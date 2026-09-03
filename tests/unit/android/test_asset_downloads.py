@@ -19,7 +19,7 @@ from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.lifecycle import TransportLifecycle
 from notebooklm._transport_drain import TransportDrainTracker
-from notebooklm.exceptions import ArtifactDownloadError, UnsupportedOperationError
+from notebooklm.exceptions import ArtifactDownloadError, AuthError, UnsupportedOperationError
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"synthetic-png-body"
 MP4 = b"\x00\x00\x00\x18ftypmp42synthetic-mp4-body"
@@ -841,9 +841,9 @@ async def test_bounded_response_failures_preserve_existing_destination(
 async def test_401_invalidates_for_next_caller_without_replay(tmp_path: Path) -> None:
     client = FakeClient([FakeResponse(401)])
     service, bearer, _ = await _open_service(client)
-    with pytest.raises(ArtifactDownloadError) as raised:
+    with pytest.raises(AuthError) as raised:
         await service.download_url(INITIAL, str(tmp_path / "out.png"))
-    assert raised.value.status_code == 401
+    assert "notebooklm login" in str(raised.value)
     assert bearer.invalidations == [17]
     assert len(client.requests) == 1
 
@@ -857,9 +857,9 @@ async def test_signed_gcs_401_does_not_invalidate_lh3_bearer(tmp_path: Path) -> 
         ]
     )
     service, bearer, _ = await _open_service(client)
-    with pytest.raises(ArtifactDownloadError) as raised:
+    with pytest.raises(AuthError) as raised:
         await service.download_url(INITIAL, str(tmp_path / "out.png"))
-    assert raised.value.status_code == 401
+    assert "notebooklm login" in str(raised.value)
     assert bearer.invalidations == []
     assert len(client.requests) == 2
 

@@ -11,13 +11,22 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, 
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Generic, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, cast
 
+from .._backoff import (
+    RETRY_BACKOFF_BASE_SECONDS,
+    RETRY_BACKOFF_CAP_SECONDS,
+    RETRY_BACKOFF_JITTER_RATIO,
+    RETRY_BACKOFF_MIN_SECONDS,
+    compute_backoff_delay,
+)
 from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
+from .._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
-from .._runtime.config import DEFAULT_CHAT_RESPONSE_MAX_BYTES
+from .._runtime.config import CORE_LOGGER_NAME, DEFAULT_CHAT_RESPONSE_MAX_BYTES
+from .._runtime.helpers import is_auth_error, resolve_sleep
 from ..exceptions import MissingDependencyError, RPCResponseTooLargeError
 from .auth import BearerCredential, BearerProvider
 from .errors import (
@@ -53,6 +62,10 @@ _ANDROID_NOTES_PROTO = (
     "notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1.notes_pb2"
 )
 logger = logging.getLogger(__name__)
+retry_logger = logging.getLogger(CORE_LOGGER_NAME)
+
+if TYPE_CHECKING:
+    from .._client_metrics import ClientMetrics
 
 
 class _DefaultTelemetry(Enum):
@@ -60,6 +73,197 @@ class _DefaultTelemetry(Enum):
 
 
 _DEFAULT_TELEMETRY = _DefaultTelemetry.METHOD
+
+
+class _RetryClass(Enum):
+    AUTH = auto()
+    RATE_LIMIT = auto()
+    SERVER = auto()
+
+
+_GRPC_RETRY_CLASS = {
+    8: _RetryClass.RATE_LIMIT,
+    13: _RetryClass.SERVER,
+    14: _RetryClass.SERVER,
+    16: _RetryClass.AUTH,
+}
+
+
+class _SessionIdempotencyPolicy(str, Enum):
+    """Temporary Android mirror of the web idempotency taxonomy.
+
+    PR-5 replaces this transport-local table with the shared operation
+    manifest.  Until then, keeping the same policy names makes the parity
+    test mechanical without importing the web registry into Android.
+    """
+
+    PROBE_THEN_CREATE = "probe_then_create"
+    IDEMPOTENT_SET_OP = "idempotent_set_op"
+    AT_LEAST_ONCE_ACCEPTED = "at_least_once_accepted"
+    NON_IDEMPOTENT_NO_RETRY = "non_idempotent_no_retry"
+
+
+@dataclass(frozen=True)
+class _MethodIdempotency:
+    default: _SessionIdempotencyPolicy
+    variants: dict[str, _SessionIdempotencyPolicy] | None = None
+
+
+_ORCHESTRATION_SERVICE = (
+    "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/"
+)
+_SHARING_SERVICE = "/labs.language.tailwind.sharing.LabsTailwindSharingService/"
+
+
+def _method_rows(
+    service: str,
+    names: tuple[str, ...],
+    policy: _SessionIdempotencyPolicy,
+) -> dict[str, _MethodIdempotency]:
+    return {f"{service}{name}": _MethodIdempotency(policy) for name in names}
+
+
+# One interim, fail-closed source of truth for every Android gRPC method used
+# by the handwritten adapters.  The classifications mirror
+# ``_web.policy.IDEMPOTENCY_REGISTRY`` 1:1; tests compare every row to that
+# registry and scan every Android unary/stream call for totality.  The streamed
+# chat method has no batchexecute enum row and is classified independently as a
+# non-idempotent turn creation.
+_ANDROID_IDEMPOTENCY_POLICIES: dict[str, _MethodIdempotency] = {
+    **_method_rows(
+        _ORCHESTRATION_SERVICE,
+        (
+            "ActOnSources",
+            "AddTentativeSources",
+            "CreateArtifact",
+            "CreateProject",
+        ),
+        _SessionIdempotencyPolicy.PROBE_THEN_CREATE,
+    ),
+    **_method_rows(
+        _SHARING_SERVICE,
+        ("ShareProject",),
+        _SessionIdempotencyPolicy.PROBE_THEN_CREATE,
+    ),
+    **_method_rows(
+        _ORCHESTRATION_SERVICE,
+        (
+            "AddSources",
+            "AddSourcesAsync",
+            "AppendSource",
+            "CopyArtifactsAsync",
+            "CopyProject",
+            "CopySourcesAsync",
+            "CreateLabel",
+            "CreateNote",
+            "DeleteLabels",
+            "DeriveArtifact",
+            "DiscoverSources",
+            "DiscoverSourcesAsync",
+            "DiscoverSourcesManifold",
+            "ExportToDrive",
+            "FinishDiscoverSourcesRun",
+            "GenerateArtifact",
+            "GenerateFreeFormStreamed",
+        ),
+        _SessionIdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+    ),
+    **_method_rows(
+        _ORCHESTRATION_SERVICE,
+        (
+            "CancelDiscoverSourcesJob",
+            "CancelGeneration",
+            "CheckSourceFreshness",
+            "DeleteArtifact",
+            "DeleteChatTurns",
+            "DeleteNotes",
+            "DeleteProjects",
+            "DeleteSources",
+            "GenerateDocumentGuides",
+            "GenerateNotebookGuide",
+            "GeneratePromptSuggestions",
+            "GenerateReportSuggestions",
+            "GetArtifact",
+            "GetArtifactCustomizationChoices",
+            "GetChatSessionStatus",
+            "GetLabels",
+            "GetNotes",
+            "GetOrCreateAccount",
+            "GetProject",
+            "ListArtifacts",
+            "ListChatSessions",
+            "ListChatTurns",
+            "ListDiscoverSourcesJob",
+            "ListExpertIntelligenceContent",
+            "ListRecentlyViewedProjects",
+            "LoadSource",
+            "MutateAccount",
+            "MutateLabel",
+            "MutateNote",
+            "MutateProject",
+            "MutateSource",
+            "NextStepSuggestions",
+            "RemoveRecentlyViewedProject",
+            "RetrieveRelevantChunks",
+            "UpdateArtifact",
+        ),
+        _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
+    ),
+    **_method_rows(
+        _SHARING_SERVICE,
+        ("GetProjectDetails",),
+        _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
+    ),
+    **_method_rows(
+        _ORCHESTRATION_SERVICE,
+        ("RefreshSource",),
+        _SessionIdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED,
+    ),
+}
+
+_MUTATE_LABEL_METHOD = f"{_ORCHESTRATION_SERVICE}MutateLabel"
+_ANDROID_IDEMPOTENCY_POLICIES[_MUTATE_LABEL_METHOD] = _MethodIdempotency(
+    _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
+    variants={
+        "add_sources": _SessionIdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        "remove_sources": _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
+        "add_notebooks": _SessionIdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
+        "remove_notebooks": _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
+    },
+)
+
+_REPLAY_SAFE_POLICIES = frozenset(
+    {
+        _SessionIdempotencyPolicy.IDEMPOTENT_SET_OP,
+        _SessionIdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED,
+    }
+)
+
+
+def _resolve_android_idempotency_policy(
+    method: str,
+    operation_variant: str | None = None,
+) -> _SessionIdempotencyPolicy:
+    """Resolve one Android method/variant, rejecting unclassified drift."""
+
+    try:
+        row = _ANDROID_IDEMPOTENCY_POLICIES[method]
+    except KeyError:
+        raise ValueError(f"Android RPC method has no idempotency policy: {method}") from None
+    if operation_variant is not None and row.variants is not None:
+        try:
+            return row.variants[operation_variant]
+        except KeyError:
+            known = sorted(row.variants)
+            raise ValueError(
+                f"Unknown Android RPC operation_variant {operation_variant!r} for "
+                f"{method}; known variants: {known}"
+            ) from None
+    return row.default
+
+
+def _method_allows_replay(method: str, operation_variant: str | None = None) -> bool:
+    return _resolve_android_idempotency_policy(method, operation_variant) in _REPLAY_SAFE_POLICIES
 
 
 class _DeadlineSignal(Exception):
@@ -81,6 +285,20 @@ class _AttemptSuccess(Generic[RespT]):
 class _AttemptFailure:
     status: GrpcStatus
     bearer_generation: int | None
+
+
+def _grpc_status_error(
+    status: GrpcStatus,
+    *,
+    method: str,
+    timeout_seconds: float | None,
+) -> Exception:
+    """Build the public sanitized status error without retaining a wire cause."""
+
+    try:
+        raise_grpc_status(status, method=method, timeout_seconds=timeout_seconds)
+    except Exception as error:
+        return error
 
 
 def _default_grpc_loader(
@@ -156,6 +374,11 @@ class AndroidSession(LoopBoundPrimitive):
         call_supervisor: CallSupervisor,
         *,
         timeout: float | None = 30.0,
+        rate_limit_max_retries: int = 3,
+        server_error_max_retries: int = 3,
+        refresh_retry_delay: float = 0.2,
+        metrics: ClientMetrics | None = None,
+        sleep: Callable[[float], Awaitable[object]] | None = None,
         grpc_loader: Callable[[], Any] = _default_grpc_loader,
         protobuf_loader: Callable[[], Any] = _default_protobuf_loader,
         monotonic: Callable[[], float] = time.monotonic,
@@ -163,6 +386,11 @@ class AndroidSession(LoopBoundPrimitive):
         self._bearer_provider = bearer_provider
         self._call_supervisor = call_supervisor
         self._timeout = timeout
+        self._rate_limit_max_retries = rate_limit_max_retries
+        self._server_error_max_retries = server_error_max_retries
+        self._refresh_retry_delay = refresh_retry_delay
+        self._metrics = metrics
+        self._sleep = sleep
         self._grpc_loader = grpc_loader
         self._protobuf_loader = protobuf_loader
         self._monotonic = monotonic
@@ -474,6 +702,7 @@ class AndroidSession(LoopBoundPrimitive):
         request: ReqT,
         *,
         replay_safe: bool,
+        operation_variant: str | None = None,
         timeout: float | None = None,
         response_type: type[RespT],
         telemetry_method: str | None | _DefaultTelemetry = _DEFAULT_TELEMETRY,
@@ -482,6 +711,12 @@ class AndroidSession(LoopBoundPrimitive):
     ) -> RespT:
         """Invoke a unary RPC without retaining this secret owner in failures."""
 
+        policy_replay_safe = _method_allows_replay(method, operation_variant)
+        if replay_safe is not policy_replay_safe:
+            raise ValueError(
+                f"Android RPC replay_safe={replay_safe} disagrees with policy "
+                f"{policy_replay_safe} for {method}"
+            )
         session = self
         failure: BaseException | None = None
         result: RespT | None = None
@@ -490,7 +725,7 @@ class AndroidSession(LoopBoundPrimitive):
                 method,
                 request,
                 metadata_augmentor=metadata_augmentor,
-                replay_safe=replay_safe,
+                replay_safe=policy_replay_safe,
                 timeout=timeout,
                 response_type=response_type,
                 telemetry_method=telemetry_method,
@@ -533,32 +768,82 @@ class AndroidSession(LoopBoundPrimitive):
                 deadline,
                 expected_epoch=expected_epoch,
             ) as lease:
-                auth_replayed = False
-                unavailable_replayed = False
-                for _attempt in range(3):
+                refresh_budget = RefreshBudget()
+                rate_limit_retries = 0
+                server_error_retries = 0
+                while True:
                     outcome = await self._unary_attempt(
                         lease, method, request, response_type, metadata_augmentor
                     )
                     if isinstance(outcome, _AttemptSuccess):
                         return outcome.value
-                    if outcome.status.name == "UNAUTHENTICATED":
-                        if outcome.bearer_generation is not None:
-                            self._bearer_provider.invalidate(outcome.bearer_generation)
-                        if replay_safe and not auth_replayed:
-                            auth_replayed = True
-                            continue
-                    if (
-                        outcome.status.name == "UNAVAILABLE"
-                        and replay_safe
-                        and not unavailable_replayed
-                    ):
-                        unavailable_replayed = True
-                        continue
-                    raise_grpc_status(
+                    error = _grpc_status_error(
                         outcome.status,
                         method=method,
                         timeout_seconds=None if deadline is None else deadline.timeout,
                     )
+                    retry_class = _GRPC_RETRY_CLASS.get(outcome.status.code)
+                    if is_auth_error(error):
+                        retry_class = _RetryClass.AUTH
+
+                    if retry_class is _RetryClass.AUTH:
+                        if outcome.bearer_generation is not None:
+                            self._bearer_provider.invalidate(outcome.bearer_generation)
+                        if replay_safe and refresh_budget.consume():
+
+                            def preserve_terminal_error(
+                                _refresh_error: Exception,
+                                *,
+                                terminal: Exception = error,
+                            ) -> BaseException:
+                                return terminal
+
+                            await refresh_and_count(
+                                refresh=lambda: self._bearer_provider.get(
+                                    expected_epoch=lease.epoch
+                                ),
+                                on_refresh_failure=preserve_terminal_error,
+                                sleep=resolve_sleep(self._sleep),
+                                refresh_retry_delay=self._refresh_retry_delay,
+                                log_label=telemetry or method,
+                                logger=retry_logger,
+                                metrics=self._metrics,
+                                retry_deadline=deadline,
+                            )
+                            continue
+                    elif (
+                        retry_class is _RetryClass.RATE_LIMIT
+                        and replay_safe
+                        and rate_limit_retries < self._rate_limit_max_retries
+                    ):
+                        await self._wait_before_retry(
+                            attempt=rate_limit_retries,
+                            deadline=deadline,
+                            label=telemetry or method,
+                            retry_class=retry_class,
+                            terminal_error=error,
+                        )
+                        rate_limit_retries += 1
+                        if self._metrics is not None:
+                            self._metrics.increment(rpc_rate_limit_retries=1)
+                        continue
+                    elif (
+                        retry_class is _RetryClass.SERVER
+                        and replay_safe
+                        and server_error_retries < self._server_error_max_retries
+                    ):
+                        await self._wait_before_retry(
+                            attempt=server_error_retries,
+                            deadline=deadline,
+                            label=telemetry or method,
+                            retry_class=retry_class,
+                            terminal_error=error,
+                        )
+                        server_error_retries += 1
+                        if self._metrics is not None:
+                            self._metrics.increment(rpc_server_error_retries=1)
+                        continue
+                    raise error
         except TimeoutError:
             queue_timed_out = True
         if queue_timed_out:
@@ -568,11 +853,46 @@ class AndroidSession(LoopBoundPrimitive):
             )
         raise AssertionError("unary call exited without a result")  # pragma: no cover
 
+    async def _wait_before_retry(
+        self,
+        *,
+        attempt: int,
+        deadline: RuntimeDeadline | None,
+        label: str,
+        retry_class: _RetryClass,
+        terminal_error: Exception,
+    ) -> None:
+        delay = max(
+            RETRY_BACKOFF_MIN_SECONDS,
+            compute_backoff_delay(
+                attempt,
+                base=RETRY_BACKOFF_BASE_SECONDS,
+                cap=RETRY_BACKOFF_CAP_SECONDS,
+                jitter_ratio=RETRY_BACKOFF_JITTER_RATIO,
+            ),
+        )
+        if deadline is not None:
+            remaining = deadline.remaining()
+            if remaining <= 0.0 or delay >= remaining:
+                raise terminal_error
+        actual_delay = delay if deadline is None else deadline.clamp_sleep(delay)
+        retry_logger.warning(
+            "%s Android %s error; backing off %.1fs before retry %d",
+            label,
+            "rate-limit" if retry_class is _RetryClass.RATE_LIMIT else "server",
+            actual_delay,
+            attempt + 1,
+        )
+        if actual_delay > 0:
+            await resolve_sleep(self._sleep)(actual_delay)
+
     async def stream(
         self,
         method: str,
         request: ReqT,
         *,
+        replay_safe: bool = False,
+        operation_variant: str | None = None,
         timeout: float | None = None,
         response_type: type[RespT],
         telemetry_method: str | None | _DefaultTelemetry = _DEFAULT_TELEMETRY,
@@ -580,6 +900,17 @@ class AndroidSession(LoopBoundPrimitive):
     ) -> AsyncIterator[RespT]:
         """Yield a stream without retaining this secret owner in failures."""
 
+        # Resolve the method through the same total policy table as unary calls
+        # so a new stream cannot bypass classification. Streams remain
+        # single-attempt even if a future read-only stream is added: the only
+        # currently admitted stream creates a chat turn, and web has no stream
+        # auth replay to mirror.
+        policy_replay_safe = _method_allows_replay(method, operation_variant)
+        if replay_safe is not policy_replay_safe:
+            raise ValueError(
+                f"Android RPC replay_safe={replay_safe} disagrees with policy "
+                f"{policy_replay_safe} for {method}"
+            )
         session = self
         iterator = cast(
             AsyncGenerator[RespT, None],

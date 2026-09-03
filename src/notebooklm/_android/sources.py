@@ -43,6 +43,7 @@ from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_d
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
+from .errors import sanitize_async_boundary
 from .phenotype import PhenotypeTokenProvider
 from .play_books import (
     build_expert_intelligence_content,
@@ -671,7 +672,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 ],
                 request_context=android_request_context(),
             ),
-            replay_safe=False,
+            replay_safe=True,
             response_type=_write_proto().MutateSourceResponse,
             expected_epoch=expected_epoch,
         )
@@ -1083,6 +1084,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             wait_timeout=wait_timeout,
         )
 
+    @sanitize_async_boundary
     async def add_file(
         self,
         notebook_id: str,
@@ -1097,8 +1099,6 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         # Choose the upload path from the same canonical target whose filename
         # drives MIME inference in either uploader, so a misleading symlink
         # suffix cannot route a file into the transaction that will reject it.
-        # Both uploaders still resolve/check the supplied canonical path inside
-        # their own admitted operation before opening it.
         canonical_path = await asyncio.to_thread(Path(file_path).resolve)
         if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
             if self._add_file_compat is not None:
@@ -1120,32 +1120,19 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 import_drive_file=self.add_drive,
             )
 
-        adapter = self
-        result: Source | None = None
-        failure: BaseException | None = None
-        try:
-            result = await adapter._upload_pipeline.upload_file(
-                notebook_id,
-                canonical_path,
-                mime_type,
-                wait=wait,
-                wait_timeout=wait_timeout,
-                title=title,
-                on_progress=on_progress,
-                register_tentative=adapter._register_file_tentative,
-                wait_until_registered=adapter._wait_uploaded_registered,
-                wait_until_ready=adapter._wait_uploaded_ready,
-                rename_uploaded=adapter._rename_uploaded,
-            )
-        except BaseException as error:
-            from .errors import sanitize_escaping_exception
-
-            failure = sanitize_escaping_exception(error)
-        finally:
-            del self, adapter
-        if failure is not None:
-            raise failure
-        return cast(Source, result)
+        return await self._upload_pipeline.upload_file(
+            notebook_id,
+            canonical_path,
+            mime_type,
+            wait=wait,
+            wait_timeout=wait_timeout,
+            title=title,
+            on_progress=on_progress,
+            register_tentative=self._register_file_tentative,
+            wait_until_registered=self._wait_uploaded_registered,
+            wait_until_ready=self._wait_uploaded_ready,
+            rename_uploaded=self._rename_uploaded,
+        )
 
     async def add_drive(
         self,
@@ -1335,7 +1322,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 await self._transport.unary(
                     DELETE_SOURCES_METHOD,
                     request,
-                    replay_safe=False,
+                    replay_safe=True,
                     response_type=_empty_type(),
                     expected_epoch=lease.epoch,
                 )
@@ -1373,7 +1360,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 response = await self._transport.unary(
                     MUTATE_SOURCE_METHOD,
                     request,
-                    replay_safe=False,
+                    replay_safe=True,
                     response_type=_write_proto().MutateSourceResponse,
                     expected_epoch=lease.epoch,
                 )
@@ -1439,7 +1426,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                     source_id=_read_proto().SourceId(id=source_id),
                     request_context=android_request_context(),
                 ),
-                replay_safe=False,
+                replay_safe=True,
                 response_type=_write_proto().RefreshSourceResponse,
                 expected_epoch=lease.epoch,
             )

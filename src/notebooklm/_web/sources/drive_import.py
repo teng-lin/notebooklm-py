@@ -54,13 +54,12 @@ import httpx
 from ..._artifact._download_client import _is_trusted_download_host
 from ..._artifact._redirect_guard import redirect_revalidation_hooks
 from ..._artifact.downloads import _await_writer_exit
+from ..._runtime.helpers import map_google_http_status
 from ..._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
 from ...exceptions import (
     ArtifactDownloadError,
     AuthError,
     NetworkError,
-    RateLimitError,
-    ServerError,
     ValidationError,
 )
 from ._upload_decode import _validate_upload_file_supported
@@ -428,19 +427,20 @@ class DriveFetcher:
     ) -> DriveDownload | _ConfirmRedirect:
         file_id = ref.file_id
         status = response.status_code
-        # 401 → expired session (re-auth path). 403 is NOT decided here: Drive
-        # returns 403 + an HTML permission page, which the discriminator handles.
-        if status == 401:
-            raise AuthError("Drive authentication expired — run `notebooklm login`, then retry.")
-        if status == 429:
-            raise RateLimitError(
-                f"Drive throttled the download (HTTP 429) for {file_id}; retry after a delay."
-            )
-        if status >= 500:
-            raise ServerError(
-                f"Drive returned HTTP {status} while fetching {file_id}; retry after a delay.",
-                status_code=status,
-            )
+        status_error: httpx.HTTPStatusError | None = None
+        if status == 401 or status == 429 or status >= 500:
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as error:
+                status_error = error
+        # 403 is NOT decided here: Drive returns 403 + an HTML permission page,
+        # which the discriminator handles below.
+        map_google_http_status(
+            response,
+            filename=f"fetching Drive file {file_id}",
+            chain=True,
+            cause=status_error,
+        )
 
         content_type = response.headers.get("content-type", "")
         if "text/html" in content_type.lower():

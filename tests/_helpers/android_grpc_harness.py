@@ -205,11 +205,21 @@ def _inject_grpc_loader(monkeypatch: pytest.MonkeyPatch, grpc_module: Any) -> No
         supervisor: Any,
         *,
         timeout: float | None,
+        rate_limit_max_retries: int,
+        server_error_max_retries: int,
+        refresh_retry_delay: float,
+        metrics: Any,
+        sleep: Any,
     ) -> android_session.AndroidSession:
         return production_session(
             bearer_provider,
             supervisor,
             timeout=timeout,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
+            refresh_retry_delay=refresh_retry_delay,
+            metrics=metrics,
+            sleep=sleep,
             grpc_loader=lambda: grpc_module,
         )
 

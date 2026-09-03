@@ -19,16 +19,14 @@ from urllib.parse import SplitResult, parse_qsl, urlsplit
 import httpx
 
 from ..._env import PERSONAL_APP_HOSTS
+from ..._runtime.helpers import map_google_http_status
 from ..._types.sources import _HTML_FILE_EXTENSIONS
 from ...exceptions import (
     AuthError,
     NetworkError,
-    RateLimitError,
-    ServerError,
     ValidationError,
 )
 from ...rpc import get_upload_url
-from ..transport.errors import parse_retry_after
 
 #: The two HTTP boundaries after the source registration RPC has succeeded.
 #: Internal: surfaced to callers only as the duck-typed ``stage`` attribute
@@ -472,23 +470,18 @@ def _raise_from_upload_http_status(exc: httpx.HTTPStatusError, filename: str) ->
     """
     status = exc.response.status_code
     reason = exc.response.reason_phrase
-    if status == 429:
-        retry_after = parse_retry_after(exc.response.headers.get("retry-after"))
-        msg = f"Upload of {filename!r} was rate limited"
-        if retry_after:
-            msg += f"; retry after {retry_after} seconds"
-        raise RateLimitError(msg, retry_after=retry_after) from exc
-    if status in (401, 403):
+    map_google_http_status(
+        exc.response,
+        filename=f"uploading {filename!r}",
+        chain=True,
+        cause=exc,
+    )
+    if status == 403:
         raise AuthError(f"Authentication failed uploading {filename!r} (HTTP {status})") from exc
     if 300 <= status < 400:
         raise AuthError(
             f"Upload of {filename!r} was redirected (HTTP {status}); the Google session "
             "may have expired — re-run `notebooklm login`."
-        ) from exc
-    if status >= 500:
-        raise ServerError(
-            f"NotebookLM upload endpoint returned {status} for {filename!r}: {reason}",
-            status_code=status,
         ) from exc
     # Remaining case: a 4xx client rejection (raise_for_status fired, and 3xx/5xx
     # are handled above). The request/file was rejected — treat it as invalid

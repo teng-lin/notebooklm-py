@@ -370,6 +370,7 @@ class AndroidChatAPI(ChatAPI):
         async for response in self._transport.stream(
             GENERATE_FREE_FORM_STREAMED_METHOD,
             request,
+            replay_safe=False,
             timeout=self._chat_timeout,
             response_type=proto.GenerateFreeFormStreamedResponse,
             telemetry_method="chat.ask",
@@ -433,7 +434,7 @@ class AndroidChatAPI(ChatAPI):
                     chat_session_id=conversation_id,
                     delete_all_history=True,
                 ),
-                replay_safe=False,
+                replay_safe=True,
                 response_type=_empty_type(),
                 expected_epoch=lease.epoch,
             )
@@ -476,7 +477,7 @@ class AndroidChatAPI(ChatAPI):
                 ],
                 request_context=android_request_context(),
             ),
-            replay_safe=False,
+            replay_safe=True,
             response_type=read_proto.Project,
         )
         validate_project_identity(response, notebook_id, method_id=MUTATE_PROJECT_METHOD)

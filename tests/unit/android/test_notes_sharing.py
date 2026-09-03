@@ -500,7 +500,7 @@ async def test_fake_server_runs_complete_note_lifecycle_with_exact_orchestration
     for method, _request, kwargs in server.calls:
         if method in writes:
             assert kwargs == {
-                "replay_safe": False,
+                "replay_safe": method != CREATE_NOTE_METHOD,
                 "response_type": writes[method],
                 "expected_epoch": 7,
             }
@@ -771,7 +771,7 @@ async def test_mind_map_delete_is_kind_safe_idempotent_and_eventually_confirmed(
     assert method == DELETE_NOTES_METHOD
     assert list(request.note_ids) == ["mind-map"]
     assert kwargs == {
-        "replay_safe": False,
+        "replay_safe": True,
         "response_type": notes_pb2.DeleteNotesResponse,
         "expected_epoch": 7,
     }
@@ -808,7 +808,7 @@ async def test_mind_map_delete_status_five_after_preflight_is_idempotent() -> No
     )
 
     await AndroidNotesAPI(_session(session)).delete_mind_map("project-1", "map-1")
-    assert session.calls[-1][2]["replay_safe"] is False
+    assert session.calls[-1][2]["replay_safe"] is True
 
 
 @pytest.mark.asyncio
@@ -891,7 +891,7 @@ async def test_delete_status_five_after_preflight_is_idempotent_and_not_replayed
         }
     )
     await AndroidNotesAPI(_session(session)).delete("project-1", "note-1")
-    assert session.calls[-1][2]["replay_safe"] is False
+    assert session.calls[-1][2]["replay_safe"] is True
 
 
 @pytest.mark.asyncio

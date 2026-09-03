@@ -80,8 +80,8 @@ from .request_types import AuthSnapshot, BuildRequest
 
 if TYPE_CHECKING:
     from ..._deadline import RuntimeDeadline
+    from ..._runtime.auth_refresh_retry import RefreshBudget
     from ..._runtime.call_supervisor import CallLease, CallSupervisor
-    from .auth_refresh_retry import RefreshBudget
     from .kernel import Kernel
 
 
@@ -313,7 +313,7 @@ class RuntimeTransport:
         checks.
 
         ``refresh_budget`` is an optional
-        :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget`
+        :class:`notebooklm._runtime.auth_refresh_retry.RefreshBudget`
         seeded by the RPC executor so the HTTP-status refresh layer
         (:class:`AuthRefreshMiddleware`) shares its once-per-logical-call
         refresh allowance with the executor's decoded-RPC refresh layer

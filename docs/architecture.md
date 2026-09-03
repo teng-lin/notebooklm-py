@@ -1154,7 +1154,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_backoff.py` | Shared capped exponential-backoff calculation with deterministic test injection |
 | `_web/transport/reqid_counter.py` | `ReqidCounter` — monotonic `_reqid` for the chat backend |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator` — refresh task + auth-snapshot lock |
-| `_web/transport/auth_refresh_retry.py` | Shared auth refresh-and-retry core for the two retry layers (HTTP-status `AuthRefreshMiddleware` + decoded-RPC `RpcExecutor`): the once-per-logical-call `RefreshBudget` token and the common `refresh_and_count` body (log/refresh/sleep/`rpc_auth_retries` metric). Unifies the previously-divergent copies per issue #1205; the two layers keep their distinct triggers and refresh-failure exception shapes. |
+| `_runtime/auth_refresh_retry.py` | Shared auth refresh-and-retry core for the web HTTP-status/decoded-RPC layers and Android gRPC: the once-per-logical-call `RefreshBudget` token and common `refresh_and_count` body (log/refresh/sleep/`rpc_auth_retries` metric). The old `_web/transport/auth_refresh_retry.py` path is a one-release compatibility re-export. |
 | `_runtime/lifecycle.py` | `ClientLifecycle` — protocol-neutral transactional root lifecycle and phased transport orchestration |
 | `_web/transport/lifecycle.py` | `WebTransportLifecycle` — Kernel/auth epoch fencing, keepalive, cookie persistence, and web resource teardown |
 | `_web/transport/runtime.py` | `RuntimeTransport` — authed-POST transport wrapper that drives the middleware chain and typed transport response handling |
@@ -1501,7 +1501,7 @@ src/notebooklm/
 │   └── transport/               # Web HTTP transport core
 │       ├── __init__.py
 │       ├── auth.py              # AuthRefreshCoordinator
-│       ├── auth_refresh_retry.py # Shared refresh budget + retry body
+│       ├── auth_refresh_retry.py # One-release compatibility re-export
 │       ├── chat.py              # Chat-specific error mapping
 │       ├── cookie_persistence.py # Cookie-jar persistence + __Secure-1PSIDTS rotation
 │       ├── error_injection.py   # Synthetic-error env-var resolver + startup guard
@@ -1529,10 +1529,11 @@ src/notebooklm/
 │           └── tracing.py
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
 │   ├── __init__.py              # Re-exports only transport-neutral runtime names
+│   ├── auth_refresh_retry.py    # Shared refresh budget + retry body
 │   ├── call_supervisor.py       # Shared call admission, metrics, semaphore, and generation leases
 │   ├── config.py                # DEFAULT_* knobs + module-level constants
 │   ├── contracts.py             # Transport-neutral LoopGuard Protocol
-│   ├── helpers.py               # is_auth_error / AUTH_ERROR_PATTERNS / keepalive helpers
+│   ├── helpers.py               # Auth classification, Google HTTP status, sleep, keepalive
 │   ├── init.py                  # Runtime collaborator construction + validation
 │   └── lifecycle.py             # Root lifecycle waves + phased transport orchestration
 ├── _source/                     # Neutral source services + lazy compatibility exports

@@ -17,7 +17,7 @@ from .._artifact.downloads import AssetDownloadService, DownloadResult
 from .._curl_cffi_transport import resolve_transport_factory
 from .._loop_affinity import assert_bound_loop
 from .._runtime.call_supervisor import CallSupervisor
-from ..exceptions import ArtifactDownloadError, UnsupportedOperationError
+from ..exceptions import ArtifactDownloadError, AuthError, UnsupportedOperationError
 from .auth import BearerCredential, BearerProvider
 from .errors import sanitize_escaping_exception
 
@@ -590,6 +590,11 @@ class AndroidAssetDownloadService(AssetDownloadService):
                     if status != 200:
                         if status == 401 and headers and credential is not None:
                             self._bearer_provider.invalidate(credential.generation)
+                        if status == 401:
+                            raise AuthError(
+                                "Android asset authentication expired; "
+                                "run `notebooklm login`, then retry."
+                            ) from None
                         return TransferFailure(f"http_{status}", host, hop)
 
                     content_type = response.headers.get("content-type", "")
@@ -667,6 +672,8 @@ class AndroidAssetDownloadService(AssetDownloadService):
                 except asyncio.CancelledError:
                     raise
                 except (KeyboardInterrupt, SystemExit):
+                    raise
+                except AuthError:
                     raise
                 except BaseException:
                     return TransferFailure("transport", host, hop)

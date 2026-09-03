@@ -1131,6 +1131,64 @@ def _write_pdf(tmp_path: Path) -> Path:
 
 
 @pytest.mark.asyncio
+async def test_start_401_escapes_the_scotty_control_plane_as_auth_error(tmp_path: Path) -> None:
+    _session, _bearer, pipeline = await _pipeline()
+
+    async def rejected_start(*args: Any) -> Any:
+        return upload_module._HTTPOutcome(401, "final", SESSION_URL)
+
+    pipeline._start_worker = rejected_start  # type: ignore[method-assign]
+
+    with pytest.raises(AuthError, match="Authentication failed uploading") as excinfo:
+        await pipeline._control_plane(
+            NOTEBOOK_ID,
+            _write_pdf(tmp_path),
+            _deadline(),
+            _UploadState(),
+            None,
+            "application/pdf",
+            pipeline._active_epoch or 0,
+            _registers,
+        )
+
+    assert excinfo.value.source_id == SOURCE_ID
+    assert excinfo.value.stage == "start"
+    assert pipeline._open_files == set()
+    assert not pipeline._upload_slot().locked()
+
+
+@pytest.mark.asyncio
+async def test_finalize_401_escapes_the_scotty_control_plane_as_auth_error(tmp_path: Path) -> None:
+    _session, _bearer, pipeline = await _pipeline()
+
+    async def accepted_start(*args: Any) -> Any:
+        return upload_module._HTTPOutcome(200, "active", SESSION_URL)
+
+    async def rejected_finalize(*args: Any) -> Any:
+        return upload_module._HTTPOutcome(401, "final")
+
+    pipeline._start_worker = accepted_start  # type: ignore[method-assign]
+    pipeline._finalize_worker = rejected_finalize  # type: ignore[method-assign]
+
+    with pytest.raises(AuthError, match="Authentication failed uploading") as excinfo:
+        await pipeline._control_plane(
+            NOTEBOOK_ID,
+            _write_pdf(tmp_path),
+            _deadline(),
+            _UploadState(),
+            None,
+            "application/pdf",
+            pipeline._active_epoch or 0,
+            _registers,
+        )
+
+    assert excinfo.value.source_id == SOURCE_ID
+    assert excinfo.value.stage == "finalize"
+    assert pipeline._open_files == set()
+    assert not pipeline._upload_slot().locked()
+
+
+@pytest.mark.asyncio
 async def test_a_notebook_id_that_could_escape_the_upload_path_is_refused(
     tmp_path: Path,
 ) -> None:

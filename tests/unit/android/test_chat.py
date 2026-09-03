@@ -786,6 +786,7 @@ async def test_base_ask_uses_latest_cumulative_final_without_concatenating_frame
     )
     assert request.request_context.client_type == 2
     assert kwargs == {
+        "replay_safe": False,
         "timeout": 180.0,
         "response_type": chat_pb2.GenerateFreeFormStreamedResponse,
         "telemetry_method": "chat.ask",
@@ -971,7 +972,7 @@ async def test_delete_uses_base_lock_cache_workflow_and_exact_non_replay_request
         delete_all_history=True,
     )
     assert kwargs == {
-        "replay_safe": False,
+        "replay_safe": True,
         "response_type": Empty,
         "expected_epoch": 7,
     }
@@ -1024,7 +1025,7 @@ async def test_configure_sends_whole_advanced_settings_block() -> None:
         "Be exact.",
     )
     assert settings.response_style_settings.response_length == ChatResponseLength.LONGER.value
-    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+    assert kwargs == {"replay_safe": True, "response_type": read_pb2.Project}
     assert fake.stream_calls == []
 
 

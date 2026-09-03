@@ -589,6 +589,93 @@ class TestRefreshAuth:
         assert calls == [False]
         assert result is client._auth
 
+    @pytest.mark.asyncio
+    async def test_android_refresh_remints_bearer_before_best_effort_web_refresh(
+        self, mock_auth, monkeypatch
+    ):
+        client = NotebookLMClient(mock_auth, backend="android")
+        calls: list[str] = []
+        provider = client._android_bearer_provider
+        assert provider is not None
+
+        async def refresh_bearer(expected_epoch: int):
+            calls.append(f"bearer:{expected_epoch}")
+
+        async def refresh_web(**kwargs):
+            calls.append(f"web:{kwargs['expected_epoch']}")
+            return kwargs["auth"]
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(provider, "refresh", refresh_bearer)
+        monkeypatch.setattr(client_mod, "refresh_auth_session", refresh_web)
+
+        result = await client._refresh_auth_for_epoch(expected_epoch=7)
+
+        assert calls == ["bearer:7", "web:7"]
+        assert result is client._auth
+
+    @pytest.mark.asyncio
+    async def test_android_refresh_keeps_successful_bearer_when_web_refresh_fails(
+        self, mock_auth, monkeypatch, caplog
+    ):
+        client = NotebookLMClient(mock_auth, backend="android")
+        provider = client._android_bearer_provider
+        assert provider is not None
+        bearer_calls: list[int] = []
+
+        async def refresh_bearer(expected_epoch: int):
+            bearer_calls.append(expected_epoch)
+
+        async def refresh_web(**kwargs):
+            raise ValueError("web cookies are intentionally absent")
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(provider, "refresh", refresh_bearer)
+        monkeypatch.setattr(client_mod, "refresh_auth_session", refresh_web)
+
+        result = await client._refresh_auth_for_epoch(expected_epoch=9)
+
+        assert bearer_calls == [9]
+        assert result is client._auth
+        assert "compatibility web refresh failed (ValueError)" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_android_allow_headless_refresh_mints_exactly_one_bearer(
+        self, mock_auth, monkeypatch
+    ):
+        client = NotebookLMClient(mock_auth, backend="android")
+        provider = client._android_bearer_provider
+        assert provider is not None
+        bearer_calls: list[int] = []
+        web_calls: list[bool] = []
+
+        async def refresh_bearer(expected_epoch: int):
+            bearer_calls.append(expected_epoch)
+
+        async def refresh_web(*, allow_headless, auth, **_kwargs):
+            web_calls.append(allow_headless)
+            return auth
+
+        import notebooklm.client as client_mod
+
+        monkeypatch.setattr(provider, "refresh", refresh_bearer)
+        monkeypatch.setattr(client_mod, "refresh_auth_session", refresh_web)
+
+        coordinator = client._collaborators.auth_coord
+        coordinator.set_bound_loop(asyncio.get_running_loop())
+        coordinator.reset_after_open()
+        coordinator.activate_epoch(7)
+        result = await client._refresh_auth_for_epoch(
+            allow_headless=True,
+            expected_epoch=7,
+        )
+
+        assert len(bearer_calls) == 1
+        assert web_calls == [False]
+        assert result is client._auth
+
 
 # =============================================================================
 # AUTH PROPERTY TESTS

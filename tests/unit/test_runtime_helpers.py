@@ -30,13 +30,13 @@ from collections.abc import Awaitable
 import httpx
 import pytest
 
-from notebooklm._runtime.helpers import is_auth_error, resolve_sleep
+from notebooklm._runtime.helpers import is_auth_error, map_google_http_status, resolve_sleep
 from notebooklm._web.transport.errors import TransportServerError
 from notebooklm._web.transport.middleware.auth_refresh import AuthRefreshMiddleware
 from notebooklm._web.transport.middleware.context import RPC_CONTEXT_RESOURCE_EPOCH
 from notebooklm._web.transport.middleware.core import NextCall, RpcRequest, RpcResponse, build_chain
 from notebooklm._web.transport.middleware.retry import RetryMiddleware
-from notebooklm.rpc import AuthError, RPCError, ServerError
+from notebooklm.rpc import AuthError, RateLimitError, RPCError, ServerError
 from tests._fixtures.chain import make_request
 
 _TEST_EPOCH = 7
@@ -77,6 +77,92 @@ def test_resolve_sleep_late_binds_asyncio_sleep(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr("asyncio.sleep", fake)
     assert resolve_sleep(None) is fake
+
+
+# ---------------------------------------------------------------------------
+# Direct unit tests for map_google_http_status
+# ---------------------------------------------------------------------------
+
+
+def _google_response(status: int, *, retry_after: str | None = None) -> httpx.Response:
+    request = httpx.Request(
+        "GET",
+        "https://www.googleapis.com/drive/v3/files/test",
+        headers={"Authorization": "Bearer private-token"},
+    )
+    headers = {"retry-after": retry_after} if retry_after is not None else None
+    return httpx.Response(status, request=request, headers=headers)
+
+
+def test_google_http_status_maps_web_auth_and_chains_http_cause() -> None:
+    response = _google_response(401)
+    with pytest.raises(httpx.HTTPStatusError) as original:
+        response.raise_for_status()
+
+    with pytest.raises(AuthError, match="notebooklm login") as excinfo:
+        map_google_http_status(
+            response,
+            filename="downloading report.pdf",
+            chain=True,
+            cause=original.value,
+        )
+
+    assert excinfo.value.__cause__ is original.value
+
+
+def test_google_http_status_maps_android_auth_without_secret_bearing_cause() -> None:
+    response = _google_response(401)
+
+    with pytest.raises(AuthError, match="notebooklm login") as excinfo:
+        map_google_http_status(response, filename="downloading report.pdf", chain=False)
+
+    assert excinfo.value.__cause__ is None
+    assert excinfo.value.__context__ is None
+
+
+def test_google_http_status_maps_rate_limit_with_retry_after() -> None:
+    with pytest.raises(RateLimitError) as excinfo:
+        map_google_http_status(
+            _google_response(429, retry_after="17"),
+            filename="uploading report.pdf",
+            chain=False,
+        )
+
+    assert excinfo.value.retry_after == 17
+
+
+@pytest.mark.parametrize(("value", "expected"), [("1.2", 2), ("9999", 300), ("bad", None)])
+def test_google_http_status_preserves_bounded_retry_after_parsing(
+    value: str,
+    expected: int | None,
+) -> None:
+    with pytest.raises(RateLimitError) as excinfo:
+        map_google_http_status(
+            _google_response(429, retry_after=value),
+            filename="uploading report.pdf",
+            chain=False,
+        )
+
+    assert excinfo.value.retry_after == expected
+
+
+def test_google_http_status_maps_server_error_and_leaves_endpoint_statuses() -> None:
+    with pytest.raises(ServerError) as excinfo:
+        map_google_http_status(
+            _google_response(503),
+            filename="importing a Drive source",
+            chain=False,
+        )
+    assert excinfo.value.status_code == 503
+
+    assert (
+        map_google_http_status(
+            _google_response(403),
+            filename="importing a Drive source",
+            chain=False,
+        )
+        is None
+    )
 
 
 # ---------------------------------------------------------------------------

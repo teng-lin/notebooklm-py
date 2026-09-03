@@ -48,7 +48,7 @@ from starlette.types import Receive, Scope, Send
 from .._app import download as download_core
 from .._app import source_add as add_core
 from .._app.errors import ErrorCategory, classify
-from ..exceptions import NotebookLMError, ValidationError
+from ..exceptions import AuthError, NotebookLMError, ValidationError
 from ._context import get_client_from_app
 from ._errors import redact
 from ._filelink import FileLinkError, FileTransferConfig
@@ -405,6 +405,11 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     status_code=400,
                     headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
                 )
+            except AuthError as exc:
+                # A download-hop 401 remains a typed upstream auth failure; keep
+                # it out of generic/non-success result handling so classification
+                # and redaction happen at this route boundary.
+                return _upstream_error_response(exc)
             except NotebookLMError as exc:
                 # An upstream error raised out of the core (e.g. the artifact ``list``
                 # RPC inside ``execute_download`` is not wrapped) would otherwise become

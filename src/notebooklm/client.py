@@ -726,6 +726,44 @@ class NotebookLMClient:
     ) -> AuthTokens:
         """Run refresh against the resource generation admitted by the caller."""
 
+        if self._backend_preference.preferred != "android":
+            return await self._refresh_web_auth_for_epoch(
+                allow_headless=allow_headless,
+                expected_epoch=expected_epoch,
+            )
+
+        provider = self._android_bearer_provider
+        if provider is None:  # pragma: no cover - assembly invariant
+            raise RuntimeError("Android bearer provider is not configured.")
+        await provider.refresh(expected_epoch)
+
+        # Until backend-conditional assembly lands, Android clients still own
+        # the web compatibility bundle used by ``rpc_call``. Refresh only that
+        # bundle after the bearer. In particular, the coordinator callback is
+        # web-only, so an allow_headless join cannot re-enter this Android
+        # branch and mint a second bearer.
+        try:
+            return await self._refresh_web_auth_for_epoch(
+                allow_headless=allow_headless,
+                expected_epoch=expected_epoch,
+            )
+        except Exception as error:
+            # A compatibility-cookie failure must not turn a successful bearer
+            # refresh into a public failure on master-token-only profiles.
+            logger.warning(
+                "Android bearer refreshed; compatibility web refresh failed (%s)",
+                type(error).__name__,
+            )
+            return self._auth
+
+    async def _refresh_web_auth_for_epoch(
+        self,
+        *,
+        allow_headless: bool = False,
+        expected_epoch: int,
+    ) -> AuthTokens:
+        """Run only the compatibility web recovery ladder for one epoch."""
+
         coord = self._collaborators.auth_coord
         if not allow_headless or not coord.has_refresh_callback:
             # Base policy — also the coordinator's single-flight callback body,
@@ -747,8 +785,7 @@ class NotebookLMClient:
             # Narrow by design: the L3-remediable base-flight failure surfaces as
             # ValueError (dead-cookie 302 / token extraction). refresh-cmd swallows
             # its RuntimeError internally (returns bool), so a RuntimeError here is
-            # incidental (e.g. "Client not initialized") and must propagate, not
-            # trigger a second headless refresh; transport 5xx propagates too.
+            # incidental and must propagate rather than trigger a second refresh.
             return await refresh_auth_session(
                 auth=self._auth,
                 kernel=self._collaborators.kernel,

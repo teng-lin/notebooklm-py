@@ -1287,6 +1287,19 @@ async def test_artifact_download_audio(mcp_call, mock_client, tmp_path) -> None:
     mock_client.artifacts.download_audio.assert_awaited_once()
 
 
+async def test_artifact_download_auth_error_is_typed_auth(mcp_call, mock_client, tmp_path) -> None:
+    from notebooklm.exceptions import AuthError
+
+    out = str(tmp_path / "out.mp3")
+    mock_client.artifacts.list = AsyncMock(return_value=[_AUDIO_ARTIFACT])
+    mock_client.artifacts.download_audio = AsyncMock(side_effect=AuthError("expired"))
+
+    with pytest.raises(ToolError, match=r"^AUTH:"):
+        await mcp_call(
+            "studio_download", {"notebook": NB_ID, "artifact_type": "audio", "path": out}
+        )
+
+
 async def test_artifact_download_reports_size_bytes(mcp_call, mock_client, tmp_path) -> None:
     """F14: a stdio download echoes the on-disk ``size_bytes`` (the file was just
     written; ``os.path.getsize`` is free and previously thrown away)."""

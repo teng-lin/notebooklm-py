@@ -16,7 +16,20 @@ from __future__ import annotations
 
 import random as _random
 
-__all__ = ["compute_backoff_delay"]
+# Retry timing is shared by the web middleware and Android gRPC session. Keep
+# these values here so parity cannot drift between transports.
+RETRY_BACKOFF_BASE_SECONDS = 1.0
+RETRY_BACKOFF_CAP_SECONDS = 30.0
+RETRY_BACKOFF_JITTER_RATIO = 0.2
+RETRY_BACKOFF_MIN_SECONDS = 0.1
+
+__all__ = [
+    "RETRY_BACKOFF_BASE_SECONDS",
+    "RETRY_BACKOFF_CAP_SECONDS",
+    "RETRY_BACKOFF_JITTER_RATIO",
+    "RETRY_BACKOFF_MIN_SECONDS",
+    "compute_backoff_delay",
+]
 
 
 def compute_backoff_delay(

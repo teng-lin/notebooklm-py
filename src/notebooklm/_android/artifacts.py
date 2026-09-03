@@ -1331,7 +1331,7 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
                 update_mask={"paths": ["title"]},
                 etag=before.etag,
             ),
-            replay_safe=False,
+            replay_safe=True,
             response_type=_PROTO.Artifact,
             expected_epoch=expected_epoch,
         )

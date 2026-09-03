@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 import notebooklm.auth as auth_module
 from notebooklm.cli import helpers as helpers_module
+from notebooklm.cli.services.download import build_download_envelope
 from notebooklm.notebooklm_cli import cli
 from notebooklm.types import Artifact
 
@@ -710,6 +711,131 @@ class TestDownloadAll:
         assert "failed" in output_lower
         assert "network error" in output_lower
         assert "error: true" not in output_lower
+
+
+class TestDownloadAuthPropagation:
+    """Authentication failures on the transfer hop retain their typed shape."""
+
+    def test_single_download_hop_auth_error_reaches_typed_handler(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        from notebooklm.exceptions import AuthError
+
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[make_artifact("audio_1", "Podcast", 1)]
+        )
+        mock_client.artifacts.download_audio = AsyncMock(
+            side_effect=AuthError("download credential expired")
+        )
+
+        result = runner.invoke(
+            cli,
+            ["download", "audio", "--json", "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 1, result.output
+        payload = json.loads(result.output)
+        assert payload["code"] == "AUTH_ERROR"
+        assert "download credential expired" in payload["message"]
+
+    def test_single_download_hop_auth_error_prints_login_hint(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        from notebooklm.exceptions import AuthError
+
+        mock_client = create_mock_client()
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[make_artifact("audio_1", "Podcast", 1)]
+        )
+        mock_client.artifacts.download_audio = AsyncMock(side_effect=AuthError("expired"))
+
+        result = runner.invoke(
+            cli,
+            ["download", "audio", "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "Authentication error" in result.output
+        assert "notebooklm login" in result.output
+
+    def test_download_all_auth_error_keeps_partial_rows_and_guidance(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        from notebooklm.exceptions import AuthError
+
+        mock_client = create_mock_client()
+        output_dir = tmp_path / "downloads"
+        mock_client.artifacts.list = AsyncMock(
+            return_value=[
+                make_artifact("audio_1", "First", 1),
+                make_artifact("audio_2", "Second", 1),
+            ]
+        )
+        mock_client.artifacts.download_audio = AsyncMock(
+            side_effect=[AuthError("download credential expired"), str(output_dir / "Second.m4a")]
+        )
+
+        result = runner.invoke(
+            cli,
+            ["download", "audio", "--all", "--json", str(output_dir), "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 1, result.output
+        payload = json.loads(result.output)
+        assert payload["error"] is True
+        assert payload["code"] == "AUTH_ERROR"
+        assert "notebooklm login" in payload["hint"]
+        assert [row["status"] for row in payload["artifacts"]] == ["failed", "downloaded"]
+
+    def test_download_all_text_auth_error_prints_login_guidance(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        from notebooklm.exceptions import AuthError
+
+        mock_client = create_mock_client()
+        output_dir = tmp_path / "downloads"
+        mock_client.artifacts.list = AsyncMock(return_value=[make_artifact("audio_1", "First", 1)])
+        mock_client.artifacts.download_audio = AsyncMock(side_effect=AuthError("expired"))
+
+        result = runner.invoke(
+            cli,
+            ["download", "audio", "--all", str(output_dir), "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "Authentication error" in result.output
+        assert "notebooklm login" in result.output
+
+
+def test_download_envelope_projects_bulk_auth_fields() -> None:
+    from notebooklm._app.download import DownloadOutcome, DownloadResult
+
+    result = DownloadResult(
+        outcome=DownloadOutcome.ALL_EXECUTED,
+        total=2,
+        succeeded_count=1,
+        failed_count=1,
+        is_failure=True,
+        error_code="AUTH_ERROR",
+        message="Authentication error: expired",
+        hint="Run 'notebooklm login' to re-authenticate.",
+        artifacts=(
+            {"id": "a1", "status": "failed"},
+            {"id": "a2", "status": "downloaded"},
+        ),
+    )
+
+    envelope = build_download_envelope(result)
+
+    assert envelope["code"] == "AUTH_ERROR"
+    assert envelope["message"] == "Authentication error: expired"
+    assert "notebooklm login" in envelope["hint"]
+    assert len(envelope["artifacts"]) == 2
 
 
 class TestDownloadAllExitCodeContract:

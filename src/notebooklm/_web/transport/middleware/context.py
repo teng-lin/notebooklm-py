@@ -18,7 +18,7 @@ RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS: Final = "rpc_queue_wait_seconds"
 # Every terminal attempt reuses it so a forced close/reopen cannot redirect
 # an old retry into the newly-opened Kernel.
 RPC_CONTEXT_RESOURCE_EPOCH: Final = "resource_epoch"
-# Optional :class:`notebooklm._web.transport.auth_refresh_retry.RefreshBudget`. Seeded by
+# Optional :class:`notebooklm._runtime.auth_refresh_retry.RefreshBudget`. Seeded by
 # ``RpcExecutor.rpc_call`` so the HTTP-status refresh layer
 # (``AuthRefreshMiddleware``) and the decoded-RPC refresh layer
 # (``RpcExecutor``) share ONE once-per-logical-call refresh allowance — a

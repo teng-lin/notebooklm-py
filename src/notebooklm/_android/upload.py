@@ -26,14 +26,13 @@ from .._deadline import RuntimeDeadline
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
 from .._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS, normalize_max_concurrent_uploads
+from .._runtime.helpers import map_google_http_status
 from .._source.drive import DriveRef, parse_drive_ref
 from .._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
 from ..exceptions import (
     AuthError,
     NetworkError,
-    RateLimitError,
     RPCError,
-    ServerError,
     SourceAddError,
     ValidationError,
 )
@@ -606,20 +605,13 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         return f"{_DRIVE_API_ORIGIN}/drive/v3/files/{quote(file_id, safe='')}?{urlencode(query)}"
 
     @staticmethod
-    def _map_drive_status(status: int, ref: DriveRef) -> None:
-        if status == 401:
-            raise AuthError(
-                "Android Drive authentication expired; reauthenticate the selected profile."
-            )
-        if status == 429:
-            raise RateLimitError(
-                f"Drive throttled the download for {ref.file_id}; retry after a delay."
-            )
-        if status >= 500:
-            raise ServerError(
-                f"Drive returned HTTP {status} while fetching {ref.file_id}; retry later.",
-                status_code=status,
-            )
+    def _map_drive_status(response: Any, ref: DriveRef) -> None:
+        status = int(response if type(response) is int else response.status_code)
+        map_google_http_status(
+            response,
+            filename=f"fetching Drive file {ref.file_id}",
+            chain=False,
+        )
         if status >= 300:
             raise ValidationError(
                 f"Drive returned HTTP {status} for {ref.file_id}; confirm the file id and "
@@ -651,7 +643,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             status = int(response.status_code)
             if status == 401:
                 self._bearer_provider.invalidate(credential.generation)
-            self._map_drive_status(status, ref)
+            self._map_drive_status(response, ref)
             try:
                 metadata = response.json()
             except (TypeError, ValueError):
@@ -707,7 +699,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                     status = int(response.status_code)
                     if status == 401:
                         self._bearer_provider.invalidate(credential.generation)
-                    self._map_drive_status(status, ref)
+                    self._map_drive_status(response, ref)
                     declared = response.headers.get("content-length")
                     if declared is not None:
                         try:
@@ -820,6 +812,38 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         )
 
     async def add_file_via_drive_staging(
+        self,
+        notebook_id: str,
+        canonical_path: Path,
+        mime_type: str | None,
+        *,
+        wait_timeout: float,
+        title: str | None,
+        import_drive_file: ImportDriveFile,
+    ) -> Source:
+        """Run Drive staging without retaining this bearer-owning pipeline."""
+
+        pipeline = self
+        result: Source | None = None
+        failure: BaseException | None = None
+        try:
+            result = await pipeline._add_file_via_drive_staging_impl(
+                notebook_id,
+                canonical_path,
+                mime_type,
+                wait_timeout=wait_timeout,
+                title=title,
+                import_drive_file=import_drive_file,
+            )
+        except BaseException as error:
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, pipeline
+        if failure is not None:
+            raise failure
+        return cast(Source, result)
+
+    async def _add_file_via_drive_staging_impl(
         self,
         notebook_id: str,
         canonical_path: Path,
@@ -1096,6 +1120,11 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             )
             if isinstance(start, _HTTPFailure):
                 raise _upload_failure(filename, state, "request failed")
+            if start.status_code == 401:
+                error = AuthError(f"Authentication failed uploading {filename!r} (HTTP 401)")
+                error.source_id = state.source_id  # type: ignore[attr-defined]
+                error.stage = state.stage  # type: ignore[attr-defined]
+                raise error
             if start.status_code != 200 or start.upload_status != "active":
                 raise _upload_failure(filename, state, f"HTTP status {start.status_code}")
             if start.session_url is None:
@@ -1120,6 +1149,11 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             )
             if isinstance(final, _HTTPFailure):
                 raise _upload_failure(filename, state, "request failed")
+            if final.status_code == 401:
+                error = AuthError(f"Authentication failed uploading {filename!r} (HTTP 401)")
+                error.source_id = state.source_id  # type: ignore[attr-defined]
+                error.stage = state.stage  # type: ignore[attr-defined]
+                raise error
             if final.status_code != 200 or final.upload_status != "final":
                 raise _upload_failure(filename, state, f"HTTP status {final.status_code}")
             return source_id, filename

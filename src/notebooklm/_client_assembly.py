@@ -254,13 +254,16 @@ def _assemble_client(
     client._account_email_cache = None
     client._account_email_cache_route = None
 
-    # Production default: the client's own ``refresh_auth`` bound method.
+    # Production default: the client's web-only base refresh. The public
+    # ``refresh_auth`` facade performs Android bearer dispatch before entering
+    # this coordinator path; keeping the callback web-only prevents a wider
+    # Android refresh from recursively minting a second bearer.
     # The test factory overrides this (typically with ``None`` or a fake)
     # to keep shells network-free.
     if isinstance(refresh_callback, _UnsetType):
 
         async def refresh_callback(expected_epoch: int) -> AuthTokens:
-            return await client._refresh_auth_for_epoch(expected_epoch=expected_epoch)
+            return await client._refresh_web_auth_for_epoch(expected_epoch=expected_epoch)
 
     # Canonicalize the keepalive storage path so different representations
     # of the same physical file (relative vs absolute, ``~`` shorthand,
@@ -524,6 +527,11 @@ def _assemble_client(
             android_bearer_provider,
             internals.collaborators.call_supervisor,
             timeout=timeout,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
+            refresh_retry_delay=refresh_retry_delay,
+            metrics=internals.collaborators.metrics,
+            sleep=sleep,
         )
         client._android_bearer_provider = android_bearer_provider
         client._android_session = android_session

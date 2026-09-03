@@ -27,14 +27,8 @@ from urllib.parse import quote
 import httpx
 
 from .._deadline import RuntimeDeadline
-from ..exceptions import (
-    AuthError,
-    NetworkError,
-    RateLimitError,
-    ServerError,
-    SourceTimeoutError,
-    ValidationError,
-)
+from .._runtime.helpers import map_google_http_status
+from ..exceptions import NetworkError, SourceTimeoutError, ValidationError
 from ..types import Source
 
 logger = logging.getLogger(__name__)
@@ -116,26 +110,15 @@ def build_multipart_body(payload: bytes, filename: str, content_type: str) -> by
     )
 
 
-def map_staging_status(status: int, filename: str) -> None:
+def map_staging_status(response: Any, filename: str) -> None:
     """Translate a Drive HTTP status into the public exception taxonomy."""
 
-    if status == 401:
-        raise AuthError(
-            "Android Drive authentication expired; reauthenticate the selected profile."
-        )
-    if status == 429:
-        raise RateLimitError(
-            f"Drive throttled the staging upload for {filename}; retry after a delay."
-        )
+    status = int(response if type(response) is int else response.status_code)
+    map_google_http_status(response, filename=f"staging {filename}", chain=False)
     if status == 403:
         raise ValidationError(
             f"Drive refused the staging upload for {filename}. The selected account needs "
             "Drive access and free quota for this file type."
-        )
-    if status >= 500:
-        raise ServerError(
-            f"Drive returned HTTP {status} while staging {filename}; retry later.",
-            status_code=status,
         )
     if status >= 300:
         raise ValidationError(f"Drive returned HTTP {status} while staging {filename}.")
@@ -267,7 +250,7 @@ class DriveStagingTransfer:
                     status = int(response.status_code)
                     if status == 401:
                         self._bearer_provider.invalidate(credential.generation)
-                    map_staging_status(status, filename)
+                    map_staging_status(response, filename)
                     try:
                         created = response.json()
                     except (TypeError, ValueError):
@@ -369,6 +352,7 @@ class DriveStagingTransfer:
             del self
 
         if failure is not None:
+            del transfer
             raise sanitize_escaping_exception(failure) from None
         assert file_id is not None
 

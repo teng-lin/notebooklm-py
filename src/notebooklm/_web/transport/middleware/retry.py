@@ -60,7 +60,13 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from ...._backoff import compute_backoff_delay
+from ...._backoff import (
+    RETRY_BACKOFF_BASE_SECONDS,
+    RETRY_BACKOFF_CAP_SECONDS,
+    RETRY_BACKOFF_JITTER_RATIO,
+    RETRY_BACKOFF_MIN_SECONDS,
+    compute_backoff_delay,
+)
 from ...._deadline import Monotonic, RuntimeDeadline
 from ...._runtime.config import CORE_LOGGER_NAME
 from ...._runtime.helpers import resolve_sleep
@@ -91,15 +97,6 @@ _NON_REPLAYABLE_POST_SEND_ERRORS = (
     httpx.ReadError,
     httpx.RemoteProtocolError,
 )
-
-
-# Backoff parameters preserve the historical transport retry timing.
-_BACKOFF_BASE_SECONDS = 1.0
-_BACKOFF_CAP_SECONDS = 30.0
-_BACKOFF_JITTER_RATIO = 0.2
-# Floor on the actual sleep so a jitter-pulled-to-zero backoff still yields a
-# tiny sleep; mirrors the ``max(0.1, …)`` on both legacy retry paths.
-_BACKOFF_MIN_SECONDS = 0.1
 
 
 class RetryMiddleware:
@@ -284,11 +281,11 @@ class RetryMiddleware:
         else:
             backoff = compute_backoff_delay(
                 attempt,
-                base=_BACKOFF_BASE_SECONDS,
-                cap=_BACKOFF_CAP_SECONDS,
-                jitter_ratio=_BACKOFF_JITTER_RATIO,
+                base=RETRY_BACKOFF_BASE_SECONDS,
+                cap=RETRY_BACKOFF_CAP_SECONDS,
+                jitter_ratio=RETRY_BACKOFF_JITTER_RATIO,
             )
-            sleep_seconds = max(_BACKOFF_MIN_SECONDS, backoff)
+            sleep_seconds = max(RETRY_BACKOFF_MIN_SECONDS, backoff)
             sleep_source = f"exp-backoff={sleep_seconds:.1f}s"
 
         actual_sleep = self._resolve_retry_sleep(
@@ -323,12 +320,12 @@ class RetryMiddleware:
     ) -> None:
         """Exponential backoff with the same parameters as the legacy loop."""
         backoff = max(
-            _BACKOFF_MIN_SECONDS,
+            RETRY_BACKOFF_MIN_SECONDS,
             compute_backoff_delay(
                 attempt,
-                base=_BACKOFF_BASE_SECONDS,
-                cap=_BACKOFF_CAP_SECONDS,
-                jitter_ratio=_BACKOFF_JITTER_RATIO,
+                base=RETRY_BACKOFF_BASE_SECONDS,
+                cap=RETRY_BACKOFF_CAP_SECONDS,
+                jitter_ratio=RETRY_BACKOFF_JITTER_RATIO,
             ),
         )
         actual_backoff = self._resolve_retry_sleep(
