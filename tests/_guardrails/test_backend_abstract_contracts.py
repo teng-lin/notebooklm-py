@@ -107,7 +107,6 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
             {
                 "add_drive",
                 "add_drive_file",
-                "add_file",
                 "add_play_book",
                 "add_text",
                 "add_url",
@@ -121,9 +120,10 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "rename",
                 "search",
                 "_send_transfer",
+                "_send_upload",
             }
         ),
-        wire_hooks=frozenset({"_send_transfer"}),
+        wire_hooks=frozenset({"_send_transfer", "_send_upload"}),
     ),
     _AbstractContract(
         module="notebooklm._chat",
@@ -343,6 +343,7 @@ _ANDROID_INHERITED_WORKFLOWS = {
         {
             "delete_many",
             "add_urls_async",
+            "add_file",
             "append_text",
             "copy",
             "get",

@@ -402,7 +402,6 @@ class SourcesAPI(ABC):
         """Add copied text to a notebook."""
         raise NotImplementedError
 
-    @abstractmethod
     async def add_file(
         self,
         notebook_id: str,
@@ -414,7 +413,58 @@ class SourcesAPI(ABC):
         title: str | None = None,
         on_progress: Callable[[int, int], object] | None = None,
     ) -> Source:
-        """Add a file source to a notebook."""
+        """Add a file source using the backend's resumable upload pipeline.
+
+        Registers the source, opens an upload session, streams the file body,
+        and applies a requested display title after upload. Uploads are
+        memory-efficient and bounded by the backend's upload semaphore.
+
+        Args:
+            notebook_id: The notebook ID.
+            file_path: Path to the file to upload.
+            mime_type: Content type for the upload handshake; inferred from the
+                filename extension when omitted.
+            title: Optional display title. Whitespace is stripped and an empty
+                title is rejected. A failed best-effort rename keeps the
+                upstream filename title.
+            wait: If true, wait for the source to be fully ready.
+            wait_timeout: Maximum seconds for readiness or title-registration
+                waiting.
+            on_progress: Optional sync or async callback receiving bytes sent
+                and total bytes.
+
+        Returns:
+            The created source; when ``wait`` is false it may still be processing.
+
+        Raises:
+            ValidationError: If the path is not a regular file, the title is
+                empty, or the file type is unsupported. A failure after
+                registration retains its backend-specific ``source_id`` and
+                ``stage`` diagnostics.
+        """
+        return await self._send_upload(
+            notebook_id,
+            file_path,
+            mime_type,
+            wait=wait,
+            wait_timeout=wait_timeout,
+            title=title,
+            on_progress=on_progress,
+        )
+
+    @abstractmethod
+    async def _send_upload(
+        self,
+        notebook_id: str,
+        file_path: str | Path,
+        mime_type: str | None = None,
+        *,
+        wait: bool = False,
+        wait_timeout: float = 120.0,
+        title: str | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
+    ) -> Source:
+        """Run the backend-selected upload pipeline."""
         raise NotImplementedError
 
     @abstractmethod

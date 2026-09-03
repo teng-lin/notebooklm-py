@@ -1085,7 +1085,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         )
 
     @sanitize_async_boundary
-    async def add_file(
+    async def _send_upload(
         self,
         notebook_id: str,
         file_path: str | Path,

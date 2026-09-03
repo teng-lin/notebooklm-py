@@ -411,7 +411,7 @@ class WebSourcesAPI(SourcesAPI):
                 logger=logger,
             )
 
-    async def add_file(
+    async def _send_upload(
         self,
         notebook_id: str,
         file_path: str | Path,
