@@ -1267,6 +1267,30 @@ async def test_a_retired_or_closing_generation_fails_the_epoch_fence(
 
 
 @pytest.mark.asyncio
+async def test_retirement_during_bearer_await_preserves_the_lifecycle_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-await epoch failure must not be relabeled as a transport error."""
+    client = FakeClient([_png_response()])
+    service, bearer, _ = await _open_service(client)
+
+    async def _retire_while_minting(expected_epoch: int) -> BearerCredential:
+        bearer.calls.append(expected_epoch)
+        await asyncio.sleep(0)
+        service._active_epoch = expected_epoch + 1
+        return BearerCredential(BEARER, generation=17)
+
+    monkeypatch.setattr(bearer, "get", _retire_while_minting)
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await service.download_url(INITIAL, str(tmp_path / "out.png"))
+
+    assert bearer.calls == [1]
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
 async def test_the_matching_open_generation_passes_the_epoch_fence() -> None:
     """Guards the test above from passing because the fence rejects everything."""
     service, _, _ = await _open_service(FakeClient([]), epoch=4)

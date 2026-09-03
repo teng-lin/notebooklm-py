@@ -145,12 +145,17 @@ async def guarded_transfer(
             if host is None:
                 return TransferFailure("url_policy", safe_host(current_url), hop)
 
-            response_cm: Any | None = None
-            response: Any | None = None
             credentials = None
             try:
                 credentials = await credential_for(current_url)
                 assert_active()
+            except BaseException:
+                del credentials
+                raise
+
+            response_cm: Any | None = None
+            response: Any | None = None
+            try:
                 _clear_client_cookies(client)
                 headers = {} if credentials is None else dict(credentials.headers)
                 response_cm = client.stream(
