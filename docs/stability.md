@@ -478,7 +478,7 @@ dispatch.
 - GitHub Issue auto-created with `bug`, `rpc-breakage`, and `automated` labels
 - Report shows expected vs actual IDs and which `RPCMethod` entries need updating
 
-**Manual trigger:** `gh workflow run rpc-health.yml -f custom_branch=release/vX.Y.Z`
+**Manual trigger:** `gh workflow run rpc-health.yml --ref main -f account_rotation_base=auto`
 
 ### How to Report API Breakage
 

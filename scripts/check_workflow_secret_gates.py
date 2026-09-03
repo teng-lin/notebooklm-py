@@ -13,8 +13,7 @@ runs that have at least one of:
   webhook actor pin, and branch-class pin respectively), OR
 * a step-level ``if:`` guard whose expression references an ``is_standard``
   output (the convention from ``nightly.yml`` where the ``resolve-branch``
-  job sets ``outputs.is_standard`` to ``true`` only for ``main`` /
-  ``release/*`` / scheduled cron triggers).
+  job sets ``outputs.is_standard`` to ``true`` only for a trusted target).
 
 ``secrets.GITHUB_TOKEN`` is *not* counted as a user-provided secret — it's
 the auto-provisioned token whose scopes are bounded by the top-level
@@ -25,6 +24,14 @@ in scope.
 The check exists to prevent silent regressions where a workflow grows a
 new ``env: FOO: ${{ secrets.SOMETHING }}`` block without picking up an approved
 environment or trusted actor/branch ``if:`` gate. CI rejects the change.
+
+The rotating live-CI credentials have a stricter conjunctive policy. A job
+binding ``NOTEBOOKLM_MASTER_TOKEN_JSON`` or
+``NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID`` must have the literal approved
+Environment *and* a job-level guard that pins both the canonical repository
+and ``is_standard == 'true'``. Those secrets must be step-scoped, and a job
+may inject only one master-token secret. Dynamic ``secrets[...]`` indexing is
+treated as a real secret reference throughout.
 
 Usage::
 
@@ -72,6 +79,19 @@ _BENIGN_SECRETS = frozenset({"GITHUB_TOKEN"})
 # GitHub Environment first. See docs/development.md → "Workflow secret
 # gates".
 _APPROVED_ENVIRONMENTS = frozenset({"protected-readonly"})
+
+_CI_SECRET_BINDINGS = frozenset(
+    {"NOTEBOOKLM_MASTER_TOKEN_JSON", "NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID"}
+)
+_FORBIDDEN_CI_SECRET_NAMES = frozenset(
+    {
+        "NOTEBOOKLM_MASTER_TOKEN_JSON",
+        "NOTEBOOKLM_MASTER_TOKEN_JSON_A",
+        "NOTEBOOKLM_MASTER_TOKEN_JSON_B",
+        "NOTEBOOKLM_MASTER_TOKEN_JSON_C",
+        "NOTEBOOKLM_ACCOUNTS_JSON",
+    }
+)
 
 # Secret reference shapes:
 #   * Dot notation:    ``${{ secrets.MY_SECRET }}`` — the canonical form
@@ -128,6 +148,8 @@ _STEP_IF_RE = re.compile(r"^      if:\s*(.*?)\s*(#.*)?$")
 # in non-comment positions, so this is sound.
 _COMMENT_RE = re.compile(r"^\s*#")
 
+_ENV_SECRET_BINDING_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*):\s*.*\bsecrets(?:\.|\[)")
+
 # A guard expression is considered "trusted" if it matches one of these
 # POSITIVE-EQUALITY patterns — substring matching is unsafe because
 # ``if: github.actor != 'dependabot[bot]'`` and
@@ -138,8 +160,7 @@ _COMMENT_RE = re.compile(r"^\s*#")
 #
 # Tokens:
 #   * ``needs.<job>.outputs.is_standard == 'true'`` — branch-class pin
-#     (nightly.yml's ``resolve-branch`` job sets this for main/release/* +
-#     scheduled triggers).
+#     (live workflows' ``resolve-target`` job sets this only for exact main).
 #   * ``github.event.sender.login == '<actor>'`` /
 #     ``github.actor == '<actor>'`` — actor pin (claude.yml's
 #     load-bearing security check).
@@ -171,9 +192,22 @@ _TRUSTED_GUARD_PATTERNS = (
     ),
 )
 
+_CANONICAL_REPOSITORY_GUARD_RE = re.compile(
+    r"github\.repository\s*==\s*['\"]teng-lin/notebooklm-py['\"]",
+    re.IGNORECASE,
+)
+
 
 def _expression_is_trusted_guard(expr: str) -> bool:
     return any(p.search(expr) for p in _TRUSTED_GUARD_PATTERNS)
+
+
+def _expression_is_ci_pool_guard(expr: str) -> bool:
+    """Return whether a job guard pins both repository and trusted target."""
+    return bool(
+        _CANONICAL_REPOSITORY_GUARD_RE.search(expr)
+        and re.search(r"is_standard\s*==\s*['\"]true['\"]", expr, re.IGNORECASE)
+    )
 
 
 def _environment_value_is_approved(value: str) -> bool:
@@ -281,12 +315,36 @@ def _scan_workflow(path: Path) -> list[str]:
     # against ``step_ifs[step_index]`` at end-of-job. -1 means the hit
     # was at job scope (outside any step).
     pending_hits: list[tuple[int, str, int]] = []
+    ci_secret_hits: list[tuple[int, str, int]] = []
     saw_any_job = False
 
     def flush_job() -> None:
         """Evaluate pending hits for the closing job, append violations."""
         if current_job is None:
             return
+
+        master_hits = [hit for hit in ci_secret_hits if hit[1] == "NOTEBOOKLM_MASTER_TOKEN_JSON"]
+        for line_no, binding, step_index in ci_secret_hits:
+            if not current_job_has_environment:
+                violations.append(
+                    f"{path}:{line_no}: {binding} used in job {current_job!r} "
+                    "without literal `environment: protected-readonly`."
+                )
+            if not _expression_is_ci_pool_guard(current_job_if):
+                violations.append(
+                    f"{path}:{line_no}: {binding} used in job {current_job!r} "
+                    "without the canonical repository and `is_standard == 'true'` job gate."
+                )
+            if step_index < 0:
+                violations.append(
+                    f"{path}:{line_no}: {binding} must be scoped to its exact consumer step."
+                )
+        if len(master_hits) > 1:
+            violations.append(
+                f"{path}: job {current_job!r} injects {len(master_hits)} master-token secrets; "
+                "exactly one selected token is permitted."
+            )
+
         if current_job_has_environment:
             return
         if _expression_is_trusted_guard(current_job_if):
@@ -304,7 +362,7 @@ def _scan_workflow(path: Path) -> list[str]:
 
     def reset_for_new_job(job_name: str) -> None:
         nonlocal current_job, current_job_has_environment, current_job_if
-        nonlocal in_step, current_step_index, step_ifs, pending_hits
+        nonlocal in_step, current_step_index, step_ifs, pending_hits, ci_secret_hits
         nonlocal in_if_block_scalar, saw_any_job
         current_job = job_name
         current_job_has_environment = False
@@ -313,6 +371,7 @@ def _scan_workflow(path: Path) -> list[str]:
         current_step_index = -1
         step_ifs = []
         pending_hits = []
+        ci_secret_hits = []
         in_if_block_scalar = False
         saw_any_job = True
 
@@ -371,8 +430,8 @@ def _scan_workflow(path: Path) -> list[str]:
             continue
 
         # Track job-level ``if:`` guards (e.g. ``claude.yml`` pinning
-        # ``sender.login`` to the maintainer; ``verify-artifacts.yml``
-        # gating on the actor). Captured BEFORE step detection so we know
+        # ``sender.login`` to the maintainer and live workflows pinning an
+        # exact target). Captured BEFORE step detection so we know
         # not to misread it as a step ``if:``.
         if not in_step:
             m_job_if = _JOB_IF_RE.match(line)
@@ -434,6 +493,16 @@ def _scan_workflow(path: Path) -> list[str]:
         # quoted strings (vanishingly rare in workflow YAML).
         searchable = _strip_yaml_trailing_comment(line)
 
+        binding_match = _ENV_SECRET_BINDING_RE.match(searchable)
+        if binding_match and binding_match.group(1) in _CI_SECRET_BINDINGS:
+            binding = binding_match.group(1)
+            ci_secret_hits.append((i, binding, current_step_index if in_step else -1))
+            if binding == "NOTEBOOKLM_MASTER_TOKEN_JSON" and "secrets[" not in searchable:
+                violations.append(
+                    f"{path}:{i}: master-token materialization must use selected dynamic "
+                    "`secrets[...]` indexing."
+                )
+
         # ``secrets: inherit`` on a reusable-workflow call passes every
         # caller secret to the called workflow. Treat as a non-bypassable
         # secret consumer so it requires the same gating.
@@ -451,6 +520,10 @@ def _scan_workflow(path: Path) -> list[str]:
             secret_name = m_secret.group(1) or m_secret.group(2) or "<dynamic>"
             if secret_name in _BENIGN_SECRETS:
                 continue
+            if secret_name in _FORBIDDEN_CI_SECRET_NAMES:
+                violations.append(
+                    f"{path}:{i}: legacy or pooled CI secret secrets.{secret_name} is forbidden."
+                )
             pending_hits.append((i, secret_name, current_step_index if in_step else -1))
 
     flush_job()

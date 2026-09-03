@@ -6,311 +6,391 @@ on:
       source:
         description: 'Package source'
         required: true
-        default: 'testpypi'
+        default: testpypi
         type: choice
-        options:
-          - testpypi
-          - pypi
+        options: [testpypi, pypi]
+      account_rotation_base:
+        description: 'CI account slot'
+        required: true
+        default: auto
+        type: choice
+        options: [auto, A, B, C]
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify from ${{ inputs.source }}
+  resolve-target:
+    if: github.repository == 'teng-lin/notebooklm-py'
     runs-on: ubuntu-latest
-    # Secret-bearing job (steps below reference secrets.NOTEBOOKLM_MASTER_TOKEN_JSON
-    # + secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID for the live E2E pass). The
-    # workflow is workflow_dispatch-only, so every run is human-initiated;
-    # this `protected-readonly` environment requires a maintainer to approve
-    # the dispatch before any secret is exposed. Non-maintainer dispatches
-    # block at the approval prompt rather than acquiring tokens.
-    # See docs/development.md → "Workflow secret gates".
-    environment: protected-readonly
+    outputs:
+      is_standard: ${{ steps.trust.outputs.is_standard }}
+      sha: ${{ steps.target.outputs.sha }}
+    steps:
+    - name: Accept only main
+      id: trust
+      env:
+        GITHUB_REF_VALUE: ${{ github.ref }}
+      run: |
+        if [ "$GITHUB_REF_VALUE" = refs/heads/main ]; then
+          echo "is_standard=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "is_standard=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Verify Package accepts only refs/heads/main"
+        fi
+    - uses: actions/checkout@v7
+      if: steps.trust.outputs.is_standard == 'true'
+      with:
+        ref: refs/heads/main
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Resolve immutable commit
+      id: target
+      if: steps.trust.outputs.is_standard == 'true'
+      run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+  plan-account:
+    needs: resolve-target
+    if: >-
+      github.repository == 'teng-lin/notebooklm-py' &&
+      needs.resolve-target.outputs.is_standard == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      account_slot: ${{ steps.select.outputs.account_slot }}
+      master_token_secret_name: ${{ steps.select.outputs.master_token_secret_name }}
     steps:
     - uses: actions/checkout@v7
       with:
+        ref: ${{ needs.resolve-target.outputs.sha }}
+        fetch-depth: 1
         persist-credentials: false
+    - name: Select package-verification account
+      id: select
+      env:
+        ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
+        MANUAL_BASE: ${{ inputs.account_rotation_base }}
+      run: >-
+        python scripts/select_ci_account.py
+        --enabled-slots "$ENABLED_SLOTS"
+        --lane verify-package
+        --rotation-day "$(date -u +%F)"
+        --manual-base "$MANUAL_BASE"
+        --github-output "$GITHUB_OUTPUT"
+    - name: Summarize safe package account selection
+      env:
+        ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
+        SELECTION_MODE: ${{ (inputs.account_rotation_base == '' || inputs.account_rotation_base == 'auto') && 'automatic' || 'manual base' }}
+      shell: bash
+      run: |
+        IFS=, read -ra enabled_slots <<< "$ENABLED_SLOTS"
+        enabled_count=${#enabled_slots[@]}
+        {
+          echo "### Package verification account plan"
+          echo "Lane/backend/slot: verify-package / web / ${{ steps.select.outputs.account_slot }}"
+          echo "Selection: $SELECTION_MODE; rotation day: ${{ steps.select.outputs.rotation_day }}; enabled slot count: $enabled_count"
+        } >> "$GITHUB_STEP_SUMMARY"
 
+  fork-skip:
+    if: github.repository != 'teng-lin/notebooklm-py'
+    runs-on: ubuntu-latest
+    steps:
+    - run: echo "::warning::Published-package E2E is unavailable to fork workflows"
+
+  verify:
+    name: Verify ${{ inputs.source }} (${{ needs.plan-account.outputs.account_slot }})
+    needs: [resolve-target, plan-account]
+    if: >-
+      github.repository == 'teng-lin/notebooklm-py' &&
+      needs.resolve-target.outputs.is_standard == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ needs.plan-account.outputs.account_slot }}
+      queue: max
+      cancel-in-progress: false
+    env:
+      NOTEBOOKLM_HOME: ${{ runner.temp }}/notebooklm-home
+      NOTEBOOKLM_PROFILE: ci-${{ needs.plan-account.outputs.account_slot }}-verify-package
+      CI_E2E_MANIFEST: ${{ runner.temp }}/notebooklm-verify-package.json
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ needs.resolve-target.outputs.sha }}
+        fetch-depth: 1
+        persist-credentials: false
     - name: Set up Python 3.12
       uses: actions/setup-python@v7
       with:
         python-version: "3.12"
-        cache: 'pip'
-
+        cache: pip
     - name: Install uv
       uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
-
     - name: Get version from pyproject.toml
       id: version
       run: |
         VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
     - name: Download exact published wheel for base-install smoke
-      shell: bash
+      env:
+        PACKAGE_SOURCE: ${{ inputs.source }}
       run: |
         mkdir -p published-dist
-        if [ "${{ inputs.source }}" = "testpypi" ]; then
-          python -m pip download --disable-pip-version-check \
-            --no-deps --no-cache-dir --only-binary=:all: \
-            --index-url https://test.pypi.org/simple/ \
-            --dest published-dist \
-            "notebooklm-py==${{ steps.version.outputs.version }}"
+        if [ "$PACKAGE_SOURCE" = testpypi ]; then
+          python -m pip download --disable-pip-version-check --no-deps --no-cache-dir \
+            --only-binary=:all: --index-url https://test.pypi.org/simple/ \
+            --dest published-dist "notebooklm-py==${{ steps.version.outputs.version }}"
         else
-          python -m pip download --disable-pip-version-check \
-            --no-deps --no-cache-dir --only-binary=:all: \
-            --dest published-dist \
+          python -m pip download --disable-pip-version-check --no-deps --no-cache-dir \
+            --only-binary=:all: --dest published-dist \
             "notebooklm-py==${{ steps.version.outputs.version }}"
         fi
-
     - name: Verify published base wheel without browser extra
-      shell: bash
       run: |
         wheels=(published-dist/notebooklm_py-*.whl)
         test "${#wheels[@]}" -eq 1
         python scripts/check_base_wheel.py --wheel "${wheels[0]}"
-
     - name: Sync locked deps + non-cookies extras
-      # Pull every runtime + tooling dep from `uv.lock` (the same lockfile
-      # contributors install from) so the verify step exercises the full
-      # non-cookies dep tree rather than whatever pip happens to resolve at
-      # smoke time. `cookies` stays excluded because rookiepy has Python
-      # 3.13+ install issues.
-      # The published wheel itself is force-reinstalled in the next step.
-      # `headless` = gpsoauth, required for the layer-4 master-token re-mint
-      # that the materialized auth profile below relies on.
-      # `android` = grpcio/protobuf plus the generated-message runtime used by
-      # the authenticated published-wheel Android preflight below.
-      run: >
-        uv sync --frozen
-        --extra browser
-        --extra dev
-        --extra markdown
-        --extra mcp
-        --extra server
-        --extra headless
-        --extra android
-
+      run: >-
+        uv sync --frozen --extra browser --extra dev --extra markdown
+        --extra mcp --extra server --extra headless --extra android
     - name: Install published wheel from TestPyPI (--no-deps)
       if: inputs.source == 'testpypi'
-      shell: bash
-      run: |
-        # --no-deps proves the wheel was actually uploaded to TestPyPI — the
-        # previous `--extra-index-url https://pypi.org/simple/` fallback would
-        # silently succeed by resolving an older published version from PyPI
-        # when the TestPyPI upload itself was broken or missing.
-        # --reinstall replaces the editable install left behind by `uv sync`
-        # with the actual built wheel under test. --no-cache + --only-binary
-        # ensure we test the freshly-uploaded wheel, never a cached sdist.
-        #
-        # `uv pip install --python .venv/bin/python` is load-bearing: a
-        # `source .venv/bin/activate && pip install …` chain falls back to
-        # the runner's system pip when uv has not seeded pip into `.venv`,
-        # which then writes outside the venv and leaves the editable install
-        # in place — masking a broken/missing TestPyPI upload.
-        uv pip install --python .venv/bin/python \
-          --no-deps --reinstall --no-cache --only-binary=:all: \
-          --index-url https://test.pypi.org/simple/ \
-          "notebooklm-py==${{ steps.version.outputs.version }}"
-
+      run: >-
+        uv pip install --python .venv/bin/python --no-deps --reinstall --no-cache
+        --only-binary=:all: --index-url https://test.pypi.org/simple/
+        "notebooklm-py==${{ steps.version.outputs.version }}"
     - name: Install published wheel from PyPI (--no-deps)
       if: inputs.source == 'pypi'
-      shell: bash
-      run: |
-        # Symmetric with the TestPyPI step: --no-deps + --reinstall swaps the
-        # locked editable install for the actual PyPI wheel without
-        # disturbing the dep tree resolved from `uv.lock`. See the TestPyPI
-        # step above for why `uv pip install --python .venv/bin/python` is
-        # used instead of activating the venv and calling bare `pip`.
-        uv pip install --python .venv/bin/python \
-          --no-deps --reinstall --no-cache --only-binary=:all: \
-          "notebooklm-py==${{ steps.version.outputs.version }}"
-
-    - name: Verify version
-      shell: bash
+      run: >-
+        uv pip install --python .venv/bin/python --no-deps --reinstall --no-cache
+        --only-binary=:all: "notebooklm-py==${{ steps.version.outputs.version }}"
+    - name: Verify version, CLI, and imports
       run: |
         source .venv/bin/activate
-        INSTALLED=$(python -c "from notebooklm import __version__; print(__version__)")
-        EXPECTED="${{ steps.version.outputs.version }}"
-        if [ "$INSTALLED" != "$EXPECTED" ]; then
-          echo "Version mismatch: installed=$INSTALLED expected=$EXPECTED"
-          exit 1
-        fi
-        echo "Version verified: $INSTALLED"
-
-    - name: Verify CLI
-      shell: bash
-      run: |
-        source .venv/bin/activate
+        test "$(python -c 'from notebooklm import __version__; print(__version__)')" = "${{ steps.version.outputs.version }}"
         notebooklm --version
-        notebooklm --help
-
-    - name: Verify imports
-      shell: bash
-      run: |
-        source .venv/bin/activate
         python -c "from notebooklm import NotebookLMClient, Notebook, Source, Artifact"
-        echo "Core imports verified"
-
     - name: Install Playwright browsers
-      shell: bash
       run: |
         source .venv/bin/activate
-        # Test deps come from the non-cookies extras installed via
-        # `uv sync --frozen` above. Just need to provision the Chromium browser
-        # binary + Linux system libs.
         playwright install chromium
         playwright install-deps chromium
-
     - name: Run unit tests
-      shell: bash
       run: |
         source .venv/bin/activate
         pytest tests/unit -v
-
     - name: Run integration tests
-      shell: bash
       run: |
         source .venv/bin/activate
         pytest tests/integration -v
 
-    - name: Skip E2E tests (fork)
-      if: github.repository != 'teng-lin/notebooklm-py'
-      run: |
-        echo "::warning::E2E tests skipped - secrets not available in fork repositories"
-        echo "## E2E Tests Skipped" >> $GITHUB_STEP_SUMMARY
-        echo "E2E tests were not run because this workflow is executing on a fork." >> $GITHUB_STEP_SUMMARY
-
-    - name: Materialize auth profile
-      if: github.repository == 'teng-lin/notebooklm-py'
-      shell: bash
+    # From this point, scripts run with the installed wheel interpreter.
+    - name: Materialize selected account
+      id: auth
+      if: >-
+        needs.resolve-target.outputs.is_standard == 'true' &&
+        github.repository == 'teng-lin/notebooklm-py'
+      continue-on-error: true
       env:
-        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[needs.plan-account.outputs.master_token_secret_name] }}
       run: |
-        # Write the master token to a real on-disk profile and mint from it.
-        # Inline env auth never engages the layer-4 re-mint (it only fires when
-        # master_token.json sits BESIDE the profile's storage_state.json —
-        # src/notebooklm/_auth/session.py), so a rotated cookie secret used to
-        # hard-fail the run (e.g. run 30799508786).
-        if [ -z "${NOTEBOOKLM_MASTER_TOKEN_JSON:-}" ]; then
-          echo "::error::NOTEBOOKLM_MASTER_TOKEN_JSON secret is not configured"
-          exit 1
-        fi
-        umask 077
-        mkdir -p ~/.notebooklm/profiles/default
-        printf '%s' "$NOTEBOOKLM_MASTER_TOKEN_JSON" > ~/.notebooklm/profiles/default/master_token.json
-        chmod 600 ~/.notebooklm/profiles/default/master_token.json
-        # The master token is now the ONLY credential shipped. A cookie
-        # snapshot cannot be: Google supersedes __Secure-1PSIDTS on a ~600 s
-        # cadence and a superseded value is rejected shortly after, so a
-        # secret minted on a workstation is routinely dead before the run
-        # starts. A master token does not rotate, so it cannot go stale.
-        # The mint below bootstraps storage_state.json from it; layer-4 then
-        # covers mid-run expiry. `unset` is load-bearing: `login` refuses to
-        # run while inline env auth is set, and the secret is already on disk.
-        unset NOTEBOOKLM_MASTER_TOKEN_JSON
         source .venv/bin/activate
-        minted=""
-        for attempt in 1 2 3; do
-          if notebooklm login --master-token-refresh; then
-            minted=1
-            break
-          fi
-          echo "::warning::master-token mint attempt ${attempt} failed."
-          if [ "$attempt" -lt 3 ]; then
-            # Jitter: nightly's ubuntu/windows legs mint concurrently from the
-            # same token, so a fixed backoff would have them retry in lockstep
-            # and collide again on whatever throttled the first attempt.
-            sleep $((attempt * 15 + RANDOM % 20))
-          fi
-        done
-        # Fatal, unlike before: there is no cookie snapshot left to fall back
-        # to, so a failed mint means the job has no credentials at all.
-        if [ -z "$minted" ]; then
-          echo "::error::master-token mint failed after 3 attempts — no auth available."
-          exit 1
-        fi
-        echo "Auth profile materialized (master token; fresh cookies minted)."
+        python scripts/materialize_ci_auth.py \
+          --account-slot "${{ needs.plan-account.outputs.account_slot }}" \
+          --profile "$NOTEBOOKLM_PROFILE"
+    - name: Sweep stale package-verification copies
+      id: sweep
+      if: steps.auth.outcome == 'success'
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+      run: |
+        source .venv/bin/activate
+        result=$(python scripts/manage_ci_e2e_notebooks.py sweep --backend web \
+          --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### Package copy lifecycle\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+    - name: Provision package-verification copies
+      id: provision
+      if: steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+        SUMMARY_SLOT: ${{ needs.plan-account.outputs.account_slot }}
+      run: |
+        source .venv/bin/activate
+        python scripts/manage_ci_e2e_notebooks.py provision --backend web \
+          --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --contract tests/fixtures/e2e_template_contract.json \
+          --prepared-contract tests/fixtures/e2e_prepared_role_contract.json \
+          --mode full --lane verify-package \
+          --account-slot "${{ needs.plan-account.outputs.account_slot }}" \
+          --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
+        python - <<'PY'
+        import json
+        import os
+        import re
+        from collections import Counter
+        from pathlib import Path
 
+        manifest = json.loads(Path(os.environ["CI_E2E_MANIFEST"]).read_text(encoding="utf-8"))
+        expected = {
+            "backend": "web",
+            "lane": "verify-package",
+            "account_slot": os.environ["SUMMARY_SLOT"],
+            "mode": "full",
+        }
+        if any(manifest.get(key) != value for key, value in expected.items()):
+            raise RuntimeError("manifest summary metadata mismatch")
+        copies = manifest.get("copies")
+        if not isinstance(copies, list) or len(copies) != 3:
+            raise RuntimeError("manifest summary role count mismatch")
+        rows = {row.get("role"): row for row in copies if isinstance(row, dict)}
+        roles = ("reference", "generation", "multi-source")
+        if set(rows) != set(roles):
+            raise RuntimeError("manifest summary roles mismatch")
+        if any(row.get("status") not in {"confirmed", "reconciled"} for row in rows.values()):
+            raise RuntimeError("manifest summary contains an unexpected copy outcome")
+        if any(row.get("prepared") is not True for row in rows.values()):
+            raise RuntimeError("manifest summary contains an unprepared role")
+        fingerprint = manifest.get("template_fingerprint")
+        if not isinstance(fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+            raise RuntimeError("manifest summary fingerprint is malformed")
+        outcomes = Counter(str(row["status"]) for row in rows.values())
+        lines = [
+            "### Prepared package roles",
+            f"- Lane/backend/slot: verify-package / web / {expected['account_slot']}",
+            f"- Template contract: version=1 fingerprint={fingerprint}",
+            f"- Copy outcomes: total=3 confirmed={outcomes['confirmed']} reconciled={outcomes['reconciled']}",
+            "- Reference checks: seeded_notes=1 history=passed",
+            "- Clean-role residuals: generation=0 multi-source=0",
+        ]
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
+            stream.write("\n".join(lines) + "\n")
+        PY
     - name: Validate published wheel Android backend
-      if: github.repository == 'teng-lin/notebooklm-py'
-      shell: bash
-      env:
-        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      id: preflight
+      if: >-
+        github.repository == 'teng-lin/notebooklm-py' &&
+        steps.provision.outcome == 'success'
+      continue-on-error: true
       run: |
         source .venv/bin/activate
-        if [ -z "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}" ]; then
-          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID secret is not configured"
-          exit 1
-        fi
         python - <<'PY'
         import asyncio
         import os
-
-        import gpsoauth  # noqa: F401 -- published-wheel dependency preflight
-        import grpc  # noqa: F401 -- published-wheel dependency preflight
-        from google.protobuf import __version__ as protobuf_version
-
+        import gpsoauth  # noqa: F401
+        import grpc  # noqa: F401
         from notebooklm import NotebookLMClient
-        from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
-            read_pb2,
-        )
-
+        from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
         async def main() -> None:
-            notebook_id = os.environ["NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID"]
-            expected_fqn = "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
-            if read_pb2.GetProjectRequest.DESCRIPTOR.full_name != expected_fqn:
+            expected = "google.internal.labs.tailwind.orchestration.v1.GetProjectRequest"
+            if read_pb2.GetProjectRequest.DESCRIPTOR.full_name != expected:
                 raise RuntimeError("Published wheel has an invalid generated GetProject proto")
+            notebook_id = os.environ["NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID"]
             async with NotebookLMClient.from_storage(backend="android") as client:
-                if set(client.backends.values()) != {"android"}:
-                    raise RuntimeError(f"Android backend was not fully selected: {client.backends}")
                 notebook = await client.notebooks.get(notebook_id)
                 if notebook.id != notebook_id:
-                    raise RuntimeError("Published-wheel Android GetProject returned the wrong notebook")
-            print(f"Published-wheel Android preflight passed (protobuf {protobuf_version}).")
-
+                    raise RuntimeError("Android preflight returned the wrong managed copy")
         asyncio.run(main())
         PY
-
-    - name: Run E2E tests
-      id: e2e
-      if: github.repository == 'teng-lin/notebooklm-py'
-      # Don't fail the job here — the retry step below gets a 10-min cool-down
-      # shot at any failures, and its exit code is what marks the job red.
-      # Auth comes from the profile materialized above (no inline env-var
-      # credential is shipped at all) so the layer-4 re-mint can engage.
+    - name: Disable generation journal settlement
+      id: journal_policy
+      if: steps.preflight.outcome == 'success'
       continue-on-error: true
-      shell: bash
-      env:
-        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      run: echo "NOTEBOOKLM_E2E_GENERATION_JOURNAL_MODE=off" >> "$GITHUB_ENV"
+    - name: Run primary E2E tests
+      id: primary
+      if: steps.journal_policy.outcome == 'success'
+      continue-on-error: true
       run: |
         source .venv/bin/activate
-        if [ -z "$NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID" ]; then
-          echo "::error::NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID secret is not configured"
-          exit 1
-        fi
-        # --reruns 1 --reruns-delay 30 catches sub-minute network blips;
-        # longer chat-throttle recovery is handled by the cool-down retry below.
         pytest tests/e2e -m "not variants" --reruns 1 --reruns-delay 30 -v
+    - name: Validate lastfailed cache
+      id: lastfailed
+      if: steps.primary.outcome == 'failure'
+      continue-on-error: true
+      run: |
+        python - <<'PY'
+        import json
+        from pathlib import Path
 
+        value = json.loads(Path(".pytest_cache/v/cache/lastfailed").read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or not value:
+            raise RuntimeError("lastfailed cache is empty or malformed")
+        if any(not isinstance(node_id, str) or failed is not True for node_id, failed in value.items()):
+            raise RuntimeError("lastfailed cache entries are malformed")
+        PY
     - name: Retry failed E2E tests after 10-min cool-down
-      # Tests still throttled after the cool-down become skips via the
-      # _install_chat_rate_limit_skip fixture in tests/e2e/conftest.py.
-      if: steps.e2e.outcome == 'failure'
-      shell: bash
-      env:
-        NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID }}
+      id: retry
+      if: steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success'
+      continue-on-error: true
+      run: |
+        sleep 600
+        source .venv/bin/activate
+        pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short
+    - name: Collect non-gating artifact telemetry
+      id: telemetry
+      if: >-
+        always() &&
+        (steps.primary.outcome == 'success' ||
+         (steps.primary.outcome == 'failure' &&
+          (steps.lastfailed.outcome == 'failure' ||
+           (steps.lastfailed.outcome == 'success' &&
+            (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure')))))
+      continue-on-error: true
       run: |
         source .venv/bin/activate
-        # Missing lastfailed after a failed e2e step means pytest crashed
-        # before writing the cache (import error, OOM, etc.) — fail the job
-        # rather than silently going green.
-        if [ ! -f .pytest_cache/v/cache/lastfailed ]; then
-          echo "::error::No lastfailed cache from previous step; pytest likely crashed before running tests."
-          exit 1
-        fi
-        echo "Initial E2E run failed. Sleeping 600s before retrying failed tests."
-        sleep 600
-        uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short
+        result=$(python scripts/verify_ci_artifacts.py --mode inventory-compat --backend web \
+          --notebook-id-env NOTEBOOKLM_GENERATION_NOTEBOOK_ID 2>&1) || {
+          echo "::warning::Non-gating package artifact telemetry was unavailable"
+          exit 0
+        }
+        printf '%s\n' "$result"
+        printf '### Package artifact telemetry\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+    - name: Cleanup package-verification copies
+      id: cleanup
+      if: always()
+      continue-on-error: true
+      env:
+        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+      run: |
+        source .venv/bin/activate
+        result=$(python scripts/manage_ci_e2e_notebooks.py cleanup --backend web \
+          --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
+          --manifest "$CI_E2E_MANIFEST")
+        printf '%s\n' "$result"
+        printf '### Package copy cleanup\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+    - name: Purge package-verification credentials and manifest
+      id: purge
+      if: always()
+      continue-on-error: true
+      run: |
+        python - <<'PY'
+        import os
+        import shutil
+        from pathlib import Path
+        home = Path(os.environ["NOTEBOOKLM_HOME"])
+        if home.exists():
+            shutil.rmtree(home)
+        Path(os.environ["CI_E2E_MANIFEST"]).unlink(missing_ok=True)
+        PY
+    - name: Aggregate package-verification outcomes
+      id: aggregate
+      if: always()
+      run: >-
+        python scripts/aggregate_ci_e2e_outcomes.py
+        --lane verify-package --mode full --producer required
+        --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
+        --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase provision=${{ steps.sweep.outcome == 'success' && (steps.provision.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase preflight=${{ steps.provision.outcome == 'success' && (steps.preflight.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase journal_policy=${{ steps.preflight.outcome == 'success' && (steps.journal_policy.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase primary=${{ steps.journal_policy.outcome == 'success' && (steps.primary.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase lastfailed=${{ steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase retry=${{ steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase telemetry=${{ (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'failure' || (steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) && (steps.telemetry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
+        --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}

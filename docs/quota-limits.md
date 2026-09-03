@@ -191,6 +191,15 @@ from the quota block). It deliberately does **not** ship this table as constants
 
 This mirrors the same call made for the tier→label mapping: ship the int, keep the table in docs.
 
+## CI account rotation
+
+The repository's live CI distributes scheduled work across an allowlisted set
+of independently authorized account slots. Rotation is load distribution, not
+quota telemetry: it does not observe remaining counters, infer reset times, or
+switch accounts after a test starts. Quota/rate-limit skips retain their normal
+typed behavior. See [Managed-copy live CI](development.md#managed-copy-live-ci)
+for slot selection, account concurrency, cleanup, and disablement procedures.
+
 ## Sources
 
 - [Consumer limits](https://support.google.com/notebooklm/answer/16213268) (live + 5 Wayback snapshots Nov 2025–Jul 2026)
