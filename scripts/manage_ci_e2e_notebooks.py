@@ -117,6 +117,7 @@ class ProbeState(Enum):
     MISSING = "missing"
     UNSAFE = "unsafe"
     UNREADABLE = "unreadable"
+    DELETE_UNCONFIRMED = "delete_unconfirmed"
 
 
 @dataclass(frozen=True)
@@ -854,7 +855,21 @@ class NotebookLifecycleManager:
             return ProbeState.MISSING
         except Exception:
             return ProbeState.UNREADABLE
-        return ProbeState.VALID
+        delay = self.retry_policy.base_delay
+        for attempt in range(self.retry_policy.attempts):
+            confirmation = await self._probe_candidate(notebook_id, title)
+            if confirmation.state is ProbeState.MISSING:
+                # Preserve the existing outcome distinction: VALID means this
+                # call issued the deletion, while MISSING means it was absent
+                # before dispatch.
+                return ProbeState.VALID
+            if confirmation.state is not ProbeState.VALID:
+                return confirmation.state
+            if attempt + 1 == self.retry_policy.attempts:
+                return ProbeState.DELETE_UNCONFIRMED
+            await self.sleep(min(delay, self.retry_policy.max_delay))
+            delay = min(delay * 2, self.retry_policy.max_delay)
+        return ProbeState.DELETE_UNCONFIRMED
 
     async def _recover_dispatched_copy(
         self,

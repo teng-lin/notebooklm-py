@@ -118,6 +118,10 @@ _SECRET_REF_RE = re.compile(
 # the called workflow). Always treat as a secret consumer.
 _SECRETS_INHERIT_RE = re.compile(r"^\s*secrets:\s*inherit\s*(#.*)?$")
 
+# Top-level jobs key. YAML permits quoted mapping keys, so both spellings
+# must enter the audited section.
+_JOBS_HEADER_RE = re.compile(r"^(?P<quote>['\"]?)jobs(?P=quote):\s*(?:#.*)?$")
+
 # Job header: two-space indent, then a plain or consistently quoted
 # `<name>:` with nothing else on the line. Quoted YAML keys must still
 # create a hard job boundary; otherwise their secret use could inherit
@@ -519,7 +523,7 @@ def _scan_workflow(path: Path) -> list[str]:
 
         # Detect entry into the top-level ``jobs:`` section.
         if not jobs_section_started:
-            if line.startswith("jobs:"):
+            if _JOBS_HEADER_RE.fullmatch(line):
                 jobs_section_started = True
             continue
 
@@ -552,13 +556,25 @@ def _scan_workflow(path: Path) -> list[str]:
             reset_for_new_job(m_job.group("name"))
             continue
 
+        # At exactly two spaces, every non-comment mapping entry under
+        # ``jobs`` is a new job. Refuse flow-style, anchored, or otherwise
+        # unsupported declarations instead of attributing their contents to
+        # the preceding recognized job and inheriting its security envelope.
+        indent = len(line) - len(line.lstrip(" "))
+        if line.strip() and indent == 2 and not _COMMENT_RE.match(line):
+            flush_job()
+            current_job = None
+            violations.append(
+                f"{path}:{i}: job declarations must use a block-style plain or quoted GitHub job ID"
+            )
+            continue
+
         if current_job is None:
             continue
 
         # Returning to a non-empty job-level key closes the preceding step.
         # Without this reset, a trailing job-level ``env:`` block inherits the
         # last step index and can make a protected binding look step-scoped.
-        indent = len(line) - len(line.lstrip(" "))
         if in_step and line.strip() and indent <= 4:
             in_step = False
 
@@ -698,13 +714,15 @@ def _scan_workflow(path: Path) -> list[str]:
     # If the file contains a top-level ``jobs:`` header but the parser
     # never identified a job, that's a parser miss — surface it so a
     # malformed checker invocation isn't mistaken for "all gated".
-    if jobs_section_started and not saw_any_job:
+    if not saw_any_job:
         # Only complain when secrets are actually present in the file —
-        # avoids noise on workflow stubs with no secrets at all.
+        # avoids noise on workflow stubs with no secrets at all. This also
+        # fails closed if an unsupported spelling prevented section entry.
         if any(_SECRET_REF_RE.search(line) for line in lines):
+            section = "jobs" if jobs_section_started else "jobs section"
             violations.append(
-                f"{path}: contains `jobs:` and `secrets.*` references but the "
-                "parser identified no jobs (unexpected indentation?). Refusing "
+                f"{path}: contains `secrets.*` references but the parser identified no {section} "
+                "(unsupported YAML structure?). Refusing "
                 "to silently pass — please review or extend the checker."
             )
 
@@ -715,10 +733,11 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
     """Enforce the pooled-token job envelope used by authenticated live CI."""
     lines = path.read_text().splitlines()
     jobs_started = False
+    violations: list[str] = []
     chunks: list[tuple[str, int, list[str]]] = []
     current: tuple[str, int, list[str]] | None = None
     for line_number, line in enumerate(lines, 1):
-        if re.fullmatch(r"jobs:\s*(?:#.*)?", line):
+        if _JOBS_HEADER_RE.fullmatch(line):
             jobs_started = True
             continue
         if not jobs_started:
@@ -728,12 +747,21 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
             if current is not None:
                 chunks.append(current)
             current = (match.group("name"), line_number, [])
+        elif (
+            line.strip() and len(line) - len(line.lstrip(" ")) == 2 and not _COMMENT_RE.match(line)
+        ):
+            if current is not None:
+                chunks.append(current)
+            current = None
+            violations.append(
+                f"{path}:{line_number}: job declarations must use a block-style plain or "
+                "quoted GitHub job ID"
+            )
         elif current is not None:
             current[2].append(line)
     if current is not None:
         chunks.append(current)
 
-    violations: list[str] = []
     for job, line_number, body in chunks:
         text = "\n".join(body)
         if "NOTEBOOKLM_ACCOUNTS_JSON" in text:

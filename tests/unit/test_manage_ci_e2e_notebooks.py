@@ -127,10 +127,12 @@ class FakeNotebooks:
         }
         self.copy_calls: list[tuple[str, str]] = []
         self.delete_calls: list[str] = []
+        self.get_calls: list[str] = []
         self.list_error: BaseException | None = None
         self.list_script: deque[object] = deque()
         self.get_errors: dict[str, BaseException] = {}
         self.delete_failures: dict[str, int] = {}
+        self.delete_noop_ids: set[str] = set()
         self.copy_error: BaseException | None = None
         self.copy_error_commits = False
         self.returned_id: str | None = None
@@ -149,6 +151,7 @@ class FakeNotebooks:
         return list(self.items.values())
 
     async def get(self, notebook_id: str) -> SimpleNamespace:
+        self.get_calls.append(notebook_id)
         error = self.get_errors.get(notebook_id)
         if error is not None:
             raise error
@@ -197,7 +200,8 @@ class FakeNotebooks:
         if remaining:
             self.delete_failures[notebook_id] = remaining - 1
             raise RuntimeError("transient delete failure containing notebook-id")
-        self.items.pop(notebook_id, None)
+        if notebook_id not in self.delete_noop_ids:
+            self.items.pop(notebook_id, None)
 
 
 class FakeSources:
@@ -1076,6 +1080,29 @@ async def test_cleanup_retries_idempotent_delete_only_to_configured_bound(
     )
     assert (await retrying.cleanup())["deleted"] == 1
     assert client.notebooks.delete_calls == [notebook_id, notebook_id, notebook_id]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_requires_bounded_post_delete_disappearance_confirmation(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, clock = _manager(tmp_path, contracts)
+    manifest = await _provision(manager, tmp_path, mode="rpc")
+    notebook_id = str(manifest["copies"][0]["notebook_id"])
+    client.notebooks.delete_noop_ids.add(notebook_id)
+    manager.retry_policy = RetryPolicy(attempts=3, base_delay=0.5, max_delay=1)
+    get_calls_before = len(client.notebooks.get_calls)
+    clock_before = clock.value
+
+    with pytest.raises(CleanupError, match="left 1 role"):
+        await manager.cleanup()
+
+    assert client.notebooks.delete_calls == [notebook_id]
+    assert client.notebooks.get_calls[get_calls_before:] == [notebook_id] * 4
+    assert clock.value - clock_before == 1.5
+    assert notebook_id in client.notebooks.items
+    assert manager.store.read()["copies"][0]["status"] == "delete_failed"
 
 
 def _write_intent(

@@ -1323,6 +1323,50 @@ def test_quoted_job_key_cannot_inherit_previous_security_envelope(
     assert "lacks the literal protected-readonly Environment" in err
 
 
+def test_quoted_top_level_jobs_key_is_audited(tmp_path, monkeypatch, capsys, script) -> None:
+    _write_workflow(
+        tmp_path,
+        "quoted-jobs.yml",
+        """
+        name: quoted-jobs
+        on: workflow_dispatch
+        "jobs":
+          live:
+            runs-on: ubuntu-latest
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[inputs.secret_name] }}
+              run: python scripts/materialize_ci_auth.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "pooled secret job 'live'" in err
+    assert "lacks the conjunctive standard-repository" in err
+
+
+def test_flow_style_job_declaration_fails_closed(tmp_path, monkeypatch, capsys, script) -> None:
+    _write_workflow(
+        tmp_path,
+        "flow-job.yml",
+        """
+        name: flow-job
+        on: workflow_dispatch
+        jobs:
+          live: {runs-on: ubuntu-latest, steps: [{run: echo ${{ secrets.MY_SECRET }}}]}
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "job declarations must use a block-style" in err
+    assert "parser identified no jobs" in err
+
+
 def test_pooled_scanner_accepts_jobs_header_with_trailing_comment(tmp_path, script) -> None:
     workflow = tmp_path / "pool.yml"
     workflow.write_text(
