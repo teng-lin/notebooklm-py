@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.e2e import conftest as e2e
-from tests.e2e.test_downloads import _completed_interactive_mind_maps
+from tests.e2e._artifact_helpers import completed_interactive_mind_maps
 
 MANAGED = {
     "NOTEBOOKLM_E2E_MANAGED_COPIES": "1",
@@ -75,7 +75,7 @@ def test_managed_mind_map_download_selects_only_completed_interactive_artifacts(
     completed = SimpleNamespace(is_interactive_mind_map=True, is_completed=True)
     completed_other_kind = SimpleNamespace(is_interactive_mind_map=False, is_completed=True)
 
-    assert _completed_interactive_mind_maps([processing, completed, completed_other_kind]) == [
+    assert completed_interactive_mind_maps([processing, completed, completed_other_kind]) == [
         completed
     ]
 

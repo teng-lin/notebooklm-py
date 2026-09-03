@@ -5,9 +5,9 @@ import tempfile
 
 import pytest
 
-from notebooklm import Artifact
 from notebooklm.exceptions import ArtifactNotReadyError
 
+from ._artifact_helpers import completed_interactive_mind_maps
 from .conftest import _managed_bindings, requires_auth, skip_or_fail_missing_reference
 
 # Large artifact transfers can be hundreds of MiB and need several minutes on
@@ -19,15 +19,6 @@ pytestmark = pytest.mark.timeout(600)
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 PDF_MAGIC = b"%PDF"
 MP4_FTYP = b"ftyp"  # At offset 4
-
-
-def _completed_interactive_mind_maps(artifacts: list[Artifact]) -> list[Artifact]:
-    """Return only downloadable interactive mind-map artifacts."""
-    return [
-        artifact
-        for artifact in artifacts
-        if artifact.is_interactive_mind_map and artifact.is_completed
-    ]
 
 
 def is_png(path: str) -> bool:
@@ -206,7 +197,7 @@ class TestDownloadMindMap:
         artifact_id = None
         if _managed_bindings() is not None:
             artifacts = await client.artifacts.list(read_only_notebook_id)
-            interactive = _completed_interactive_mind_maps(artifacts)
+            interactive = completed_interactive_mind_maps(artifacts)
             if not interactive:
                 skip_or_fail_missing_reference(
                     "copied reference has no completed Studio-backed interactive mind map"
