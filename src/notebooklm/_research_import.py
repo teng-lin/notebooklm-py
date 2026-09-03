@@ -1,13 +1,12 @@
-"""Free-function helpers for research source import + verification.
+"""Backend-neutral helpers for research source import + verification.
 
-Extracted from the research facade (ADR-0008 module-size ratchet) so the
-``ResearchAPI.import_sources`` / ``import_sources_with_verification`` machinery
+Extracted from the research APIs so the ``import_sources`` /
+``import_sources_with_verification`` machinery
 — URL normalization for import verification, the report-source predicate, the
 imported-entry / merge helpers, the #1961 idempotency pre-filter + its
 ``already_present`` side-channel carrier, and the #2187 batch-scaled read
 timeout + retry-time FAILED_PRECONDITION predicate — lives in one cohesive
-place. These are imported by ``_web.research`` and remain reachable as
-``notebooklm._research.<name>`` for callers/tests that reference them there.
+place without making the neutral base depend on either transport package.
 """
 
 from __future__ import annotations
@@ -17,13 +16,27 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
-from .._runtime.config import resolve_import_research_read_timeout
-from .._types.enums import GrpcStatusCode, normalize_grpc_status
-from .._types.research import ResearchSource, ResearchSourceInput
-from ..exceptions import ResearchTaskMismatchError, RPCError, ValidationError
+from ._runtime.config import resolve_import_research_read_timeout
+from ._types.enums import GrpcStatusCode, normalize_grpc_status
+from ._types.research import ResearchSource, ResearchSourceInput
+from .exceptions import ResearchTaskMismatchError, RPCError, ValidationError
 
 if TYPE_CHECKING:
-    from ..types import Source
+    from .types import Source
+
+
+def _coerce_research_source(source: ResearchSourceInput) -> ResearchSource:
+    """Return the typed research-source model for one public input."""
+    if isinstance(source, ResearchSource):
+        return source
+    return ResearchSource.from_public_dict(source)
+
+
+def _coerce_research_sources(
+    sources: Sequence[ResearchSourceInput],
+) -> list[ResearchSource]:
+    """Return typed research-source models while preserving input order."""
+    return [_coerce_research_source(source) for source in sources]
 
 
 def _validate_research_task_provenance(
@@ -41,7 +54,7 @@ def _validate_research_task_provenance(
     Runs BEFORE the #1961 idempotency pre-filter (see
     :func:`_partition_requested_sources`) so a mismatched-provenance source is
     rejected even when its URL is already present in the notebook and would
-    otherwise be dropped without ever reaching :meth:`ResearchAPI.import_sources`.
+    otherwise be dropped without ever reaching the backend ``import_sources`` mutation.
     """
     for source in source_models:
         source_task_id = source.research_task_id
@@ -112,6 +125,11 @@ def _imported_source_entry(source: Source) -> dict[str, str]:
     return {"id": source.id or "", "title": source.title or source.url or ""}
 
 
+def _already_present_source_entry(source: Source) -> dict[str, str]:
+    """Return the historical id/title/URL side-channel row."""
+    return {**_imported_source_entry(source), "url": source.url or ""}
+
+
 def _merge_imported_sources(
     imported: list[dict[str, str]],
     verified_imported: list[dict[str, str]],
@@ -128,7 +146,7 @@ def _merge_imported_sources(
 class _ImportedResearchSources(list):
     """Newly-imported source entries carrying the already-present ones (#1961).
 
-    :meth:`ResearchAPI.import_sources_with_verification` pre-filters requested
+    ``client.research.import_sources_with_verification`` pre-filters requested
     sources whose (normalized) URL already exists in the notebook so a repeat
     import does not duplicate them. This ``list`` subclass keeps every list
     behavior existing callers rely on (iteration, ``len``, indexing, JSON
@@ -328,13 +346,7 @@ def _partition_requested_sources(
             existing_id = existing.id or ""
             if existing_id not in already_present_ids:
                 already_present_ids.add(existing_id)
-                already_present.append(
-                    {
-                        "id": existing_id,
-                        "title": existing.title or existing.url or "",
-                        "url": existing.url or "",
-                    }
-                )
+                already_present.append(_already_present_source_entry(existing))
             continue
         new_inputs.append(source_input)
         new_models.append(source)
