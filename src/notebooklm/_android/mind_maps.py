@@ -9,13 +9,16 @@ tree reads and generation use the live-proven artifact representation.
 from __future__ import annotations
 
 import builtins
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Protocol, cast
 
 from .._mind_maps_api import MindMapsAPI
-from .._runtime.call_supervisor import CallSupervisor
+from .._runtime.call_supervisor import OperationLease
 from ..exceptions import ArtifactNotReadyError, MindMapNotFoundError, NoteNotFoundError
 from ..types import ArtifactType, MindMap, MindMapKind
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
+from .session import AndroidSession
 
 if TYPE_CHECKING:
     from .._artifacts import ArtifactsAPI
@@ -38,10 +41,19 @@ class _SelectedNoteBackedMindMapReader(Protocol):
 class AndroidMindMapsAPI(MindMapsAPI):
     """Android mind-map adapter composed from base-typed artifact/note APIs."""
 
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
+
     def __init__(
         self,
         *,
-        supervisor: CallSupervisor,
+        session: AndroidSession,
         artifacts: ArtifactsAPI,
         notes: NotesAPI,
         note_backed_reader: _NoteBackedMindMapReader
@@ -50,7 +62,7 @@ class AndroidMindMapsAPI(MindMapsAPI):
     ) -> None:
         """Retain the exact artifact/Notes collaborators without selecting a frontend."""
         super().__init__(artifacts=artifacts, notes=notes)
-        self._supervisor = supervisor
+        self._transport = session
         reader_owner = notes if note_backed_reader is None else note_backed_reader
         reader = getattr(reader_owner, "_list_note_backed_mind_maps", None)
         if reader is None:
@@ -68,7 +80,7 @@ class AndroidMindMapsAPI(MindMapsAPI):
 
     async def list(self, notebook_id: str) -> builtins.list[MindMap]:
         """List each backing once within one supervisor generation."""
-        async with self._supervisor.operation_scope("mind_maps.list"):
+        async with self._operation_scope("mind_maps.list"):
             result = list(await self.list_note_backed(notebook_id))
             list_studio = getattr(self._artifacts, "_list_all_studio", None)
             artifacts = (
@@ -106,25 +118,6 @@ class AndroidMindMapsAPI(MindMapsAPI):
         except NoteNotFoundError as exc:
             raise MindMapNotFoundError(mind_map_id) from exc
 
-    async def rename(
-        self,
-        notebook_id: str,
-        mind_map_id: str,
-        new_title: str,
-        *,
-        kind: MindMapKind | None = None,
-        return_object: bool = True,
-    ) -> MindMap | None:
-        """Compose kind detection, exact mutation, and optional hydration."""
-        async with self._supervisor.operation_scope("mind_maps.rename"):
-            return await super().rename(
-                notebook_id,
-                mind_map_id,
-                new_title,
-                kind=kind,
-                return_object=return_object,
-            )
-
     async def generate(
         self,
         notebook_id: str,
@@ -136,7 +129,7 @@ class AndroidMindMapsAPI(MindMapsAPI):
         wait: bool = True,
     ) -> MindMap:
         """Generate either backing through its selected narrow collaborator."""
-        async with self._supervisor.operation_scope("mind_maps.generate"):
+        async with self._operation_scope("mind_maps.generate"):
             if kind is MindMapKind.NOTE_BACKED:
                 result = await self._artifacts.generate_mind_map(
                     notebook_id,
@@ -198,46 +191,6 @@ class AndroidMindMapsAPI(MindMapsAPI):
                 created_at=artifact.created_at if artifact is not None else None,
                 tree=tree,
             )
-
-    async def delete(
-        self,
-        notebook_id: str,
-        mind_map_id: str,
-        *,
-        kind: MindMapKind | None = None,
-    ) -> None:
-        """Compose kind detection and deletion within one resource generation."""
-        async with self._supervisor.operation_scope("mind_maps.delete"):
-            await super().delete(notebook_id, mind_map_id, kind=kind)
-
-    async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
-        """Resolve note-backed first, then interactive, using existing read seams."""
-        return await super()._detect_kind(notebook_id, mind_map_id)
-
-    async def get_tree(
-        self,
-        notebook_id: str,
-        mind_map_id: str,
-        *,
-        kind: MindMapKind | None = None,
-    ) -> dict[str, Any] | None:
-        """Return persisted note trees or the live interactive JSON payload."""
-        async with self._supervisor.operation_scope("mind_maps.get_tree"):
-            read_interactive = getattr(self._artifacts, "_get_interactive_mind_map_tree", None)
-            if read_interactive is None or not callable(read_interactive):
-                raise TypeError("artifacts must provide the Android interactive tree seam")
-            if kind is MindMapKind.INTERACTIVE:
-                return await read_interactive(notebook_id, mind_map_id)
-
-            for mind_map in await self.list_note_backed(notebook_id):
-                if mind_map.id == mind_map_id:
-                    return mind_map.tree
-            if kind is MindMapKind.NOTE_BACKED:
-                return None
-
-            if await self._find_interactive(notebook_id, mind_map_id) is not None:
-                return await read_interactive(notebook_id, mind_map_id)
-            return None
 
 
 __all__ = ["AndroidMindMapsAPI"]

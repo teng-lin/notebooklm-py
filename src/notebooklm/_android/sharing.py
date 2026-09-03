@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any, cast
 
 from .._idempotency import mark_unconfirmed
+from .._runtime.call_supervisor import OperationLease
 from .._sharing import SharingAPI
 from .._types.enums import SharePermission, ShareViewLevel
 from ..exceptions import (
@@ -14,6 +17,7 @@ from ..exceptions import (
 )
 from ..types import ShareStatus
 from .codecs.sharing import decode_share_status
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .session import AndroidSession
 from .write_safety import call_unconfirmed_on_transport_loss
 
@@ -70,6 +74,15 @@ def _map_notebook_error(notebook_id: str, error: RPCError, *, method_id: str) ->
 
 class AndroidSharingAPI(SharingAPI):
     """Fully native sharing surface."""
+
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
 
     def __init__(self, session: AndroidSession) -> None:
         self._transport = session

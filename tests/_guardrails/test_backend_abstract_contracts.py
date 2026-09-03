@@ -253,13 +253,95 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
             {
                 "_send_rename_note_backed",
                 "generate",
-                "get_tree",
                 "list_note_backed",
             }
         ),
         wire_hooks=frozenset({"_send_rename_note_backed"}),
     ),
 )
+
+_ANDROID_IMPLEMENTATIONS = {
+    "ArtifactsAPI": ("notebooklm._android.artifacts", "AndroidArtifactsAPI"),
+    "BaseResearchAPI": ("notebooklm._android.research", "AndroidResearchAPI"),
+    "ChatAPI": ("notebooklm._android.chat", "AndroidChatAPI"),
+    "CollectionsAPI": ("notebooklm._android.collections", "AndroidCollectionsAPI"),
+    "LabelsAPI": ("notebooklm._android.labels", "AndroidLabelsAPI"),
+    "MindMapsAPI": ("notebooklm._android.mind_maps", "AndroidMindMapsAPI"),
+    "NotebooksAPI": ("notebooklm._android.notebooks", "AndroidNotebooksAPI"),
+    "NotesAPI": ("notebooklm._android.notes", "AndroidNotesAPI"),
+    "SettingsAPI": ("notebooklm._android.settings", "AndroidSettingsAPI"),
+    "SharingAPI": ("notebooklm._android.sharing", "AndroidSharingAPI"),
+    "SourcesAPI": ("notebooklm._android.sources", "AndroidSourcesAPI"),
+}
+
+_ANDROID_INHERITED_WORKFLOWS = {
+    "ArtifactsAPI": frozenset(
+        {
+            "generate_audio",
+            "generate_cinematic_video",
+            "generate_data_table",
+            "generate_flashcards",
+            "generate_infographic",
+            "generate_quiz",
+            "generate_report",
+            "generate_slide_deck",
+            "generate_study_guide",
+            "generate_video",
+            "get",
+            "get_or_none",
+            "list_audio",
+            "list_data_tables",
+            "list_flashcards",
+            "list_infographics",
+            "list_quizzes",
+            "list_reports",
+            "list_slide_decks",
+            "list_video",
+            "poll_status",
+            "wait_for_completion",
+        }
+    ),
+    "BaseResearchAPI": frozenset(
+        {
+            "_import_sources_with_verification",
+            "_wait_for_completion",
+            "import_sources_with_verification",
+            "wait_for_completion",
+        }
+    ),
+    "ChatAPI": frozenset(
+        {
+            "ask",
+            "cancel",
+            "delete_conversation",
+            "save_answer_as_note",
+            "session_status",
+            "set_mode",
+        }
+    ),
+    "CollectionsAPI": frozenset(),
+    "LabelsAPI": frozenset(),
+    "MindMapsAPI": frozenset(
+        {"_detect_kind", "delete", "get", "get_or_none", "get_tree", "rename"}
+    ),
+    "NotebooksAPI": frozenset({"create", "get_metadata", "get_or_none", "rename", "set_emoji"}),
+    "NotesAPI": frozenset(),
+    "SettingsAPI": frozenset(),
+    "SharingAPI": frozenset({"add_user", "update_user"}),
+    "SourcesAPI": frozenset(
+        {
+            "delete_many",
+            "get",
+            "get_or_none",
+            "wait_all_until_ready",
+            "wait_for_sources",
+            "wait_until_ready",
+            "wait_until_registered",
+        }
+    ),
+}
+
+_TEMPLATE_HOOKS = frozenset({"_operation_scope"})
 
 _WIRE_HOOK_PREFIXES = ("_send_",)
 _WIRE_HOOK_NAMES = frozenset({"_cancel_generation", "_get_session_status", "_stream_answer"})
@@ -300,6 +382,42 @@ def test_backend_base_abstract_methods_and_wire_hooks_match_manifest() -> None:
             f"{contract.class_name} wire hooks changed: "
             f"expected {sorted(contract.wire_hooks)}, got {sorted(actual_wire_hooks)}"
         )
+
+
+def test_namespace_bases_and_backends_preserve_the_scope_template_hook() -> None:
+    """Keep lifecycle policy separate from each workflow's one wire hook."""
+    assert (
+        {contract.class_name for contract in BASE_ABSTRACT_CONTRACTS}
+        == set(_ANDROID_IMPLEMENTATIONS)
+        == set(_ANDROID_INHERITED_WORKFLOWS)
+    )
+
+    for contract in BASE_ABSTRACT_CONTRACTS:
+        base = getattr(importlib.import_module(contract.module), contract.class_name)
+        web = getattr(
+            importlib.import_module(contract.implementation_module),
+            contract.implementation_class_name,
+        )
+        android_module, android_name = _ANDROID_IMPLEMENTATIONS[contract.class_name]
+        android = getattr(importlib.import_module(android_module), android_name)
+
+        actual_hooks = frozenset(name for name in _TEMPLATE_HOOKS if name in base.__dict__)
+        assert actual_hooks == _TEMPLATE_HOOKS
+        assert not getattr(base._operation_scope, "__isabstractmethod__", False)
+        assert web._operation_scope is base._operation_scope
+        assert android._operation_scope is not base._operation_scope
+
+
+def test_android_backends_inherit_manifested_neutral_workflow_bodies() -> None:
+    """A scope-only Android override may not fork a neutral workflow body."""
+    for contract in BASE_ABSTRACT_CONTRACTS:
+        base = getattr(importlib.import_module(contract.module), contract.class_name)
+        android_module, android_name = _ANDROID_IMPLEMENTATIONS[contract.class_name]
+        android = getattr(importlib.import_module(android_module), android_name)
+
+        for method_name in _ANDROID_INHERITED_WORKFLOWS[contract.class_name]:
+            assert method_name not in android.__dict__
+            assert getattr(android, method_name) is getattr(base, method_name)
 
 
 def test_artifact_workflow_ownership_and_docstrings_are_preserved() -> None:

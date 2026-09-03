@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -14,6 +15,7 @@ from urllib.parse import urlsplit, urlunsplit
 from . import research as _research_pub
 from ._idempotency import mark_unconfirmed
 from ._notebook_metadata import NotebookSourceLister
+from ._runtime.call_supervisor import OperationLease
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_TIMEOUT,
@@ -147,6 +149,13 @@ def validate_discover(query: str, mode: str) -> tuple[str, str, DiscoveryMode]:
 class BaseResearchAPI(ABC):
     """Backend-neutral nine-callable Research namespace."""
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
+
     def __init__(
         self,
         *,
@@ -221,6 +230,22 @@ class BaseResearchAPI(ABC):
         initial_interval: float = _INITIAL_INTERVAL_UNSET,
     ) -> ResearchTask:
         """Poll one pinned run until it reaches a terminal state."""
+        async with self._operation_scope("research.wait_for_completion"):
+            return await self._wait_for_completion_in_scope(
+                notebook_id,
+                task_id,
+                timeout=timeout,
+                initial_interval=initial_interval,
+            )
+
+    async def _wait_for_completion_in_scope(
+        self,
+        notebook_id: str,
+        task_id: str | None = None,
+        *,
+        timeout: float = 1800,
+        initial_interval: float = _INITIAL_INTERVAL_UNSET,
+    ) -> ResearchTask:
         if initial_interval is _INITIAL_INTERVAL_UNSET:
             interval = _DEFAULT_RESEARCH_POLL_INTERVAL
         elif isinstance(initial_interval, bool) or not isinstance(initial_interval, (int, float)):
@@ -315,6 +340,30 @@ class BaseResearchAPI(ABC):
         post-failure reads prove the exact missing subset and no concurrent row
         makes attribution ambiguous.
         """
+        async with self._operation_scope("research.import_sources_with_verification"):
+            return await self._import_sources_with_verification_in_scope(
+                notebook_id,
+                task_id,
+                sources,
+                max_elapsed=max_elapsed,
+                initial_delay=initial_delay,
+                backoff_factor=backoff_factor,
+                max_delay=max_delay,
+                allow_duplicate=allow_duplicate,
+            )
+
+    async def _import_sources_with_verification_in_scope(
+        self,
+        notebook_id: str,
+        task_id: str,
+        sources: Sequence[ResearchSourceInput],
+        *,
+        max_elapsed: float = 1800,
+        initial_delay: float = 5,
+        backoff_factor: float = 2,
+        max_delay: float = 60,
+        allow_duplicate: bool = False,
+    ) -> list[dict[str, str]]:
         if not sources:
             return _imported_result([], [])
         inputs = list(sources)

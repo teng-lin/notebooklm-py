@@ -1,8 +1,10 @@
 """Backend-neutral sharing namespace contract."""
 
+import contextlib
 import logging
 from abc import ABC, abstractmethod
 
+from ._runtime.call_supervisor import OperationLease
 from ._types.enums import SharePermission, ShareViewLevel
 from .types import ShareStatus
 
@@ -11,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 class SharingAPI(ABC):
     """Operations for notebook sharing."""
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     @abstractmethod
     async def get_status(self, notebook_id: str) -> ShareStatus:

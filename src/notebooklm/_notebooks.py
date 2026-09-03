@@ -1,6 +1,7 @@
 """Backend-neutral notebook operations API."""
 
 import builtins
+import contextlib
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -11,6 +12,7 @@ from ._env import get_base_url
 from ._idempotency import idempotent_create
 from ._idempotency import mark_unconfirmed as _unconfirmed
 from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister
+from ._runtime.call_supervisor import OperationLease
 from .exceptions import (
     AuthError,
     NetworkError,
@@ -69,6 +71,13 @@ class NotebooksAPI(ABC):
     """
 
     _create_method_id: str
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     def __init__(
         self,
@@ -150,6 +159,10 @@ class NotebooksAPI(ABC):
             the create is retried. If more than one matches, the wrapper raises an
             :class:`RPCError` because the situation is ambiguous.
         """
+        async with self._operation_scope("notebooks.create"):
+            return await self._create_with_probe(title)
+
+    async def _create_with_probe(self, title: str) -> Notebook:
         logger.debug("Creating notebook: %s", title)
 
         # Capture the baseline notebook IDs *before* the create so the

@@ -149,25 +149,23 @@ def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> Non
 
 def test_exact_abstract_set_and_frontends_are_concrete() -> None:
     assert MindMapsAPI.__abstractmethods__ == frozenset(
-        {"_send_rename_note_backed", "generate", "get_tree", "list_note_backed"}
+        {"_send_rename_note_backed", "generate", "list_note_backed"}
     )
     assert WebMindMapsAPI.__abstractmethods__ == frozenset()
     assert AndroidMindMapsAPI.__abstractmethods__ == frozenset()
 
 
-def test_android_backend_wraps_aggregate_and_delete_but_inherits_lookup_workflows() -> None:
+def test_android_backend_wraps_only_behavioral_aggregate_workflow() -> None:
     assert "list" in AndroidMindMapsAPI.__dict__
     assert AndroidMindMapsAPI.list is not MindMapsAPI.list
-    assert "delete" in AndroidMindMapsAPI.__dict__
-    assert AndroidMindMapsAPI.delete is not MindMapsAPI.delete
-    for method_name in {"get", "get_or_none"}:
+    for method_name in {"delete", "get", "get_or_none", "get_tree", "rename"}:
         assert method_name not in AndroidMindMapsAPI.__dict__
         assert getattr(AndroidMindMapsAPI, method_name) is getattr(MindMapsAPI, method_name)
 
 
-def test_android_rename_gate_delegates_the_supported_branch_to_the_base() -> None:
-    assert "rename" in AndroidMindMapsAPI.__dict__
-    assert AndroidMindMapsAPI.rename is not MindMapsAPI.rename
+def test_android_rename_inherits_the_scoped_base_workflow() -> None:
+    assert "rename" not in AndroidMindMapsAPI.__dict__
+    assert AndroidMindMapsAPI.rename is MindMapsAPI.rename
 
 
 def test_default_client_assembly_keeps_the_web_frontend() -> None:

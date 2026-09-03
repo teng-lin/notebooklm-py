@@ -127,7 +127,6 @@ async def test_create_keeps_base_baseline_then_single_send_workflow() -> None:
     assert kwargs == {
         "replay_safe": False,
         "response_type": read_pb2.Project,
-        "expected_epoch": 7,
     }
 
 
@@ -227,7 +226,7 @@ async def test_create_workflow_finishes_during_graceful_drain_in_one_epoch() -> 
     create_release.set()
 
     assert (await task).id == "new"
-    assert [kwargs["expected_epoch"] for _method, _request, kwargs in transport.calls] == [1, 1]
+    assert all("expected_epoch" not in kwargs for _method, _request, kwargs in transport.calls)
     await transport.supervisor.wait_for_idle(1, 0.1)
 
 

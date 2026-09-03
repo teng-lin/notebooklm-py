@@ -562,7 +562,6 @@ async def test_generate_quiz_uses_exact_request_and_never_replays_mutation() -> 
     assert kwargs == {
         "replay_safe": False,
         "response_type": _PROTO.CreateArtifactResponse,
-        "expected_epoch": 7,
     }
     assert request.project_id == "notebook-1"
     assert request.artifact.type == _PROTO.ARTIFACT_TYPE_APP
@@ -680,7 +679,6 @@ async def test_generate_audio_uses_exact_duplicated_source_wire(
     assert kwargs == {
         "replay_safe": False,
         "response_type": _PROTO.CreateArtifactResponse,
-        "expected_epoch": 7,
     }
     assert request.project_id == "notebook-1"
     assert request.artifact.type == _PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW
@@ -858,7 +856,7 @@ async def test_generate_video_families_use_exact_mobile_options() -> None:
     method, request, kwargs = session.calls[0]
     assert method == CREATE_ARTIFACT_METHOD
     assert kwargs["replay_safe"] is False
-    assert kwargs["expected_epoch"] == 7
+    assert "expected_epoch" not in kwargs
     assert request.artifact.type == _PROTO.ARTIFACT_TYPE_EXPLAINER_VIDEO
     assert [row.source_id.id for row in request.artifact.sources] == ["source-1"]
     options = request.artifact.explainer_video.generation_options
@@ -2566,6 +2564,41 @@ class _SupervisedNotebookSources:
         )
 
 
+class _PausedSupervisedNotebookSources:
+    def __init__(self, transport: SupervisedAndroidTransport) -> None:
+        self._transport = transport
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def get_source_ids(self, notebook_id: str) -> list[str]:
+        self.started.set()
+        await self.release.wait()
+        return await self._transport.unary(
+            "notebooks.get_source_ids",
+            notebook_id,
+            replay_safe=True,
+            response_type=list,
+        )
+
+
+@pytest.mark.asyncio
+async def test_quiz_nested_source_read_rejects_a_retired_workflow_epoch() -> None:
+    transport = SupervisedAndroidTransport()
+    notebooks = _PausedSupervisedNotebookSources(transport)
+    transport.handlers["notebooks.get_source_ids"] = ["source-1"]
+    api = _supervised_graph(transport, notebooks=notebooks)
+    task = asyncio.create_task(api.generate_quiz("notebook-1"))
+    await notebooks.started.wait()
+
+    old_generation = await transport.force_close_and_reopen()
+    notebooks.release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await task
+    assert transport.calls == []
+    assert old_generation.in_flight == 0
+
+
 @pytest.mark.asyncio
 async def test_quiz_source_resolution_and_mutation_finish_during_graceful_drain() -> None:
     transport = SupervisedAndroidTransport()
@@ -2593,7 +2626,7 @@ async def test_quiz_source_resolution_and_mutation_finish_during_graceful_drain(
         "notebooks.get_source_ids",
         CREATE_ARTIFACT_METHOD,
     ]
-    assert transport.calls[1][2]["expected_epoch"] == 1
+    assert "expected_epoch" not in transport.calls[1][2]
 
 
 @pytest.mark.asyncio
@@ -2623,7 +2656,7 @@ async def test_audio_source_resolution_and_mutation_finish_during_graceful_drain
         "notebooks.get_source_ids",
         CREATE_ARTIFACT_METHOD,
     ]
-    assert transport.calls[1][2]["expected_epoch"] == 1
+    assert "expected_epoch" not in transport.calls[1][2]
     await transport.supervisor.wait_for_idle(1, 0.1)
 
 

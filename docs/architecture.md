@@ -179,14 +179,26 @@ shows lazy bearer acquisition, channel creation, and result projection.
 
 ```text
 NotebookLMClient.<feature>.<method>()
+    → backend-neutral <Feature>API runs shared workflow orchestration
+    → Android<Feature>API._operation_scope(...) for multi-call workflows
+      → AndroidSession.operation_scope(...) + task-local workflow epoch
     → Android<Feature>API validates/builds a protobuf request
-    → AndroidSession.operation_scope(...) for multi-call workflows
     → AndroidSession.unary(...) or .unary_stream(...)
     → CallSupervisor terminal scope (drain, metrics, semaphore)
     → lazy bearer acquisition + lazy gRPC channel
     → notebooklm-pa.googleapis.com
     → strict protobuf/public-dataclass projection
 ```
+
+Every backend-neutral namespace base exposes the same non-abstract
+`_operation_scope(label)` template hook. Its default is an async-compatible
+no-op, while each Android namespace overrides it with the session's
+generation-bearing scope. The Android scope binds a module-level `ContextVar`
+tagged with that `AndroidSession`'s unique identity and lease epoch. Nested
+namespace calls therefore inherit the original workflow fence without adding
+epoch parameters to wire hooks; unrelated Android clients in the same task
+cannot consume each other's tag, and nested scopes restore the outer tag on
+exit.
 
 Android optional dependencies and the master-token credential are validated at
 async open; the channel itself remains lazy until the first Android RPC. Asset
@@ -556,6 +568,7 @@ the executor on direct collaborator dependencies.
 | `ClientLifecycle` | [`_runtime/lifecycle.py`](../src/notebooklm/_runtime/lifecycle.py) | Protocol-neutral root lifecycle. Owns resource state, generation allocation, transactional/coalesced open and close waves, pre-hook timeout validation, loop binding, phased transport ordering, rollback, and deterministic teardown failure precedence. It owns no HTTP client, auth state, keepalive task, cookie persistence, or RPC semaphore. |
 | `WebTransportLifecycle` | [`_web/transport/lifecycle.py`](../src/notebooklm/_web/transport/lifecycle.py) | Web resource participant installed directly for Web selection and owned behind `LazyWebSidecar` only after deprecated Android `rpc_call` use. Activates/fences the Kernel and auth coordinator for one epoch, owns cookie-save routing, opens/closes the Kernel, and mirrors accepted cookie state into the client-owned `AuthTokens`; only the primary Web runtime can own a keepalive task. |
 | `AndroidSession` | [`_android/session.py`](../src/notebooklm/_android/session.py) | Selected-Android gRPC participant. Validates optional runtimes and activates bearer state at open, constructs its TLS channel lazily, maps gRPC status/deadline outcomes, and shares `CallSupervisor` admission/telemetry with Web calls. |
+| Android workflow epoch | [`_android/epoch.py`](../src/notebooklm/_android/epoch.py) | Session-tagged task-local epoch inherited by nested namespace calls inside one Android operation scope. |
 | `MiddlewareChainBuilder` | [`_web/transport/middleware/chain.py`](../src/notebooklm/_web/transport/middleware/chain.py) | Constructs the web-specific `Retry -> AuthRefresh -> ErrorInjection -> Tracing` chain; `CallSupervisor` owns the protocol-neutral outer policy. |
 | `TransportDrainTracker` | [`_transport_drain.py`](../src/notebooklm/_transport_drain.py) | Transitional in-flight bookkeeping owned by `CallSupervisor`. The supervisor, not the tracker, owns generation admission and public drain policy. |
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
@@ -1090,6 +1103,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/errors.py` | Sanitized gRPC-status projection plus the pre-I/O unsupported-operation helper; raw transport exceptions and details never cross this boundary. |
 | `_android/notebooks.py` | Selected Android notebook adapter: reads and evidence-admitted notebook create/delete/title-and-emoji update/copy/guide operations. Recent-removal uses the native route; its `INTERNAL` response for owned notebooks is folded into the same already-absent no-op the Web frontend exposes, while genuinely shared notebooks are removed natively. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
+| `_android/epoch.py` | Session-tagged task-local epoch propagation for Android namespace workflow scopes. |
 | `_android/write_safety.py` | Shared non-idempotent write helper that marks only transport-ambiguous Android outcomes as unconfirmed while preserving confirmed authentication, validation, and backend rejections. |
 | `_android/sources.py` | Selected Android source adapter: `GetProject` reads, exact URL/text/YouTube/Drive adds, freshness checks, native stale-Drive-source refresh, maintenance/content methods, generic file uploads, and Android-bearer Drive-file download followed by Android registration/upload. |
 | `_android/source_search.py` | Native replay-safe `RetrieveRelevantChunks` dispatch and protobuf-to-`RelevantChunk` projection for `sources.search`. |
@@ -1420,6 +1434,7 @@ src/notebooklm/
 │   ├── errors.py                # Sanitized gRPC status/error mapping
 │   ├── notebooks.py             # Selected Android notebook reads/mutations, incl. native recent-removal
 │   ├── session.py               # Supervised lazy gRPC transport
+│   ├── epoch.py                 # Session-tagged task-local workflow epoch propagation
 │   ├── write_safety.py          # Shared ambiguous-write outcome marker
 │   ├── sources.py               # Selected source surface (fully native)
 │   ├── source_search.py         # Native RetrieveRelevantChunks search service

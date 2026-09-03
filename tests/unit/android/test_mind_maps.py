@@ -18,7 +18,6 @@ from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._notes import NotesAPI
-from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._types.research import MindMapResult
 from notebooklm.exceptions import ArtifactNotReadyError, MindMapNotFoundError, NoteNotFoundError
 from notebooklm.types import Artifact, GenerationStatus, MindMap, MindMapKind, Note
@@ -104,7 +103,7 @@ def _graph(
 
     return (
         AndroidMindMapsAPI(
-            supervisor=cast(CallSupervisor, supervisor or _Supervisor()),
+            session=cast(Any, supervisor or _Supervisor()),
             artifacts=artifact_api,
             notes=notes,
         ),
@@ -117,7 +116,7 @@ def test_direct_graph_requires_and_retains_exact_base_collaborators() -> None:
     api, artifacts, notes = _graph()
     parameters = inspect.signature(AndroidMindMapsAPI).parameters
 
-    assert parameters["supervisor"].default is inspect.Parameter.empty
+    assert parameters["session"].default is inspect.Parameter.empty
     assert parameters["artifacts"].default is inspect.Parameter.empty
     assert parameters["notes"].default is inspect.Parameter.empty
     assert api._artifacts is artifacts
@@ -151,7 +150,7 @@ def test_direct_graph_requires_private_typed_notes_read_seam() -> None:
 
     with pytest.raises(TypeError, match="private typed note-backed"):
         AndroidMindMapsAPI(
-            supervisor=cast(CallSupervisor, _Supervisor()),
+            session=cast(Any, _Supervisor()),
             artifacts=artifacts,
             notes=notes,
         )
@@ -699,7 +698,7 @@ class _SupervisedArtifacts:
 
 def _supervised_api(transport: SupervisedAndroidTransport) -> AndroidMindMapsAPI:
     return AndroidMindMapsAPI(
-        supervisor=transport.supervisor,
+        session=cast(Any, transport),
         artifacts=cast(Any, _SupervisedArtifacts(transport)),
         notes=cast(Any, _SupervisedNotes(transport)),
     )

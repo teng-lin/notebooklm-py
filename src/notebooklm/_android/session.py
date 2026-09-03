@@ -29,6 +29,7 @@ from .._runtime.config import CORE_LOGGER_NAME, DEFAULT_CHAT_RESPONSE_MAX_BYTES
 from .._runtime.helpers import is_auth_error, resolve_sleep
 from ..exceptions import MissingDependencyError, RPCResponseTooLargeError
 from .auth import BearerCredential, BearerProvider
+from .epoch import workflow_epoch_for
 from .errors import (
     GrpcStatus,
     grpc_status,
@@ -443,6 +444,7 @@ class AndroidSession(LoopBoundPrimitive):
         self._grpc_loader = grpc_loader
         self._protobuf_loader = protobuf_loader
         self._monotonic = monotonic
+        self._workflow_session_id = object()
         self._bound_loop: asyncio.AbstractEventLoop | None = None
         self._active_epoch: int | None = None
         self._closing = False
@@ -512,6 +514,18 @@ class AndroidSession(LoopBoundPrimitive):
             raise RuntimeError(_NOT_OPEN)
         assert_bound_loop(self._bound_loop)
         return epoch
+
+    def _resolve_expected_epoch(self, expected_epoch: int | None) -> int:
+        """Resolve explicit or task-local workflow fencing for one call."""
+
+        active_epoch = self._require_active()
+        if expected_epoch is None:
+            expected_epoch = workflow_epoch_for(self)
+        if expected_epoch is None:
+            return active_epoch
+        if expected_epoch != active_epoch:
+            self._assert_epoch(expected_epoch)
+        return expected_epoch
 
     def _deadline(self, timeout: float | None) -> RuntimeDeadline | None:
         resolved = self._timeout if timeout is None else timeout
@@ -847,10 +861,7 @@ class AndroidSession(LoopBoundPrimitive):
     ) -> RespT:
         """Invoke one typed unary RPC with bounded replay of safe reads."""
 
-        active_epoch = self._require_active()
-        if expected_epoch is not None and expected_epoch != active_epoch:
-            self._assert_epoch(expected_epoch)
-        expected_epoch = active_epoch
+        expected_epoch = self._resolve_expected_epoch(expected_epoch)
         telemetry = self._telemetry_method(method, telemetry_method)
         self._call_supervisor.record_started(telemetry)
         deadline = self._deadline(timeout)
@@ -1065,7 +1076,7 @@ class AndroidSession(LoopBoundPrimitive):
     ) -> AsyncIterator[RespT]:
         """Yield a typed server stream while retaining one supervisor lease."""
 
-        expected_epoch = self._require_active()
+        expected_epoch = self._resolve_expected_epoch(None)
         telemetry = self._telemetry_method(method, telemetry_method)
         self._call_supervisor.record_started(telemetry)
         deadline = self._deadline(timeout)
