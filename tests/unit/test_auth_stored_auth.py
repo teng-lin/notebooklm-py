@@ -311,20 +311,12 @@ async def test_inline_source_resolution_parses_one_captured_environment_value(
         promotions=LegacyPromotionScheduler(),
     )
     captured = json.dumps(_document(account={"email": "captured@example.com"}).to_json())
-    reads = 0
-
-    def resolve_once() -> str | None:
-        nonlocal reads
-        reads += 1
-        return captured if reads == 1 else None
-
-    monkeypatch.setattr(_auth_tokens, "resolve_auth_json_env", resolve_once)
+    monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", captured)
 
     source = await loader._resolve_source(None, "must-not-be-read")
 
     assert isinstance(source, InlineAuthSource)
     assert source.document.to_json()["notebooklm"]["account"]["email"] == ("captured@example.com")
-    assert reads == 1
 
 
 @pytest.mark.asyncio

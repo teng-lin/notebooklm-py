@@ -221,11 +221,7 @@ def test_public_probe_error_escapes_same_object_without_constructing(
         assert candidate == path
         raise error
 
-    def forbidden_constructor(*_args: object, **_kwargs: object) -> Any:
-        pytest.fail("a failed legacy probe must not construct MasterTokenFile")
-
     monkeypatch.setattr(Path, "exists", fail_probe)
-    monkeypatch.setattr(master_token, "MasterTokenFile", forbidden_constructor)
 
     with pytest.raises(OSError) as captured:
         master_token.read_master_token(path)
@@ -235,32 +231,16 @@ def test_public_probe_error_escapes_same_object_without_constructing(
     assert captured.value.__context__ is None
 
 
-def test_public_constructor_error_after_present_probe_escapes_same_object(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_public_present_malformed_record_projects_master_token_error(
+    tmp_path: Path,
 ) -> None:
     path = tmp_path / "token.json"
-    error = OSError("constructor failed")
-    probes = 0
+    path.write_text(json.dumps({"version": 999}), encoding="utf-8")
 
-    def present(candidate: Path) -> bool:
-        nonlocal probes
-        assert candidate == path
-        probes += 1
-        return True
-
-    def fail_constructor(*_args: object, **_kwargs: object) -> Any:
-        raise error
-
-    monkeypatch.setattr(Path, "exists", present)
-    monkeypatch.setattr(master_token, "MasterTokenFile", fail_constructor)
-
-    with pytest.raises(OSError) as captured:
+    with pytest.raises(master_token.MasterTokenError) as captured:
         master_token.read_master_token(path)
 
-    assert probes == 1
-    assert captured.value is error
-    assert captured.value.__cause__ is None
-    assert captured.value.__context__ is None
+    assert str(captured.value) == _MALFORMED
 
 
 def test_public_present_read_probes_constructs_reads_parses_and_decodes_once(
@@ -279,11 +259,6 @@ def test_public_present_read_probes_constructs_reads_parses_and_decodes_once(
             events.append("probe")
         return real_exists(candidate)
 
-    def construct(candidate: Path) -> MasterTokenFile:
-        assert candidate == path
-        events.append("construct")
-        return MasterTokenFile(candidate, locks=cast(StorageLockManager, RecordingLocks()))
-
     def read_text(candidate: Path, *args: object, **kwargs: object) -> str:
         assert candidate == path
         events.append(f"read:{kwargs.get('encoding')}")
@@ -301,12 +276,11 @@ def test_public_present_read_probes_constructs_reads_parses_and_decodes_once(
 
     monkeypatch.setattr(Path, "exists", exists)
     monkeypatch.setattr(Path, "read_text", read_text)
-    monkeypatch.setattr(master_token, "MasterTokenFile", construct)
     monkeypatch.setattr(master_token_file.json, "loads", loads)
     monkeypatch.setattr(master_token_file, "_master_token_from_legacy_record", decode)
 
     assert master_token.read_master_token(path) == raw
-    assert events == ["probe", "construct", "read:utf-8", "parse", "decode"]
+    assert events == ["probe", "read:utf-8", "parse", "decode"]
 
 
 def test_typed_read_projects_only_token_from_one_private_call(

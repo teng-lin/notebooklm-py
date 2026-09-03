@@ -92,21 +92,15 @@ def test_value_shapes_signatures_validation_and_redaction() -> None:
 
 
 @pytest.mark.parametrize("state", [LockState.CONTENDED, LockState.UNAVAILABLE])
-def test_lock_miss_is_typed_and_runs_zero_body(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: LockState
-) -> None:
+def test_lock_miss_is_typed_and_runs_zero_body(tmp_path: Path, state: LockState) -> None:
+    class BodySentinelDocument(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("lock miss must not enter the transaction body")
+
     locks = RecordingLocks(state)
     path = tmp_path / "custom" / "A.json"
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda *args, **kwargs: pytest.fail("filter ran"),
-    )
-    monkeypatch.setattr(
-        profile_store, "_commit_profile_json", lambda *args: pytest.fail("commit ran")
-    )
     result = ProfileStore(path, locks=locks).replace_from_remint(
-        RemintWriteRequest(_source(_row()), True)
+        RemintWriteRequest(BodySentinelDocument.decode({"cookies": [], "origins": []}), True)
     )
     assert result == ReplaceResult(ReplaceStatus.LOCK_UNAVAILABLE)
     assert len(locks.requests) == 1
@@ -202,19 +196,18 @@ def test_carry_read_oserror_is_silent_and_still_commits(
 
 
 def test_unicode_carry_failure_precedes_filter_and_releases_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
+    class FilterSentinelDocument(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("Unicode carry failure must precede filtering")
+
     path = tmp_path / "A.json"
     path.write_bytes(b"\xff")
     locks = RecordingLocks()
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda *args, **kwargs: pytest.fail("filter ran"),
-    )
     with pytest.raises(UnicodeDecodeError):
         ProfileStore(path, locks=locks).replace_from_remint(
-            RemintWriteRequest(_source(_row()), True)
+            RemintWriteRequest(FilterSentinelDocument.decode({"cookies": [], "origins": []}), True)
         )
     assert locks.released and path.read_bytes() == b"\xff"
 

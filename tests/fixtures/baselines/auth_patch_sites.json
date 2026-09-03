@@ -1,12 +1,6 @@
 {
   "sites": [
     {
-      "attribute": "_probe_authuser",
-      "count": 2,
-      "idiom": "monkeypatch.setattr",
-      "module": "account"
-    },
-    {
       "attribute": "enumerate_accounts",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -40,12 +34,6 @@
       "attribute": "_EXTRACTION_HINT",
       "count": 1,
       "idiom": "monkeypatch.setattr",
-      "module": "cookie_policy"
-    },
-    {
-      "attribute": "_SECONDARY_BINDING_WARNED",
-      "count": 4,
-      "idiom": "assignment",
       "module": "cookie_policy"
     },
     {
@@ -140,7 +128,7 @@
     },
     {
       "attribute": "MasterTokenFile",
-      "count": 4,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "master_token"
     },
@@ -219,18 +207,12 @@
     {
       "attribute": "_STORAGE_LOCKS",
       "count": 2,
-      "idiom": "assignment",
-      "module": "profile_store"
-    },
-    {
-      "attribute": "_STORAGE_LOCKS",
-      "count": 6,
       "idiom": "monkeypatch.setattr",
       "module": "profile_store"
     },
     {
       "attribute": "_commit_profile_json",
-      "count": 18,
+      "count": 15,
       "idiom": "monkeypatch.setattr",
       "module": "profile_store"
     },
@@ -242,7 +224,7 @@
     },
     {
       "attribute": "filter_storage_state_cookies_by_domain_policy",
-      "count": 7,
+      "count": 2,
       "idiom": "monkeypatch.setattr",
       "module": "profile_store"
     },
@@ -278,7 +260,7 @@
     },
     {
       "attribute": "recover_psidts_in_memory",
-      "count": 7,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "psidts_recovery"
     },
@@ -437,24 +419,18 @@
       "count": 6,
       "idiom": "monkeypatch.setattr",
       "module": "tokens"
-    },
-    {
-      "attribute": "resolve_auth_json_env",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "tokens"
     }
   ],
   "summary": {
     "TOTAL": {
-      "private": 144,
-      "public": 99,
-      "total": 243
+      "private": 129,
+      "public": 84,
+      "total": 213
     },
     "account": {
-      "private": 2,
+      "private": 0,
       "public": 12,
-      "total": 14
+      "total": 12
     },
     "account_email": {
       "private": 2,
@@ -462,9 +438,9 @@
       "total": 2
     },
     "cookie_policy": {
-      "private": 6,
+      "private": 2,
       "public": 4,
-      "total": 10
+      "total": 6
     },
     "cookie_semantics": {
       "private": 0,
@@ -488,8 +464,8 @@
     },
     "master_token": {
       "private": 3,
-      "public": 5,
-      "total": 8
+      "public": 2,
+      "total": 5
     },
     "master_token_file": {
       "private": 15,
@@ -502,14 +478,14 @@
       "total": 8
     },
     "profile_store": {
-      "private": 27,
-      "public": 8,
-      "total": 35
+      "private": 18,
+      "public": 3,
+      "total": 21
     },
     "psidts_recovery": {
       "private": 9,
-      "public": 10,
-      "total": 19
+      "public": 4,
+      "total": 13
     },
     "recovery": {
       "private": 13,
@@ -538,8 +514,8 @@
     },
     "tokens": {
       "private": 6,
-      "public": 1,
-      "total": 7
+      "public": 0,
+      "total": 6
     }
   },
   "version": 1

@@ -1064,11 +1064,10 @@ class TestFlockUnavailableWarning:
     deployments don't flood logs.
     """
 
-    def test_warning_emitted_when_lock_unavailable(self, tmp_path, monkeypatch, caplog):
+    def test_warning_emitted_when_lock_unavailable(self, tmp_path, caplog):
         import contextlib as _contextlib
         import logging as _logging
 
-        from notebooklm._auth import profile_store as _profile_store
         from notebooklm._auth.storage_lock import LockState, StorageLockManager
 
         class UnavailableLocks(StorageLockManager):
@@ -1076,16 +1075,15 @@ class TestFlockUnavailableWarning:
             def acquire(self, request):
                 yield LockState.UNAVAILABLE
 
-        monkeypatch.setattr(_profile_store, "_STORAGE_LOCKS", UnavailableLocks())
-
         storage = tmp_path / "storage_state.json"
         _write_storage(storage, [_stored_cookie("SID", "v", http_only=False)])
         jar = httpx.Cookies()
         jar.set("SID", "v", domain=".google.com", path="/")
-        snapshot = snapshot_cookie_jar(jar)
+        baseline = CookieJar.from_httpx(jar)
+        store = ProfileStore(storage, locks=UnavailableLocks())
 
         with caplog.at_level(_logging.WARNING, logger="notebooklm.auth"):
-            save_cookies_to_storage(jar, storage, original_snapshot=snapshot)
+            store.merge_cookie_observation(CookieJar.from_httpx(jar), baseline=baseline)
 
         unavailable_warnings = [
             r for r in caplog.records if "lock unavailable" in r.message.lower()
@@ -1095,13 +1093,12 @@ class TestFlockUnavailableWarning:
             f"got {len(unavailable_warnings)}: {[r.message for r in unavailable_warnings]}"
         )
 
-    def test_warning_emitted_only_once_per_process(self, tmp_path, monkeypatch, caplog):
+    def test_warning_emitted_only_once_per_process(self, tmp_path, caplog):
         """Steady-state NFS deployment: don't flood logs once the operator
         knows. After the first WARNING the guard suppresses further ones."""
         import contextlib as _contextlib
         import logging as _logging
 
-        from notebooklm._auth import profile_store as _profile_store
         from notebooklm._auth.storage_lock import LockState, StorageLockManager
 
         class UnavailableLocks(StorageLockManager):
@@ -1109,17 +1106,16 @@ class TestFlockUnavailableWarning:
             def acquire(self, request):
                 yield LockState.UNAVAILABLE
 
-        monkeypatch.setattr(_profile_store, "_STORAGE_LOCKS", UnavailableLocks())
-
         storage = tmp_path / "storage_state.json"
         _write_storage(storage, [_stored_cookie("SID", "v", http_only=False)])
         jar = httpx.Cookies()
         jar.set("SID", "v", domain=".google.com", path="/")
-        snapshot = snapshot_cookie_jar(jar)
+        baseline = CookieJar.from_httpx(jar)
+        store = ProfileStore(storage, locks=UnavailableLocks())
 
         with caplog.at_level(_logging.WARNING, logger="notebooklm.auth"):
             for _ in range(3):
-                save_cookies_to_storage(jar, storage, original_snapshot=snapshot)
+                store.merge_cookie_observation(CookieJar.from_httpx(jar), baseline=baseline)
 
         unavailable_warnings = [
             r for r in caplog.records if "lock unavailable" in r.message.lower()
