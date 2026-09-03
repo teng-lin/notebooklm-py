@@ -73,6 +73,7 @@ def _validate_descriptor(
     *,
     path: str,
     response_type: type[Any] | None,
+    request_serializer: Callable[[Any], bytes] | None,
     response_deserializer: Callable[[bytes], Any] | None,
     replay_policy: ReplayPolicy,
 ) -> None:
@@ -87,6 +88,10 @@ def _validate_descriptor(
         raise ValueError("response_type or response_deserializer is required")
     if response_type is not None and response_deserializer is not None:
         raise ValueError("provide response_type or response_deserializer, not both")
+    if request_serializer is not None and not callable(request_serializer):
+        raise TypeError("request_serializer must be callable")
+    if response_deserializer is not None and not callable(response_deserializer):
+        raise TypeError("response_deserializer must be callable")
     if response_type is not None and not callable(getattr(response_type, "FromString", None)):
         raise TypeError("response_type must provide a callable FromString(bytes) constructor")
 
@@ -111,6 +116,7 @@ class GrpcUnaryMethod(Generic[RequestT, ResponseT]):
         _validate_descriptor(
             path=self.path,
             response_type=self.response_type,
+            request_serializer=self.request_serializer,
             response_deserializer=self.response_deserializer,
             replay_policy=self.replay_policy,
         )
@@ -130,6 +136,7 @@ class GrpcUnaryStreamMethod(Generic[RequestT, ResponseT]):
         _validate_descriptor(
             path=self.path,
             response_type=self.response_type,
+            request_serializer=self.request_serializer,
             response_deserializer=self.response_deserializer,
             replay_policy=self.replay_policy,
         )

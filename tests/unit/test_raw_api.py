@@ -146,6 +146,23 @@ def test_descriptor_requires_one_response_codec() -> None:
         )
 
 
+@pytest.mark.parametrize("descriptor_type", [GrpcUnaryMethod, GrpcUnaryStreamMethod])
+def test_descriptor_rejects_non_callable_explicit_codecs_before_dispatch(
+    descriptor_type: type[GrpcUnaryMethod[Any, Any]] | type[GrpcUnaryStreamMethod[Any, Any]],
+) -> None:
+    with pytest.raises(TypeError, match="request_serializer must be callable"):
+        descriptor_type(
+            METHOD,
+            response_type=_Response,
+            request_serializer=object(),  # type: ignore[arg-type]
+        )
+    with pytest.raises(TypeError, match="response_deserializer must be callable"):
+        descriptor_type(
+            METHOD,
+            response_deserializer=object(),  # type: ignore[arg-type]
+        )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("policy", "expected_replay_safe"),
