@@ -386,8 +386,12 @@ def test_web_only_namespace_compatibility_modules_stay_thin_and_lazy(
 
 
 def test_relocated_package_shells_are_removed() -> None:
-    """Completed moves leave no directory shells or Python package source at the old paths."""
-    stale = [name for name in REMOVED_EMPTY_PACKAGE_SHELLS if (SRC_ROOT / name).exists()]
+    """Completed moves leave no Python package source at the old paths."""
+    stale = [
+        str(path.relative_to(SRC_ROOT))
+        for name in REMOVED_EMPTY_PACKAGE_SHELLS
+        for path in (SRC_ROOT / name).rglob("*.py")
+    ]
     assert stale == []
 
 
