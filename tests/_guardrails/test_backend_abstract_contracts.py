@@ -164,18 +164,13 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         implementation_class_name="WebCollectionsAPI",
         abstract_methods=frozenset(
             {
-                "add_notebooks",
+                "_send_mutate_member",
+                "_send_update",
                 "create",
-                "delete",
-                "get",
-                "get_or_none",
                 "list",
-                "notebooks",
-                "remove_notebooks",
-                "rename",
             }
         ),
-        wire_hooks=frozenset(),
+        wire_hooks=frozenset({"_send_mutate_member", "_send_update"}),
     ),
     _AbstractContract(
         module="notebooklm._labels",
@@ -323,7 +318,17 @@ _ANDROID_INHERITED_WORKFLOWS = {
             "set_mode",
         }
     ),
-    "CollectionsAPI": frozenset(),
+    "CollectionsAPI": frozenset(
+        {
+            "add_notebooks",
+            "delete",
+            "get",
+            "get_or_none",
+            "notebooks",
+            "remove_notebooks",
+            "rename",
+        }
+    ),
     "LabelsAPI": frozenset(
         {
             "add_sources",

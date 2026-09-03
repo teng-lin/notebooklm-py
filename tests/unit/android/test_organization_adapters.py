@@ -324,14 +324,9 @@ def test_adapters_are_concrete_and_module_imports_keep_protobuf_lazy() -> None:
     assert server.operation_scopes == []
     assert CollectionsAPI.__abstractmethods__ == {
         "list",
-        "get_or_none",
-        "get",
-        "notebooks",
         "create",
-        "rename",
-        "add_notebooks",
-        "remove_notebooks",
-        "delete",
+        "_send_update",
+        "_send_mutate_member",
     }
     assert all(
         inspect.iscoroutinefunction(getattr(AndroidCollectionsAPI, name))
