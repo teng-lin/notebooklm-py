@@ -19,7 +19,7 @@
           "scotty",
           "indexer"
         ],
-        "note": "Bytes leave the RPC pipeline for a dedicated resumable upload client."
+      "note": "Bytes leave RPC dispatch through the upload pipeline owned by the selected backend runtime."
       },
       {
         "id": "link",
@@ -93,11 +93,11 @@
     {
       "id": "pipeline",
       "type": "backend",
-      "label": "Upload Pipeline",
-      "sublabel": "Web · Android control",
+      "label": "Runtime Upload",
+      "sublabel": "Web · Android bundle",
       "stage": 1,
       "row": 0,
-      "tag": "own client"
+      "tag": "dedicated client"
     },
     {
       "id": "addsvc",
@@ -239,7 +239,7 @@
       "title": "Two ingest shapes",
       "items": [
         "File adds register metadata, then move bytes outside the RPC path",
-        "The Android backend mirrors both shapes over gRPC plus its own upload pipeline"
+        "WebRuntime and AndroidRuntime each own the upload pipeline for their namespace"
       ]
     },
     {

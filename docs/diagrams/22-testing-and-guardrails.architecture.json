@@ -37,7 +37,7 @@
           "wire",
           "golden"
         ],
-        "note": "Changing an invariant without updating its pin is treated as a bug."
+        "note": "Pins cover backend retry parity, scoped compatibility hooks, boundaries, and wire contracts."
       }
     ]
   },
@@ -59,8 +59,9 @@
     {
       "id": "wire",
       "type": "security",
-      "label": "Wire Contract",
-      "sublabel": "positional shapes",
+      "label": "Backend Parity",
+      "sublabel": "retry manifest · scope hooks",
+      "tag": "guardrail",
       "pos": [
         544,
         60
@@ -239,7 +240,7 @@
       "id": "unit-wire",
       "from": "unit",
       "to": "wire",
-      "label": "decode pins",
+      "label": "policy pins",
       "labelAt": [
         629,
         202
@@ -332,7 +333,8 @@
       "title": "Pinned invariants",
       "items": [
         "Boundary gates reject forbidden imports per adapter and per backend",
-        "Changing chain order or a Protocol without updating its pin is a bug"
+        "Web and Android retry manifests must preserve policy parity",
+        "Scope-hook tests keep LazyWebSidecar inside operation_scope and out of keepalive"
       ]
     }
   ]

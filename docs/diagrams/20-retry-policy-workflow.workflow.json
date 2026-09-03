@@ -2,240 +2,88 @@
   "schema_version": 1,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Web RPC Retry Safety Decision",
+    "title": "Backend Retry and Write Safety",
     "locale": "en",
     "quality_profile": "showcase",
-    "viewBox": [
-      1080,
-      620
-    ],
+    "viewBox": [1100, 620],
     "views": [
       {
-        "id": "lookup",
-        "label": "Policy lookup",
-        "focus": [
-          "call",
-          "registry",
-          "resolve",
-          "dispatch"
-        ],
-        "note": "The registry is consulted once per call, before any request is materialised."
+        "id": "web",
+        "label": "Web retry",
+        "focus": ["call", "select", "webpolicy", "webretry", "dispatch"],
+        "note": "The Web registry controls blind HTTP replay before the middleware retry loop."
       },
       {
-        "id": "safe",
-        "label": "Retry-safe RPCs",
-        "focus": [
-          "resolve",
-          "idem",
-          "atleast"
-        ],
-        "note": "Replay-safe operations keep the inner retry loop enabled."
+        "id": "android",
+        "label": "Android retry",
+        "focus": ["call", "select", "androidpolicy", "androidretry", "dispatch"],
+        "note": "The Android manifest applies the same safe-read ceiling to auth, rate-limit and server retries."
       },
       {
-        "id": "unsafe",
-        "label": "Retry-unsafe RPCs",
-        "focus": [
-          "resolve",
-          "probe",
-          "noretry"
-        ],
-        "note": "Commit-lost failures must surface rather than duplicate a write."
+        "id": "ambiguity",
+        "label": "Unconfirmed writes",
+        "focus": ["webpolicy", "androidpolicy", "idempotency", "scrub"],
+        "note": "Non-replayed writes surface transport-loss ambiguity without retaining callbacks or secret-owning frames."
       }
     ]
   },
   "lanes": [
-    {
-      "id": "caller",
-      "label": "Caller"
-    },
-    {
-      "id": "executor",
-      "label": "RpcExecutor"
-    },
-    {
-      "id": "safe",
-      "label": "Retries enabled"
-    },
-    {
-      "id": "unsafe",
-      "label": "Retries disabled",
-      "variant": "exception"
-    }
+    {"id": "entry", "label": "Selected client"},
+    {"id": "web", "label": "Web executor"},
+    {"id": "android", "label": "Android session"},
+    {"id": "shared", "label": "Shared write safety"}
   ],
   "phases": [
-    {
-      "id": "enter",
-      "label": "Enter",
-      "fromCol": 0,
-      "toCol": 1
-    },
-    {
-      "id": "classify",
-      "label": "Classify",
-      "fromCol": 2,
-      "toCol": 3,
-      "variant": "emphasis"
-    },
-    {
-      "id": "dispatch",
-      "label": "Dispatch",
-      "fromCol": 4,
-      "toCol": 5,
-      "variant": "dashed"
-    }
+    {"id": "enter", "label": "Enter and select", "fromCol": 0, "toCol": 1},
+    {"id": "classify", "label": "Classify", "fromCol": 2, "toCol": 3, "variant": "emphasis"},
+    {"id": "recover", "label": "Recover or surface", "fromCol": 4, "toCol": 5, "variant": "dashed"}
   ],
-  "mainPath": [
-    "call",
-    "registry",
-    "resolve",
-    "dispatch"
-  ],
+  "mainPath": ["call", "select", "webpolicy", "webretry", "dispatch"],
   "nodes": [
-    {
-      "id": "call",
-      "lane": "caller",
-      "col": 0,
-      "width": 68,
-      "type": "external",
-      "label": "rpc_call",
-      "sublabel": "public API"
-    },
-    {
-      "id": "registry",
-      "lane": "executor",
-      "col": 2,
-      "width": 68,
-      "type": "database",
-      "label": "Registry",
-      "sublabel": "5 policies"
-    },
-    {
-      "id": "resolve",
-      "lane": "executor",
-      "col": 4,
-      "width": 68,
-      "type": "backend",
-      "label": "Resolve",
-      "sublabel": "retry flag"
-    },
-    {
-      "id": "idem",
-      "lane": "safe",
-      "col": 3,
-      "width": 68,
-      "type": "backend",
-      "label": "Set op",
-      "sublabel": "replay ok"
-    },
-    {
-      "id": "atleast",
-      "lane": "safe",
-      "col": 5,
-      "width": 68,
-      "type": "messagebus",
-      "label": "At least",
-      "sublabel": "dupe cost"
-    },
-    {
-      "id": "probe",
-      "lane": "unsafe",
-      "col": 3,
-      "width": 68,
-      "type": "security",
-      "label": "Probe",
-      "sublabel": "probe loop"
-    },
-    {
-      "id": "noretry",
-      "lane": "unsafe",
-      "col": 5,
-      "width": 68,
-      "type": "security",
-      "label": "No retry",
-      "sublabel": "surface it"
-    },
-    {
-      "id": "dispatch",
-      "lane": "executor",
-      "col": 5,
-      "width": 68,
-      "type": "cloud",
-      "label": "Dispatch",
-      "sublabel": "wire POST"
-    }
+    {"id": "call", "lane": "entry", "col": 0, "width": 84, "type": "external", "label": "Operation", "sublabel": "typed or raw"},
+    {"id": "select", "lane": "entry", "col": 1, "width": 84, "type": "backend", "label": "Backend", "sublabel": "web · android"},
+    {"id": "dispatch", "lane": "entry", "col": 5, "width": 88, "type": "cloud", "label": "Dispatch", "sublabel": "one wire attempt"},
+    {"id": "webpolicy", "lane": "web", "col": 2, "width": 112, "type": "database", "label": "Web Registry", "sublabel": "5 policies"},
+    {"id": "webretry", "lane": "web", "col": 4, "width": 112, "type": "backend", "label": "Web Retry", "sublabel": "HTTP middleware"},
+    {"id": "androidpolicy", "lane": "android", "col": 2, "width": 112, "type": "database", "label": "Android Manifest", "sublabel": "method ceiling"},
+    {"id": "androidretry", "lane": "android", "col": 4, "width": 112, "type": "backend", "label": "Android Retry", "sublabel": "auth · rate · server"},
+    {"id": "idempotency", "lane": "shared", "col": 3, "width": 132, "type": "security", "label": "Outcome Helpers", "sublabel": "unsafe write · probe · tag"},
+    {"id": "scrub", "lane": "shared", "col": 5, "width": 110, "type": "security", "label": "Scrub + Surface", "sublabel": "unconfirmed error"}
   ],
   "edges": [
-    {
-      "from": "call",
-      "to": "registry",
-      "variant": "emphasis",
-      "role": "main"
-    },
-    {
-      "from": "registry",
-      "to": "resolve",
-      "variant": "emphasis",
-      "role": "main"
-    },
-    {
-      "from": "resolve",
-      "to": "dispatch",
-      "variant": "emphasis",
-      "role": "main"
-    },
-    {
-      "from": "registry",
-      "to": "idem",
-      "label": "replay safe",
-      "role": "branch"
-    },
-    {
-      "from": "idem",
-      "to": "atleast",
-      "label": "side effects",
-      "variant": "dashed",
-      "role": "branch"
-    },
-    {
-      "from": "registry",
-      "to": "probe",
-      "label": "no dedupe key",
-      "variant": "security",
-      "role": "error",
-      "labelDx": 52,
-      "labelDy": 40
-    },
-    {
-      "from": "probe",
-      "to": "noretry",
-      "label": "no probe",
-      "variant": "security",
-      "role": "error"
-    }
+    {"id": "call-select", "from": "call", "to": "select", "variant": "emphasis", "role": "main"},
+    {"id": "select-web", "from": "select", "to": "webpolicy", "variant": "emphasis", "role": "main"},
+    {"id": "web-retry", "from": "webpolicy", "to": "webretry", "label": "replay safe", "variant": "emphasis", "role": "main", "route": "straight"},
+    {"id": "web-dispatch", "from": "webretry", "to": "dispatch", "variant": "emphasis", "role": "main"},
+    {"id": "select-android", "from": "select", "to": "androidpolicy", "variant": "dashed", "role": "branch"},
+    {"id": "android-retry", "from": "androidpolicy", "to": "androidretry", "label": "safe unary", "variant": "dashed", "role": "branch", "route": "straight"},
+    {"id": "android-dispatch", "from": "androidretry", "to": "dispatch", "variant": "dashed", "role": "branch"},
+    {"id": "shared-uncertainty", "from": "select", "to": "idempotency", "variant": "security", "role": "error"},
+    {"id": "surface", "from": "idempotency", "to": "scrub", "variant": "security", "role": "error"}
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Why it exists",
+      "title": "Backend-specific classification",
       "items": [
-        "Every mutating Web RPC is exposed to a commit-lost failure over HTTPS",
-        "Retry safety is a property of the RPC, declared once in the registry"
+        "Web uses IdempotencyRegistry; Android uses the total _android/retry_policy.py manifest",
+        "Both bound auth, rate-limit, and server recovery by replay safety"
       ]
     },
     {
       "dot": "emerald",
-      "title": "The five policies",
+      "title": "Shared outcome honesty",
       "items": [
-        "IDEMPOTENT_SET_OP and AT_LEAST_ONCE_ACCEPTED keep inner retries on",
-        "PROBE_THEN_CREATE and NON_IDEMPOTENT_NO_RETRY force them off"
+        "idempotent_create probes for a committed result before repeating a create",
+        "call_unconfirmed_on_transport_loss and unresolved_commit_error expose unknown commits honestly"
       ]
     },
     {
       "dot": "rose",
-      "title": "Closed axis",
+      "title": "Secret-safe failure",
       "items": [
-        "UNCLASSIFIED survives only as a placeholder for hand-built test registries",
-        "A sixth policy needs an ADR amendment and an executor change in lockstep"
+        "Ambiguous writes clear traceback frames and suppress cause and context before re-raise",
+        "Cancellation and confirmed backend rejections are never relabeled unconfirmed"
       ]
     }
   ]

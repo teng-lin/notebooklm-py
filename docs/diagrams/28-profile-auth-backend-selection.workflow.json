@@ -2,7 +2,7 @@
   "schema_version": 1,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Profile, Auth, and Backend Selection",
+    "title": "Profile, Auth, and Backend Runtime Selection",
     "locale": "en",
     "quality_profile": "showcase",
     "viewBox": [
@@ -19,7 +19,7 @@
           "backendselect",
           "webgraph"
         ],
-        "note": "The default graph uses profile or inline cookies and preserves the batchexecute compatibility path."
+        "note": "Web selection installs WebRuntime, cookie-backed auth, and the Web raw adapter."
       },
       {
         "id": "android-open",
@@ -30,7 +30,7 @@
           "backendselect",
           "androidgraph"
         ],
-        "note": "Explicit Android selection installs all eleven adapters and validates the profile's master token at async open."
+        "note": "Android selection opens AndroidRuntime only; the Web compatibility sidecar stays lazy."
       },
       {
         "id": "precedence",
@@ -39,7 +39,7 @@
           "authselect",
           "backendselect"
         ],
-        "note": "Authentication source and backend preference are resolved independently before the client graph opens."
+        "note": "Authentication and backend resolve independently; client.raw follows the selected backend."
       }
     ]
   },
@@ -123,8 +123,8 @@
       "col": 4,
       "width": 108,
       "type": "backend",
-      "label": "Web Namespaces",
-      "sublabel": "11 adapters",
+      "label": "WebRuntime",
+      "sublabel": "namespaces · executor",
       "tag": "default"
     },
     {
@@ -133,8 +133,8 @@
       "col": 4,
       "width": 108,
       "type": "backend",
-      "label": "Android Graph",
-      "sublabel": "11 adapters",
+      "label": "AndroidRuntime",
+      "sublabel": "APIs · bearer · session",
       "tag": "opt-in"
     }
   ],
@@ -179,23 +179,23 @@
       "title": "Authentication precedence",
       "items": [
         "Path > NOTEBOOKLM_AUTH_JSON > active profile",
-        "Inline JSON is not a durable Android token"
+        "Web owns cookie I/O; Android owns its master token and bearer generation"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Backend precedence",
+      "title": "Backend-selected graph",
       "items": [
         "backend= > NOTEBOOKLM_BACKEND > Web",
-        "client.backends reports installed adapters"
+        "client.raw follows the backend; Android account lookup returns self._auth.account_email without I/O"
       ]
     },
     {
       "dot": "rose",
-      "title": "Open-time boundary",
+      "title": "Android boundary",
       "items": [
-        "Android checks extras and token at async open",
-        "client.rpc_call remains Web-only under either graph"
+        "Android mode constructs only AndroidRuntime: no full Web transport, cookie I/O, or keepalive",
+        "Deprecated rpc_call materializes LazyWebSidecar only inside operation_scope"
       ]
     }
   ]

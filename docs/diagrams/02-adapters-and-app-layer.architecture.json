@@ -36,7 +36,20 @@
           "app_errors",
           "envelopes"
         ],
-        "note": "One classify call feeds three different failure vocabularies."
+        "note": "One classify call feeds three vocabularies, including download-hop AuthError."
+      },
+      {
+        "id": "download-errors",
+        "label": "Download auth failure",
+        "focus": [
+          "cli_cmd",
+          "mcp_tools",
+          "rest_routes",
+          "app_flows",
+          "app_errors",
+          "envelopes"
+        ],
+        "note": "Single downloads re-raise AuthError; batch adapters retain rows and add code, message and hint."
       }
     ]
   },
@@ -105,7 +118,7 @@
       "id": "envelopes",
       "type": "frontend",
       "label": "Error Envelopes",
-      "sublabel": "exit code · CODE: msg · HTTP",
+      "sublabel": "code · message · hint · HTTP",
       "pos": [
         277,
         500
@@ -133,7 +146,7 @@
       "id": "app_flows",
       "type": "backend",
       "label": "Feature Cores",
-      "sublabel": "_app/ login · notebooks · sources",
+      "sublabel": "_app/ plans · waits · download",
       "tag": "transport-neutral",
       "pos": [
         529,
@@ -148,7 +161,7 @@
       "id": "app_errors",
       "type": "backend",
       "label": "errors.classify",
-      "sublabel": "_app/errors.py",
+      "sublabel": "AuthError → authentication",
       "tag": "single category source",
       "pos": [
         529,
@@ -176,8 +189,8 @@
     {
       "id": "runtime",
       "type": "backend",
-      "label": "Client Runtime",
-      "sublabel": "executor · transport · kernel",
+      "label": "Selected Runtime",
+      "sublabel": "Shared + Web / Android",
       "pos": [
         1053,
         250
@@ -252,7 +265,7 @@
       "id": "client-to-runtime",
       "from": "client",
       "to": "runtime",
-      "label": "rpc_call",
+      "label": "selected backend",
       "variant": "emphasis"
     },
     {
@@ -278,8 +291,7 @@
       "dot": "cyan",
       "title": "Adapter responsibilities",
       "items": [
-        "*_cmd.py owns Click options, rendering and exit codes",
-        "cli/services/ owns plans, retry and wait policy",
+        "*_cmd.py owns Click options, rendering and exits; cli/services/ owns plans and wait policy",
         "MCP mutations preview unless called with confirm=true"
       ]
     },
@@ -287,18 +299,16 @@
       "dot": "emerald",
       "title": "Neutral core",
       "items": [
-        "_app/ raises only the public notebooklm.exceptions types",
-        "Simple reads call client namespaces directly",
-        "Login call order, generate, wait and download flows live in the cores"
+        "_app/ raises public exceptions and owns login, generate, wait, and download flows",
+        "Simple reads call client namespaces directly"
       ]
     },
     {
       "dot": "rose",
-      "title": "Enforced boundaries",
+      "title": "Download error routing",
       "items": [
-        "test_app_boundary.py bans click, rich, fastmcp and fastapi",
-        "test_cli_boundary.py allows only the _app private package",
-        "MCP and REST boundaries are pinned by their own gates"
+        "A single-item download re-raises AuthError from a guarded 401 or 403 hop",
+        "--all keeps rows plus code/message/hint; MCP returns AUTH and REST uses shared classification"
       ]
     }
   ]

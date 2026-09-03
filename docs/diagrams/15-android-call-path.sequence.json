@@ -8,52 +8,155 @@
     "column_fit": "spread",
     "viewBox": [1060, 560],
     "views": [
-      { "id": "encode", "label": "Encode", "focus": ["caller", "andapi", "codec"], "note": "The namespace builds a typed protobuf request instead of a positional frame." },
-      { "id": "auth", "label": "Bearer", "focus": ["session", "bearer"], "note": "One shared short-lived bearer is minted per generation and reused." },
-      { "id": "wire", "label": "Wire and decode", "focus": ["session", "pa", "codec", "caller"], "note": "gRPC status codes map onto the same public exception hierarchy." }
+      {
+        "id": "entry",
+        "label": "Typed and raw entry",
+        "focus": ["caller", "adapter", "session"],
+        "note": "Typed namespaces and AndroidRawAPI converge on the same AndroidSession methods."
+      },
+      {
+        "id": "policy",
+        "label": "Replay and epoch",
+        "focus": ["adapter", "policy", "session"],
+        "note": "Typed calls use the total manifest; raw calls carry an explicit replay classification."
+      },
+      {
+        "id": "auth",
+        "label": "Bearer refresh",
+        "focus": ["session", "bearer", "pa"],
+        "note": "AndroidRuntime.bearer_provider supplies generation-fenced auth and is invalidated on an observed 401."
+      }
     ]
   },
   "participants": [
-    { "id": "caller", "type": "external", "label": "Caller", "sublabel": "backend=android" },
-    { "id": "andapi", "type": "backend", "label": "Android API", "sublabel": "namespace method" },
-    { "id": "codec", "type": "backend", "label": "Proto Codec", "sublabel": "_android/codecs" },
-    { "id": "session", "type": "backend", "label": "AndroidSession", "sublabel": "lazy channel" },
-    { "id": "bearer", "type": "security", "label": "BearerProvider", "sublabel": "gpsoauth mint" },
-    { "id": "pa", "type": "cloud", "label": "NotebookLM PA", "sublabel": "notebooklm-pa.googleapis.com" }
+    {"id": "caller", "type": "external", "label": "Caller", "sublabel": "backend=android"},
+    {"id": "adapter", "type": "backend", "label": "Android Adapter", "sublabel": "typed API · AndroidRawAPI"},
+    {"id": "policy", "type": "security", "label": "Retry Policy", "sublabel": "manifest · raw capability"},
+    {"id": "session", "type": "backend", "label": "AndroidSession", "sublabel": "epoch-fenced transport"},
+    {"id": "bearer", "type": "security", "label": "BearerProvider", "sublabel": "AndroidRuntime field"},
+    {"id": "pa", "type": "cloud", "label": "NotebookLM PA", "sublabel": "notebooklm-pa.googleapis.com"}
   ],
   "segments": [
-    { "from": 165, "to": 228, "label": "Encode" },
-    { "from": 236, "to": 388, "label": "Authenticated unary call" },
-    { "from": 396, "to": 480, "label": "Decode and return" }
+    {"from": 165, "to": 228, "label": "Enter selected transport"},
+    {"from": 236, "to": 356, "label": "Classify and authenticate"},
+    {"from": 364, "to": 480, "label": "Wire and return"}
   ],
   "messages": [
-    { "id": "call", "from": "caller", "to": "andapi", "y": 180, "label": "client.notebooks.list()", "variant": "emphasis" },
-    { "id": "build", "from": "andapi", "to": "codec", "y": 212, "label": "build request message" },
-    { "id": "unary", "from": "codec", "to": "session", "y": 244, "label": "unary(method, request)", "variant": "emphasis", "note": "operation lease plus loop-affinity check" },
-    { "id": "need-bearer", "from": "session", "to": "bearer", "y": 276, "label": "current bearer", "variant": "security" },
-    { "id": "bearer-back", "from": "bearer", "to": "session", "y": 308, "label": "Authorization header", "variant": "return", "note": "shared per generation; re-minted before expiry" },
-    { "id": "wire", "from": "session", "to": "pa", "y": 340, "label": "gRPC unary over TLS", "variant": "emphasis" },
-    { "id": "resp", "from": "pa", "to": "session", "y": 372, "label": "response message", "variant": "return" },
-    { "id": "decode", "from": "session", "to": "codec", "y": 404, "label": "decoded proto", "variant": "return", "note": "gRPC status mapped to notebooklm.exceptions" },
-    { "id": "rows", "from": "codec", "to": "andapi", "y": 436, "label": "typed rows", "variant": "return" },
-    { "id": "result", "from": "andapi", "to": "caller", "y": 468, "label": "typed result", "variant": "return" }
+    {
+      "id": "call",
+      "from": "caller",
+      "to": "adapter",
+      "y": 180,
+      "label": "typed method / client.raw",
+      "variant": "emphasis"
+    },
+    {
+      "id": "unary",
+      "from": "adapter",
+      "to": "session",
+      "y": 212,
+      "label": "unary / unary_stream",
+      "variant": "emphasis",
+      "note": "AndroidRawAPI serializes outside grpcio; typed workflows inherit the task-local epoch"
+    },
+    {
+      "id": "classify",
+      "from": "session",
+      "to": "policy",
+      "y": 244,
+      "label": "resolve replay safety",
+      "variant": "security"
+    },
+    {
+      "id": "policy-result",
+      "from": "policy",
+      "to": "session",
+      "y": 276,
+      "label": "safe read or single attempt",
+      "variant": "return"
+    },
+    {
+      "id": "need-bearer",
+      "from": "session",
+      "to": "bearer",
+      "y": 308,
+      "label": "get(expected_epoch)",
+      "variant": "security"
+    },
+    {
+      "id": "bearer-back",
+      "from": "bearer",
+      "to": "session",
+      "y": 340,
+      "label": "Authorization + generation",
+      "variant": "return",
+      "note": "shared mint wave; re-minted before expiry or after matching-generation invalidation"
+    },
+    {
+      "id": "wire",
+      "from": "session",
+      "to": "pa",
+      "y": 372,
+      "label": "gRPC over TLS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "response",
+      "from": "pa",
+      "to": "session",
+      "y": 404,
+      "label": "protobuf response / status",
+      "variant": "return"
+    },
+    {
+      "id": "decode",
+      "from": "session",
+      "to": "adapter",
+      "y": 436,
+      "label": "decoded or raw result",
+      "variant": "return",
+      "note": "gRPC status is sanitized into notebooklm.exceptions"
+    },
+    {
+      "id": "result",
+      "from": "adapter",
+      "to": "caller",
+      "y": 468,
+      "label": "typed / decoded result",
+      "variant": "return"
+    }
   ],
   "activations": [
-    { "participant": "andapi", "from": 175, "to": 474, "type": "backend" },
-    { "participant": "codec", "from": 207, "to": 442, "type": "backend" },
-    { "participant": "session", "from": 239, "to": 410, "type": "backend" },
-    { "participant": "bearer", "from": 271, "to": 314, "type": "security" },
-    { "participant": "pa", "from": 335, "to": 378, "type": "cloud" }
+    {"participant": "adapter", "from": 175, "to": 474, "type": "backend"},
+    {"participant": "policy", "from": 239, "to": 282, "type": "security"},
+    {"participant": "session", "from": 207, "to": 442, "type": "backend"},
+    {"participant": "bearer", "from": 303, "to": 346, "type": "security"},
+    {"participant": "pa", "from": 367, "to": 410, "type": "cloud"}
   ],
   "cards": [
-    { "dot": "cyan", "title": "Same public surface", "items": [
-      "The namespace method and its typed result are identical to the web backend",
-      "Only the encode, transport and decode steps differ"]},
-    { "dot": "rose", "title": "Identity", "items": [
-      "One shared bearer is minted per generation from the stored master token",
-      "The Android extra is required: grpcio plus a compatible protobuf runtime"]},
-    { "dot": "amber", "title": "Failure mapping", "items": [
-      "gRPC status codes become the same public exception types callers already handle",
-      "Deadlines raise a typed timeout instead of a raw grpc error"]}
+    {
+      "dot": "cyan",
+      "title": "One Android transport",
+      "items": [
+        "Typed namespace hooks and AndroidRawAPI.unary or unary_stream converge on AndroidSession",
+        "Raw descriptors carry replay policy; typed scopes propagate one epoch through nested calls"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Retry parity",
+      "items": [
+        "The Android manifest is the replay ceiling for every typed gRPC method",
+        "Safe unary calls match Web recovery; streams and non-idempotent writes stay single-attempt"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Credential safety",
+      "items": [
+        "AndroidRuntime.bearer_provider mints and caches the short-lived OAuth bearer",
+        "Auth invalidates the observed generation; escaping failures release secret-owning frames"
+      ]
+    }
   ]
 }

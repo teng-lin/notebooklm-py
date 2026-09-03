@@ -20,7 +20,7 @@
           "completed",
           "downloaded"
         ],
-        "note": "The five phases from a generate_* call to a published local file."
+        "note": "After generation completes, the neutral guarded-transfer plane verifies and publishes the local file."
       },
       {
         "id": "polling",
@@ -99,7 +99,7 @@
       "id": "downloaded",
       "type": "success",
       "label": "Published",
-      "sublabel": "atomic local write",
+      "sublabel": "neutral guarded transfer",
       "lane": "main",
       "col": 4,
       "step": "05",
@@ -208,7 +208,7 @@
       "title": "Main path",
       "items": [
         "Five ordered phases from generate to a published file",
-        "Byte transfer happens after COMPLETED, outside the RPC pipeline"
+        "After COMPLETED, AssetDownloadService routes bytes through _artifact/_guarded_transfer.py"
       ]
     },
     {

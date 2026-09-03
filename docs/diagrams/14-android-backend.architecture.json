@@ -2,42 +2,27 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Android Backend Subsystem",
+    "title": "Android Backend Runtime",
     "locale": "en",
     "quality_profile": "showcase",
     "views": [
       {
         "id": "control",
         "label": "Control plane",
-        "focus": [
-          "client",
-          "namespaces",
-          "codecs",
-          "session",
-          "pa"
-        ],
-        "note": "Android namespace control-plane calls use typed protobuf unary or streaming gRPC methods."
+        "focus": ["client", "apis", "runtime", "session", "pa"],
+        "note": "AndroidRuntime supplies the selected namespaces with one supervised gRPC session."
       },
       {
-        "id": "identity",
-        "label": "Identity",
-        "focus": [
-          "mastertoken",
-          "mint",
-          "bearer",
-          "session"
-        ],
-        "note": "A durable master token mints the short-lived Android OAuth bearer."
+        "id": "scope",
+        "label": "Retry and epoch",
+        "focus": ["apis", "epoch", "runtime", "retry", "session"],
+        "note": "Multi-call workflows inherit a session-tagged epoch; the manifest caps which unary calls may replay."
       },
       {
-        "id": "data",
-        "label": "Data plane",
-        "focus": [
-          "bearer",
-          "dataplane",
-          "hosts"
-        ],
-        "note": "Uploads and asset transfers use plain HTTPS with per-hop bearer decisions."
+        "id": "assets",
+        "label": "Guarded assets",
+        "focus": ["runtime", "neutral", "dataplane", "hosts", "bearer"],
+        "note": "The neutral transfer plane revalidates every hop and invalidates the matching bearer generation on 401."
       }
     ]
   },
@@ -46,323 +31,157 @@
       "id": "mastertoken",
       "type": "security",
       "label": "Master Token",
-      "sublabel": "durable record",
-      "pos": [
-        30,
-        60
-      ],
-      "size": [
-        160,
-        84
-      ]
-    },
-    {
-      "id": "mint",
-      "type": "cloud",
-      "label": "gpsoauth Mint",
-      "sublabel": "MintService",
-      "pos": [
-        282,
-        60
-      ],
-      "size": [
-        170,
-        84
-      ]
+      "sublabel": "durable gpsoauth input",
+      "tag": "profile-owned",
+      "pos": [282, 60],
+      "size": [170, 84]
     },
     {
       "id": "bearer",
       "type": "security",
       "label": "BearerProvider",
-      "sublabel": "shared · generation",
-      "tag": "repr-safe",
-      "pos": [
-        544,
-        60
-      ],
-      "size": [
-        170,
-        84
-      ]
+      "sublabel": "AndroidRuntime field",
+      "tag": "generation fenced",
+      "pos": [544, 60],
+      "size": [170, 84]
     },
     {
-      "id": "evidence",
-      "type": "backend",
-      "label": "Evidence Profile",
-      "sublabel": "pinned app version",
-      "pos": [
-        1063,
-        60
-      ],
-      "size": [
-        155,
-        84
-      ]
+      "id": "retry",
+      "type": "security",
+      "label": "Retry Policy",
+      "sublabel": "_android/retry_policy.py",
+      "tag": "total method manifest",
+      "pos": [806, 60],
+      "size": [165, 84]
     },
     {
       "id": "client",
       "type": "backend",
       "label": "NotebookLMClient",
       "sublabel": "backend=android",
-      "pos": [
-        30,
-        260
-      ],
-      "size": [
-        160,
-        90
-      ]
+      "tag": "conditional graph",
+      "pos": [30, 260],
+      "size": [160, 90]
     },
     {
-      "id": "namespaces",
+      "id": "apis",
       "type": "backend",
       "label": "Android APIs",
-      "sublabel": "_android/*.py",
-      "tag": "11 namespaces",
-      "pos": [
-        282,
-        260
-      ],
-      "size": [
-        170,
-        90
-      ]
+      "sublabel": "eleven namespaces + raw",
+      "tag": "shared base workflows",
+      "pos": [282, 260],
+      "size": [170, 90]
     },
     {
-      "id": "codecs",
+      "id": "runtime",
       "type": "backend",
-      "label": "Proto Codecs",
-      "sublabel": "_android/codecs/",
-      "pos": [
-        544,
-        260
-      ],
-      "size": [
-        170,
-        90
-      ]
+      "label": "AndroidRuntime",
+      "sublabel": "bearer · session · transfer",
+      "tag": "upload · assets · phenotype",
+      "pos": [544, 260],
+      "size": [170, 90]
     },
     {
       "id": "session",
       "type": "backend",
       "label": "AndroidSession",
-      "sublabel": "lazy · supervised",
-      "tag": "epoch fenced",
-      "pos": [
-        806,
-        260
-      ],
-      "size": [
-        165,
-        90
-      ]
+      "sublabel": "lazy TLS channel",
+      "tag": "supervised unary · stream",
+      "pos": [806, 260],
+      "size": [165, 90]
     },
     {
       "id": "pa",
       "type": "cloud",
       "label": "NotebookLM PA",
       "sublabel": "notebooklm-pa.googleapis.com",
-      "pos": [
-        1063,
-        260
-      ],
-      "size": [
-        155,
-        90
-      ]
+      "pos": [1063, 260],
+      "size": [155, 90]
+    },
+    {
+      "id": "epoch",
+      "type": "backend",
+      "label": "Workflow Epoch",
+      "sublabel": "_android/epoch.py",
+      "tag": "session-tagged ContextVar",
+      "pos": [282, 460],
+      "size": [170, 84]
+    },
+    {
+      "id": "neutral",
+      "type": "backend",
+      "label": "Neutral Guard Plane",
+      "sublabel": "_artifact/_guarded_transfer.py",
+      "tag": "per-URL fence",
+      "pos": [544, 460],
+      "size": [170, 84]
     },
     {
       "id": "dataplane",
       "type": "backend",
       "label": "HTTPS Data Plane",
-      "sublabel": "upload · download",
-      "pos": [
-        806,
-        460
-      ],
-      "size": [
-        165,
-        84
-      ]
+      "sublabel": "Scotty · Drive · assets",
+      "tag": "dedicated clients",
+      "pos": [806, 460],
+      "size": [165, 84]
     },
     {
       "id": "hosts",
       "type": "cloud",
       "label": "Asset Hosts",
       "sublabel": "lh3 · usercontent",
-      "pos": [
-        1063,
-        460
-      ],
-      "size": [
-        155,
-        84
-      ]
+      "pos": [1063, 460],
+      "size": [155, 84]
     }
   ],
   "boundaries": [
     {
-      "kind": "security-group",
-      "label": "bearer authority",
-      "wraps": [
-        "mastertoken",
-        "mint",
-        "bearer"
-      ]
-    },
-    {
       "kind": "region",
-      "label": "gRPC control plane",
-      "wraps": [
-        "namespaces",
-        "codecs",
-        "session"
-      ]
+      "label": "AndroidRuntime bundle",
+      "wraps": ["bearer", "runtime", "session", "neutral", "dataplane"]
     }
   ],
   "connections": [
-    {
-      "id": "client-namespaces",
-      "from": "client",
-      "to": "namespaces",
-      "label": "assembles",
-      "variant": "emphasis"
-    },
-    {
-      "id": "namespaces-codecs",
-      "from": "namespaces",
-      "to": "codecs",
-      "label": "typed proto"
-    },
-    {
-      "id": "codecs-session",
-      "from": "codecs",
-      "to": "session",
-      "label": "unary call"
-    },
-    {
-      "id": "session-pa",
-      "from": "session",
-      "to": "pa",
-      "label": "gRPC TLS",
-      "variant": "emphasis"
-    },
-    {
-      "id": "token-mint",
-      "from": "mastertoken",
-      "to": "mint",
-      "label": "gpsoauth",
-      "variant": "security"
-    },
-    {
-      "id": "mint-bearer",
-      "from": "mint",
-      "to": "bearer",
-      "label": "OAuth token",
-      "variant": "security"
-    },
-    {
-      "id": "bearer-session",
-      "from": "bearer",
-      "to": "session",
-      "label": "Authorization",
-      "variant": "security",
-      "labelAt": [
-        888.5,
-        190
-      ],
-      "fromSide": "right",
-      "toSide": "top",
-      "via": [
-        [
-          888.5,
-          102
-        ]
-      ]
-    },
-    {
-      "id": "evidence-pa",
-      "from": "evidence",
-      "to": "pa",
-      "label": "user-agent",
-      "labelAt": [
-        1140.5,
-        202
-      ]
-    },
-    {
-      "id": "data-hosts",
-      "from": "dataplane",
-      "to": "hosts",
-      "label": "bearer GET",
-      "variant": "dashed"
-    },
-    {
-      "id": "session-data",
-      "from": "session",
-      "to": "dataplane",
-      "label": "upload control",
-      "labelAt": [
-        888.5,
-        405
-      ],
-      "variant": "dashed"
-    },
-    {
-      "id": "bearer-data",
-      "from": "bearer",
-      "to": "dataplane",
-      "label": "per-hop bearer",
-      "variant": "security",
-      "fromSide": "top",
-      "toSide": "bottom",
-      "via": [
-        [
-          629,
-          20
-        ],
-        [
-          20,
-          20
-        ],
-        [
-          20,
-          580
-        ],
-        [
-          888.5,
-          580
-        ]
-      ],
-      "labelAt": [
-        470,
-        570
-      ]
-    }
+    {"id": "client-apis", "from": "client", "to": "apis", "label": "installs", "variant": "emphasis"},
+    {"id": "apis-runtime", "from": "apis", "to": "runtime", "label": "uses", "variant": "emphasis"},
+    {"id": "runtime-session", "from": "runtime", "to": "session"},
+    {"id": "session-pa", "from": "session", "to": "pa", "label": "gRPC TLS", "variant": "emphasis"},
+    {"id": "master-bearer", "from": "mastertoken", "to": "bearer", "label": "gpsoauth mint", "variant": "security"},
+    {"id": "bearer-session", "from": "bearer", "to": "session", "label": "Authorization", "variant": "security", "labelAt": [760, 202]},
+    {"id": "retry-session", "from": "retry", "to": "session", "label": "replay ceiling", "variant": "security", "labelAt": [888.5, 202]},
+    {"id": "apis-epoch", "from": "apis", "to": "epoch", "label": "bind scope", "labelAt": [367, 405]},
+    {"id": "epoch-runtime", "from": "epoch", "to": "runtime", "label": "inherited fence"},
+    {"id": "runtime-neutral", "from": "runtime", "to": "neutral", "label": "asset policy", "labelAt": [629, 405]},
+    {"id": "neutral-data", "from": "neutral", "to": "dataplane", "label": "guarded transfer", "variant": "dashed"},
+    {"id": "data-hosts", "from": "dataplane", "to": "hosts", "label": "HTTPS", "variant": "dashed"},
+    {"id": "hosts-bearer", "from": "hosts", "to": "bearer", "label": "401 → invalidate generation", "variant": "security", "fromSide": "bottom", "toSide": "top", "via": [[1140.5, 590], [1238, 590], [1238, 20], [629, 20]], "labelAt": [1080, 580]}
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Control plane",
+      "title": "AndroidRuntime",
       "items": [
-        "The channel opens lazily on first use and is fenced to the client resource epoch",
-        "Unary and streaming calls carry deadlines and typed gRPC status mapping"
+        "The bundle owns bearer_provider, session, upload_pipeline, asset_downloads and Phenotype",
+        "The gRPC channel opens lazily and participates in the neutral root lifecycle",
+        "The evidence profile still pins the app version, package and user agents"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Scopes and retry",
+      "items": [
+        "epoch.py carries one session-tagged workflow epoch through nested namespace calls",
+        "retry_policy.py keeps typed call declarations equal to the total replay manifest",
+        "Safe unary calls share bounded auth, rate-limit and server-error retry behavior with Web"
       ]
     },
     {
       "dot": "rose",
-      "title": "Identity",
+      "title": "Credential-safe assets",
       "items": [
-        "The OAuth spec pins the app package, client signature and seven scopes",
-        "BearerCredential never exposes its token through repr"
-      ]
-    },
-    {
-      "dot": "amber",
-      "title": "Data plane",
-      "items": [
-        "AndroidUploadPipeline and AndroidAssetDownloadService bypass gRPC entirely",
-        "Asset hops clear ambient cookies and strip credentials once off the allowlist"
+        "Asset download uses the neutral guarded-transfer plane with a sticky async CredentialPolicy",
+        "A mid-chain 401 or 403 raises AuthError and invalidates only the observed bearer generation",
+        "Every redirect hop clears ambient cookies and re-evaluates whether bearer auth is allowed"
       ]
     }
   ]

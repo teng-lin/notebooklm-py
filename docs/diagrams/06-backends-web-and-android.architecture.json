@@ -2,42 +2,27 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Backend Split: Web Wire and Android gRPC",
+    "title": "Backend Split and Shared Mechanisms",
     "locale": "en",
     "quality_profile": "showcase",
     "views": [
       {
+        "id": "shared",
+        "label": "Neutral ownership",
+        "focus": ["client", "neutral", "mechanisms", "webns", "andns"],
+        "note": "Base namespaces own shared workflows while neutral helpers carry cross-backend policy."
+      },
+      {
         "id": "web",
-        "label": "Web wire",
-        "focus": [
-          "neutral",
-          "webns",
-          "params",
-          "wire",
-          "webep"
-        ],
-        "note": "Positional param builders and strict positional decoding over batchexecute."
+        "label": "Web bundle",
+        "focus": ["webns", "webruntime", "webwire", "webep"],
+        "note": "Web adapters attach the complete WebRuntime and positional batchexecute wire."
       },
       {
         "id": "android",
-        "label": "Android gRPC",
-        "focus": [
-          "neutral",
-          "andns",
-          "codecs",
-          "session",
-          "andep"
-        ],
-        "note": "Typed protobuf messages over a lazily opened, supervised gRPC channel."
-      },
-      {
-        "id": "identity",
-        "label": "Android identity",
-        "focus": [
-          "andauth",
-          "session"
-        ],
-        "note": "The bearer is minted from a stored gpsoauth master token with Android scopes."
+        "label": "Android bundle",
+        "focus": ["andns", "androidruntime", "androidpolicy", "andep"],
+        "note": "Android adapters attach only AndroidRuntime plus the retry manifest and workflow epoch."
       }
     ]
   },
@@ -47,290 +32,146 @@
       "type": "backend",
       "label": "Web Namespaces",
       "sublabel": "_web/*.py",
-      "pos": [
-        282,
-        60
-      ],
-      "size": [
-        170,
-        84
-      ]
+      "tag": "wire hooks",
+      "pos": [282, 60],
+      "size": [170, 84]
     },
     {
-      "id": "params",
+      "id": "webruntime",
       "type": "backend",
-      "label": "Param Builders",
-      "sublabel": "_web/params/",
+      "label": "WebRuntime",
+      "sublabel": "executor · transport · kernel",
+      "tag": "cookies · uploader",
+      "pos": [544, 60],
+      "size": [170, 84]
+    },
+    {
+      "id": "webwire",
+      "type": "backend",
+      "label": "Web Wire",
+      "sublabel": "params · rows · codec",
       "tag": "position-sensitive",
-      "pos": [
-        544,
-        60
-      ],
-      "size": [
-        170,
-        84
-      ]
-    },
-    {
-      "id": "wire",
-      "type": "backend",
-      "label": "batchexecute Codec",
-      "sublabel": "_web/wire/",
-      "tag": "strict safe_index",
-      "pos": [
-        806,
-        60
-      ],
-      "size": [
-        165,
-        84
-      ]
+      "pos": [806, 60],
+      "size": [165, 84]
     },
     {
       "id": "webep",
       "type": "cloud",
       "label": "NotebookLM Web",
       "sublabel": "batchexecute RPC",
-      "pos": [
-        1063,
-        60
-      ],
-      "size": [
-        155,
-        84
-      ]
+      "pos": [1063, 60],
+      "size": [155, 84]
     },
     {
       "id": "client",
       "type": "backend",
       "label": "NotebookLMClient",
-      "sublabel": "composition root",
-      "pos": [
-        30,
-        260
-      ],
-      "size": [
-        160,
-        90
-      ]
+      "sublabel": "conditional assembly",
+      "tag": "one selected graph",
+      "pos": [30, 260],
+      "size": [160, 90]
     },
     {
       "id": "neutral",
       "type": "backend",
       "label": "Neutral Bases",
-      "sublabel": "shared base classes",
+      "sublabel": "shared workflow owners",
       "tag": "no wire shapes",
-      "pos": [
-        282,
-        260
-      ],
-      "size": [
-        170,
-        90
-      ]
+      "pos": [282, 260],
+      "size": [170, 90]
     },
     {
-      "id": "andauth",
-      "type": "security",
-      "label": "Bearer Provider",
-      "sublabel": "gpsoauth bearer",
-      "pos": [
-        1063,
-        260
-      ],
-      "size": [
-        155,
-        90
-      ]
+      "id": "mechanisms",
+      "type": "backend",
+      "label": "Shared Mechanisms",
+      "sublabel": "_runtime · _idempotency",
+      "tag": "auth · epoch · transfer",
+      "pos": [544, 260],
+      "size": [170, 90]
     },
     {
       "id": "andns",
       "type": "backend",
       "label": "Android Namespaces",
       "sublabel": "_android/*.py",
-      "pos": [
-        282,
-        460
-      ],
-      "size": [
-        170,
-        84
-      ]
+      "tag": "protobuf hooks",
+      "pos": [282, 460],
+      "size": [170, 84]
     },
     {
-      "id": "codecs",
+      "id": "androidruntime",
       "type": "backend",
-      "label": "Proto Codecs",
-      "sublabel": "_android/codecs/",
-      "tag": "generated protos",
-      "pos": [
-        544,
-        460
-      ],
-      "size": [
-        170,
-        84
-      ]
+      "label": "AndroidRuntime",
+      "sublabel": "session · upload · assets",
+      "tag": "bearer · phenotype",
+      "pos": [544, 460],
+      "size": [170, 84]
     },
     {
-      "id": "session",
-      "type": "backend",
-      "label": "gRPC Session",
-      "sublabel": "lazy · supervised",
-      "pos": [
-        806,
-        460
-      ],
-      "size": [
-        165,
-        84
-      ]
+      "id": "androidpolicy",
+      "type": "security",
+      "label": "Retry + Epoch",
+      "sublabel": "retry_policy.py · epoch.py",
+      "tag": "manifest · ContextVar",
+      "pos": [806, 460],
+      "size": [165, 84]
     },
     {
       "id": "andep",
       "type": "cloud",
       "label": "NotebookLM PA",
       "sublabel": "notebooklm-pa.googleapis.com",
-      "pos": [
-        1063,
-        460
-      ],
-      "size": [
-        155,
-        84
-      ]
+      "pos": [1063, 460],
+      "size": [155, 84]
     }
   ],
   "boundaries": [
     {
       "kind": "region",
       "label": "_web/ · default backend",
-      "wraps": [
-        "webns",
-        "params",
-        "wire"
-      ]
+      "wraps": ["webns", "webruntime", "webwire"]
     },
     {
       "kind": "region",
       "label": "_android/ · opt-in backend",
-      "wraps": [
-        "andns",
-        "codecs",
-        "session"
-      ]
+      "wraps": ["andns", "androidruntime", "androidpolicy"]
     }
   ],
   "connections": [
-    {
-      "id": "client-to-neutral",
-      "from": "client",
-      "to": "neutral",
-      "label": "assemble",
-      "variant": "emphasis"
-    },
-    {
-      "id": "neutral-to-webns",
-      "from": "neutral",
-      "to": "webns",
-      "label": "default",
-      "variant": "emphasis"
-    },
-    {
-      "id": "neutral-to-andns",
-      "from": "neutral",
-      "to": "andns",
-      "label": "explicit select",
-      "variant": "dashed",
-      "labelAt": [
-        367,
-        398
-      ]
-    },
-    {
-      "id": "webns-to-params",
-      "from": "webns",
-      "to": "params",
-      "label": "positional"
-    },
-    {
-      "id": "params-to-wire",
-      "from": "params",
-      "to": "wire",
-      "label": "encode"
-    },
-    {
-      "id": "wire-to-webep",
-      "from": "wire",
-      "to": "webep",
-      "label": "HTTPS POST",
-      "variant": "emphasis"
-    },
-    {
-      "id": "andns-to-codecs",
-      "from": "andns",
-      "to": "codecs",
-      "label": "typed proto"
-    },
-    {
-      "id": "codecs-to-session",
-      "from": "codecs",
-      "to": "session",
-      "label": "unary call"
-    },
-    {
-      "id": "session-to-andep",
-      "from": "session",
-      "to": "andep",
-      "label": "gRPC TLS",
-      "variant": "dashed"
-    },
-    {
-      "id": "andauth-to-session",
-      "from": "andauth",
-      "to": "session",
-      "label": "bearer token",
-      "variant": "security",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "via": [
-        [
-          1140.5,
-          405
-        ],
-        [
-          888.5,
-          405
-        ]
-      ]
-    }
+    {"id": "client-neutral", "from": "client", "to": "neutral", "label": "assembles", "variant": "emphasis"},
+    {"id": "neutral-shared", "from": "neutral", "to": "mechanisms", "label": "uses"},
+    {"id": "neutral-web", "from": "neutral", "to": "webns", "label": "Web subclass", "variant": "emphasis", "labelAt": [367, 202]},
+    {"id": "neutral-android", "from": "neutral", "to": "andns", "label": "Android subclass", "variant": "dashed", "labelAt": [367, 398]},
+    {"id": "web-runtime", "from": "webns", "to": "webruntime", "label": "attaches"},
+    {"id": "runtime-wire", "from": "webruntime", "to": "webwire", "label": "dispatches"},
+    {"id": "wire-web", "from": "webwire", "to": "webep", "label": "HTTPS POST", "variant": "emphasis"},
+    {"id": "android-runtime", "from": "andns", "to": "androidruntime", "label": "attaches", "variant": "dashed"},
+    {"id": "runtime-policy", "from": "androidruntime", "to": "androidpolicy", "label": "replay · fence", "variant": "security"},
+    {"id": "policy-android", "from": "androidpolicy", "to": "andep", "label": "gRPC TLS", "variant": "dashed"}
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Shared shape",
+      "title": "Hoisted mechanisms",
       "items": [
-        "Public namespace classes stay transport-neutral",
-        "test_backend_boundaries.py constrains private imports",
-        "Typed results are identical whichever backend served the call"
+        "Neutral bases own workflows; helpers cover refresh, epoch fences, transport-loss tags, and backoff",
+        "Scotty upload and guarded download are shared without sharing wire transport"
       ]
     },
     {
       "dot": "violet",
-      "title": "Web wire",
+      "title": "Web graph",
       "items": [
-        "Method IDs in rpc/types.py are the top breakage class",
-        "Nested source-id params are position-sensitive",
-        "safe_index raises typed shape drift, never raw IndexError"
+        "Web namespaces receive WebRuntime and its executor, kernel, auth and upload collaborators",
+        "Positional encoding and strict row decoding remain Web-only; Web stays the compatibility default"
       ]
     },
     {
       "dot": "amber",
-      "title": "Android backend",
+      "title": "Android graph",
       "items": [
-        "Needs the android extra: grpcio plus a protobuf runtime",
-        "The channel opens lazily and drains with the client",
-        "A pinned evidence profile fixes app version and user-agent"
+        "AndroidRuntime owns bearer, gRPC session, uploads, assets and Phenotype",
+        "retry_policy.py and epoch.py add parity and fencing without constructing full Web transport"
       ]
     }
   ]

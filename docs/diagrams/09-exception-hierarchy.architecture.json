@@ -5,253 +5,69 @@
     "title": "Selected Public Exception Hierarchy",
     "locale": "en",
     "quality_profile": "showcase",
-    "viewBox": [
-      1258,
-      600
-    ],
+    "viewBox": [1258, 740],
     "views": [
       {
         "id": "rpc",
-        "label": "RPC failures",
-        "focus": [
-          "root",
-          "rpc",
-          "rpctimeout",
-          "rpcfailures"
-        ],
-        "note": "RPCError owns authentication, rate-limit and server failures; request timeout is a NetworkError."
+        "label": "RPC and auth failures",
+        "focus": ["root", "network", "rpc", "rpctimeout", "autherror", "downloadhop"],
+        "note": "A download-hop 401 or 403 is an AuthError; request timeout remains a NetworkError."
       },
       {
-        "id": "notfound",
-        "label": "Domain not found",
-        "focus": [
-          "root",
-          "rpc",
-          "notfound",
-          "domainmissing"
-        ],
-        "note": "Notebook, source and artifact not-found errors inherit both NotFoundError and RPCError."
+        "id": "download",
+        "label": "Download failures",
+        "focus": ["root", "rpc", "autherror", "artifact", "artifactdownload", "downloadhop"],
+        "note": "Authentication failures stay distinguishable from media, policy and publication failures."
       },
       {
-        "id": "wait",
-        "label": "Local wait timeout",
-        "focus": [
-          "root",
-          "waittimeout",
-          "artifacttimeout"
-        ],
-        "note": "ArtifactTimeoutError is a local polling timeout, separate from RPCTimeoutError."
+        "id": "domain",
+        "label": "Domain failures",
+        "focus": ["root", "rpc", "notfound", "domainmissing", "wait", "artifact", "artifacttimeout"],
+        "note": "Domain not-found and timeout classes retain their multiple-inheritance catch surfaces."
       }
     ]
   },
   "components": [
-    {
-      "id": "root",
-      "type": "backend",
-      "label": "NotebookLMError",
-      "sublabel": "public exception root",
-      "tag": "Exception",
-      "pos": [
-        30,
-        252
-      ],
-      "size": [
-        160,
-        96
-      ]
-    },
-    {
-      "id": "network",
-      "type": "backend",
-      "label": "NetworkError",
-      "sublabel": "transport failures",
-      "pos": [
-        282,
-        40
-      ],
-      "size": [
-        176,
-        86
-      ]
-    },
-    {
-      "id": "rpc",
-      "type": "backend",
-      "label": "RPCError",
-      "sublabel": "remote-call failures",
-      "pos": [
-        282,
-        180
-      ],
-      "size": [
-        176,
-        86
-      ]
-    },
-    {
-      "id": "notfound",
-      "type": "backend",
-      "label": "NotFoundError",
-      "sublabel": "missing entity",
-      "pos": [
-        282,
-        340
-      ],
-      "size": [
-        176,
-        86
-      ]
-    },
-    {
-      "id": "waittimeout",
-      "type": "backend",
-      "label": "WaitTimeoutError",
-      "sublabel": "local polling timeout",
-      "pos": [
-        282,
-        480
-      ],
-      "size": [
-        176,
-        86
-      ]
-    },
-    {
-      "id": "rpctimeout",
-      "type": "backend",
-      "label": "RPCTimeoutError",
-      "sublabel": "request timed out",
-      "pos": [
-        1022,
-        40
-      ],
-      "size": [
-        206,
-        86
-      ]
-    },
-    {
-      "id": "rpcfailures",
-      "type": "backend",
-      "label": "RPC Failure Types",
-      "sublabel": "Auth · RateLimit · Server",
-      "tag": "direct subclasses",
-      "pos": [
-        1022,
-        172
-      ],
-      "size": [
-        206,
-        96
-      ]
-    },
-    {
-      "id": "domainmissing",
-      "type": "backend",
-      "label": "Domain *NotFoundError",
-      "sublabel": "Notebook · Source · Artifact",
-      "tag": "also RPCError",
-      "pos": [
-        1002,
-        332
-      ],
-      "size": [
-        226,
-        100
-      ]
-    },
-    {
-      "id": "artifacttimeout",
-      "type": "backend",
-      "label": "ArtifactTimeoutError",
-      "sublabel": "generation wait expired",
-      "pos": [
-        1002,
-        480
-      ],
-      "size": [
-        226,
-        86
-      ]
-    }
+    {"id": "root", "type": "backend", "label": "NotebookLMError", "sublabel": "public exception root", "tag": "Exception", "pos": [30, 315], "size": [160, 96]},
+    {"id": "network", "type": "backend", "label": "NetworkError", "sublabel": "transport failures", "pos": [282, 40], "size": [176, 86]},
+    {"id": "rpc", "type": "backend", "label": "RPCError", "sublabel": "remote-call failures", "pos": [282, 180], "size": [176, 86]},
+    {"id": "notfound", "type": "backend", "label": "NotFoundError", "sublabel": "missing entity", "pos": [282, 340], "size": [176, 86]},
+    {"id": "wait", "type": "backend", "label": "WaitTimeoutError", "sublabel": "local polling timeout", "pos": [282, 500], "size": [176, 86]},
+    {"id": "artifact", "type": "backend", "label": "ArtifactError", "sublabel": "artifact failure family", "pos": [282, 640], "size": [176, 86]},
+    {"id": "rpctimeout", "type": "backend", "label": "RPCTimeoutError", "sublabel": "request timed out", "pos": [1022, 40], "size": [206, 86]},
+    {"id": "autherror", "type": "security", "label": "AuthError", "sublabel": "credential rejected", "tag": "RPCError", "pos": [750, 180], "size": [190, 86]},
+    {"id": "downloadhop", "type": "external", "label": "Download Hop 401/403", "sublabel": "guarded asset GET", "tag": "raises AuthError", "pos": [1022, 180], "size": [206, 86]},
+    {"id": "domainmissing", "type": "backend", "label": "Domain *NotFoundError", "sublabel": "Notebook · Source · Artifact", "tag": "also RPCError", "pos": [1002, 340], "size": [226, 100]},
+    {"id": "artifactdownload", "type": "backend", "label": "ArtifactDownloadError", "sublabel": "media · policy · publication", "pos": [1002, 640], "size": [226, 86]},
+    {"id": "artifacttimeout", "type": "backend", "label": "ArtifactTimeoutError", "sublabel": "generation wait expired", "tag": "also ArtifactError", "pos": [1002, 500], "size": [226, 86]}
   ],
   "connections": [
-    {
-      "id": "root-network",
-      "from": "root",
-      "to": "network"
-    },
-    {
-      "id": "root-rpc",
-      "from": "root",
-      "to": "rpc",
-      "variant": "emphasis"
-    },
-    {
-      "id": "root-notfound",
-      "from": "root",
-      "to": "notfound"
-    },
-    {
-      "id": "root-wait",
-      "from": "root",
-      "to": "waittimeout"
-    },
-    {
-      "id": "network-rpctimeout",
-      "from": "network",
-      "to": "rpctimeout",
-      "label": "specializes"
-    },
-    {
-      "id": "rpc-failures",
-      "from": "rpc",
-      "to": "rpcfailures",
-      "label": "direct subclasses",
-      "variant": "emphasis"
-    },
-    {
-      "id": "notfound-domain",
-      "from": "notfound",
-      "to": "domainmissing"
-    },
-    {
-      "id": "rpc-domain",
-      "from": "rpc",
-      "to": "domainmissing",
-      "label": "also RPCError",
-      "variant": "dashed"
-    },
-    {
-      "id": "wait-artifact",
-      "from": "waittimeout",
-      "to": "artifacttimeout",
-      "label": "specializes"
-    }
+    {"id": "root-network", "from": "root", "to": "network"},
+    {"id": "root-rpc", "from": "root", "to": "rpc", "variant": "emphasis"},
+    {"id": "root-notfound", "from": "root", "to": "notfound"},
+    {"id": "root-wait", "from": "root", "to": "wait"},
+    {"id": "root-artifact", "from": "root", "to": "artifact"},
+    {"id": "network-timeout", "from": "network", "to": "rpctimeout", "label": "specializes"},
+    {"id": "rpc-auth", "from": "rpc", "to": "autherror", "label": "specializes", "variant": "security"},
+    {"id": "hop-auth", "from": "downloadhop", "to": "autherror", "label": "raises", "variant": "security"},
+    {"id": "notfound-domain", "from": "notfound", "to": "domainmissing"},
+    {"id": "rpc-domain", "from": "rpc", "to": "domainmissing", "label": "also RPCError", "variant": "dashed"},
+    {"id": "artifact-download", "from": "artifact", "to": "artifactdownload", "label": "specializes"},
+    {"id": "wait-artifact", "from": "wait", "to": "artifacttimeout", "label": "specializes"}
   ],
   "cards": [
     {
-      "dot": "violet",
-      "title": "Direct RPC failures",
+      "dot": "rose",
+      "title": "Download authentication",
       "items": [
-        "AuthError, RateLimitError and ServerError directly subclass RPCError",
-        "DecodingError and UnknownRPCMethodError remain narrow RPCError types"
-      ]
-    },
-    {
-      "dot": "amber",
-      "title": "Multiple inheritance",
-      "items": [
-        "NotebookNotFoundError, SourceNotFoundError and ArtifactNotFoundError share both branches",
-        "Callers can catch the domain family or the broader RPC failure family"
+        "Guarded 401/403 raises AuthError; single, MCP, and REST preserve its auth classification"
       ]
     },
     {
       "dot": "cyan",
-      "title": "Two timeout meanings",
+      "title": "Batch result metadata",
       "items": [
-        "RPCTimeoutError reports a transport request timeout",
-        "ArtifactTimeoutError reports an exhausted local generation wait"
+        "DownloadResult adds error_code/message/hint; --all keeps rows plus AUTH_ERROR"
       ]
     }
   ]

@@ -14,7 +14,7 @@
           "webns",
           "andns"
         ],
-        "note": "One neutral abstract namespace with two concrete backend subclasses."
+        "note": "Neutral _sources.py owns shared workflows; Web and Android subclasses satisfy one hook contract."
       },
       {
         "id": "upload",
@@ -42,8 +42,8 @@
     {
       "id": "pipeline",
       "type": "backend",
-      "label": "SourceUploadPipeline",
-      "sublabel": "own client + semaphore",
+      "label": "WebRuntime Upload",
+      "sublabel": "SourceUploadPipeline",
       "tag": "loop-bound",
       "pos": [
         544,
@@ -85,9 +85,9 @@
     {
       "id": "baseapi",
       "type": "backend",
-      "label": "SourcesAPI",
-      "sublabel": "abstract base",
-      "tag": "ABC",
+      "label": "Neutral SourcesAPI",
+      "sublabel": "_sources.py · shared workflows",
+      "tag": "one contract",
       "pos": [
         282,
         260
@@ -156,7 +156,7 @@
     {
       "id": "andupload",
       "type": "backend",
-      "label": "AndroidUploadPipeline",
+      "label": "AndroidRuntime Upload",
       "sublabel": "control + data plane",
       "pos": [
         544,
@@ -280,18 +280,18 @@
   "cards": [
     {
       "dot": "cyan",
-      "title": "Inheritance",
+      "title": "Hoisted workflows",
       "items": [
-        "SourcesAPI is an ABC; both backends return the same frozen Source",
-        "WebSourcesAPI and its pipeline share one CallSupervisor"
+        "Neutral _sources.py owns lookup, polling, upload finalization, and transfer workflows",
+        "WebSourcesAPI and AndroidSourcesAPI implement one backend hook contract"
       ]
     },
     {
       "dot": "violet",
       "title": "Upload pipeline",
       "items": [
-        "The pipeline is a phased transport-lifecycle participant, not a plain helper",
-        "It holds its own upload semaphore and a dedicated httpx client"
+        "WebRuntime and AndroidRuntime own their corresponding upload pipelines",
+        "Each pipeline keeps its own upload semaphore and dedicated client"
       ]
     },
     {

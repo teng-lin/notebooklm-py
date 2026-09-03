@@ -20,7 +20,7 @@
           "closing",
           "reclosed"
         ],
-        "note": "Four resource states, each open wave carrying its own generation epoch."
+        "note": "Each open wave installs SharedRuntime plus exactly one backend runtime bundle."
       },
       {
         "id": "waves",
@@ -29,7 +29,7 @@
           "opening",
           "draining"
         ],
-        "note": "Drain waits for in-flight calls without retiring the generation."
+        "note": "CallSupervisor leases drain in-flight operations; middleware is not a drain participant."
       },
       {
         "id": "rollback",
@@ -68,7 +68,7 @@
       "id": "opening",
       "type": "active",
       "label": "OPENING",
-      "sublabel": "transactional wave",
+      "sublabel": "runtime bundle wave",
       "lane": "main",
       "col": 1,
       "step": "02",
@@ -82,7 +82,7 @@
       "lane": "main",
       "col": 2,
       "step": "03",
-      "tag": "bound loop"
+      "tag": "selected backend"
     },
     {
       "id": "closing",
@@ -200,16 +200,16 @@
       "dot": "emerald",
       "title": "Generations",
       "items": [
-        "Each open wave allocates an epoch that fences the kernel and auth coordinator",
-        "A stale epoch cannot write into a newer generation"
+        "Each open wave fences SharedRuntime and the selected WebRuntime or AndroidRuntime",
+        "A stale Web generation or Android epoch cannot write into a newer generation"
       ]
     },
     {
       "dot": "amber",
       "title": "Drain",
       "items": [
-        "drain() waits for in-flight calls but leaves the generation open",
-        "Close waves are coalesced and retained across caller cancellation"
+        "CallSupervisor drain waits on operation leases and leaves the generation open",
+        "Middleware is not a drain participant; close waves coalesce across caller cancellation"
       ]
     },
     {

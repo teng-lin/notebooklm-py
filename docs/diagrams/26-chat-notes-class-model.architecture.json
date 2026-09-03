@@ -14,7 +14,7 @@
         "id": "chat",
         "label": "Chat implementations",
         "focus": ["client", "bases", "web", "android"],
-        "note": "ChatAPI owns orchestration while WebChatAPI and AndroidChatAPI implement the selected send path."
+        "note": "Neutral _chat.py owns orchestration while both backends implement one send contract."
       },
       {
         "id": "notes",
@@ -43,9 +43,9 @@
     {
       "id": "bases",
       "type": "backend",
-      "label": "Namespace ABCs",
-      "sublabel": "Chat · Notes · Mind Maps",
-      "tag": "3 neutral bases",
+      "label": "Neutral Workflow Bases",
+      "sublabel": "_chat.py · _notes.py",
+      "tag": "+ _mind_maps_api.py",
       "pos": [300, 220],
       "size": [220, 100]
     },
@@ -97,15 +97,15 @@
       "dot": "violet",
       "title": "Chat orchestration",
       "items": [
-        "ChatAPI owns conversation state, locking, cache, id recovery and turn numbering",
-        "WebChatAPI sends through chat_aware_authed_post; AndroidChatAPI uses AndroidSession"
+        "Neutral _chat.py owns settings, conversation state, locking, cache, recovery, and turn numbering",
+        "WebChatAPI and AndroidChatAPI satisfy one backend send contract"
       ]
     },
     {
       "dot": "amber",
       "title": "Notes and mind maps",
       "items": [
-        "ChatAPI, NotesAPI and MindMapsAPI are the three backend-neutral abstract bases",
+        "Neutral _notes.py and _mind_maps_api.py own shared workflows and composition",
         "WebNotesAPI, WebChatAPI and WebMindMapsAPI have matching Android implementations"
       ]
     }

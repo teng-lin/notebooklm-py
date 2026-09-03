@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="generator" content="archify 2.16.0-dev.0">
-  <title>Backend Split: Web Wire and Android gRPC Diagram</title>
+  <title>Backend Split and Shared Mechanisms Diagram</title>
   <script>
     // Resolve the theme before first paint so light-preference users don't
     // see a dark flash. The toolbar script below re-applies with UI state.
@@ -4955,11 +4955,11 @@
            data-preset-badge-blueprint="BLUEPRINT / REV 01"
            data-preset-badge-editorial="EDITORIAL / FIELD NOTE">
         <div class="pulse-dot"></div>
-        <h1>Backend Split: Web Wire and Android gRPC</h1>
+        <h1>Backend Split and Shared Mechanisms</h1>
       </div>
     </div>
 
-    <script id="archify-guided-views-data" type="application/json">[{"id":"web","label":"Web wire","focus":["neutral","webns","params","wire","webep"],"note":"Positional param builders and strict positional decoding over batchexecute."},{"id":"android","label":"Android gRPC","focus":["neutral","andns","codecs","session","andep"],"note":"Typed protobuf messages over a lazily opened, supervised gRPC channel."},{"id":"identity","label":"Android identity","focus":["andauth","session"],"note":"The bearer is minted from a stored gpsoauth master token with Android scopes."}]</script>
+    <script id="archify-guided-views-data" type="application/json">[{"id":"shared","label":"Neutral ownership","focus":["client","neutral","mechanisms","webns","andns"],"note":"Base namespaces own shared workflows while neutral helpers carry cross-backend policy."},{"id":"web","label":"Web bundle","focus":["webns","webruntime","webwire","webep"],"note":"Web adapters attach the complete WebRuntime and positional batchexecute wire."},{"id":"android","label":"Android bundle","focus":["andns","androidruntime","androidpolicy","andep"],"note":"Android adapters attach only AndroidRuntime plus the retry manifest and workflow epoch."}]</script>
 
     <script id="archify-i18n-data" type="application/json">{"locale":"en","messages":{"viewer.kind.frontend":"Frontend","viewer.kind.backend":"Backend","viewer.kind.database":"Database","viewer.kind.cloud":"Cloud","viewer.kind.security":"Security","viewer.kind.messagebus":"Message bus","viewer.kind.external":"External","viewer.kind.neutral":"Neutral","viewer.kind.node":"Node","viewer.kind.start":"Start","viewer.kind.active":"Active","viewer.kind.waiting":"Waiting","viewer.kind.decision":"Decision","viewer.kind.success":"Success","viewer.kind.failure":"Failure","viewer.toolbar.actions":"Diagram actions","viewer.theme.toggle.title":"Toggle theme (T)","viewer.theme.toggle":"Toggle color theme","viewer.theme.dark":"Dark","viewer.theme.light":"Light","viewer.preset.choose.title":"Choose visual style (S cycles)","viewer.preset.choose":"Choose visual style","viewer.preset.style":"Style","viewer.preset.menu":"Visual style","viewer.preset.identity":"Visual identity","viewer.preset.cycles":"S cycles","viewer.preset.classic":"Classic","viewer.preset.classic.short":"Classic","viewer.preset.classic.hint":"Stable technical default","viewer.preset.flow":"Signal Flow","viewer.preset.flow.short":"Flow","viewer.preset.flow.hint":"Motion-forward presentation","viewer.preset.blueprint":"Blueprint","viewer.preset.blueprint.hint":"Engineering review","viewer.preset.editorial":"Editorial","viewer.preset.editorial.hint":"Publication and launch notes","viewer.preset.badge.signalFlow":"SIGNAL FLOW","viewer.preset.badge.blueprint":"BLUEPRINT / REV 01","viewer.preset.badge.editorial":"EDITORIAL / FIELD NOTE","viewer.preset.badge.editorialPlate":"ARCHIFY / PLATE 04","viewer.preset.current":"Visual style: {style}. Choose visual style","viewer.motion.live":"Live","viewer.motion.still":"Still","viewer.motion.pause":"Pause motion","viewer.motion.resume":"Resume motion","viewer.motion.reduced":"Motion paused by reduced-motion preference","viewer.motion.hidden":"Motion paused while this page is hidden","viewer.motion.yielding":"Pause motion; currently yielding to {owner}","viewer.motion.yielding.title":"Live preview enabled · yielding to {owner}","viewer.owner.story":"the guided story","viewer.owner.chapter":"the active chapter","viewer.owner.chapterPreview":"the chapter delta preview","viewer.owner.handoff":"the chapter handoff","viewer.owner.route":"Route Probe","viewer.owner.lens":"Semantic Lens","viewer.owner.relationship":"Relationship Preview","viewer.owner.intent":"Intent Trace","viewer.owner.focus":"semantic focus","viewer.owner.legend":"legend preview","viewer.owner.reader":"reader interaction","viewer.present.enter":"Enter presentation stage","viewer.present.enter.title":"Presentation stage (F)","viewer.present.exit":"Exit presentation stage","viewer.present.exit.title":"Exit presentation stage (F or Escape)","viewer.present.present":"Present","viewer.present.exit.label":"Exit","viewer.export.button":"Export","viewer.export.button.title":"Export diagram (E)","viewer.export.diagram":"Export diagram","viewer.export.menu":"Export","viewer.export.subtitle":"Portable, clean outputs","viewer.export.share":"Share","viewer.export.shareCard":"Share Card","viewer.export.routeShareCard":"Route Share Card","viewer.export.reachShareCard":"Reach Share Card","viewer.export.copyShareCard":"Copy Share Card","viewer.export.copyDiagram":"Copy diagram","viewer.export.clipboardPng":"PNG to clipboard","viewer.export.raster":"Raster images","viewer.export.image":"Image","viewer.export.lossless":"Lossless image","viewer.export.compact":"Compact image","viewer.export.modern":"Modern image","viewer.export.vectorMotion":"Vector and motion","viewer.export.vectorMotion.heading":"Vector \u0026 motion","viewer.export.editable":"Editable vector","viewer.export.motion6s":"6s motion","viewer.export.unsupported":"Not supported by this browser","viewer.export.clipboardUnsupported":"Clipboard image write not supported by this browser","viewer.export.clipboardUnsupported.period":"Clipboard image write not supported by this browser.","viewer.export.clipboardUnsupported.short":"Clipboard image write not supported in this browser.","viewer.export.motionUnavailable":"Motion capture unavailable in this browser","viewer.export.webmUnavailable":"WebM unavailable in this browser","viewer.export.failed":"Export failed: {message}","viewer.export.unknownVariant":"Unknown Share Card variant: {variant}","viewer.export.routeRequired":"Trace a route before exporting a Route Share Card","viewer.export.reachRequired":"Trace authored reach before exporting a Reach Share Card","viewer.export.unknown":"unknown","viewer.export.routeFailed":"Route Share Card export failed: {message}","viewer.export.reachFailed":"Reach Share Card export failed: {message}","viewer.export.copyFailed":"Copy failed: {message}","viewer.export.copiedPng":"Copied PNG to clipboard","viewer.export.copiedShare":"Copied Share Card","viewer.export.downloadedShare":"Downloaded Share Card","viewer.export.downloadedRoute":"Downloaded Route Share Card","viewer.export.downloadedReach":"Downloaded Reach Share Card","viewer.export.downloadedWebm":"Downloaded WebM","viewer.export.recording":"Recording 6 seconds of motion…","viewer.export.card.routeSummary.one":"Route: {source} → {target} · {count} directed hop","viewer.export.card.routeSummary.other":"Route: {source} → {target} · {count} directed hops","viewer.export.card.reachSummary":"Authored {direction} from {origin} · {nodes} · {links} · max {hops}","viewer.export.card.node.one":"{count} node","viewer.export.card.node.other":"{count} nodes","viewer.export.card.link.one":"{count} link","viewer.export.card.link.other":"{count} links","viewer.export.card.hop.one":"{count} hop","viewer.export.card.hop.other":"{count} hops","viewer.export.card.routeBadge":"ARCHIFY · ROUTE · {hops}","viewer.export.card.reachBadge":"ARCHIFY · {direction} REACH","viewer.export.card.defaultBadge":"ARCHIFY · {preset} · {theme}","viewer.export.direction.upstream":"Upstream","viewer.export.direction.downstream":"Downstream","viewer.export.error.canvasUnavailable":"Canvas unavailable for {label}","viewer.export.error.contextUnavailable":"2D canvas context unavailable for {label}","viewer.export.error.toBlobUnavailable":"canvas.toBlob unavailable for {label}","viewer.export.error.toBlobNull":"canvas.toBlob returned no data for {label}","viewer.export.error.variantsCombined":"Share Card variants cannot be combined","viewer.export.error.viewerState":"Share Card export could not remove temporary viewer state","viewer.export.error.routeState":"Route Card export could not preserve the resolved route safely","viewer.export.error.reachState":"Reach Card export could not preserve authored reach safely","viewer.export.error.webmRequirements":"WebM motion export requires a trace animation and browser MediaRecorder support","viewer.export.error.mediaRecorder":"MediaRecorder failed","viewer.export.error.emptyWebm":"MediaRecorder produced an empty WebM","viewer.export.error.webmBackground":"SVG background could not be loaded for WebM export","viewer.guided.region":"Guided diagram views","viewer.guided.previous":"Previous guided view","viewer.guided.previous.title":"Previous guided view ([)","viewer.guided.next":"Next guided view","viewer.guided.next.title":"Next guided view (])","viewer.guided.views":"Guided views","viewer.guided.explore":"Explore this system","viewer.guided.intro":"Step through curated paths without changing the source diagram.","viewer.guided.trail":"Story trail","viewer.guided.beat":"Beat","viewer.guided.nextBeat":"Next","viewer.guided.play":"Play guided story","viewer.guided.play.title":"Play guided story (P)","viewer.guided.pause":"Pause guided story","viewer.guided.pause.title":"Pause guided story (P)","viewer.guided.replay":"Replay guided story","viewer.guided.replay.title":"Replay guided story (P)","viewer.guided.playStory":"Play story","viewer.guided.pauseStory":"Pause","viewer.guided.replayStory":"Replay story","viewer.guided.motionUnavailable":"Story playback unavailable while motion is Still","viewer.guided.enableMotion":"Switch motion to Live to play the guided story","viewer.guided.selectBeatLink":"Select a Story Beat to copy its exact link","viewer.guided.copyMoment":"Copy moment","viewer.guided.momentCopied":"Moment link copied","viewer.guided.momentCopyFailed":"Could not copy story moment link","viewer.guided.copied":"Copied","viewer.guided.copyFailed":"Copy failed","viewer.guided.showAll":"Show all","viewer.guided.showAll.aria":"Show entire diagram","viewer.guided.chapters":"Story chapters","viewer.guided.storyTrail":"Story trail for {label}: {count} beats","viewer.guided.chapter.open":"Open chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.current":"Current chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.selectedNodes":"{count} selected nodes","viewer.guided.chapter.stops":"{count} stops","viewer.guided.chapter.stop.one":"{count} stop","viewer.guided.chapter.stop.other":"{count} stops","viewer.guided.chapter.current.title":"{label} — current chapter, {count} stops","viewer.guided.chapter.delta.expanded":"{stay} stay, {enter} enter, {leave} leave","viewer.guided.chapter.delta.aria":"Open chapter {index} of {total}: {label}. Chapter focus delta: {delta}","viewer.guided.chapter.delta.title":"{label} — {delta} chapter focus","viewer.guided.handoff":"{from} → {to} · via {label}","viewer.guided.share.chapter":"Chapter {index} / {total}","viewer.guided.share.initial":"Chapter 01 / 01","viewer.guided.share.default":"Guided chapter","viewer.guided.state.ready":"Ready","viewer.guided.state.playing":"Playing","viewer.guided.state.settled":"Settled","viewer.guided.state.paused":"Paused","viewer.guided.state.pinned":"Pinned","viewer.guided.state.still":"Still","viewer.guided.share.step":"Step {index} / {total} · {label}","viewer.guided.share.staticMoment":"{step} · Static moment","viewer.guided.share.complete":"{count} steps complete · {note}","viewer.guided.share.settled":"Path settled for reading.","viewer.guided.share.staticPath":"{count} steps · Static path","viewer.guided.share.ready":"{count} steps · Ready","viewer.guided.share.aria":"{state} chapter {index} of {total}: {label}. {beat}. {route}","viewer.guided.beat.start":"Beat {index} / {total} · {label} · starting point","viewer.guided.beat.forward":"Beat {index} / {total} · {from} → {to}","viewer.guided.beat.reverse":"Beat {index} / {total} · {from} → {to} · reverse authored link","viewer.guided.beat.multiple":"Beat {index} / {total} · {from} ⇄ {to} · {count} authored links","viewer.guided.beat.group":"Beat {index} / {total} · {from} · {to} · grouped · no direct link","viewer.guided.beat.aria.prefix":"Story beat {index} of {total}: {label}. ","viewer.guided.beat.aria.start":"Starting point.","viewer.guided.beat.aria.forward":"From {from} through one authored forward relationship.","viewer.guided.beat.aria.reverse":"From {from}; the authored relationship points from {to} to {from}.","viewer.guided.beat.aria.multiple":"From {from} through {count} authored relationships; shown without arbitrary motion.","viewer.guided.beat.aria.group":"Grouped from {from} with no direct authored relationship.","viewer.guided.caption.start":"Starting point","viewer.guided.caption.grouped":"Grouped transition · no direct authored link","viewer.guided.caption.more":" +{count} more","viewer.guided.caption.reverse":"Reverse authored relationship","viewer.guided.caption.relationships":"{count} authored relationships","viewer.guided.caption.relationship":"Authored relationship","viewer.guided.caption.direction":"authored direction: {from} → {to}","viewer.guided.caption.starting":"Authored starting point","viewer.guided.beatLink":"Copy link to current story moment: Beat {index} of {total}: {label}","viewer.guided.noStory":"This diagram has no authored guided story.","viewer.guide.eyebrow":"Diagram guide","viewer.guide.close":"Close diagram guide","viewer.guide.inspecting":"Inspecting compiled semantics","viewer.guide.actions":"Diagram exploration actions","viewer.guide.find":"Find any node","viewer.guide.find.hint":"Search labels, responsibilities, kinds, and stable IDs.","viewer.guide.route":"Trace a route","viewer.guide.route.aria":"Trace a directed route","viewer.guide.route.hint":"Ask how two semantic nodes connect in authored direction.","viewer.guide.map":"See the whole system","viewer.guide.map.hint":"Open Semantic Radar with a live viewport and stable nodes.","viewer.guide.lens":"Compare semantic kinds","viewer.guide.lens.hint":"Count roles, reveal their traffic, and compare direct authored links.","viewer.guide.story":"Play the guided story","viewer.guide.story.hint":"Walk the authored chapters and real relationships.","viewer.guide.present":"Enter Presentation Stage","viewer.guide.present.hint":"Give the live diagram the viewport without changing export.","viewer.guide.shortcuts":"Additional keyboard shortcuts","viewer.guide.shortcut.export":"Export","viewer.guide.shortcut.theme":"Theme","viewer.guide.shortcut.style":"Style","viewer.guide.shortcut.reset":"Reset","viewer.guide.shortcut.zoomIn":"Zoom in","viewer.guide.shortcut.zoomOut":"Zoom out","viewer.guide.shortcut.close":"Close","viewer.guide.facts":"{nodes} · {relationships} · {views}","viewer.guide.fact.node.one":"{count} semantic node","viewer.guide.fact.node.other":"{count} semantic nodes","viewer.guide.fact.relationship.one":"{count} relationship","viewer.guide.fact.relationship.other":"{count} relationships","viewer.guide.fact.view.one":"{count} guided view","viewer.guide.fact.view.other":"{count} guided views","viewer.guide.story.available.one":"Walk {count} authored chapter and its real relationships.","viewer.guide.story.available.other":"Walk {count} authored chapters and their real relationships.","viewer.guide.story.unavailable":"No authored guided story in this diagram.","viewer.guide.open":"Open diagram guide","viewer.guide.noStory":"This diagram has no authored guided story.","viewer.finder.title":"Find a node","viewer.finder.close":"Close node finder","viewer.finder.placeholder":"Search labels or IDs","viewer.finder.search":"Search diagram nodes","viewer.finder.results":"Diagram nodes","viewer.finder.empty":"No matching nodes","viewer.finder.result.focus":"Focus {label}","viewer.finder.result.routeStart":"Choose {label} as route start","viewer.finder.result.routeTarget":"Choose {label} as route destination, {links}","viewer.finder.status.empty":"No matching nodes","viewer.finder.status.count.one":"{count} matching node","viewer.finder.status.count.other":"{count} matching nodes","viewer.finder.noun.nodes":"nodes","viewer.finder.link.one":"{count} link","viewer.finder.link.other":"{count} links","viewer.finder.result.focus.one":"Focus {label}, {count} related connection","viewer.finder.result.focus.other":"Focus {label}, {count} related connections","viewer.finder.status.filtered":"{visible} of {available} {noun}","viewer.finder.status.all":"{available} {noun}","viewer.passport.eyebrow":"Semantic passport","viewer.passport.metadata":"Node metadata","viewer.passport.evidence":"Verified source evidence","viewer.passport.verified":"Verified source","viewer.passport.reach":"Authored reach","viewer.passport.reach.trace":"Trace authored reachability","viewer.passport.upstream":"Upstream","viewer.passport.downstream":"Downstream","viewer.passport.upstream.trace":"Trace upstream authored reachability","viewer.passport.downstream.trace":"Trace downstream authored reachability","viewer.passport.close":"Close semantic passport","viewer.passport.copy":"Copy link","viewer.passport.copy.focus":"Copy link to focused node","viewer.passport.relations":"Relations","viewer.passport.relations.show":"Show connected relationships","viewer.passport.relations.hide":"Hide connected relationships","viewer.passport.relations.list":"Connected relationships","viewer.passport.copyRelation":"Copy relation","viewer.passport.copyNode":"Copy node","viewer.passport.copyPinned":"Copy link to pinned relationship","viewer.passport.copySource":"Copy link to source node","viewer.passport.copy.focused.success":"Focused node link copied","viewer.passport.copy.pinned.success":"Pinned relationship link copied","viewer.passport.copy.focused.failed":"Could not copy focused node link","viewer.passport.copy.pinned.failed":"Could not copy pinned relationship link","viewer.passport.relationship.none":"No connected relationships","viewer.passport.relationship.count.one":"{count} relation","viewer.passport.relationship.count.other":"{count} relations","viewer.passport.relationship.show.one":"Show {count} connected relationship","viewer.passport.relationship.show.other":"Show {count} connected relationships","viewer.passport.relationship.summary":"{out} outgoing · {in} incoming{loops}","viewer.passport.relationship.loops":" · {count} loop","viewer.passport.relationship.explorer":"Direct relationship explorer","viewer.passport.relationship.help":"Use arrow keys to explore relationships. Press Enter or Space to pin details; Escape clears.","viewer.passport.relationship.loopsBack":"loops back","viewer.passport.relationship.connectsTo":"connects to","viewer.passport.relationship.connectsFrom":"connects from","viewer.passport.relationship.pinned":"Pinned relationship · {from} → {to} · {label}","viewer.passport.relationship.inspect":"Inspect relationship {index} of {total}: {from} to {to}, {label}. Press Enter for details.","viewer.passport.relationship.group.out":"Outgoing","viewer.passport.relationship.group.in":"Incoming","viewer.passport.relationship.group.loop":"Self loops","viewer.passport.relationship.row":"{group}: {relationship}, {neighbor}","viewer.passport.relationship.direction.out":"OUT →","viewer.passport.relationship.direction.in":"← IN","viewer.passport.relationship.direction.loop":"LOOP","viewer.passport.sourceCount.one":"{count} verified source reference","viewer.passport.sourceCount.other":"{count} verified source references","viewer.passport.sourceMarker":"SRC","viewer.passport.beacon.one":"{count} verified source; focus this node to inspect","viewer.passport.beacon.other":"{count} verified sources; focus this node to inspect","viewer.passport.repository.open":"Open verified repository revision {revision}","viewer.passport.source.open":"Open verified source {path} at revision {revision}","viewer.passport.source.openLink":"Open ↗","viewer.passport.reach.upstream.one":"Trace {count} upstream authored node","viewer.passport.reach.upstream.other":"Trace {count} upstream authored nodes","viewer.passport.reach.downstream.one":"Trace {count} downstream authored node","viewer.passport.reach.downstream.other":"Trace {count} downstream authored nodes","viewer.passport.reach.noUpstream":"No upstream authored nodes","viewer.passport.reach.noDownstream":"No downstream authored nodes","viewer.passport.reach.status":"{direction} · {nodes} nodes · {links} links · max {hops} hops","viewer.route.eyebrow":"Route probe","viewer.route.start":"Choose a start node","viewer.route.start.find":"Find start","viewer.route.start.find.aria":"Find a route start","viewer.route.copy":"Copy link","viewer.route.copy.aria":"Copy link to traced route","viewer.route.clear":"Clear","viewer.route.clear.aria":"Clear route probe","viewer.route.traced":"Traced route","viewer.route.pickTwo":"Pick two semantic nodes on the diagram","viewer.route.pickOne":"Pick a semantic node on the diagram","viewer.route.controls":"Route journey controls","viewer.route.previous":"Previous route position","viewer.route.play":"Play route journey","viewer.route.pause":"Pause route journey","viewer.route.replay":"Replay route journey","viewer.route.next":"Next route position","viewer.route.journey":"Journey","viewer.route.pause.label":"Pause","viewer.route.replay.label":"Replay","viewer.route.overview":"Overview","viewer.route.overview.aria":"Show complete route overview","viewer.route.instructions":"Choose the source, then the destination. Direction matters.","viewer.route.destination":"Choose a destination from {label}","viewer.route.destination.find":"Find target","viewer.route.destination.find.aria":"Find a reachable route destination","viewer.route.differentDestination":"Choose a different destination","viewer.route.distinct":"A route needs two distinct semantic nodes.","viewer.route.unreachable":"No directed route to {label}","viewer.route.unreachable.detail":"{target} is not reachable from {source}. Pick a highlighted destination.","viewer.route.start.instructions":"Select the source. The next step will reveal only directed destinations.","viewer.route.copy.success":"Traced route link copied","viewer.route.copy.failed":"Could not copy traced route link","viewer.route.position":"Route position {index} of {total}: {label}","viewer.route.step":"Step {index} of {total} · {phase} · {label}","viewer.route.motionRequired":"Automatic journey requires Live motion","viewer.route.trigger.clear":"Clear traced route","viewer.route.overview.status":"{nodes} · {hops} · shortest authored route","viewer.route.overview.node.one":"{count} node","viewer.route.overview.node.other":"{count} nodes","viewer.route.overview.hop.one":"{count} directed hop","viewer.route.overview.hop.other":"{count} directed hops","viewer.route.phase.playing":"Playing","viewer.route.phase.complete":"Complete","viewer.route.phase.inspecting":"Inspecting","viewer.route.destination.count.one":"{count} directed destination available. Pick a highlighted node.","viewer.route.destination.count.other":"{count} directed destinations available. Pick a highlighted node.","viewer.route.noOutgoing":"No outgoing route starts here. Clear and choose another source.","viewer.route.result.title":"{source} to {target}","viewer.route.finder.source.title":"Choose route start","viewer.route.finder.source.placeholder":"Search route sources","viewer.route.finder.source.empty":"No matching route sources","viewer.route.finder.source.results":"Nodes that can start a route","viewer.route.finder.source.noun":"route sources","viewer.route.finder.source.badge":"start","viewer.route.finder.target.title":"Destination from {label}","viewer.route.finder.target.placeholder":"Search reachable destinations","viewer.route.finder.target.empty":"No matching reachable destinations","viewer.route.finder.target.results":"Reachable route destinations","viewer.route.finder.target.noun":"reachable destinations","viewer.route.hop.one":"{count} hop","viewer.route.hop.other":"{count} hops","viewer.lens.eyebrow":"Semantic lens","viewer.lens.title":"Compare system roles","viewer.lens.close":"Close semantic lens","viewer.lens.instruction":"Choose up to two semantic kinds. One reveals its real traffic; two compare only direct authored relationships.","viewer.lens.kinds":"Semantic kinds","viewer.lens.choose":"Choose a kind to inspect its nodes and touching relationships.","viewer.lens.copy":"Copy link to semantic lens","viewer.lens.clear":"Clear semantic lens","viewer.lens.open":"Open semantic lens","viewer.lens.openActive":"Open active semantic lens","viewer.lens.legend":"Semantic legend","viewer.lens.legend.inspect.one":"Inspect {label}, {count} node","viewer.lens.legend.inspect.other":"Inspect {label}, {count} nodes","viewer.lens.kind.count.one":"{label}, {count} node","viewer.lens.kind.count.other":"{label}, {count} nodes","viewer.lens.compare.one":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationship","viewer.lens.compare.other":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationships","viewer.lens.single":"{nodes} · {relationships} · connected peers remain visible","viewer.lens.node.one":"{count} {label} node","viewer.lens.node.other":"{count} {label} nodes","viewer.lens.relationship.one":"{count} touching relationship","viewer.lens.relationship.other":"{count} touching relationships","viewer.radar.title":"Semantic radar","viewer.radar.building":"Building overview","viewer.radar.openFull":"Open full semantic radar","viewer.radar.open":"Open radar","viewer.radar.close":"Close semantic radar","viewer.radar.surface":"Diagram overview. Click a node to focus it, or use arrow keys to pan.","viewer.radar.click":"Click node","viewer.radar.drag":"Drag to pan","viewer.radar.space":"Semantic radar needs more MAP space.","viewer.radar.nodes":"Semantic diagram radar nodes","viewer.radar.focus":"Focus {label} from Semantic Radar","viewer.radar.status":"{count} nodes · {viewport}","viewer.radar.fullMap":"{count} nodes · full map","viewer.radar.compacted":"Radar compacted to avoid covering the Semantic Passport or MAP controls.","viewer.radar.cancelWaiting":"Cancel semantic radar waiting for more MAP space","viewer.radar.needsSpace":"Semantic radar needs more visible MAP space","viewer.radar.viewport.full":"full map","viewer.radar.viewport.width":"{percent}% width","viewer.radar.viewport.scale":"{percent}% viewport","viewer.nav.controls":"Diagram view controls","viewer.nav.route":"Trace a directed route","viewer.nav.route.title":"Trace route (R)","viewer.nav.route.short":"PATH","viewer.nav.radar":"Open semantic radar","viewer.nav.radar.title":"Semantic radar (M)","viewer.nav.radar.short":"MAP","viewer.nav.lens":"Open semantic lens","viewer.nav.lens.title":"Semantic lens (L)","viewer.nav.lens.short":"LENS","viewer.nav.find":"Find a node","viewer.nav.find.title":"Find a node (/)","viewer.nav.guide":"Open diagram guide","viewer.nav.guide.title":"Diagram guide (?)","viewer.nav.zoomOut":"Zoom out","viewer.nav.zoomOut.title":"Zoom out (-)","viewer.nav.reset":"Reset diagram view","viewer.nav.reset.title":"Reset view (0)","viewer.nav.read":"READ","viewer.nav.zoomIn":"Zoom in","viewer.nav.zoomIn.title":"Zoom in (+)","viewer.nav.camera":"{hint}. Reset diagram view","viewer.nav.camera.title":"{semantic}{hint} · reset view (0)","viewer.nav.camera.semantic":"Semantic camera active · ","viewer.nav.level.map":"MAP","viewer.nav.level.read":"READ","viewer.nav.level.full":"FULL","viewer.nav.level.auto":"AUTO","viewer.nav.detail.map":"Zoom in to reveal relationship labels and node context","viewer.nav.detail.read":"Zoom in again to reveal tags and annotations","viewer.nav.detail.full":"Full diagram detail","viewer.intent.summary":"{label}. {out} outgoing, {in} incoming{loops}. {total} connections. Press Enter for details.","viewer.intent.loops":", {count} self loop","viewer.common.copied":"Copied","viewer.common.copyFailed":"Copy failed","viewer.common.copyLink":"Copy link","viewer.common.clear":"Clear","viewer.common.close":"Close"}}</script>
     <div class="guided-views no-print" id="guided-views" hidden aria-label="Guided diagram views">
@@ -5005,7 +5005,7 @@
     <div class="diagram-container" data-detail-level="read"
          data-preset-badge-editorial-plate="ARCHIFY / PLATE 04">
       <svg viewBox="0 0 1258 632" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
-        <title id="archify-diagram-title">Backend Split: Web Wire and Android gRPC</title>
+        <title id="archify-diagram-title">Backend Split and Shared Mechanisms</title>
         <desc id="archify-diagram-description">An architecture diagram generated by Archify.</desc>
         <!-- Definitions -->
         <defs>
@@ -5035,20 +5035,20 @@
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" data-composition-frame-label="_android/ · opt-in backend" x="252" y="430" width="749" height="134" rx="12" class="c-region" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
-        <path data-edge-from="client" data-edge-to="neutral" data-edge-label="assemble" data-edge-key="0" data-edge-id="client-to-neutral" data-composition-points="190,305;282,305" d="M 190 305 L 282 305" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="neutral" data-edge-to="webns" data-edge-label="default" data-edge-key="1" data-edge-id="neutral-to-webns" data-composition-points="367,260;367,144" d="M 367 260 L 367 144" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="neutral" data-edge-to="andns" data-edge-label="explicit select" data-edge-key="2" data-edge-id="neutral-to-andns" data-composition-points="367,350;367,460" d="M 367 350 L 367 460" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="webns" data-edge-to="params" data-edge-label="positional" data-edge-key="3" data-edge-id="webns-to-params" data-composition-points="452,102;544,102" d="M 452 102 L 544 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="params" data-edge-to="wire" data-edge-label="encode" data-edge-key="4" data-edge-id="params-to-wire" data-composition-points="714,102;806,102" d="M 714 102 L 806 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="wire" data-edge-to="webep" data-edge-label="HTTPS POST" data-edge-key="5" data-edge-id="wire-to-webep" data-composition-points="971,102;1063,102" d="M 971 102 L 1063 102" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="andns" data-edge-to="codecs" data-edge-label="typed proto" data-edge-key="6" data-edge-id="andns-to-codecs" data-composition-points="452,502;544,502" d="M 452 502 L 544 502" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="codecs" data-edge-to="session" data-edge-label="unary call" data-edge-key="7" data-edge-id="codecs-to-session" data-composition-points="714,502;806,502" d="M 714 502 L 806 502" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="session" data-edge-to="andep" data-edge-label="gRPC TLS" data-edge-key="8" data-edge-id="session-to-andep" data-composition-points="971,502;1063,502" d="M 971 502 L 1063 502" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="andauth" data-edge-to="session" data-edge-label="bearer token" data-edge-key="9" data-edge-id="andauth-to-session" data-composition-points="1140.5,350;1140.5,405;888.5,405;888.5,460" d="M 1140.5 350 L 1140.5 397 Q 1140.5 405 1132.5 405 L 896.5 405 Q 888.5 405 888.5 413 L 888.5 460" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="client" data-edge-to="neutral" data-edge-label="assembles" data-edge-key="0" data-edge-id="client-neutral" data-composition-points="190,305;282,305" d="M 190 305 L 282 305" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="neutral" data-edge-to="mechanisms" data-edge-label="uses" data-edge-key="1" data-edge-id="neutral-shared" data-composition-points="452,305;544,305" d="M 452 305 L 544 305" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="neutral" data-edge-to="webns" data-edge-label="Web subclass" data-edge-key="2" data-edge-id="neutral-web" data-composition-points="367,260;367,144" d="M 367 260 L 367 144" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="neutral" data-edge-to="andns" data-edge-label="Android subclass" data-edge-key="3" data-edge-id="neutral-android" data-composition-points="367,350;367,460" d="M 367 350 L 367 460" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="webns" data-edge-to="webruntime" data-edge-label="attaches" data-edge-key="4" data-edge-id="web-runtime" data-composition-points="452,102;544,102" d="M 452 102 L 544 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="webruntime" data-edge-to="webwire" data-edge-label="dispatches" data-edge-key="5" data-edge-id="runtime-wire" data-composition-points="714,102;806,102" d="M 714 102 L 806 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="webwire" data-edge-to="webep" data-edge-label="HTTPS POST" data-edge-key="6" data-edge-id="wire-web" data-composition-points="971,102;1063,102" d="M 971 102 L 1063 102" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="andns" data-edge-to="androidruntime" data-edge-label="attaches" data-edge-key="7" data-edge-id="android-runtime" data-composition-points="452,502;544,502" d="M 452 502 L 544 502" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="androidruntime" data-edge-to="androidpolicy" data-edge-label="replay · fence" data-edge-key="8" data-edge-id="runtime-policy" data-composition-points="714,502;806,502" d="M 714 502 L 806 502" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="androidpolicy" data-edge-to="andep" data-edge-label="gRPC TLS" data-edge-key="9" data-edge-id="policy-android" data-composition-points="971,502;1063,502" d="M 971 502 L 1063 502" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
-        <g id="node-webns" data-node-id="webns" data-node-label="Web Namespaces" tabindex="0" role="button" aria-label="Focus Web Namespaces, _web/*.py, _web/ · default backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_web/*.py" data-node-context="_web/ · default backend">
-          <title>Web Namespaces · _web/*.py · _web/ · default backend</title>
+        <g id="node-webns" data-node-id="webns" data-node-label="Web Namespaces" tabindex="0" role="button" aria-label="Focus Web Namespaces, _web/*.py, _web/ · default backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_web/*.py" data-node-tag="wire hooks" data-node-context="_web/ · default backend">
+          <title>Web Namespaces · _web/*.py · _web/ · default backend · wire hooks</title>
           <rect x="282" y="60" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="282" y="60" width="170" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(288 66) scale(0.6875)">
@@ -5056,30 +5056,31 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="367" y="100" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Web Namespaces</text>
         <text data-detail="context" x="367" y="116" class="t-muted" font-size="9" text-anchor="middle">_web/*.py</text>
+        <text data-detail="fine" x="367" y="136" class="t-backend" font-size="7" text-anchor="middle">wire hooks</text>
         </g>
 
-        <g id="node-params" data-node-id="params" data-node-label="Param Builders" tabindex="0" role="button" aria-label="Focus Param Builders, _web/params/, _web/ · default backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_web/params/" data-node-tag="position-sensitive" data-node-context="_web/ · default backend">
-          <title>Param Builders · _web/params/ · _web/ · default backend · position-sensitive</title>
+        <g id="node-webruntime" data-node-id="webruntime" data-node-label="WebRuntime" tabindex="0" role="button" aria-label="Focus WebRuntime, executor · transport · kernel, _web/ · default backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="executor · transport · kernel" data-node-tag="cookies · uploader" data-node-context="_web/ · default backend">
+          <title>WebRuntime · executor · transport · kernel · _web/ · default backend · cookies · uploader</title>
           <rect x="544" y="60" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="544" y="60" width="170" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(550 66) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="629" y="100" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Param Builders</text>
-        <text data-detail="context" x="629" y="116" class="t-muted" font-size="9" text-anchor="middle">_web/params/</text>
-        <text data-detail="fine" x="629" y="136" class="t-backend" font-size="7" text-anchor="middle">position-sensitive</text>
+          <text data-node-label="" data-detail-anchor="" x="629" y="100" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">WebRuntime</text>
+        <text data-detail="context" x="629" y="116" class="t-muted" font-size="9" text-anchor="middle">executor · transport · kernel</text>
+        <text data-detail="fine" x="629" y="136" class="t-backend" font-size="7" text-anchor="middle">cookies · uploader</text>
         </g>
 
-        <g id="node-wire" data-node-id="wire" data-node-label="batchexecute Codec" tabindex="0" role="button" aria-label="Focus batchexecute Codec, _web/wire/, _web/ · default backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_web/wire/" data-node-tag="strict safe_index" data-node-context="_web/ · default backend">
-          <title>batchexecute Codec · _web/wire/ · _web/ · default backend · strict safe_index</title>
+        <g id="node-webwire" data-node-id="webwire" data-node-label="Web Wire" tabindex="0" role="button" aria-label="Focus Web Wire, params · rows · codec, _web/ · default backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="params · rows · codec" data-node-tag="position-sensitive" data-node-context="_web/ · default backend">
+          <title>Web Wire · params · rows · codec · _web/ · default backend · position-sensitive</title>
           <rect x="806" y="60" width="165" height="84" rx="6" class="c-mask"/>
           <rect x="806" y="60" width="165" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(812 66) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="888.5" y="100" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">batchexecute Codec</text>
-        <text data-detail="context" x="888.5" y="116" class="t-muted" font-size="9" text-anchor="middle">_web/wire/</text>
-        <text data-detail="fine" x="888.5" y="136" class="t-backend" font-size="7" text-anchor="middle">strict safe_index</text>
+          <text data-node-label="" data-detail-anchor="" x="888.5" y="100" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Web Wire</text>
+        <text data-detail="context" x="888.5" y="116" class="t-muted" font-size="9" text-anchor="middle">params · rows · codec</text>
+        <text data-detail="fine" x="888.5" y="136" class="t-backend" font-size="7" text-anchor="middle">position-sensitive</text>
         </g>
 
         <g id="node-webep" data-node-id="webep" data-node-label="NotebookLM Web" tabindex="0" role="button" aria-label="Focus NotebookLM Web, batchexecute RPC, Architecture component" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="batchexecute RPC" data-node-context="Architecture component">
@@ -5093,43 +5094,44 @@
         <text data-detail="context" x="1140.5" y="116" class="t-muted" font-size="9" text-anchor="middle">batchexecute RPC</text>
         </g>
 
-        <g id="node-client" data-node-id="client" data-node-label="NotebookLMClient" tabindex="0" role="button" aria-label="Focus NotebookLMClient, composition root, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="composition root" data-node-context="Architecture component">
-          <title>NotebookLMClient · composition root · Architecture component</title>
+        <g id="node-client" data-node-id="client" data-node-label="NotebookLMClient" tabindex="0" role="button" aria-label="Focus NotebookLMClient, conditional assembly, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="conditional assembly" data-node-tag="one selected graph" data-node-context="Architecture component">
+          <title>NotebookLMClient · conditional assembly · Architecture component · one selected graph</title>
           <rect x="30" y="260" width="160" height="90" rx="6" class="c-mask"/>
           <rect x="30" y="260" width="160" height="90" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(36 266) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="110" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">NotebookLMClient</text>
-        <text data-detail="context" x="110" y="319" class="t-muted" font-size="9" text-anchor="middle">composition root</text>
+        <text data-detail="context" x="110" y="319" class="t-muted" font-size="9" text-anchor="middle">conditional assembly</text>
+        <text data-detail="fine" x="110" y="342" class="t-backend" font-size="7" text-anchor="middle">one selected graph</text>
         </g>
 
-        <g id="node-neutral" data-node-id="neutral" data-node-label="Neutral Bases" tabindex="0" role="button" aria-label="Focus Neutral Bases, shared base classes, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="shared base classes" data-node-tag="no wire shapes" data-node-context="Architecture component">
-          <title>Neutral Bases · shared base classes · Architecture component · no wire shapes</title>
+        <g id="node-neutral" data-node-id="neutral" data-node-label="Neutral Bases" tabindex="0" role="button" aria-label="Focus Neutral Bases, shared workflow owners, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="shared workflow owners" data-node-tag="no wire shapes" data-node-context="Architecture component">
+          <title>Neutral Bases · shared workflow owners · Architecture component · no wire shapes</title>
           <rect x="282" y="260" width="170" height="90" rx="6" class="c-mask"/>
           <rect x="282" y="260" width="170" height="90" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(288 266) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="367" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Neutral Bases</text>
-        <text data-detail="context" x="367" y="319" class="t-muted" font-size="9" text-anchor="middle">shared base classes</text>
+        <text data-detail="context" x="367" y="319" class="t-muted" font-size="9" text-anchor="middle">shared workflow owners</text>
         <text data-detail="fine" x="367" y="342" class="t-backend" font-size="7" text-anchor="middle">no wire shapes</text>
         </g>
 
-        <g id="node-andauth" data-node-id="andauth" data-node-label="Bearer Provider" tabindex="0" role="button" aria-label="Focus Bearer Provider, gpsoauth bearer, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="gpsoauth bearer" data-node-context="Architecture component">
-          <title>Bearer Provider · gpsoauth bearer · Architecture component</title>
-          <rect x="1063" y="260" width="155" height="90" rx="6" class="c-mask"/>
-          <rect x="1063" y="260" width="155" height="90" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(1069 266) scale(0.6875)">
-            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
-            <path d="m5.8 8 1.5 1.5 3-3"/>
+        <g id="node-mechanisms" data-node-id="mechanisms" data-node-label="Shared Mechanisms" tabindex="0" role="button" aria-label="Focus Shared Mechanisms, _runtime · _idempotency, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_runtime · _idempotency" data-node-tag="auth · epoch · transfer" data-node-context="Architecture component">
+          <title>Shared Mechanisms · _runtime · _idempotency · Architecture component · auth · epoch · transfer</title>
+          <rect x="544" y="260" width="170" height="90" rx="6" class="c-mask"/>
+          <rect x="544" y="260" width="170" height="90" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(550 266) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="1140.5" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Bearer Provider</text>
-        <text data-detail="context" x="1140.5" y="319" class="t-muted" font-size="9" text-anchor="middle">gpsoauth bearer</text>
+          <text data-node-label="" data-detail-anchor="" x="629" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Shared Mechanisms</text>
+        <text data-detail="context" x="629" y="319" class="t-muted" font-size="9" text-anchor="middle">_runtime · _idempotency</text>
+        <text data-detail="fine" x="629" y="342" class="t-backend" font-size="7" text-anchor="middle">auth · epoch · transfer</text>
         </g>
 
-        <g id="node-andns" data-node-id="andns" data-node-label="Android Namespaces" tabindex="0" role="button" aria-label="Focus Android Namespaces, _android/*.py, _android/ · opt-in backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_android/*.py" data-node-context="_android/ · opt-in backend">
-          <title>Android Namespaces · _android/*.py · _android/ · opt-in backend</title>
+        <g id="node-andns" data-node-id="andns" data-node-label="Android Namespaces" tabindex="0" role="button" aria-label="Focus Android Namespaces, _android/*.py, _android/ · opt-in backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_android/*.py" data-node-tag="protobuf hooks" data-node-context="_android/ · opt-in backend">
+          <title>Android Namespaces · _android/*.py · _android/ · opt-in backend · protobuf hooks</title>
           <rect x="282" y="460" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="282" y="460" width="170" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(288 466) scale(0.6875)">
@@ -5137,29 +5139,32 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="367" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Android Namespaces</text>
         <text data-detail="context" x="367" y="516" class="t-muted" font-size="9" text-anchor="middle">_android/*.py</text>
+        <text data-detail="fine" x="367" y="536" class="t-backend" font-size="7" text-anchor="middle">protobuf hooks</text>
         </g>
 
-        <g id="node-codecs" data-node-id="codecs" data-node-label="Proto Codecs" tabindex="0" role="button" aria-label="Focus Proto Codecs, _android/codecs/, _android/ · opt-in backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="_android/codecs/" data-node-tag="generated protos" data-node-context="_android/ · opt-in backend">
-          <title>Proto Codecs · _android/codecs/ · _android/ · opt-in backend · generated protos</title>
+        <g id="node-androidruntime" data-node-id="androidruntime" data-node-label="AndroidRuntime" tabindex="0" role="button" aria-label="Focus AndroidRuntime, session · upload · assets, _android/ · opt-in backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="session · upload · assets" data-node-tag="bearer · phenotype" data-node-context="_android/ · opt-in backend">
+          <title>AndroidRuntime · session · upload · assets · _android/ · opt-in backend · bearer · phenotype</title>
           <rect x="544" y="460" width="170" height="84" rx="6" class="c-mask"/>
           <rect x="544" y="460" width="170" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(550 466) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="629" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Proto Codecs</text>
-        <text data-detail="context" x="629" y="516" class="t-muted" font-size="9" text-anchor="middle">_android/codecs/</text>
-        <text data-detail="fine" x="629" y="536" class="t-backend" font-size="7" text-anchor="middle">generated protos</text>
+          <text data-node-label="" data-detail-anchor="" x="629" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">AndroidRuntime</text>
+        <text data-detail="context" x="629" y="516" class="t-muted" font-size="9" text-anchor="middle">session · upload · assets</text>
+        <text data-detail="fine" x="629" y="536" class="t-backend" font-size="7" text-anchor="middle">bearer · phenotype</text>
         </g>
 
-        <g id="node-session" data-node-id="session" data-node-label="gRPC Session" tabindex="0" role="button" aria-label="Focus gRPC Session, lazy · supervised, _android/ · opt-in backend" aria-pressed="false" data-node-kind="backend" data-node-sublabel="lazy · supervised" data-node-context="_android/ · opt-in backend">
-          <title>gRPC Session · lazy · supervised · _android/ · opt-in backend</title>
+        <g id="node-androidpolicy" data-node-id="androidpolicy" data-node-label="Retry + Epoch" tabindex="0" role="button" aria-label="Focus Retry + Epoch, retry_policy.py · epoch.py, _android/ · opt-in backend" aria-pressed="false" data-node-kind="security" data-node-sublabel="retry_policy.py · epoch.py" data-node-tag="manifest · ContextVar" data-node-context="_android/ · opt-in backend">
+          <title>Retry + Epoch · retry_policy.py · epoch.py · _android/ · opt-in backend · manifest · ContextVar</title>
           <rect x="806" y="460" width="165" height="84" rx="6" class="c-mask"/>
-          <rect x="806" y="460" width="165" height="84" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(812 466) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          <rect x="806" y="460" width="165" height="84" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(812 466) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="888.5" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">gRPC Session</text>
-        <text data-detail="context" x="888.5" y="516" class="t-muted" font-size="9" text-anchor="middle">lazy · supervised</text>
+          <text data-node-label="" data-detail-anchor="" x="888.5" y="500" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Retry + Epoch</text>
+        <text data-detail="context" x="888.5" y="516" class="t-muted" font-size="9" text-anchor="middle">retry_policy.py · epoch.py</text>
+        <text data-detail="fine" x="888.5" y="536" class="t-security" font-size="7" text-anchor="middle">manifest · ContextVar</text>
         </g>
 
         <g id="node-andep" data-node-id="andep" data-node-label="NotebookLM PA" tabindex="0" role="button" aria-label="Focus NotebookLM PA, notebooklm-pa.googleapis.com, Architecture component" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="notebooklm-pa.googleapis.com" data-node-context="Architecture component">
@@ -5174,45 +5179,45 @@
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="client" data-edge-to="neutral" data-edge-label="assemble" data-edge-key="0" data-edge-id="client-to-neutral">
-          <rect x="211.8" y="285" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="236" y="295" class="t-backend" font-size="8" text-anchor="middle">assemble</text>
+        <g data-detail="context" data-edge-from="client" data-edge-to="neutral" data-edge-label="assembles" data-edge-key="0" data-edge-id="client-neutral">
+          <rect x="209.4" y="285" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="236" y="295" class="t-backend" font-size="8" text-anchor="middle">assembles</text>
         </g>
-        <g data-detail="context" data-edge-from="neutral" data-edge-to="webns" data-edge-label="default" data-edge-key="1" data-edge-id="neutral-to-webns">
-          <rect x="345.2" y="240" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="367" y="250" class="t-backend" font-size="8" text-anchor="middle">default</text>
+        <g data-detail="context" data-edge-from="neutral" data-edge-to="mechanisms" data-edge-label="uses" data-edge-key="1" data-edge-id="neutral-shared">
+          <rect x="483" y="285" width="30" height="14" rx="3" class="c-mask"/>
+          <text x="498" y="295" class="t-muted" font-size="8" text-anchor="middle">uses</text>
         </g>
-        <g data-detail="context" data-edge-from="neutral" data-edge-to="andns" data-edge-label="explicit select" data-edge-key="2" data-edge-id="neutral-to-andns">
-          <rect x="326" y="388" width="82" height="14" rx="3" class="c-mask"/>
-          <text x="367" y="398" class="t-messagebus" font-size="8" text-anchor="middle">explicit select</text>
+        <g data-detail="context" data-edge-from="neutral" data-edge-to="webns" data-edge-label="Web subclass" data-edge-key="2" data-edge-id="neutral-web">
+          <rect x="333.2" y="192" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="367" y="202" class="t-backend" font-size="8" text-anchor="middle">Web subclass</text>
         </g>
-        <g data-detail="context" data-edge-from="webns" data-edge-to="params" data-edge-label="positional" data-edge-key="3" data-edge-id="webns-to-params">
-          <rect x="469" y="82" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="498" y="92" class="t-muted" font-size="8" text-anchor="middle">positional</text>
+        <g data-detail="context" data-edge-from="neutral" data-edge-to="andns" data-edge-label="Android subclass" data-edge-key="3" data-edge-id="neutral-android">
+          <rect x="323.6" y="388" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="367" y="398" class="t-messagebus" font-size="8" text-anchor="middle">Android subclass</text>
         </g>
-        <g data-detail="context" data-edge-from="params" data-edge-to="wire" data-edge-label="encode" data-edge-key="4" data-edge-id="params-to-wire">
-          <rect x="740.6" y="82" width="38.8" height="14" rx="3" class="c-mask"/>
-          <text x="760" y="92" class="t-muted" font-size="8" text-anchor="middle">encode</text>
+        <g data-detail="context" data-edge-from="webns" data-edge-to="webruntime" data-edge-label="attaches" data-edge-key="4" data-edge-id="web-runtime">
+          <rect x="473.8" y="82" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="498" y="92" class="t-muted" font-size="8" text-anchor="middle">attaches</text>
         </g>
-        <g data-detail="context" data-edge-from="wire" data-edge-to="webep" data-edge-label="HTTPS POST" data-edge-key="5" data-edge-id="wire-to-webep">
+        <g data-detail="context" data-edge-from="webruntime" data-edge-to="webwire" data-edge-label="dispatches" data-edge-key="5" data-edge-id="runtime-wire">
+          <rect x="731" y="82" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="760" y="92" class="t-muted" font-size="8" text-anchor="middle">dispatches</text>
+        </g>
+        <g data-detail="context" data-edge-from="webwire" data-edge-to="webep" data-edge-label="HTTPS POST" data-edge-key="6" data-edge-id="wire-web">
           <rect x="988" y="82" width="58" height="14" rx="3" class="c-mask"/>
           <text x="1017" y="92" class="t-backend" font-size="8" text-anchor="middle">HTTPS POST</text>
         </g>
-        <g data-detail="context" data-edge-from="andns" data-edge-to="codecs" data-edge-label="typed proto" data-edge-key="6" data-edge-id="andns-to-codecs">
-          <rect x="466.6" y="482" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="498" y="492" class="t-muted" font-size="8" text-anchor="middle">typed proto</text>
+        <g data-detail="context" data-edge-from="andns" data-edge-to="androidruntime" data-edge-label="attaches" data-edge-key="7" data-edge-id="android-runtime">
+          <rect x="473.8" y="482" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="498" y="492" class="t-messagebus" font-size="8" text-anchor="middle">attaches</text>
         </g>
-        <g data-detail="context" data-edge-from="codecs" data-edge-to="session" data-edge-label="unary call" data-edge-key="7" data-edge-id="codecs-to-session">
-          <rect x="731" y="482" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="760" y="492" class="t-muted" font-size="8" text-anchor="middle">unary call</text>
+        <g data-detail="context" data-edge-from="androidruntime" data-edge-to="androidpolicy" data-edge-label="replay · fence" data-edge-key="8" data-edge-id="runtime-policy">
+          <rect x="721.4" y="482" width="77.2" height="14" rx="3" class="c-mask"/>
+          <text x="760" y="492" class="t-security" font-size="8" text-anchor="middle">replay · fence</text>
         </g>
-        <g data-detail="context" data-edge-from="session" data-edge-to="andep" data-edge-label="gRPC TLS" data-edge-key="8" data-edge-id="session-to-andep">
+        <g data-detail="context" data-edge-from="androidpolicy" data-edge-to="andep" data-edge-label="gRPC TLS" data-edge-key="9" data-edge-id="policy-android">
           <rect x="992.8" y="482" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="1017" y="492" class="t-messagebus" font-size="8" text-anchor="middle">gRPC TLS</text>
-        </g>
-        <g data-detail="context" data-edge-from="andauth" data-edge-to="session" data-edge-label="bearer token" data-edge-key="9" data-edge-id="andauth-to-session">
-          <rect x="980.7" y="385" width="67.6" height="14" rx="3" class="c-mask"/>
-          <text x="1014.5" y="395" class="t-security" font-size="8" text-anchor="middle">bearer token</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
@@ -5431,36 +5436,33 @@
       <div class="card">
         <div class="card-header">
           <div class="card-dot cyan"></div>
-          <h3>Shared shape</h3>
+          <h3>Hoisted mechanisms</h3>
         </div>
         <ul>
-          <li>&bull; Public namespace classes stay transport-neutral</li>
-          <li>&bull; test_backend_boundaries.py constrains private imports</li>
-          <li>&bull; Typed results are identical whichever backend served the call</li>
+          <li>&bull; Neutral bases own workflows; helpers cover refresh, epoch fences, transport-loss tags, and backoff</li>
+          <li>&bull; Scotty upload and guarded download are shared without sharing wire transport</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot violet"></div>
-          <h3>Web wire</h3>
+          <h3>Web graph</h3>
         </div>
         <ul>
-          <li>&bull; Method IDs in rpc/types.py are the top breakage class</li>
-          <li>&bull; Nested source-id params are position-sensitive</li>
-          <li>&bull; safe_index raises typed shape drift, never raw IndexError</li>
+          <li>&bull; Web namespaces receive WebRuntime and its executor, kernel, auth and upload collaborators</li>
+          <li>&bull; Positional encoding and strict row decoding remain Web-only; Web stays the compatibility default</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot amber"></div>
-          <h3>Android backend</h3>
+          <h3>Android graph</h3>
         </div>
         <ul>
-          <li>&bull; Needs the android extra: grpcio plus a protobuf runtime</li>
-          <li>&bull; The channel opens lazily and drains with the client</li>
-          <li>&bull; A pinned evidence profile fixes app version and user-agent</li>
+          <li>&bull; AndroidRuntime owns bearer, gRPC session, uploads, assets and Phenotype</li>
+          <li>&bull; retry_policy.py and epoch.py add parity and fencing without constructing full Web transport</li>
         </ul>
       </div>
     </div>

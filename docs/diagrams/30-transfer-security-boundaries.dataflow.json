@@ -32,7 +32,7 @@
           "response",
           "verify"
         ],
-        "note": "Every HTTPS redirect hop is revalidated; the structured cookie jar is authoritative only on trusted hosts."
+        "note": "Neutral guarded transfer keeps one sticky asynchronous CredentialPolicy per URL and revalidates every redirect hop."
       },
       {
         "id": "android-download",
@@ -44,7 +44,7 @@
           "response",
           "verify"
         ],
-        "note": "The Android bearer is limited to evidenced entry hosts and is permanently stripped when a chain leaves that set."
+        "note": "A mid-chain 401 raises AuthError and invalidates the observed Android bearer generation inside the per-URL fence."
       }
     ]
   },
@@ -113,7 +113,7 @@
     {
       "id": "hoppolicy",
       "type": "security",
-      "label": "Per-hop Policy",
+      "label": "Neutral Guard Plane",
       "stage": 1,
       "row": 2,
       "tag": "every redirect"
@@ -121,9 +121,10 @@
     {
       "id": "downloadcreds",
       "type": "security",
-      "label": "Scoped Auth",
+      "label": "CredentialPolicy",
       "stage": 2,
-      "row": 2
+      "row": 2,
+      "tag": "per URL · generation"
     },
     {
       "id": "response",
@@ -178,8 +179,12 @@
       "id": "url-policy",
       "from": "asseturl",
       "to": "hoppolicy",
-      "label": "check",
-      "labelDy": -23,
+      "label": "enter fence",
+      "classification": "neutral guarded plane",
+      "labelAt": [
+        208,
+        428
+      ],
       "route": "straight",
       "variant": "security"
     },
@@ -187,7 +192,8 @@
       "id": "policy-download-creds",
       "from": "hoppolicy",
       "to": "downloadcreds",
-      "label": "auth",
+      "label": "await policy",
+      "classification": "sticky per URL",
       "labelDy": -23,
       "route": "straight",
       "variant": "security"
@@ -197,6 +203,7 @@
       "from": "downloadcreds",
       "to": "response",
       "label": "GET",
+      "classification": "credential scoped",
       "labelDy": -23,
       "route": "straight"
     },
@@ -204,33 +211,38 @@
       "id": "response-verify",
       "from": "response",
       "to": "verify",
-      "label": "stream chunks",
-      "classification": "bounded"
+      "label": "stream + cleanup",
+      "classification": "bounded · exit precise",
+      "labelAt": [
+        853,
+        428
+      ]
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Separate planes",
+      "title": "Neutral download plane",
       "items": [
-        "Uploads and asset downloads use dedicated lifecycle participants outside RpcExecutor",
-        "The selected backend supplies the correct credential policy"
+        "_artifact/_guarded_transfer.py owns redirect, credential, response, and cleanup fencing",
+        "WebRuntime or AndroidRuntime supplies the backend credential policy"
       ]
     },
     {
       "dot": "rose",
       "title": "No credential drift",
       "items": [
-        "Each download hop revalidates URL policy before attaching credentials",
-        "Android clears ambient cookies and never restores a bearer after leaving bearer hosts"
+        "One sticky asynchronous CredentialPolicy is held for each URL chain",
+        "Mid-chain 401 or 403 raises AuthError and invalidates the observed bearer generation"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Safe publication",
+      "title": "Cleanup and publication",
       "items": [
-        "Limits and media signatures are checked before publication",
-        "A same-directory staging file is atomically replaced only after a complete transfer"
+        "_await_advisory_cleanup shields response exit, per-URL close, and batch task cleanup",
+        "Exit precedence is process exit, pending cancellation, current cancellation, then cleanup cancellation",
+        "Verified bytes replace a same-directory staging file only after a complete transfer"
       ]
     }
   ]

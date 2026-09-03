@@ -6,49 +6,85 @@
     "locale": "en",
     "quality_profile": "showcase",
     "views": [
-      { "id": "construction", "label": "Construction", "focus": ["client", "assembly", "composed", "features"], "note": "One shared construction path binds every write-once slot exactly once." },
-      { "id": "dispatch", "label": "Dispatch classes", "focus": ["executor", "transport", "chainhost", "kernel"], "note": "Each collaborator is injected by keyword, never reached through a facade." },
-      { "id": "contracts", "label": "Structural contracts", "focus": ["protocols", "kernel", "seams"], "note": "Production satisfies the Web Protocols structurally; there is no generic runtime Session facade." }
+      {
+        "id": "shared",
+        "label": "Neutral runtime",
+        "focus": ["client", "assembly", "shared", "supervisor", "lifecycle"],
+        "note": "SharedRuntime is the neutral metrics, admission and lifecycle bundle built for every client."
+      },
+      {
+        "id": "web",
+        "label": "Web classes",
+        "focus": ["assembly", "webruntime", "composed", "chainhost", "sidecar"],
+        "note": "WebRuntime owns every Web-only collaborator; LazyWebSidecar creates one only for deprecated Android rpc_call."
+      },
+      {
+        "id": "android",
+        "label": "Android classes",
+        "focus": ["assembly", "androidruntime", "session", "epoch"],
+        "note": "AndroidRuntime owns the selected transport participants and session-scoped workflow epoch propagation."
+      }
     ]
   },
   "components": [
-    { "id": "composed", "type": "database", "label": "ClientComposed", "sublabel": "write-once holder", "tag": "guards pre-bind", "pos": [282, 60], "size": [170, 84] },
-    { "id": "collaborators", "type": "database", "label": "RuntimeCollaborators", "sublabel": "metrics · reqid · auth", "pos": [544, 60], "size": [170, 84] },
-    { "id": "seams", "type": "database", "label": "ClientSeams", "sublabel": "mutable callables", "pos": [806, 60], "size": [165, 84] },
-    { "id": "protocols", "type": "backend", "label": "Kernel Protocol", "sublabel": "post · cookies · aclose", "tag": "structural", "pos": [1063, 60], "size": [155, 84] },
-    { "id": "client", "type": "backend", "label": "NotebookLMClient", "sublabel": "public surface", "tag": "composition root", "pos": [30, 260], "size": [160, 90] },
-    { "id": "assembly", "type": "backend", "label": "_client_assembly", "sublabel": "shared construction", "pos": [282, 260], "size": [170, 90] },
-    { "id": "executor", "type": "backend", "label": "RpcExecutor", "sublabel": "satisfies RpcCaller", "pos": [544, 260], "size": [170, 90] },
-    { "id": "transport", "type": "backend", "label": "RuntimeTransport", "sublabel": "authed POST owner", "pos": [806, 260], "size": [165, 90] },
-    { "id": "kernel", "type": "backend", "label": "Kernel", "sublabel": "concrete web core", "pos": [1063, 260], "size": [155, 90] },
-    { "id": "features", "type": "backend", "label": "Feature APIs", "sublabel": "eleven namespaces", "pos": [282, 460], "size": [170, 84] },
-    { "id": "supervisor", "type": "backend", "label": "CallSupervisor", "sublabel": "leases · drain", "pos": [544, 460], "size": [170, 84] },
-    { "id": "chainhost", "type": "backend", "label": "MiddlewareChainHost", "sublabel": "chain + budgets", "pos": [806, 460], "size": [165, 84] },
-    { "id": "weblifecycle", "type": "backend", "label": "WebTransportLifecycle", "sublabel": "epoch participant", "pos": [1063, 460], "size": [155, 84] }
+    {"id": "shared", "type": "database", "label": "SharedRuntime", "sublabel": "_runtime/init.py", "tag": "neutral bundle", "pos": [282, 60], "size": [170, 84]},
+    {"id": "supervisor", "type": "backend", "label": "CallSupervisor", "sublabel": "generation leases", "tag": "admission · metrics · semaphore", "pos": [544, 60], "size": [170, 84]},
+    {"id": "lifecycle", "type": "backend", "label": "ClientLifecycle", "sublabel": "root state machine", "tag": "participant tuples", "pos": [806, 60], "size": [165, 84]},
+    {"id": "sidecar", "type": "backend", "label": "LazyWebSidecar", "sublabel": "materialises WebRuntime", "tag": "no keepalive", "pos": [1063, 60], "size": [155, 84]},
+    {"id": "client", "type": "backend", "label": "NotebookLMClient", "sublabel": "public surface", "tag": "composition root", "pos": [30, 260], "size": [160, 90]},
+    {"id": "assembly", "type": "backend", "label": "_client_assembly", "sublabel": "conditional construction", "tag": "one primary runtime", "pos": [282, 260], "size": [170, 90]},
+    {"id": "webruntime", "type": "backend", "label": "WebRuntime", "sublabel": "reqid · auth · kernel", "tag": "transport · executor · uploader", "pos": [544, 260], "size": [170, 90]},
+    {"id": "composed", "type": "database", "label": "ClientComposed", "sublabel": "write-once Web holder", "tag": "transport · executor · chain", "pos": [806, 260], "size": [165, 90]},
+    {"id": "chainhost", "type": "backend", "label": "MiddlewareChainHost", "sublabel": "retry · auth refresh", "tag": "error injection · tracing", "pos": [1063, 260], "size": [155, 90]},
+    {"id": "androidruntime", "type": "backend", "label": "AndroidRuntime", "sublabel": "bearer · session · upload", "tag": "assets · phenotype", "pos": [282, 460], "size": [170, 84]},
+    {"id": "session", "type": "backend", "label": "AndroidSession", "sublabel": "lazy gRPC transport", "tag": "shared supervisor", "pos": [544, 460], "size": [170, 84]},
+    {"id": "epoch", "type": "backend", "label": "Workflow Epoch", "sublabel": "_android/epoch.py", "tag": "session-tagged ContextVar", "pos": [806, 460], "size": [165, 84]}
+  ],
+  "boundaries": [
+    {"kind": "region", "label": "transport-neutral runtime", "wraps": ["shared", "supervisor", "lifecycle"]},
+    {"kind": "region", "label": "Web-only runtime", "wraps": ["webruntime", "composed", "chainhost"]},
+    {"kind": "region", "label": "Android-only runtime", "wraps": ["androidruntime", "session", "epoch"]}
   ],
   "connections": [
-    { "id": "client-assembly", "from": "client", "to": "assembly", "label": "constructs", "variant": "emphasis" },
-    { "id": "assembly-composed", "from": "assembly", "to": "composed", "label": "binds once", "labelAt": [367, 202] },
-    { "id": "assembly-features", "from": "assembly", "to": "features", "label": "wires", "labelAt": [367, 398] },
-    { "id": "assembly-executor", "from": "assembly", "to": "executor", "label": "creates", "variant": "emphasis", "labelAt": [470, 256] },
-    { "id": "assembly-collaborators", "from": "assembly", "to": "collaborators", "label": "builds", "labelAt": [500, 202] },
-    { "id": "executor-supervisor", "from": "executor", "to": "supervisor", "label": "admission", "labelAt": [629, 398] },
-    { "id": "executor-transport", "from": "executor", "to": "transport", "label": "authed POST", "variant": "emphasis", "labelAt": [715, 256] },
-    { "id": "executor-seams", "from": "executor", "to": "seams", "label": "decode · sleep", "labelAt": [760, 202] },
-    { "id": "transport-chainhost", "from": "transport", "to": "chainhost", "label": "dispatches", "labelAt": [888.5, 398] },
-    { "id": "transport-kernel", "from": "transport", "to": "kernel", "label": "terminal post", "variant": "emphasis" },
-    { "id": "kernel-protocols", "from": "kernel", "to": "protocols", "label": "satisfies", "labelAt": [1140.5, 202] },
-    { "id": "weblifecycle-kernel", "from": "weblifecycle", "to": "kernel", "label": "opens", "labelAt": [1140.5, 398] }
+    {"id": "client-assembly", "from": "client", "to": "assembly", "label": "constructs", "variant": "emphasis"},
+    {"id": "assembly-shared", "from": "assembly", "to": "shared", "label": "builds", "labelAt": [367, 202]},
+    {"id": "shared-supervisor", "from": "shared", "to": "supervisor", "label": "owns"},
+    {"id": "supervisor-lifecycle", "from": "supervisor", "to": "lifecycle", "label": "generation state"},
+    {"id": "lifecycle-sidecar", "from": "lifecycle", "to": "sidecar", "label": "pre-registers proxy", "variant": "dashed", "labelAt": [1017, 158]},
+    {"id": "assembly-web", "from": "assembly", "to": "webruntime", "label": "backend=web", "variant": "emphasis"},
+    {"id": "web-composed", "from": "webruntime", "to": "composed", "label": "binds once"},
+    {"id": "composed-chain", "from": "composed", "to": "chainhost", "label": "owns chain"},
+    {"id": "assembly-android", "from": "assembly", "to": "androidruntime", "label": "backend=android", "variant": "dashed", "labelAt": [367, 405]},
+    {"id": "android-session", "from": "androidruntime", "to": "session", "label": "owns"},
+    {"id": "session-epoch", "from": "session", "to": "epoch", "label": "binds workflow tag", "variant": "dashed", "labelAt": [760, 558]}
   ],
   "cards": [
-    { "dot": "cyan", "title": "Ownership", "items": [
-      "NotebookLMClient owns _auth, _seams, _composed, _collaborators and the executor",
-      "Composition is centralised so the client and the test factory build the same graph"]},
-    { "dot": "violet", "title": "Write-once binding", "items": [
-      "transport, executor and the chain slots are bound exactly once",
-      "Reading a slot before binding raises a clear RuntimeError"]},
-    { "dot": "rose", "title": "No facade", "items": [
-      "Features take each collaborator by keyword-only argument, never a runtime union",
-      "There is no generic runtime Session facade; AndroidSession is the selected Android transport"]}
+    {
+      "dot": "cyan",
+      "title": "Split bundles",
+      "items": [
+        "RuntimeCollaborators remains only a private alias for neutral SharedRuntime",
+        "WebRuntime and AndroidRuntime contain their backend-specific collaborators",
+        "Conditional assembly does not construct the unused primary backend runtime"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Narrowed policy owners",
+      "items": [
+        "CallSupervisor supplies generation leases and the neutral admission, metrics and semaphore policy",
+        "MiddlewareChainHost owns only the Web Retry, AuthRefresh, ErrorInjection and Tracing chain",
+        "Transport drain is no longer implemented as middleware"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Android compatibility",
+      "items": [
+        "epoch.py propagates one session-tagged ContextVar through nested Android workflows",
+        "LazyWebSidecar is inert until deprecated rpc_call is used on an Android client",
+        "A materialised sidecar owns close and reopen but never installs keepalive"
+      ]
+    }
   ]
 }
