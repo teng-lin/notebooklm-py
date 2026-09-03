@@ -487,6 +487,7 @@ class GenerationJournal:
 
 class DisabledOperation:
     operation_id = "disabled"
+    last_event = "disabled"
 
     def accepted(self, resource_id: str) -> None:
         pass

@@ -251,6 +251,7 @@ def test_off_and_unset_are_noops() -> None:
             id_kind="anything",
             lifecycle="anything",
         )
+        assert operation.last_event == "disabled"
         operation.accepted("anything")
 
 
