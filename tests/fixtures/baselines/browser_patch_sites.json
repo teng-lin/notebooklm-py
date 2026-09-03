@@ -1040,14 +1040,8 @@
       "module": "browser_capture"
     },
     {
-      "attribute": "_get_drive_record",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
       "attribute": "_playwright_installed",
-      "count": 16,
+      "count": 4,
       "idiom": "monkeypatch.setattr",
       "module": "headless_reauth"
     },
@@ -1071,13 +1065,7 @@
     },
     {
       "attribute": "run_browser_capture",
-      "count": 17,
-      "idiom": "monkeypatch.setattr",
-      "module": "headless_reauth"
-    },
-    {
-      "attribute": "run_cdp_capture",
-      "count": 7,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "headless_reauth"
     },
@@ -1096,9 +1084,9 @@
   ],
   "summary": {
     "TOTAL": {
-      "private": 17,
-      "public": 49,
-      "total": 66
+      "private": 4,
+      "public": 26,
+      "total": 30
     },
     "browser_capture": {
       "private": 0,
@@ -1106,9 +1094,9 @@
       "total": 5
     },
     "headless_reauth": {
-      "private": 17,
-      "public": 36,
-      "total": 53
+      "private": 4,
+      "public": 13,
+      "total": 17
     },
     "oauth_token": {
       "private": 0,
