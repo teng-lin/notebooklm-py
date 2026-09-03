@@ -34,19 +34,14 @@ import pytest
 from notebooklm._browser.headless_reauth import (
     HeadlessReauthStatus,
     attempt_headless_reauth,
+    headless_reauth_readiness,
 )
 from notebooklm.paths import get_browser_profile_dir, get_storage_path
 
 
 def _profile_is_reusable() -> bool:
-    profile = get_browser_profile_dir()
-    if not profile.is_dir():
-        return False
-    try:
-        next(profile.iterdir())
-    except (StopIteration, OSError):
-        return False
-    return True
+    """Use the production resolver's exact reusable-profile definition."""
+    return headless_reauth_readiness(browser_profile=get_browser_profile_dir()).profile_present
 
 
 def _playwright_available() -> bool:
