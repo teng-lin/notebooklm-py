@@ -16,17 +16,18 @@ from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._research_import import (
+    _WEB_RESEARCH_IMPORT_POLICY,
     _coerce_research_sources,
     _import_research_read_timeout,
     _imported_result,
     _is_import_research_failed_precondition,
-    _is_importable_report_source,
     _merge_imported_sources,
     _no_import_verification_url_entry_count,
     _normalize_import_verification_url,
     _partition_requested_sources,
     _reconcile_import_probe,
     _requested_import_verification_urls,
+    _ResearchImportBatch,
     _validate_research_task_provenance,
 )
 from .._runtime.config import (
@@ -114,6 +115,8 @@ class WebResearchAPI(BaseResearchAPI):
                     notebook_id, task.task_id, result.sources[:5]
                 )
     """
+
+    _import_policy = _WEB_RESEARCH_IMPORT_POLICY
 
     def __init__(
         self,
@@ -503,93 +506,23 @@ class WebResearchAPI(BaseResearchAPI):
             source_path=f"/notebook/{notebook_id}",
         )
 
-    async def import_sources(
+    async def _send_import(
         self,
         notebook_id: str,
-        task_id: str,
-        sources: Sequence[ResearchSourceInput],
+        batch: _ResearchImportBatch,
         *,
-        _remaining_budget: float | None = None,
+        _remaining_budget: float | None,
     ) -> list[dict[str, str]]:
-        """Import selected research sources into the notebook.
-
-        Args:
-            notebook_id: The notebook ID.
-            task_id: The research task ID.
-            sources: List of sources to import, each with 'url' and 'title'.
-                Deep research results from poll() may also include a report
-                entry with 'report_markdown' and 'research_task_id'.
-            _remaining_budget: Internal. What is left of
-                :meth:`import_sources_with_verification`'s ``max_elapsed``
-                when this attempt starts; clamps the per-attempt read timeout
-                so one attempt cannot outlive that loop's deadline (#2205).
-                Not part of the public contract — direct callers leave it
-                unset and get the full batch-scaled window.
-
-        Returns:
-            List of imported sources with 'id' and 'title'.
-
-        Note:
-            The API response can be incomplete - it may return fewer items than
-            were actually imported. All requested sources typically get imported
-            successfully, but the return value may not reflect all of them.
-            To reliably verify imports, check the notebook's source list using
-            `client.sources.list(notebook_id)` after calling this method.
-        """
-        if not sources:
-            return []
-        source_inputs: list[ResearchSourceInput] = list(sources)
-        source_models = _coerce_research_sources(source_inputs)
-        logger.debug(
-            "Importing %d research sources into notebook %s",
-            len(source_models),
-            notebook_id,
-        )
-
-        # Per-source ``research_task_id`` provenance: mismatches raise, a
-        # multi-task batch is refused, and the effective import task id is
-        # returned. Shared with ``import_sources_with_verification`` (which runs
-        # it up front, before the #1961 idempotency pre-filter) so provenance is
-        # validated even for entries the pre-filter would drop.
-        effective_task_id = _validate_research_task_provenance(source_models, task_id)
-
-        report_source_indexes = {
-            index
-            for index, (source_input, source) in enumerate(
-                zip(source_inputs, source_models, strict=True)
-            )
-            if _is_importable_report_source(source_input, source)
-        }
-        report_sources = [source_models[index] for index in sorted(report_source_indexes)]
-        valid_sources = [
-            source
-            for index, source in enumerate(source_models)
-            if source.url and index not in report_source_indexes
+        source_array = [
+            self._build_report_import_entry(item.source.title, item.source.report_markdown)
+            if item.kind == "report"
+            else self._build_web_import_entry(item.source.url, item.source.title)
+            for item in batch.items
         ]
-        skipped_count = len(source_models) - len(valid_sources) - len(report_sources)
-        if skipped_count > 0:
-            logger.warning(
-                "Skipping %d source(s) that cannot be imported (missing URLs or report entries)",
-                skipped_count,
-            )
-        if not valid_sources and not report_sources:
-            return []
-
-        source_array = []
-        for report_source in report_sources:
-            source_array.append(
-                self._build_report_import_entry(
-                    report_source.title,
-                    report_source.report_markdown,
-                )
-            )
-        source_array.extend(
-            self._build_web_import_entry(src.url, src.title) for src in valid_sources
-        )
 
         result = await self._rpc.rpc_call(
             RPCMethod.IMPORT_RESEARCH,
-            [None, [1], effective_task_id, notebook_id, source_array],
+            [None, [1], batch.task_id, notebook_id, source_array],
             source_path=f"/notebook/{notebook_id}",
             read_timeout=_import_research_read_timeout(
                 len(source_array),

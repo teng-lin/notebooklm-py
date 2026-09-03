@@ -1047,20 +1047,23 @@ class TestResearch:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_import_sources_missing_url(self, auth_tokens):
+    async def test_import_sources_missing_url(self, auth_tokens, caplog):
         """Test import_sources filters out sources without URL.
 
         Sources without URLs cause the entire batch to fail, so they are
         filtered out before making the RPC call.
         """
-        async with NotebookLMClient(auth_tokens) as client:
-            sources = [{"title": "Title Only"}]  # No URL
-            result = await client.research.import_sources(
-                notebook_id="nb_123", task_id="task_123", sources=sources
-            )
+        with caplog.at_level(logging.DEBUG, logger="notebooklm._research"):
+            async with NotebookLMClient(auth_tokens) as client:
+                sources = [{"title": "Title Only"}]  # No URL
+                result = await client.research.import_sources(
+                    notebook_id="nb_123", task_id="task_123", sources=sources
+                )
 
         # Sources without URLs are filtered out, no RPC call made
         assert result == []
+        assert "Importing 1 research sources" in caplog.text
+        assert "Skipping 1 source(s)" in caplog.text
 
     @pytest.mark.asyncio
     async def test_import_sources_includes_deep_research_report_entry(
@@ -1076,15 +1079,15 @@ class TestResearch:
         async with NotebookLMClient(auth_tokens) as client:
             sources = [
                 {
-                    "title": "Deep Research Report",
-                    "result_type": 5,
-                    "report_markdown": "# Deep report body",
-                    "research_task_id": "report_123",
-                },
-                {
                     "url": "http://example.com",
                     "title": "Web Source",
                     "result_type": 1,
+                    "research_task_id": "report_123",
+                },
+                {
+                    "title": "Deep Research Report",
+                    "result_type": 5,
+                    "report_markdown": "# Deep report body",
                     "research_task_id": "report_123",
                 },
             ]

@@ -33,6 +33,7 @@ import pytest
 import notebooklm._research as _research_mod
 from notebooklm import research as research_pub
 from notebooklm._research import BaseResearchAPI, _only_source
+from notebooklm._research_import import _ResearchImportBatch
 from notebooklm._types.research import ResearchStatus, ResearchTask
 from notebooklm.exceptions import (
     AmbiguousResearchTaskError,
@@ -100,15 +101,15 @@ class _StubResearchAPI(BaseResearchAPI):
     async def cancel(self, notebook_id, run_id):  # noqa: ANN001
         raise AssertionError("cancel() must not be reached")
 
-    async def import_sources(
+    async def _send_import(
         self,
         notebook_id: str,
-        task_id: str,
-        sources: Any,
+        batch: _ResearchImportBatch,
         *,
-        _remaining_budget: float | None = None,
+        _remaining_budget: float | None,
     ) -> list[dict[str, str]]:
-        self.import_calls.append((list(sources), _remaining_budget))
+        del notebook_id
+        self.import_calls.append(([item.source_input for item in batch.items], _remaining_budget))
         outcome = self._outcomes.pop(0)
         if isinstance(outcome, BaseException):
             raise outcome
@@ -220,6 +221,32 @@ def test_an_unpinned_strict_poll_over_several_runs_refuses_to_guess() -> None:
 # ---------------------------------------------------------------------------
 # Up-front validation
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_raw_import_empty_and_unusable_batches_do_not_reach_send_hook() -> None:
+    api, _lister = _make_api(list_outcomes=[[]], import_outcomes=[])
+
+    assert await api.import_sources("nb", "opaque-task", []) == []
+    assert await api.import_sources("nb", "opaque-task", [{"title": "No URL or report body"}]) == []
+    assert api.import_calls == []
+
+
+@pytest.mark.asyncio
+async def test_raw_import_propagates_send_error_by_identity() -> None:
+    error = RPCError("rejected", method_id="fake.Finish", rpc_code=9)
+    api, _lister = _make_api(list_outcomes=[[]], import_outcomes=[error])
+
+    with pytest.raises(RPCError) as raised:
+        await api.import_sources(
+            "nb",
+            "opaque-task",
+            [{"url": "https://example.com", "title": "Example"}],
+        )
+
+    assert raised.value is error
+    assert raised.value.method_id == "fake.Finish"
+    assert raised.value.rpc_code == 9
 
 
 @pytest.mark.asyncio
@@ -361,7 +388,9 @@ async def test_a_refused_report_import_is_raised_bare_rather_than_marked_unconfi
 
     with pytest.raises(RPCError) as exc_info:
         await api.import_sources_with_verification(
-            "nb", "task", [{"url": "", "title": "Report", "report_markdown": "# r"}]
+            "nb",
+            "task",
+            [{"url": "", "title": "Report", "result_type": 5, "report_markdown": "# r"}],
         )
 
     assert _unconfirmed(exc_info.value) is False
@@ -379,7 +408,9 @@ async def test_a_dropped_report_import_is_marked_unconfirmed() -> None:
 
     with pytest.raises(NetworkError) as exc_info:
         await api.import_sources_with_verification(
-            "nb", "task", [{"url": "", "title": "Report", "report_markdown": "# r"}]
+            "nb",
+            "task",
+            [{"url": "", "title": "Report", "result_type": 5, "report_markdown": "# r"}],
         )
 
     assert _unconfirmed(exc_info.value) is True

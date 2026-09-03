@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -15,12 +16,17 @@ from . import research as _research_pub
 from ._idempotency import mark_unconfirmed
 from ._notebook_metadata import NotebookSourceLister
 from ._research_import import (
+    _WEB_RESEARCH_IMPORT_POLICY,
     _already_present_source_entry,
+    _classify_research_import,
     _coerce_research_sources,
     _imported_result,
     _imported_source_entry,
     _is_import_research_failed_precondition,
     _normalize_import_verification_url,
+    _ResearchImportBatch,
+    _ResearchImportPolicy,
+    _validate_import_task_id,
     _validate_research_task_provenance,
 )
 from ._runtime.call_supervisor import OperationLease
@@ -51,6 +57,7 @@ from .types import CitedSourceSelection, Source
 
 _INITIAL_INTERVAL_UNSET: Any = object()
 _DEFAULT_RESEARCH_POLL_INTERVAL = 5.0
+logger = logging.getLogger("notebooklm._research")
 
 
 def _only_source(candidates: Sequence[Source]) -> Source | None:
@@ -106,6 +113,8 @@ def validate_discover(query: str, mode: str) -> tuple[str, str, DiscoveryMode]:
 
 class BaseResearchAPI(ABC):
     """Backend-neutral nine-callable Research namespace."""
+
+    _import_policy: _ResearchImportPolicy = _WEB_RESEARCH_IMPORT_POLICY
 
     def _operation_scope(
         self, label: str
@@ -245,7 +254,6 @@ class BaseResearchAPI(ABC):
     async def cancel(self, notebook_id: str, run_id: str) -> None:
         """Cancel one exact run without replaying the mutation."""
 
-    @abstractmethod
     async def import_sources(
         self,
         notebook_id: str,
@@ -254,7 +262,76 @@ class BaseResearchAPI(ABC):
         *,
         _remaining_budget: float | None = None,
     ) -> list[dict[str, str]]:
-        """Issue one non-replayed raw import request."""
+        """Import selected research sources into the notebook.
+
+        Args:
+            notebook_id: The notebook ID.
+            task_id: The research task ID.
+            sources: List of sources to import, each with 'url' and 'title'.
+                Deep research results from poll() may also include a report
+                entry with 'report_markdown' and 'research_task_id'.
+            _remaining_budget: Internal. What is left of
+                :meth:`import_sources_with_verification`'s ``max_elapsed``
+                when this attempt starts; clamps the per-attempt read timeout
+                so one attempt cannot outlive that loop's deadline (#2205).
+                Not part of the public contract — direct callers leave it
+                unset and get the full batch-scaled window.
+
+        Returns:
+            List of imported sources with 'id' and 'title'.
+
+        Note:
+            The API response can be incomplete - it may return fewer items than
+            were actually imported. All requested sources typically get imported
+            successfully, but the return value may not reflect all of them.
+            To reliably verify imports, check the notebook's source list using
+            `client.sources.list(notebook_id)` after calling this method.
+        """
+        if not sources:
+            return []
+
+        policy = self._import_policy
+        validated_task_id = _validate_import_task_id(task_id, policy)
+        source_inputs = list(sources)
+        source_models = _coerce_research_sources(source_inputs)
+        if policy.log_classification:
+            logger.debug(
+                "Importing %d research sources into notebook %s",
+                len(source_models),
+                notebook_id,
+            )
+        effective_task_id = _validate_research_task_provenance(
+            source_models,
+            validated_task_id,
+        )
+        batch = _classify_research_import(
+            source_inputs,
+            source_models,
+            task_id=effective_task_id,
+            policy=policy,
+        )
+        if policy.log_classification and batch.skipped_count:
+            logger.warning(
+                "Skipping %d source(s) that cannot be imported (missing URLs or report entries)",
+                batch.skipped_count,
+            )
+        if not batch.items:
+            return []
+        return await self._send_import(
+            notebook_id,
+            batch,
+            _remaining_budget=_remaining_budget,
+        )
+
+    @abstractmethod
+    async def _send_import(
+        self,
+        notebook_id: str,
+        batch: _ResearchImportBatch,
+        *,
+        _remaining_budget: float | None,
+    ) -> list[dict[str, str]]:
+        """Encode, send, and decode one backend import mutation."""
 
     async def import_sources_with_verification(
         self,

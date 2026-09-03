@@ -36,8 +36,8 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         class_name="BaseResearchAPI",
         implementation_module="notebooklm._web.research",
         implementation_class_name="WebResearchAPI",
-        abstract_methods=frozenset({"start", "discover", "poll", "cancel", "import_sources"}),
-        wire_hooks=frozenset(),
+        abstract_methods=frozenset({"_send_import", "start", "discover", "poll", "cancel"}),
+        wire_hooks=frozenset({"_send_import"}),
     ),
     _AbstractContract(
         module="notebooklm._artifacts",
@@ -308,6 +308,7 @@ _ANDROID_INHERITED_WORKFLOWS = {
             "_import_sources_with_verification_in_scope",
             "_wait_for_completion",
             "_wait_for_completion_in_scope",
+            "import_sources",
             "import_sources_with_verification",
             "wait_for_completion",
         }
@@ -600,6 +601,7 @@ def test_logger_names_survive_web_module_moves() -> None:
 
 def test_research_neutral_helpers_are_inherited_without_a_web_import_cycle() -> None:
     """Research sharing stays neutral and keeps compatibility in the Web leaf."""
+    from notebooklm._android.research import AndroidResearchAPI
     from notebooklm._research import BaseResearchAPI
     from notebooklm._web.research import ResearchAPI, WebResearchAPI
 
@@ -612,6 +614,16 @@ def test_research_neutral_helpers_are_inherited_without_a_web_import_cycle() -> 
         )
     assert "_web_extract_report_urls" not in WebResearchAPI.__dict__
     assert "_web_select_cited_sources" not in WebResearchAPI.__dict__
+    assert "import_sources" not in WebResearchAPI.__dict__
+    assert WebResearchAPI.import_sources is BaseResearchAPI.import_sources
+    assert (
+        WebResearchAPI._import_sources_with_verification
+        is not BaseResearchAPI._import_sources_with_verification
+    )
+    assert (
+        AndroidResearchAPI._import_sources_with_verification
+        is BaseResearchAPI._import_sources_with_verification
+    )
 
     root = Path(__file__).resolve().parents[2]
     neutral_path = root / "src" / "notebooklm" / "_research_import.py"
@@ -637,6 +649,31 @@ def test_research_neutral_helpers_are_inherited_without_a_web_import_cycle() -> 
         )
         for node in ast.walk(tree)
     )
+
+
+def test_research_import_calls_only_its_single_wire_hook() -> None:
+    """Classification stays in the neutral body above one backend send boundary."""
+    root = Path(__file__).resolve().parents[2]
+    path = root / "src" / "notebooklm" / "_research.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    research = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "BaseResearchAPI"
+    )
+    method = next(
+        node
+        for node in research.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "import_sources"
+    )
+    hooks = {
+        node.func.attr
+        for node in ast.walk(method)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr.startswith("_send_")
+    }
+    assert hooks == {"_send_import"}
 
 
 def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
