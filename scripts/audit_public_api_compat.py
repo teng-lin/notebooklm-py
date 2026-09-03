@@ -272,6 +272,12 @@ def annotation_repr(annotation, obj=None):
             )["return"]
         except Exception:
             return annotation
+    # ``typing.get_type_hints`` resolves a postponed ``None`` annotation to
+    # ``types.NoneType``, while a module without postponed annotations exposes
+    # the literal ``None`` singleton. They are the same public return contract;
+    # keep the historical spelling stable when code moves between such modules.
+    if annotation is None or annotation is type(None):
+        return "None"
     rendered = inspect.formatannotation(annotation)
     for private_prefix, compatibility_prefix in ANNOTATION_MODULE_ALIASES.items():
         rendered = rendered.replace(private_prefix, compatibility_prefix)

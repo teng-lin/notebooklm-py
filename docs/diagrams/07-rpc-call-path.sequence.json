@@ -36,7 +36,7 @@
           "sidecar",
           "webexec"
         ],
-        "note": "On Android, rpc_call materializes LazyWebSidecar inside operation_scope and closes it on scope exit."
+        "note": "On Android, rpc_call materializes LazyWebSidecar inside operation_scope; the runtime is retained for reuse and root lifecycle closes it."
       }
     ],
     "column_fit": "spread",
@@ -201,9 +201,9 @@
       "from": "webexec",
       "to": "caller",
       "y": 576,
-      "label": "return; close sidecar on scope exit",
+      "label": "return; retain sidecar for reuse",
       "variant": "return",
-      "note": "never registered as a keepalive participant"
+      "note": "root lifecycle closes it; never registered as a keepalive participant"
     }
   ],
   "cards": [
