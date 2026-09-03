@@ -236,17 +236,17 @@ def test_ci_pool_rejects_multiple_master_tokens_in_one_job(tmp_path, monkeypatch
             steps:
             - name: auth-a
               env:
-                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.SLOT_A }}
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
               run: python auth.py
             - name: auth-b
               env:
-                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets.SLOT_B }}
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
               run: python auth.py
         """,
     )
     rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
     assert rc == 1
-    assert "injects 2 master-token secrets" in err
+    assert "must inject exactly one selected master-token secret" in err
 
 
 def test_legacy_bundled_ci_secret_is_forbidden(tmp_path, monkeypatch, capsys, script):
@@ -971,6 +971,27 @@ def test_future_pooled_dynamic_secret_job_requires_full_account_envelope(tmp_pat
         """,
     )
     assert script._scan_pooled_account_jobs(tmp_path / "pool.yml") == []
+
+
+def test_pooled_scanner_accepts_jobs_header_with_trailing_comment(tmp_path, script) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:  # authenticated lanes
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      cancel-in-progress: false
+      queue: max
+    runs-on: ubuntu-latest
+    steps:
+    - run: echo ${{ secrets[matrix.master_token_secret_name] }}
+"""
+    )
+    assert script._scan_pooled_account_jobs(workflow) == []
 
 
 @pytest.mark.parametrize(

@@ -64,7 +64,6 @@ async def swept_interactive_mind_maps(client, generation_notebook_id):
         "operation": None,
         "typed_quota": False,
         "pre_accept_rejected": False,
-        "accepted": False,
     }
     yield state
     operation = state["operation"]
@@ -80,16 +79,36 @@ async def swept_interactive_mind_maps(client, generation_notebook_id):
             break
         await asyncio.sleep(2)
     created = [art for art in current if art.id not in baseline]
-    if operation is not None and state["typed_quota"] and not created:
+    if (
+        operation is not None
+        and operation.last_event == "started"
+        and state["typed_quota"]
+        and not created
+    ):
         operation.quota_no_commit_observed()
     multiple = operation is not None and len(created) > 1
     for art in created:
-        if operation is not None and state["typed_quota"] and not multiple:
+        if (
+            operation is not None
+            and operation.last_event == "started"
+            and state["typed_quota"]
+            and not multiple
+        ):
             operation.discovered_accepted(art.id, reason="post_create_quota")
         await client.artifacts.delete(generation_notebook_id, art.id)
         remaining = {row.id for row in await client.artifacts.list(generation_notebook_id)}
         assert art.id not in remaining
-        if operation is not None and not multiple and (state["typed_quota"] or state["accepted"]):
+        if (
+            operation is not None
+            and not multiple
+            and operation.last_event
+            in {
+                "accepted",
+                "persisted",
+                "completed",
+                "discovered_accepted",
+            }
+        ):
             operation.delete_confirmed(
                 art.id,
                 reason="post_create_quota" if state["typed_quota"] else "test_teardown",
@@ -142,7 +161,6 @@ async def test_interactive_mind_map_full_lifecycle(
             operation.rate_limited_rejected()
         raise
     operation.accepted(mind_map.id)
-    swept_interactive_mind_maps["accepted"] = True
     try:
         assert mind_map.kind == MindMapKind.INTERACTIVE
         assert mind_map.id, "generate() must return a non-empty interactive artifact id"

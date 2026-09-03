@@ -539,18 +539,13 @@ def _scan_workflow(path: Path) -> list[str]:
 
 
 def _scan_pooled_account_jobs(path: Path) -> list[str]:
-    """Enforce the future pooled-token job envelope when one is introduced.
-
-    PR 1 contains no pooled workflow consumers, so this is inert until the
-    cutover. Keeping it here ensures the first dynamic selected-secret job is
-    reviewed with the account-wide concurrency and exact trust gates intact.
-    """
+    """Enforce the pooled-token job envelope used by authenticated live CI."""
     lines = path.read_text().splitlines()
     jobs_started = False
     chunks: list[tuple[str, int, list[str]]] = []
     current: tuple[str, int, list[str]] | None = None
     for line_number, line in enumerate(lines, 1):
-        if line == "jobs:":
+        if re.fullmatch(r"jobs:\s*(?:#.*)?", line):
             jobs_started = True
             continue
         if not jobs_started:

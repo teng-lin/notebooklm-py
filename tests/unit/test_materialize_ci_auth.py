@@ -39,6 +39,7 @@ def test_atomic_private_write_and_child_environment(tmp_path, capsys) -> None:
     assert calls[0][0] == [sys.executable, "-m", "notebooklm", "login", "--master-token-refresh"]
     assert "NOTEBOOKLM_MASTER_TOKEN_JSON" not in calls[0][1]["env"]
     assert calls[0][1]["env"]["NOTEBOOKLM_PROFILE"] == "ci-A-verify-package"
+    assert calls[0][1]["timeout"] == auth.MINT_TIMEOUT_SECONDS
     if sys.platform != "win32":
         assert stat.S_IMODE(profile.stat().st_mode) == 0o700
         assert stat.S_IMODE((profile / "master_token.json").stat().st_mode) == 0o600
@@ -123,6 +124,29 @@ def test_subprocess_crash_is_infrastructure_error(tmp_path) -> None:
         auth.materialize(
             account_slot="A", profile="ci-A-verify-package", env=_env(tmp_path), run=run
         )
+
+
+def test_timed_out_mint_retries_then_reports_auth_failure(tmp_path, capsys) -> None:
+    calls = 0
+    sleeps = []
+
+    def run(command, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    with pytest.raises(auth.AuthenticationError, match="exit 124"):
+        auth.materialize(
+            account_slot="A",
+            profile="ci-A-verify-package",
+            env=_env(tmp_path),
+            run=run,
+            sleep=sleeps.append,
+            randint=lambda _a, _b: 0,
+        )
+    assert calls == 3
+    assert sleeps == [15, 30]
+    assert "timed out after 600 seconds" in capsys.readouterr().err
 
 
 def test_non_os_subprocess_crash_is_infrastructure_error(tmp_path) -> None:

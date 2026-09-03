@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,7 +44,9 @@ def test_required_journal_appends_versioned_transitions_without_printing_ids(
         id_kind="studio_task",
         lifecycle="settle",
     )
+    assert operation.last_event == "started"
     operation.accepted("artifact-secret-id")
+    assert operation.last_event == "accepted"
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     assert [row["event"] for row in rows] == ["started", "accepted"]
     assert all(row["version"] == 1 for row in rows)
@@ -53,6 +56,27 @@ def test_required_journal_appends_versioned_transitions_without_printing_ids(
     assert lock.is_file()
     if os.name != "nt":
         assert lock.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.asyncio
+async def test_note_mind_map_typed_quota_closes_manual_operation() -> None:
+    from tests.e2e.test_generation import _generate_note_mind_map
+
+    events: list[str] = []
+
+    class Artifacts:
+        async def generate_mind_map(self, notebook_id: str) -> None:
+            del notebook_id
+            skipped = pytest.skip.Exception("typed quota")
+            skipped._notebooklm_typed_rate_limit = True
+            raise skipped
+
+    operation = SimpleNamespace(rate_limited_rejected=lambda: events.append("rejected"))
+    with pytest.raises(pytest.skip.Exception, match="typed quota"):
+        await _generate_note_mind_map(
+            SimpleNamespace(artifacts=Artifacts()), "generation-role", operation
+        )
+    assert events == ["rejected"]
 
 
 def test_primary_and_retry_processes_append_without_truncation(tmp_path) -> None:

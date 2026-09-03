@@ -215,6 +215,11 @@ class JournalOperation:
     def operation_id(self) -> str:
         return self._envelope.operation_id
 
+    @property
+    def last_event(self) -> str:
+        """Return the last recorded non-sensitive lifecycle event."""
+        return self._events[-1][0]
+
     def _record(
         self,
         event: str,

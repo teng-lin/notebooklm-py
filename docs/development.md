@@ -791,15 +791,15 @@ NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=<work-nb-id> \
   uv run pytest tests/e2e -m e2e --profile work
 ```
 
-### Opt-in disposable E2E copies
+### Disposable E2E copy qualification
 
-The repository includes first-stage tooling for treating CI accounts as opaque slots (`A`, `B`,
-and `C`) and writable E2E notebooks as disposable copies. This is currently an **opt-in local and
-qualification path**: scheduled workflows still use the legacy single credential and persistent
-notebook bindings until the operations gate in
-[issue #2331](https://github.com/teng-lin/notebooklm-py/issues/2331) is completed and the workflow
-cutover lands. Merging the tooling does not enable account rotation or require a new GitHub
-setting.
+Canonical live CI treats accounts as opaque slots (`A`, `B`, and `C`) and writable E2E notebooks
+as disposable copies. Before deploying the workflow cutover, complete the external operations gate
+in [issue #2331](https://github.com/teng-lin/notebooklm-py/issues/2331): configure the protected
+Environment, qualify the template under each enabled account/backend, and start the repository
+variable at `NOTEBOOKLM_CI_ACCOUNT_SLOTS=A`. Release verification must dispatch `rpc-health.yml`
+and `verify-package.yml` with `--ref main`; release and feature refs cannot reach their protected
+authenticated jobs.
 
 The canonical template describes only state the copy API promises to preserve: ready sources and
 Studio artifacts. Its checked-in shape is `tests/fixtures/e2e_template_contract.json`. Notes and

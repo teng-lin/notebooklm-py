@@ -26,7 +26,12 @@ from notebooklm import (
     VideoStyle,
 )
 
-from .conftest import assert_generation_started, read_back_option_pair, requires_auth
+from .conftest import (
+    _TYPED_RATE_LIMIT_ATTR,
+    assert_generation_started,
+    read_back_option_pair,
+    requires_auth,
+)
 
 # Live CREATE_ARTIFACT coverage — monitored by the nightly generation coverage
 # floor (tests/e2e/conftest.py, #1819): a fully-throttled run where every marked
@@ -34,6 +39,16 @@ from .conftest import assert_generation_started, read_back_option_pair, requires
 # INVARIANT: keep this module generation-only — a passing non-generation test here
 # would satisfy the floor and mask a genuinely throttled generation surface.
 pytestmark = pytest.mark.live_generation
+
+
+async def _generate_note_mind_map(client, notebook_id, operation):
+    """Close the manual note-map journal operation when typed quota rejects creation."""
+    try:
+        return await client.artifacts.generate_mind_map(notebook_id)
+    except BaseException as exc:
+        if bool(getattr(exc, _TYPED_RATE_LIMIT_ATTR, False)):
+            operation.rate_limited_rejected()
+        raise
 
 
 @requires_auth
@@ -460,7 +475,7 @@ class TestMindMapGeneration:
             id_kind="note_mind_map",
             lifecycle="settle",
         )
-        result = await client.artifacts.generate_mind_map(generation_notebook_id)
+        result = await _generate_note_mind_map(client, generation_notebook_id, operation)
         assert result is not None
         assert result.note_id is not None
         operation.persisted(result.note_id)

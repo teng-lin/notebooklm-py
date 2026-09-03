@@ -31,6 +31,7 @@ _LANES = (
 _PROFILE_RE = re.compile(
     rf"ci-(?P<slot>[A-C])-(?P<lane>{'|'.join(re.escape(lane) for lane in _LANES)})\Z"
 )
+MINT_TIMEOUT_SECONDS = 600
 
 
 class ConfigurationError(ValueError):
@@ -148,6 +149,14 @@ def materialize(
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=MINT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            last_result = subprocess.CompletedProcess(
+                command,
+                124,
+                "",
+                f"auth mint timed out after {MINT_TIMEOUT_SECONDS} seconds",
             )
         except Exception as exc:
             raise InfrastructureError("could not launch the auth mint subprocess") from exc

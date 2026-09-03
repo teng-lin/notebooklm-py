@@ -95,11 +95,20 @@ def test_disabled_manual_base_is_rejected() -> None:
 
 
 def test_epoch_day_is_timezone_independent(monkeypatch) -> None:
-    monkeypatch.setenv("TZ", "Pacific/Kiritimati")
-    if hasattr(os, "tzset"):
-        os.tzset()
-    assert selector.utc_epoch_day("1970-01-01") == 0
-    assert selector.utc_epoch_day("1970-01-02") == 1
+    original_tz = os.environ.get("TZ")
+    try:
+        monkeypatch.setenv("TZ", "Pacific/Kiritimati")
+        if hasattr(os, "tzset"):
+            os.tzset()
+        assert selector.utc_epoch_day("1970-01-01") == 0
+        assert selector.utc_epoch_day("1970-01-02") == 1
+    finally:
+        if original_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", original_tz)
+        if hasattr(os, "tzset"):
+            os.tzset()
 
 
 def test_versioned_four_key_json_and_github_outputs_are_stable(tmp_path, capsys) -> None:
