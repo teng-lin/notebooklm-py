@@ -743,6 +743,7 @@ def test_resolve_cdp_url_allows_loopback(url: str) -> None:
         "http://192.168.1.10:9222",
         "http://0.0.0.0:9222",  # wildcard bind is not loopback
         "http://example.com:9222",
+        "http://[malformed-secret",
         "not a url",
     ],
 )

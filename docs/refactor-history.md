@@ -21,7 +21,7 @@
 > `_auth.browser_state_validation` and `_auth.login_wait_trace` with `_browser.browser_capture`,
 > `_auth.storage_transaction` with `_auth.profile_store`, and `_auth.storage_writer` with
 > `_auth.storage`. No transitional replacement shims were added.
-
+>
 > **2026-09-02 browser boundary note:** Playwright-backed acquisition now lives
 > in `_browser/`, while `_auth/recovery_rungs.py` owns the browser-neutral L3
 > registry. Interactive login is coordinated by `_app/login_browser.py`; CLI

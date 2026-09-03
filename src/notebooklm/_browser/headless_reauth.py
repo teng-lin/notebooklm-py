@@ -304,8 +304,11 @@ def _is_loopback_cdp_host(cdp_url: str) -> bool:
     # carry the host in the netloc, so urlparse handles either. A bare
     # ``host:port`` (no scheme) parses with an empty hostname, so prepend a
     # scheme in that case to extract the host.
-    parsed = urlparse(cdp_url if "//" in cdp_url else f"http://{cdp_url}")
-    host = (parsed.hostname or "").lower()
+    try:
+        parsed = urlparse(cdp_url if "//" in cdp_url else f"http://{cdp_url}")
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return False
     if host in {"localhost", "::1"}:
         return True
     try:

@@ -8,6 +8,7 @@ code; callers receive only the captured token string or a canonical
 
 from __future__ import annotations
 
+from ipaddress import ip_address
 from urllib.parse import SplitResult, urlsplit
 
 from .._auth.master_token_types import MasterTokenError
@@ -21,6 +22,18 @@ from .._auth.master_token_types import MasterTokenError
 from .browser_capture import classify_launch_failure, sync_playwright_context
 
 _EMBEDDED_SETUP_URL = "https://accounts.google.com/EmbeddedSetup"
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """Return whether a parsed CDP host stays on the operator's machine."""
+    if host is None:
+        return False
+    if host.casefold() == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def capture_oauth_token(
@@ -65,11 +78,12 @@ def capture_oauth_token(
                     or parsed_cdp.password is not None
                     or bool(parsed_cdp.query)
                     or bool(parsed_cdp.fragment)
+                    or not _is_loopback_host(parsed_cdp.hostname)
                 )
             if rejected_cdp:
                 raise MasterTokenError(
-                    "CDP URL must be a credential-free scheme/host/path endpoint without "
-                    "userinfo, query, or fragment."
+                    "CDP URL must be a credential-free loopback scheme/host/path endpoint "
+                    "without userinfo, query, or fragment."
                 )
 
         with sync_playwright_context() as playwright_driver:

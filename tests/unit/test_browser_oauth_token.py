@@ -118,9 +118,10 @@ def test_capture_timeout_preserves_active_context_and_scrubs_resources(monkeypat
         "https://localhost:9222/devtools?token=QSECRET42",
         "https://localhost:9222/devtools#FSECRET42",
         "http://[MALFORMEDSECRET42?token=secret",
+        "http://remote-host:9222",
     ],
 )
-def test_capture_rejects_credential_bearing_or_malformed_cdp_before_connector(monkeypatch, cdp_url):
+def test_capture_rejects_unsafe_cdp_before_connector(monkeypatch, cdp_url):
     context = Mock()
     monkeypatch.setattr(capture_service, "sync_playwright_context", context)
 
@@ -128,7 +129,7 @@ def test_capture_rejects_credential_bearing_or_malformed_cdp_before_connector(mo
         capture_service.capture_oauth_token(cdp_url=cdp_url)
 
     assert str(raised.value) == (
-        "CDP URL must be a credential-free scheme/host/path endpoint without "
+        "CDP URL must be a credential-free loopback scheme/host/path endpoint without "
         "userinfo, query, or fragment."
     )
     assert all(
