@@ -281,9 +281,9 @@ jobs:
       continue-on-error: true
       with:
         path: rebrand-state.json
-        key: rpc-rebrand-state-main-
+        key: rpc-rebrand-state-main-${{ needs.plan-live-lanes.outputs.web_account_slot }}-
         restore-keys: |
-          rpc-rebrand-state-main-
+          rpc-rebrand-state-main-${{ needs.plan-live-lanes.outputs.web_account_slot }}-
 
     # The restored document is the PREVIOUS run's, and it carries a run-scoped
     # ``changed`` flag. Move it into its own slot so it can never be read as
@@ -854,7 +854,7 @@ jobs:
         # Run-scoped key: cache entries are immutable, so a fixed key would
         # freeze the first night's answer forever. The restore step matches
         # this by prefix and picks the most recent.
-        key: rpc-rebrand-state-main-${{ github.run_id }}
+        key: rpc-rebrand-state-main-${{ needs.plan-live-lanes.outputs.web_account_slot }}-${{ github.run_id }}
 
     - name: Upload Report
       id: report_upload
