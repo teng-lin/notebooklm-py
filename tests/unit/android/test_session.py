@@ -1188,6 +1188,7 @@ async def test_omitted_unary_and_stream_epochs_reject_a_retired_workflow_generat
             async for _item in session.stream(
                 METHOD,
                 _Message(b"request"),
+                replay_safe=True,
                 response_type=_Message,
             ):
                 pass
