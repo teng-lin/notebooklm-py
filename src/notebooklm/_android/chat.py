@@ -8,7 +8,13 @@ from contextlib import asynccontextmanager
 from typing import Any, cast
 from uuid import uuid4
 
-from .._chat import _TURN_COUNT_INITIAL_LIMIT, _TURN_COUNT_MAX_LIMIT, ChatAPI, _PostedAsk
+from .._chat import (
+    ChatAPI,
+    _ChatSettingsRead,
+    _ConfigureAttemptLogPolicy,
+    _PostedAsk,
+    _TurnRoleSnapshot,
+)
 from .._conversation_cache import ConversationCache
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.call_supervisor import OperationLease
@@ -23,12 +29,10 @@ from ..exceptions import (
     ChatError,
     ChatResponseParseError,
     UnknownRPCMethodError,
-    ValidationError,
 )
 from ..types import (
     ChatReference,
     ChatSessionStatus,
-    ChatSettings,
     ConversationTurn,
     NextStepSuggestion,
     Note,
@@ -101,6 +105,8 @@ def _cancellable_chat_request_context() -> Any:
 
 class AndroidChatAPI(ChatAPI):
     """Android chat adapter installed by public Android backend selection."""
+
+    _configure_attempt_log_policy: _ConfigureAttemptLogPolicy = "silent"
 
     @asynccontextmanager
     async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
@@ -293,38 +299,17 @@ class AndroidChatAPI(ChatAPI):
         notebook_id: str,
         conversation_id: str,
         limit: int,
-    ) -> list[object]:
+    ) -> _TurnRoleSnapshot:
         response = await self.get_conversation_turns(
             notebook_id,
             conversation_id,
             limit=limit,
         )
-        return [turn.observed_event_type for turn in response.chat_turns[: max(0, limit)]]
-
-    async def _count_prior_server_turns(
-        self,
-        notebook_id: str,
-        conversation_id: str,
-    ) -> int:
-        """Count from Android's authoritative rows and exhaustion token."""
-        limit = _TURN_COUNT_INITIAL_LIMIT
-        while True:
-            response = await self.get_conversation_turns(
-                notebook_id,
-                conversation_id,
-                limit=limit,
-            )
-            roles = [turn.observed_event_type for turn in response.chat_turns]
-            question_count = sum(role == 1 for role in roles)
-            if len(roles) < limit or not response.next_page_token:
-                return question_count
-            if limit >= _TURN_COUNT_MAX_LIMIT:
-                raise ChatError(
-                    f"Conversation history filled the maximum "
-                    f"{_TURN_COUNT_MAX_LIMIT:,}-row snapshot; cannot derive an "
-                    "authoritative turn number."
-                )
-            limit *= 2
+        roles = tuple(turn.observed_event_type for turn in response.chat_turns[: max(0, limit)])
+        return _TurnRoleSnapshot(
+            roles=roles,
+            exhausted=len(roles) < limit or not response.next_page_token,
+        )
 
     @staticmethod
     def _conversation_history(cached_turns: list[ConversationTurn]) -> list[Any]:
@@ -451,19 +436,14 @@ class AndroidChatAPI(ChatAPI):
                 expected_epoch=lease.epoch,
             )
 
-    async def configure(
+    async def _send_configure(
         self,
         notebook_id: str,
-        goal: ChatGoal | None = None,
-        response_length: ChatResponseLength | None = None,
-        custom_prompt: str | None = None,
+        goal: ChatGoal,
+        response_length: ChatResponseLength,
+        custom_prompt: str | None,
     ) -> None:
-        if goal is None:
-            goal = ChatGoal.DEFAULT
-        if response_length is None:
-            response_length = ChatResponseLength.DEFAULT
-        if goal == ChatGoal.CUSTOM and not custom_prompt:
-            raise ValidationError("custom_prompt is required when goal is CUSTOM")
+        """Send one Android whole-settings mutation."""
         active_prompt = custom_prompt if goal == ChatGoal.CUSTOM else ""
 
         from .upload import android_request_context
@@ -494,7 +474,8 @@ class AndroidChatAPI(ChatAPI):
         )
         validate_project_identity(response, notebook_id, method_id=MUTATE_PROJECT_METHOD)
 
-    async def get_settings(self, notebook_id: str) -> ChatSettings:
+    async def _read_settings(self, notebook_id: str) -> _ChatSettingsRead:
+        """Read and validate Android chat settings."""
         read_proto = _read_proto()
         wire = _wire_proto()
         response = await self._transport.unary(
@@ -516,9 +497,10 @@ class AndroidChatAPI(ChatAPI):
         project = response.project
         validate_project_identity(project, notebook_id, method_id=GET_PROJECT_METHOD)
         if not project.HasField("advanced_settings"):
-            return ChatSettings(
+            return _ChatSettingsRead(
                 goal=ChatGoal.DEFAULT,
                 response_length=ChatResponseLength.DEFAULT,
+                custom_prompt=None,
             )
 
         settings = project.advanced_settings
@@ -555,7 +537,7 @@ class AndroidChatAPI(ChatAPI):
             )
         if goal != ChatGoal.CUSTOM:
             custom_prompt = None
-        return ChatSettings(
+        return _ChatSettingsRead(
             goal=goal,
             response_length=response_length,
             custom_prompt=custom_prompt,

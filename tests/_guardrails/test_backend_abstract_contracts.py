@@ -144,20 +144,23 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "_list_turn_roles",
                 "_cancel_generation",
                 "_get_session_status",
+                "_read_settings",
+                "_send_configure",
                 "_send_delete_conversation",
                 "_send_note",
                 "_stream_answer",
-                "configure",
                 "get_conversation_id",
                 "get_conversation_turns",
                 "get_history",
-                "get_settings",
             }
         ),
         wire_hooks=frozenset(
             {
                 "_cancel_generation",
                 "_get_session_status",
+                "_list_turn_roles",
+                "_read_settings",
+                "_send_configure",
                 "_send_delete_conversation",
                 "_send_note",
                 "_stream_answer",
@@ -323,9 +326,12 @@ _ANDROID_INHERITED_WORKFLOWS = {
     ),
     "ChatAPI": frozenset(
         {
+            "_count_prior_server_turns",
             "ask",
             "cancel",
+            "configure",
             "delete_conversation",
+            "get_settings",
             "save_answer_as_note",
             "session_status",
             "set_mode",
@@ -410,7 +416,9 @@ _WIRE_HOOK_NAMES = frozenset(
     {
         "_cancel_generation",
         "_get_session_status",
+        "_list_turn_roles",
         "_read_customization_choices",
+        "_read_settings",
         "_list_studio_mind_map_rows",
         "_read_interactive_tree",
         "_start_interactive_mind_map",
@@ -695,8 +703,11 @@ def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ChatAPI"
     )
     expected = {
+        "_count_prior_server_turns": {"_list_turn_roles"},
         "ask": {"_stream_answer"},
+        "configure": {"_send_configure"},
         "delete_conversation": {"_send_delete_conversation"},
+        "get_settings": {"_read_settings"},
         "save_answer_as_note": {"_send_note"},
     }
     for method_name, expected_hooks in expected.items():
@@ -711,7 +722,10 @@ def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
             for node in ast.walk(method)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and (node.func.attr.startswith("_send_") or node.func.attr == "_stream_answer")
+            and (
+                node.func.attr.startswith("_send_")
+                or node.func.attr in {"_list_turn_roles", "_read_settings", "_stream_answer"}
+            )
         }
         assert hooks == expected_hooks
 
@@ -812,19 +826,23 @@ def test_created_chat_session_hint_storage_and_consumer_have_one_base_owner() ->
         assert "_created_chat_session_ids" not in source
 
 
-def test_chat_settings_and_turn_role_reads_remain_backend_owned() -> None:
-    """Do not replace transport-specific reads with vacuous send hooks."""
+def test_chat_workflows_and_typed_reads_have_their_intended_owners() -> None:
+    """Keep public policy shared and transport-specific reads in backend hooks."""
     from notebooklm._android.chat import AndroidChatAPI
     from notebooklm._chat import ChatAPI
     from notebooklm._web.chat import WebChatAPI
 
-    for method_name in ("get_settings", "_list_turn_roles"):
+    for method_name in ("configure", "get_settings", "_count_prior_server_turns"):
+        assert method_name not in WebChatAPI.__dict__
+        assert method_name not in AndroidChatAPI.__dict__
+        assert getattr(WebChatAPI, method_name) is getattr(ChatAPI, method_name)
+        assert getattr(AndroidChatAPI, method_name) is getattr(ChatAPI, method_name)
+
+    for method_name in ("_send_configure", "_read_settings", "_list_turn_roles"):
         assert method_name in ChatAPI.__abstractmethods__
         base_method = getattr(ChatAPI, method_name)
         assert getattr(WebChatAPI, method_name) is not base_method
         assert getattr(AndroidChatAPI, method_name) is not base_method
-
-    assert AndroidChatAPI._count_prior_server_turns is not ChatAPI._count_prior_server_turns
 
 
 def test_backend_implementations_preserve_abstract_method_signatures() -> None:

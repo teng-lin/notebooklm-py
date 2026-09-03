@@ -10,10 +10,11 @@ from typing import Any
 
 import pytest
 
-from notebooklm._chat import ChatAPI, _PostedAsk
+from notebooklm._chat import ChatAPI, _ChatSettingsRead, _PostedAsk, _TurnRoleSnapshot
 from notebooklm._types.documents import StructuredDocument
 from notebooklm._types.enums import ChatGoal, ChatResponseLength
 from notebooklm._web.chat import WebChatAPI
+from notebooklm.exceptions import ValidationError
 from notebooklm.types import (
     ChatReference,
     ChatSessionStatus,
@@ -26,7 +27,7 @@ from notebooklm.types import (
 # ``inspect.getdoc`` keeps these stable across CPython's 3.13 docstring
 # indentation change while still detecting documentation drift. These cover the
 # effective runtime owner of every public method: shared workflows on the
-# neutral base and Web overrides for the abstract reads/configuration.
+# neutral base and Web overrides for the remaining abstract reads.
 _CHAT_DOCSTRING_SHA256 = {
     ("ChatAPI", "<class>"): "3cb0c1f0686423392457277486d386eeef8f99865e8b45ba754bc96ec75cb804",
     ("ChatAPI", "__init__"): "a48df90f2e18ac8d5591f96686b829897edc6b9ecfdb3901ef56905de4966e23",
@@ -80,11 +81,11 @@ _CHAT_DOCSTRING_SHA256 = {
         "get_history",
     ): "05fc7448600335aa9c7f548b2e12723c3836f1f75ad8ca04c86f25008bdb7526",
     (
-        "WebChatAPI",
+        "ChatAPI",
         "configure",
     ): "18fee62a4f952caf863098bbef023655be560d9d2a69c8307ef83fa9fb6e0e01",
     (
-        "WebChatAPI",
+        "ChatAPI",
         "get_settings",
     ): "ab537f9191b92e48129cbc1431f32b85ba613bc871175e4fbdcfb89babce3fcc",
 }
@@ -98,10 +99,16 @@ class _FakeChatAPI(ChatAPI):
         *,
         conversation_ids: list[str | None] | None = None,
         role_snapshots: list[list[object]] | None = None,
+        settings: _ChatSettingsRead | None = None,
     ) -> None:
         self.events: list[tuple[str, object]] = []
         self._conversation_ids = list(conversation_ids or [])
         self._role_snapshots = list(role_snapshots or [])
+        self._settings = settings or _ChatSettingsRead(
+            goal=ChatGoal.DEFAULT,
+            response_length=ChatResponseLength.DEFAULT,
+            custom_prompt=None,
+        )
         self._source_ids = ["source-1"]
         loop_guard = SimpleNamespace(assert_bound_loop=self._assert_loop)
         notebooks = SimpleNamespace(get_source_ids=self._get_source_ids)
@@ -144,9 +151,10 @@ class _FakeChatAPI(ChatAPI):
         notebook_id: str,
         conversation_id: str,
         limit: int,
-    ) -> list[object]:
+    ) -> _TurnRoleSnapshot:
         self.events.append(("roles", (notebook_id, conversation_id, limit)))
-        return self._role_snapshots.pop(0)
+        roles = tuple(self._role_snapshots.pop(0))
+        return _TurnRoleSnapshot(roles=roles, exhausted=len(roles) < limit)
 
     async def _send_delete_conversation(
         self,
@@ -221,17 +229,18 @@ class _FakeChatAPI(ChatAPI):
     ) -> list[tuple[str, str]]:
         raise NotImplementedError
 
-    async def configure(
+    async def _send_configure(
         self,
         notebook_id: str,
-        goal: ChatGoal | None = None,
-        response_length: ChatResponseLength | None = None,
-        custom_prompt: str | None = None,
+        goal: ChatGoal,
+        response_length: ChatResponseLength,
+        custom_prompt: str | None,
     ) -> None:
-        raise NotImplementedError
+        self.events.append(("configure", (notebook_id, goal, response_length, custom_prompt)))
 
-    async def get_settings(self, notebook_id: str) -> ChatSettings:
-        raise NotImplementedError
+    async def _read_settings(self, notebook_id: str) -> _ChatSettingsRead:
+        self.events.append(("settings", notebook_id))
+        return self._settings
 
 
 @pytest.mark.asyncio
@@ -318,6 +327,85 @@ async def test_delete_and_note_workflows_prepare_state_around_one_hook_each() ->
             ),
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_configure_normalizes_once_before_the_typed_send_hook() -> None:
+    api = _FakeChatAPI()
+
+    await api.configure("notebook-1")
+    await api.configure(
+        "notebook-1",
+        goal=ChatGoal.LEARNING_GUIDE,
+        response_length=ChatResponseLength.LONGER,
+        custom_prompt="inactive draft",
+    )
+    await api.configure(
+        "notebook-1",
+        goal=ChatGoal.CUSTOM,
+        custom_prompt="Be exact.",
+    )
+
+    assert api.events == [
+        (
+            "configure",
+            (
+                "notebook-1",
+                ChatGoal.DEFAULT,
+                ChatResponseLength.DEFAULT,
+                None,
+            ),
+        ),
+        (
+            "configure",
+            (
+                "notebook-1",
+                ChatGoal.LEARNING_GUIDE,
+                ChatResponseLength.LONGER,
+                None,
+            ),
+        ),
+        (
+            "configure",
+            (
+                "notebook-1",
+                ChatGoal.CUSTOM,
+                ChatResponseLength.DEFAULT,
+                "Be exact.",
+            ),
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_configure_rejects_missing_custom_prompt_before_send_hook() -> None:
+    api = _FakeChatAPI()
+
+    with pytest.raises(
+        ValidationError,
+        match="custom_prompt is required when goal is CUSTOM",
+    ):
+        await api.configure("notebook-1", goal=ChatGoal.CUSTOM)
+
+    assert api.events == []
+
+
+@pytest.mark.asyncio
+async def test_get_settings_constructs_public_model_after_one_typed_read() -> None:
+    api = _FakeChatAPI(
+        settings=_ChatSettingsRead(
+            goal=ChatGoal.CUSTOM,
+            response_length=ChatResponseLength.SHORTER,
+            custom_prompt="Use proofs.",
+        )
+    )
+
+    assert await api.get_settings("notebook-1") == ChatSettings(
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.SHORTER,
+        custom_prompt="Use proofs.",
+    )
+    assert api.events == [("settings", "notebook-1")]
 
 
 @pytest.mark.parametrize(

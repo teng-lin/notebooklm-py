@@ -10,7 +10,7 @@ import weakref
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Literal
 
 from ._conversation_cache import ConversationCache
 from ._loop_bound import LoopBoundPrimitive
@@ -19,7 +19,7 @@ from ._runtime.call_supervisor import OperationLease
 from ._runtime.contracts import LoopGuard
 from ._types.documents import StructuredDocument, utf16_len
 from ._types.enums import ChatGoal, ChatResponseLength
-from .exceptions import ChatError, NetworkError
+from .exceptions import ChatError, NetworkError, ValidationError
 from .types import (
     AskResult,
     ChatMode,
@@ -81,6 +81,26 @@ class _PostedAsk:
     answer_document: StructuredDocument
     turn_key: ConversationTurnKey | None
     next_steps: list[NextStepSuggestion]
+
+
+@dataclass(frozen=True)
+class _ChatSettingsRead:
+    """Backend-decoded chat settings before public model construction."""
+
+    goal: ChatGoal
+    response_length: ChatResponseLength
+    custom_prompt: str | None
+
+
+@dataclass(frozen=True)
+class _TurnRoleSnapshot:
+    """One bounded role snapshot plus backend-specific exhaustion evidence."""
+
+    roles: tuple[object, ...]
+    exhausted: bool
+
+
+_ConfigureAttemptLogPolicy = Literal["before_validation", "silent"]
 
 
 def _strip_citation_markers(answer_text: str) -> tuple[str, list[tuple[int, int]]]:
@@ -159,6 +179,8 @@ class ChatAPI(LoopBoundPrimitive, ABC):
                 conversation_id=result.conversation_id
             )
     """
+
+    _configure_attempt_log_policy: _ConfigureAttemptLogPolicy = "silent"
 
     def _operation_scope(
         self, label: str
@@ -263,10 +285,9 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         """Count questions from a complete newest-first role snapshot."""
         limit = _TURN_COUNT_INITIAL_LIMIT
         while True:
-            roles = await self._list_turn_roles(notebook_id, conversation_id, limit)
-            row_count = len(roles)
-            question_count = sum(role == 1 for role in roles)
-            if row_count < limit:
+            snapshot = await self._list_turn_roles(notebook_id, conversation_id, limit)
+            question_count = sum(role == 1 for role in snapshot.roles)
+            if snapshot.exhausted:
                 return question_count
             if limit >= _TURN_COUNT_MAX_LIMIT:
                 raise ChatError(
@@ -688,7 +709,6 @@ class ChatAPI(LoopBoundPrimitive, ABC):
     ) -> list[tuple[str, str]]:
         """Return decoded question/answer history."""
 
-    @abstractmethod
     async def configure(
         self,
         notebook_id: str,
@@ -696,11 +716,78 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         response_length: ChatResponseLength | None = None,
         custom_prompt: str | None = None,
     ) -> None:
-        """Persist chat configuration."""
+        """Configure chat persona and response settings for a notebook.
+
+        Writes the WHOLE chat-settings block with no server-side merge: an
+        omitted ``goal`` / ``response_length`` resets that field to its default.
+        This is the low-level primitive — for a partial, merge-preserving update
+        (CLI ``configure`` / MCP ``chat_configure``) go through
+        ``_app.chat.execute_configure``, which reads :meth:`get_settings` first.
+
+        Args:
+            notebook_id: The notebook ID.
+            goal: Chat persona/goal (ChatGoal enum: DEFAULT, CUSTOM, LEARNING_GUIDE).
+            response_length: Response verbosity (ChatResponseLength enum).
+            custom_prompt: Custom instructions (required if goal is CUSTOM).
+
+        Raises:
+            ValidationError: If goal is CUSTOM but custom_prompt is not provided.
+        """
+        if self._configure_attempt_log_policy == "before_validation":
+            logger.debug("Configuring chat for notebook %s", notebook_id)
+        resolved_goal = ChatGoal.DEFAULT if goal is None else goal
+        resolved_length = ChatResponseLength.DEFAULT if response_length is None else response_length
+        if resolved_goal == ChatGoal.CUSTOM and not custom_prompt:
+            raise ValidationError("custom_prompt is required when goal is CUSTOM")
+        active_prompt = custom_prompt if resolved_goal == ChatGoal.CUSTOM else None
+        await self._send_configure(
+            notebook_id,
+            resolved_goal,
+            resolved_length,
+            active_prompt,
+        )
+
+    async def get_settings(self, notebook_id: str) -> ChatSettings:
+        """Read the notebook's current chat configuration.
+
+        Decodes the chat-settings block from ``GET_NOTEBOOK`` so a *partial*
+        ``configure`` can merge (read-modify-write) instead of clobbering the
+        fields it doesn't touch — the server stores the whole block with no
+        merge (see :meth:`configure`). A notebook that has never been configured
+        reads back as ``DEFAULT``/``DEFAULT`` with no persona.
+
+        Args:
+            notebook_id: The notebook ID.
+
+        Returns:
+            The current :class:`ChatSettings` (goal, response length, persona).
+
+        Raises:
+            UnknownRPCMethodError: if the GET_NOTEBOOK chat-settings block has
+                drifted from the expected shape — raised rather than silently
+                defaulting, which on the merge path would clobber a field the
+                caller meant to preserve (the #1751 footgun).
+        """
+        settings = await self._read_settings(notebook_id)
+        return ChatSettings(
+            goal=settings.goal,
+            response_length=settings.response_length,
+            custom_prompt=settings.custom_prompt,
+        )
 
     @abstractmethod
-    async def get_settings(self, notebook_id: str) -> ChatSettings:
-        """Return decoded chat settings."""
+    async def _send_configure(
+        self,
+        notebook_id: str,
+        goal: ChatGoal,
+        response_length: ChatResponseLength,
+        custom_prompt: str | None,
+    ) -> None:
+        """Send one backend-specific whole-settings mutation."""
+
+    @abstractmethod
+    async def _read_settings(self, notebook_id: str) -> _ChatSettingsRead:
+        """Read and validate backend chat settings into a neutral carrier."""
 
     @abstractmethod
     async def _list_turn_roles(
@@ -708,8 +795,8 @@ class ChatAPI(LoopBoundPrimitive, ABC):
         notebook_id: str,
         conversation_id: str,
         limit: int,
-    ) -> list[object]:
-        """Return one decoded role value per backend turn row."""
+    ) -> _TurnRoleSnapshot:
+        """Return decoded roles plus backend-specific exhaustion evidence."""
 
     @abstractmethod
     async def _stream_answer(

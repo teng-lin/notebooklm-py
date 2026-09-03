@@ -6,7 +6,14 @@ import logging
 import reprlib
 from typing import TYPE_CHECKING, Any
 
-from .._chat import ChatAPI, _PostedAsk, _prepare_note_citations
+from .._chat import (
+    ChatAPI,
+    _ChatSettingsRead,
+    _ConfigureAttemptLogPolicy,
+    _PostedAsk,
+    _prepare_note_citations,
+    _TurnRoleSnapshot,
+)
 from .._conversation_cache import ConversationCache
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
@@ -17,9 +24,9 @@ from .._runtime.config import (
 )
 from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
-from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError, ValidationError
+from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError
 from ..rpc import RPCMethod, safe_index
-from ..types import ChatReference, ChatSessionStatus, ChatSettings, ConversationTurn, Note
+from ..types import ChatReference, ChatSessionStatus, ConversationTurn, Note
 from .contracts import RpcCaller
 from .params.chat_note import build_save_chat_as_note_params
 from .params.chat_session import (
@@ -136,6 +143,8 @@ class WebChatAPI(ChatAPI):
             )
     """
 
+    _configure_attempt_log_policy: _ConfigureAttemptLogPolicy = "before_validation"
+
     def __init__(
         self,
         *,
@@ -246,14 +255,17 @@ class WebChatAPI(ChatAPI):
         notebook_id: str,
         conversation_id: str,
         limit: int,
-    ) -> list[object]:
+    ) -> _TurnRoleSnapshot:
         turns_data = await self.get_conversation_turns(
             notebook_id,
             conversation_id,
             limit=limit,
         )
         turns = unwrap_conversation_turns(turns_data, source="_chat.ask.turn_count")
-        return [ConversationTurnRow(turn).role for turn in turns]
+        return _TurnRoleSnapshot(
+            roles=tuple(ConversationTurnRow(turn).role for turn in turns),
+            exhausted=len(turns) < limit,
+        )
 
     async def _send_delete_conversation(
         self,
@@ -411,37 +423,14 @@ class WebChatAPI(ChatAPI):
             turns_data = [list(reversed(turns))]
         return self._parse_turns_to_qa_pairs(turns_data)
 
-    async def configure(
+    async def _send_configure(
         self,
         notebook_id: str,
-        goal: ChatGoal | None = None,
-        response_length: ChatResponseLength | None = None,
-        custom_prompt: str | None = None,
+        goal: ChatGoal,
+        response_length: ChatResponseLength,
+        custom_prompt: str | None,
     ) -> None:
-        """Configure chat persona and response settings for a notebook.
-
-        Writes the WHOLE chat-settings block with no server-side merge: an
-        omitted ``goal`` / ``response_length`` resets that field to its default.
-        This is the low-level primitive — for a partial, merge-preserving update
-        (CLI ``configure`` / MCP ``chat_configure``) go through
-        ``_app.chat.execute_configure``, which reads :meth:`get_settings` first.
-
-        Args:
-            notebook_id: The notebook ID.
-            goal: Chat persona/goal (ChatGoal enum: DEFAULT, CUSTOM, LEARNING_GUIDE).
-            response_length: Response verbosity (ChatResponseLength enum).
-            custom_prompt: Custom instructions (required if goal is CUSTOM).
-
-        Raises:
-            ValidationError: If goal is CUSTOM but custom_prompt is not provided.
-        """
-        logger.debug("Configuring chat for notebook %s", notebook_id)
-        if goal is None:
-            goal = ChatGoal.DEFAULT
-        if response_length is None:
-            response_length = ChatResponseLength.DEFAULT
-        if goal == ChatGoal.CUSTOM and not custom_prompt:
-            raise ValidationError("custom_prompt is required when goal is CUSTOM")
+        """Send one Web whole-settings mutation."""
         goal_array = [goal.value, custom_prompt] if goal == ChatGoal.CUSTOM else [goal.value]
         chat_settings = [goal_array, [response_length.value]]
         params = [notebook_id, [[None, None, None, None, None, None, None, chat_settings]]]
@@ -454,27 +443,8 @@ class WebChatAPI(ChatAPI):
             raise_on_null_status=True,
         )
 
-    async def get_settings(self, notebook_id: str) -> ChatSettings:
-        """Read the notebook's current chat configuration.
-
-        Decodes the chat-settings block from ``GET_NOTEBOOK`` so a *partial*
-        ``configure`` can merge (read-modify-write) instead of clobbering the
-        fields it doesn't touch — the server stores the whole block with no
-        merge (see :meth:`configure`). A notebook that has never been configured
-        reads back as ``DEFAULT``/``DEFAULT`` with no persona.
-
-        Args:
-            notebook_id: The notebook ID.
-
-        Returns:
-            The current :class:`ChatSettings` (goal, response length, persona).
-
-        Raises:
-            UnknownRPCMethodError: if the GET_NOTEBOOK chat-settings block has
-                drifted from the expected shape — raised rather than silently
-                defaulting, which on the merge path would clobber a field the
-                caller meant to preserve (the #1751 footgun).
-        """
+    async def _read_settings(self, notebook_id: str) -> _ChatSettingsRead:
+        """Read and validate Web chat settings."""
         params = build_get_notebook_params(notebook_id)
         result = await self._rpc.rpc_call(
             RPCMethod.GET_NOTEBOOK,
@@ -500,7 +470,11 @@ class WebChatAPI(ChatAPI):
                 source="ChatAPI.get_settings",
                 data_at_failure=reprlib.repr((row.goal_code, row.response_length_code)),
             ) from exc
-        return ChatSettings(goal=goal, response_length=length, custom_prompt=row.custom_prompt)
+        return _ChatSettingsRead(
+            goal=goal,
+            response_length=length,
+            custom_prompt=row.custom_prompt,
+        )
 
     @staticmethod
     def _parse_turns_to_qa_pairs(turns_data: Any) -> list[tuple[str, str]]:

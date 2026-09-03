@@ -277,11 +277,13 @@ For a new conversation, `ChatAPI.ask()` then calls its abstract
 that read through `GET_LAST_CONVERSATION_ID` on the normal `RpcExecutor` path.
 Other Web chat reads use the same executor, while shared
 `ChatAPI.delete_conversation()` delegates its one RPC send to
-`WebChatAPI._send_delete_conversation()`. Chat settings and turn roles remain
-the explicit backend-owned `get_settings()` / `_list_turn_roles()` read
-boundaries. Android also retains its specialized prior-turn counter because it
-uses the native exhaustion token rather than inferring exhaustion from row
-count alone.
+`WebChatAPI._send_delete_conversation()`. `ChatAPI.configure()` owns defaults,
+custom-prompt validation, and normalization above `_send_configure()`, while
+`ChatAPI.get_settings()` constructs the public model from the typed
+`_read_settings()` carrier. Authoritative prior-turn counting is also shared;
+each `_list_turn_roles()` hook returns typed roles plus backend-specific
+exhaustion evidence, so Web keeps its row-count rule and Android keeps its
+native pagination-token rule.
 
 `AndroidChatAPI` reuses the same neutral `ChatAPI` locks, cache, source lookup,
 and result construction, but its send seam calls
@@ -1124,7 +1126,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/artifact_proto.py` | Lazy handles for exact artifact/read protobuf modules and repository-local evidence overlays so public Android backend construction does not eagerly import generated descriptors. |
 | `_android/note_backed.py` | Narrow adapter projecting the selected typed note-backed mind-map reader into aggregate Android artifact rows. |
 | `_android/assets.py` | Publicly selected, lifecycle-drained Android asset transport. It validates canonical hosts and every hop, clears ambient cookies, performs the APK-evidenced bearer-authenticated `GET` with `alr=yes` only on exact admitted entry hosts, strips credentials after leaving the allowlist, enforces representation-specific length/stream/signature limits, corrects verified WAV destinations to `.wav`, and publishes through same-directory staging atomically. PDF and PPTX slide transfer are live-proven. |
-| `_android/chat.py` | Selected Android chat adapter over settings, sessions, raw turns, history deletion, the cumulative server stream, and citation-rich saved-response notes; base `ChatAPI` retains locks/cache/follow-up orchestration and public result construction. Settings and typed turn-role reads remain backend-owned, as does Android's exhaustion-token-aware prior-turn counter. |
+| `_android/chat.py` | Selected Android chat adapter over typed settings/turn-role reads, settings mutation, sessions, raw turns, history deletion, the cumulative server stream, and citation-rich saved-response notes. Base `ChatAPI` owns locks/cache/follow-up orchestration, configure/settings result construction, and exhaustion-aware prior-turn counting. |
 | `_android/notes.py` | Selected implementation of the eight-method Notes manifest: exact note CRUD write/read-back checks, bounded idempotent deletion polling, exact-kind note-backed mind-map list/delete, and rich saved-response creation with current-server citation fields. Unknown creation time remains `None`, raw map rows preserve the supported ID/content prefix, and genuine post-delete absence remains `None`. |
 | `_android/settings.py` | Native output-language and account-limit adapter over exact `GetOrCreateAccount` and `MutateAccount`; temporary live mutation/read-back was restored in `finally`. |
 | `_android/sharing.py` | Native `GetProjectDetails`/`ShareProject` adapter for status, public links, collaborator grants/updates/removals, and read-back. `set_view_level` uses the native `MutateProject` tag-9 branch and folds the written level into the fresh sharing projection. |
@@ -1253,8 +1255,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `artifacts.py`, `research.py`, `utils.py` | Public helper modules for artifact retry, research citation/report utilities, and common async helpers |
 | `_notebooks.py` | Backend-neutral abstract `NotebooksAPI`; owns shared create idempotency, copy validation/ambiguity policy, lookup/update conveniences, metadata composition, and share-URL semantics. Copy ambiguity uses a typed backend policy: Web explicitly chains the original transient error, while Android suppresses the capability-bearing cause. |
 | `_sources.py` | Backend-neutral abstract `SourcesAPI`; owns source identity lookup, search validation/global ranking, the `add_urls_async` / `append_text` / `copy` transfer workflows, file-upload title normalization/finalization over `_send_upload`, and the four polling workflows over neutral `SourcePoller` |
-| `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, copy/export workflows, decoded polling, family lists, lookup, neutral formatting, and asset transfer; customization choices remain a backend read |
-| `_chat.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, and shared ask/delete/save-note orchestration over protected adapter hooks plus backend-owned `get_settings` and typed `_list_turn_roles` read boundaries |
+| `_artifacts.py` | Backend-neutral abstract `ArtifactsAPI`; owns artifact generation orchestration, copy/export workflows, decoded polling, family lists, lookup, customization-choice delegation, neutral formatting, and asset transfer over protected backend hooks |
+| `_chat.py` | Backend-neutral abstract `ChatAPI`; owns locks, cache, deleted-conversation tracking, ID recovery, authoritative turn counting, modes, configure/settings result policy, and shared ask/delete/save-note orchestration over protected typed backend hooks |
 | `_research.py` | Backend-neutral abstract `BaseResearchAPI`; owns polling helpers, raw-import materialization/provenance/classification over one `_send_import` hook, and the Android-safe import-verification workflow over abstract backend reads/mutations |
 | `_research_import.py` | Backend-neutral research import classification and reconciliation helpers: immutable backend policy plus typed item/batch carriers, typed input coercion, structured-URL normalization, provenance checks, imported-result carriers, idempotency partitioning, probe outcomes, and read-timeout resolution |
 | `_web/research.py` | Web implementation of `client.research`; keeps Web import encoding/decoding behind `_send_import` and its distinct established import-verification policy; shared classification preserves the historical `notebooklm._research` logger key |
@@ -1607,7 +1609,7 @@ src/notebooklm/
 │   ├── sources.py               # Source row adapter
 │   ├── play_books.py            # ListExpertIntelligenceContent row adapter (#2292): decode_play_books_response → PlayBook list
 │   └── transfers.py             # CopySourcesAsync / CopyArtifactsAsync / AddSourcesAsync mapping-row adapters (#2283)
-├── _chat.py                     # Abstract ChatAPI + shared locks/cache/ask/delete/save-note orchestration and lazy private turn-helper shim
+├── _chat.py                     # Abstract ChatAPI + shared ask/configure/settings/turn-count orchestration over typed hooks
 ├── _auth/                       # Auth subpackage (forwarded through auth.py facade)
 │   ├── __init__.py
 │   ├── paths.py                 # Storage paths and filesystem helpers

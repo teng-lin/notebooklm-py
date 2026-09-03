@@ -11,6 +11,7 @@ marker; see ``pyproject.toml`` markers list for the rationale.
 """
 
 import json
+import logging
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -202,13 +203,19 @@ class TestChatAPI:
         self,
         auth_tokens,
         httpx_mock: HTTPXMock,
+        caplog: pytest.LogCaptureFixture,
     ):
         """Test that CUSTOM mode without prompt raises ValidationError."""
         from notebooklm.exceptions import ValidationError
 
-        async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ValidationError, match="custom_prompt is required"):
-                await client.chat.configure("nb_123", goal=ChatGoal.CUSTOM)
+        with caplog.at_level(logging.DEBUG, logger="notebooklm._chat.api"):
+            async with NotebookLMClient(auth_tokens) as client:
+                with pytest.raises(ValidationError, match="custom_prompt is required"):
+                    await client.chat.configure("nb_123", goal=ChatGoal.CUSTOM)
+
+        assert "Configuring chat for notebook nb_123" in [
+            record.getMessage() for record in caplog.records
+        ]
 
     @pytest.mark.asyncio
     async def test_configure_custom_mode_with_prompt(
