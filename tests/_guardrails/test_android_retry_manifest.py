@@ -292,16 +292,17 @@ def test_android_retry_manifest_negative_self_test_covers_imported_constant_site
 
 def test_android_session_consults_the_retry_manifest() -> None:
     tree = ast.parse((_ANDROID_ROOT / "session.py").read_text(encoding="utf-8"))
-    unary_impl = next(
+    replay_resolver = next(
         node
         for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_unary_impl"
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "_resolve_replay_safe"
     )
     assert any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "replay_safe_for"
-        for node in ast.walk(unary_impl)
+        for node in ast.walk(replay_resolver)
     )
 
 

@@ -188,11 +188,8 @@ class FakeOrganizationServer:
         }
         assert kwargs["response_type"] is response_types[method]
         assert kwargs["expected_epoch"] == self.epoch
-        variant = kwargs.get("operation_variant")
-        assert kwargs["replay_safe"] is (
-            method == MUTATE_LABEL_METHOD
-            and (variant is None or str(variant).startswith("remove_"))
-        )
+        assert kwargs["replay_safe"] is False
+        assert "operation_variant" not in kwargs
         assert request.HasField("request_context")
         if method == CREATE_LABEL_METHOD:
             if request.HasField("auto_create"):

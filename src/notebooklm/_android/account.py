@@ -37,7 +37,7 @@ class AndroidAccountAPI:
             response = await self._transport.unary(
                 GET_OR_CREATE_ACCOUNT_METHOD,
                 proto.GetOrCreateAccountRequest(request_context=_request_context()),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=proto.GetOrCreateAccountResponse,
                 expected_epoch=lease.epoch,
             )

@@ -384,7 +384,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
             await self._transport.unary(
                 DELETE_PROJECTS_METHOD,
                 notebook_proto.DeleteProjectsRequest(project_ids=[notebook_id]),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=empty_type,
             )
         except RPCError as exc:
@@ -419,7 +419,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         response = await self._transport.unary(
             MUTATE_PROJECT_METHOD,
             request,
-            replay_safe=True,
+            replay_safe=False,
             response_type=_read_proto().Project,
         )
         _notebook_codec().validate_project_identity(
@@ -465,7 +465,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         return await self._transport.unary(
             GENERATE_NOTEBOOK_GUIDE_METHOD,
             notebook_proto.GenerateNotebookGuideRequest(project_id=notebook_id),
-            replay_safe=True,
+            replay_safe=False,
             response_type=wire_proto.WireGenerateNotebookGuideResponse,
         )
 
@@ -493,7 +493,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
                     project_id=notebook_id,
                     request_context=_android_request_context(),
                 ),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=empty_type,
             )
         except RPCError as exc:

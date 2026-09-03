@@ -292,7 +292,7 @@ class AndroidResearchAPI(BaseResearchAPI):
                         request_context=android_request_context(),
                         source_discovery_job_id=run_id,
                     ),
-                    replay_safe=True,
+                    replay_safe=False,
                     response_type=_empty_type(),
                     expected_epoch=lease.epoch,
                 )

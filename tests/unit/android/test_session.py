@@ -17,7 +17,7 @@ from notebooklm._android.epoch import (
     reset_workflow_epoch,
     workflow_epoch_for,
 )
-from notebooklm._android.notebooks import AndroidNotebooksAPI, GET_PROJECT_METHOD
+from notebooklm._android.notebooks import GET_PROJECT_METHOD, AndroidNotebooksAPI
 from notebooklm._android.session import (
     ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
     ANDROID_GRPC_TARGET,
@@ -332,18 +332,18 @@ async def test_raw_calls_use_fixed_session_auth_codecs_and_constant_telemetry() 
 
 
 @pytest.mark.asyncio
-async def test_unary_rejects_stale_replay_literal_before_wire_dispatch() -> None:
+async def test_unary_accepts_explicit_replay_opt_out_for_safe_method() -> None:
     session, _, channel, _, _ = await _open()
 
-    with pytest.raises(ValueError, match="disagrees with policy"):
-        await session.unary(
-            METHOD,
-            _Message(b"request"),
-            replay_safe=False,
-            response_type=_Message,
-        )
+    result = await session.unary(
+        METHOD,
+        _Message(b"request"),
+        replay_safe=False,
+        response_type=_Message,
+    )
 
-    assert channel.invocations == []
+    assert result == _Message(b"response")
+    assert len(channel.invocations) == 1
 
 
 @pytest.mark.asyncio

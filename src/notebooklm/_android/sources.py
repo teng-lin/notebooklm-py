@@ -676,7 +676,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 ],
                 request_context=android_request_context(),
             ),
-            replay_safe=True,
+            replay_safe=False,
             response_type=_write_proto().MutateSourceResponse,
             expected_epoch=expected_epoch,
         )
@@ -1326,7 +1326,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 await self._transport.unary(
                     DELETE_SOURCES_METHOD,
                     request,
-                    replay_safe=True,
+                    replay_safe=False,
                     response_type=_empty_type(),
                     expected_epoch=lease.epoch,
                 )
@@ -1364,7 +1364,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 response = await self._transport.unary(
                     MUTATE_SOURCE_METHOD,
                     request,
-                    replay_safe=True,
+                    replay_safe=False,
                     response_type=_write_proto().MutateSourceResponse,
                     expected_epoch=lease.epoch,
                 )
@@ -1430,7 +1430,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                     source_id=_read_proto().SourceId(id=source_id),
                     request_context=android_request_context(),
                 ),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=_write_proto().RefreshSourceResponse,
                 expected_epoch=lease.epoch,
             )

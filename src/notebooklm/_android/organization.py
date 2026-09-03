@@ -198,7 +198,7 @@ async def mutate_properties(
     await transport.unary(
         MUTATE_LABEL_METHOD,
         request,
-        replay_safe=True,
+        replay_safe=False,
         response_type=exact.MutateLabelResponse,
         expected_epoch=expected_epoch,
     )
@@ -230,8 +230,7 @@ async def mutate_member(
     await transport.unary(
         MUTATE_LABEL_METHOD,
         request,
-        operation_variant=operation,
-        replay_safe=operation.startswith("remove_"),
+        replay_safe=False,
         response_type=exact.MutateLabelResponse,
         expected_epoch=expected_epoch,
     )

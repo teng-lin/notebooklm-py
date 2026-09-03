@@ -96,7 +96,7 @@ async def delete_artifact(
             await session.unary(
                 DELETE_ARTIFACT_METHOD,
                 _PROTO.DeleteArtifactRequest(artifact_id=artifact_id),
-                replay_safe=True,
+                replay_safe=False,
                 response_type=empty_response_type(),
                 expected_epoch=lease.epoch,
             )
