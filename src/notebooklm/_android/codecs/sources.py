@@ -368,7 +368,7 @@ def _skip_value(payload: bytes, offset: int, wire_type: int) -> int:
         return offset + length
     if wire_type == 5:
         return offset + 4
-    if not (wire_type == 1):
+    if wire_type == 1:
         return offset + 8
     raise ValueError(f"unsupported wire type {wire_type}")
 
