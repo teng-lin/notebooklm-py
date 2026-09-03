@@ -193,6 +193,25 @@ def test_auth_audit_owner_entropy_exception_requires_canonical_path(tmp_path: Pa
     assert "Leak (auth token)" in leaked.stdout
 
 
+def test_auth_policy_identifier_entropy_exception_requires_canonical_path(tmp_path: Path) -> None:
+    policies = FIXTURES_DIR / "policies"
+    for name in ("auth_behavior_scenarios.json", "auth_patch_survivors.json"):
+        clean = _run_guard("--secrets-only", str(policies / name))
+        assert clean.returncode == 0, clean.stdout
+
+    lookalike_dir = tmp_path / "policies"
+    lookalike_dir.mkdir()
+    lookalike = lookalike_dir / "auth_behavior_scenarios.json"
+    identifier = "test_flock_unavailable_warns_exactly_once_under_asyncio_gather"
+    lookalike.write_text(
+        f'{{"owner_qualname": "{identifier}"}}\n',
+        encoding="utf-8",
+    )
+    result = _run_guard("--secrets-only", str(lookalike))
+    assert result.returncode == 1
+    assert "high-entropy token" in result.stdout
+
+
 # --- Signed blob-capability URLs (#2120 / #2215) ---------------------------
 # These must be caught in BOTH scan modes. ``--secrets-only`` reaches the
 # detector via ``_CREDENTIAL_DETECTORS``; the full cassette scan routes through

@@ -5319,7 +5319,7 @@
         "ordering",
         "result"
       ],
-      "id": "scenario-psidts-validation-healing",
+      "id": "scenario-auth-cookie-validation-healing",
       "node_mapping": [
         {
           "base": "tests/unit/test_auth_validate_heal_split.py::TestHealIsSeparable::test_heal_delegates_to_the_single_rotation_implementation",

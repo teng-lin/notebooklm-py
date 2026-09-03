@@ -85,6 +85,12 @@ _AUTH_AUDIT_BASELINES = frozenset(
     }
 )
 _AUTH_AUDIT_BASELINE_DIR = (_REPO_ROOT / "tests" / "fixtures" / "baselines").resolve()
+_AUTH_AUDIT_POLICY_FILES = frozenset(
+    {
+        (_REPO_ROOT / "tests/fixtures/policies/auth_behavior_scenarios.json").resolve(),
+        (_REPO_ROOT / "tests/fixtures/policies/auth_patch_survivors.json").resolve(),
+    }
+)
 _OWNER_QUALNAME_LINE = re.compile(r'^\s*(?:\{\s*)?"owner_qualname"\s*:')
 _ANDROID_GRPC_FORMAT = "notebooklm.android.grpc-cassette"
 _ANDROID_SAFE_METADATA_KEYS = frozenset(
@@ -383,11 +389,13 @@ def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
             for line_no, line in enumerate(fh, start=1):
                 if secrets_only:
                     line_leaks = find_credential_leaks(line)
-                    if (
-                        path.resolve().parent == _AUTH_AUDIT_BASELINE_DIR
+                    resolved = path.resolve()
+                    structural_auth_identifier = (
+                        resolved.parent == _AUTH_AUDIT_BASELINE_DIR
                         and path.name in _AUTH_AUDIT_BASELINES
                         and _OWNER_QUALNAME_LINE.match(line)
-                    ):
+                    ) or (resolved in _AUTH_AUDIT_POLICY_FILES and _OWNER_QUALNAME_LINE.match(line))
+                    if structural_auth_identifier:
                         line_leaks = [
                             leak
                             for leak in line_leaks
