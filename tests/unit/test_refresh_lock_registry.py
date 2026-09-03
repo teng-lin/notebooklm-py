@@ -50,6 +50,8 @@ class TestFlightClaimIdentity:
     """
 
     def test_second_claim_same_key_follows_leader(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             gate = asyncio.Event()
 
@@ -57,39 +59,43 @@ class TestFlightClaimIdentity:
                 await gate.wait()
                 return "done"
 
-            is_leader_1, flight_1 = _single_flight.claim(("k", "p"), _leader_body)
-            is_leader_2, flight_2 = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader_1, flight_1 = single_flight.claim(("k", "p"), _leader_body)
+            is_leader_2, flight_2 = single_flight.claim(("k", "p"), _leader_body)
             # First claim leads; the second (while in flight) follows the SAME
             # flight rather than spawning a second leader.
             assert is_leader_1 is True
             assert is_leader_2 is False
             assert flight_2 is flight_1
             gate.set()
-            await _single_flight.await_flight(flight_1)
+            await single_flight.await_flight(flight_1)
 
         asyncio.run(_run())
 
     def test_distinct_keys_get_distinct_flights(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             gate = asyncio.Event()
 
             async def _leader_body():
                 await gate.wait()
 
-            is_leader_a, flight_a = _single_flight.claim(("path-a", "p"), _leader_body)
-            is_leader_b, flight_b = _single_flight.claim(("path-b", "p"), _leader_body)
+            is_leader_a, flight_a = single_flight.claim(("path-a", "p"), _leader_body)
+            is_leader_b, flight_b = single_flight.claim(("path-b", "p"), _leader_body)
             assert is_leader_a is True
             assert is_leader_b is True
             assert flight_a is not flight_b
             gate.set()
             await asyncio.gather(
-                _single_flight.await_flight(flight_a),
-                _single_flight.await_flight(flight_b),
+                single_flight.await_flight(flight_a),
+                single_flight.await_flight(flight_b),
             )
 
         asyncio.run(_run())
 
     def test_settled_flight_is_overwritable_by_next_leader(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             calls = 0
 
@@ -97,15 +103,15 @@ class TestFlightClaimIdentity:
                 nonlocal calls
                 calls += 1
 
-            is_leader_1, flight_1 = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader_1, flight_1 = single_flight.claim(("k", "p"), _leader_body)
             assert is_leader_1 is True
-            await _single_flight.await_flight(flight_1)
+            await single_flight.await_flight(flight_1)
             # Once settled, a fresh claim becomes a NEW leader (the prior cycle's
             # flight does not pin the slot forever).
-            is_leader_2, flight_2 = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader_2, flight_2 = single_flight.claim(("k", "p"), _leader_body)
             assert is_leader_2 is True
             assert flight_2 is not flight_1
-            await _single_flight.await_flight(flight_2)
+            await single_flight.await_flight(flight_2)
             assert calls == 2
 
         asyncio.run(_run())
@@ -128,6 +134,8 @@ class TestClaimIfEpochCurrent:
     """Compare-under-exclusion: the epoch compare + the claim are one lock hold."""
 
     def test_skips_when_epoch_already_advanced(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             ran = False
 
@@ -137,19 +145,21 @@ class TestClaimIfEpochCurrent:
 
             # A sibling already succeeded (epoch 1) before this caller (which
             # captured epoch_before=0) reaches the claim.
-            _single_flight.note_success("path")
-            claimed = _single_flight.claim_if_epoch_current(
+            single_flight.note_success("path")
+            claimed = single_flight.claim_if_epoch_current(
                 ("path", "pol"), _body, path_key="path", epoch_before=0
             )
             assert claimed is None, "stale epoch_before must produce a skip signal"
             # No leader task was created, so the factory never runs.
             await asyncio.sleep(0)
             assert ran is False
-            assert _single_flight.SingleFlight.process_default()._flights == {}
+            assert single_flight._flights == {}
 
         asyncio.run(_run())
 
     def test_claims_when_epoch_unchanged(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             ran = False
 
@@ -157,13 +167,13 @@ class TestClaimIfEpochCurrent:
                 nonlocal ran
                 ran = True
 
-            claimed = _single_flight.claim_if_epoch_current(
+            claimed = single_flight.claim_if_epoch_current(
                 ("path", "pol"), _body, path_key="path", epoch_before=0
             )
             assert claimed is not None
             is_leader, flight = claimed
             assert is_leader is True
-            await _single_flight.await_flight(flight)
+            await single_flight.await_flight(flight)
             assert ran is True
 
         asyncio.run(_run())
@@ -181,6 +191,8 @@ class TestDoubleCancelDoesNotDetonateBridge:
     """
 
     def test_second_cancel_while_pending_preserves_bridge_and_siblings(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             leader_gate = asyncio.Event()
 
@@ -189,20 +201,20 @@ class TestDoubleCancelDoesNotDetonateBridge:
                 return "leader-result"
 
             # Leader claim creates the driving task; a follower shares it.
-            is_leader, flight = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader, flight = single_flight.claim(("k", "p"), _leader_body)
             assert is_leader is True
 
             follower_result: list[str] = []
 
             async def _follower():
-                is_l2, f2 = _single_flight.claim(("k", "p"), _leader_body)
+                is_l2, f2 = single_flight.claim(("k", "p"), _leader_body)
                 assert is_l2 is False and f2 is flight
-                follower_result.append(await _single_flight.await_flight(f2))
+                follower_result.append(await single_flight.await_flight(f2))
 
             follower_task = asyncio.ensure_future(_follower())
 
             async def _awaiter():
-                await _single_flight.await_flight(flight)
+                await single_flight.await_flight(flight)
 
             awaiter_task = asyncio.ensure_future(_awaiter())
             await asyncio.sleep(0)  # let both start awaiting the pending bridge
@@ -306,17 +318,19 @@ class TestPromptPopRetention:
     """
 
     def test_registry_does_not_accumulate_across_cycles(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             async def _leader_body():
                 return None
 
             for _ in range(5):
-                _is_leader, flight = _single_flight.claim(("k", "p"), _leader_body)
-                await _single_flight.await_flight(flight)
+                _is_leader, flight = single_flight.claim(("k", "p"), _leader_body)
+                await single_flight.await_flight(flight)
                 # Yield so the task done-callbacks (mirror + pop) run.
                 await asyncio.sleep(0)
 
-            assert _single_flight.SingleFlight.process_default()._flights == {}, (
+            assert single_flight._flights == {}, (
                 "Settled flights must be popped from the process-global registry"
             )
 

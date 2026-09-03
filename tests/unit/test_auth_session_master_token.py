@@ -75,11 +75,11 @@ def _persist_writes_valid_storage(store, request):
     )
 
 
-def _patch_mint(effect):
+def _mint_side_effect(effect):
     async def mint(_service, token):
         return await effect(token.email, token.secret, token.android_id)
 
-    return patch.object(MintService, "mint", autospec=True, side_effect=mint)
+    return mint
 
 
 @pytest.mark.asyncio
@@ -122,7 +122,12 @@ async def test_reauth_success_remints_and_reloads(tmp_path):
     # mock jar) — only the network mint + the recovery-aware reload are stubbed.
     async with _opened_recovery(auth) as (kernel, expected_epoch):
         with (
-            _patch_mint(AsyncMock(return_value=jar)),
+            patch.object(
+                MintService,
+                "mint",
+                autospec=True,
+                side_effect=_mint_side_effect(AsyncMock(return_value=jar)),
+            ),
             patch.object(
                 ProfileStore,
                 "replace_minted_session",
@@ -146,7 +151,12 @@ async def test_reauth_returns_false_on_revoked_token(tmp_path):
     )
     auth = _auth(tmp_path / "storage_state.json")
     async with _opened_recovery(auth) as (kernel, expected_epoch):
-        with _patch_mint(AsyncMock(side_effect=mt.MasterTokenError("revoked"))):
+        with patch.object(
+            MintService,
+            "mint",
+            autospec=True,
+            side_effect=_mint_side_effect(AsyncMock(side_effect=mt.MasterTokenError("revoked"))),
+        ):
             ok = await session_mod._try_master_token_reauth(
                 auth=auth,
                 kernel=kernel,

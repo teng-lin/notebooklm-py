@@ -49,31 +49,21 @@ def runner() -> CliRunner:
 def mock_auth_env(monkeypatch) -> Generator[None, None, None]:
     """Stub auth loading + token fetch so --json paths run offline.
 
-    Covers three CLI auth entry points so this test file is portable across
+    Covers the two CLI auth entry points used by these commands so this file is portable across
     macOS/Ubuntu/Windows CI runners that have no ``~/.notebooklm`` storage:
 
     1. ``load_auth_from_storage`` — used by ``with_client``-decorated commands
        (source/artifact/chat/note/share/research/notebook/session).
     2. ``fetch_tokens_with_domains`` — token fetch on the same path.
-    3. ``AuthTokens.from_storage`` — used directly by ``download`` commands,
-       which bypass ``with_client``.
-
     Also clears ``NOTEBOOKLM_AUTH_JSON`` so a stray empty env var on the
     runner can't trip the "set but empty" pre-flight check.
     """
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
-    # Stub object that download commands hand to the injected client factory;
-    # the factory ignores the auth value and returns the mock client, so the
-    # auth is never inspected.
-    stub_auth = MagicMock(name="AuthTokens-stub")
     with (
         patch.object(helpers_module, "load_auth_from_storage") as mock_load,
         patch.object(
             auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch,
-        patch.object(
-            auth_module.AuthTokens, "from_storage", new_callable=AsyncMock
-        ) as mock_from_storage,
     ):
         mock_load.return_value = {
             "SID": "test",
@@ -83,7 +73,6 @@ def mock_auth_env(monkeypatch) -> Generator[None, None, None]:
             "SAPISID": "test",
         }
         mock_fetch.return_value = ("csrf_token", "session_id")
-        mock_from_storage.return_value = stub_auth
         yield
 
 

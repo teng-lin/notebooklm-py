@@ -41,15 +41,6 @@ def _make_lock_unavailable(path: Path) -> None:
     lock_path.mkdir(parents=True, exist_ok=True)
 
 
-def _patch_master_token_lock_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force the path-owned token writer to use an unavailable manager."""
-    monkeypatch.setattr(
-        master_token_file.StorageLockManager,
-        "process_default",
-        lambda: _UnavailableLocks(),
-    )
-
-
 # --- value-free outcome contract -------------------------------------------
 
 
@@ -852,7 +843,11 @@ def test_write_master_token_fails_closed_on_lock_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "master_token.json"
-    _patch_master_token_lock_unavailable(monkeypatch)
+    monkeypatch.setattr(
+        master_token_file.StorageLockManager,
+        "process_default",
+        lambda: _UnavailableLocks(),
+    )
     with pytest.raises(storage_mod.LockUnavailableError):
         storage_mod.write_master_token(
             path, email="e@x.com", master_token="aas_et/M", android_id="abc"

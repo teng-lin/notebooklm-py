@@ -636,6 +636,8 @@ def test_single_flight_is_unreachable_from_the_sync_drive_entry() -> None:
     from notebooklm._auth import recovery
     from notebooklm._auth import single_flight as sf
 
+    single_flight = sf.SingleFlight()
+
     # The entry point and its coalescer are synchronous; the async caller that
     # reaches them hands them to a worker thread.
     assert not inspect.iscoroutinefunction(attempt_headless_reauth)
@@ -650,7 +652,7 @@ def test_single_flight_is_unreachable_from_the_sync_drive_entry() -> None:
     async def _drive_in_worker_thread() -> str:
         def _claim_from_worker() -> str:
             try:
-                sf.claim(("path", "profile"), _never_runs)
+                single_flight.claim(("path", "profile"), _never_runs)
             except RuntimeError as exc:
                 return str(exc)
             return "claimed"  # pragma: no cover - would mean a loop was present

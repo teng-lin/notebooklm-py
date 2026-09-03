@@ -36,11 +36,10 @@ def _clear_refresh_env(monkeypatch):
     monkeypatch.delenv("_NOTEBOOKLM_REFRESH_ATTEMPTED", raising=False)
 
 
-def _stub_storage_path(monkeypatch, tmp_path: Path) -> Path:
-    """Point the refresh owner module at a writable temp storage file."""
+def _storage_path(tmp_path: Path) -> Path:
+    """Create the writable storage file passed to the refresh owner."""
     storage = tmp_path / "storage_state.json"
     storage.write_text("{}")
-    monkeypatch.setattr(refresh_mod, "get_storage_path", lambda profile=None: storage)
     return storage
 
 
@@ -70,12 +69,12 @@ class TestShlexDefault:
 
     @pytest.mark.asyncio
     async def test_simple_command_split_and_run_without_shell(self, monkeypatch, tmp_path):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         assert recorder.calls, "subprocess.run was not invoked"
         call = recorder.calls[0]
@@ -86,12 +85,12 @@ class TestShlexDefault:
 
     @pytest.mark.asyncio
     async def test_quoted_command_split_preserves_tokens(self, monkeypatch, tmp_path):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, 'echo "hello world"')
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         target = recorder.calls[0]["args"][0]
         # The quoted span stays a single argv element AND the syntactic
@@ -102,7 +101,7 @@ class TestShlexDefault:
 
     @pytest.mark.asyncio
     async def test_malformed_command_raises_runtime_error(self, monkeypatch, tmp_path):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         # Unterminated double quote — POSIX ``shlex.split`` raises ValueError.
         # Skip on Windows: ``CommandLineToArgvW`` is lenient and treats the
         # remainder of the string as the final quoted token rather than
@@ -121,13 +120,13 @@ class TestShlexDefault:
         monkeypatch.setattr(auth_mod.subprocess, "run", _boom)
 
         with pytest.raises(RuntimeError, match="could not be parsed"):
-            await _run_refresh_cmd()
+            await _run_refresh_cmd(storage)
 
         assert called["hit"] is False
 
     @pytest.mark.asyncio
     async def test_empty_argv_raises_runtime_error(self, monkeypatch, tmp_path):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         # All-whitespace string splits to []; the env-not-set guard treats ""
         # as missing, so we use spaces to bypass that and exercise the
         # empty-argv branch.
@@ -141,20 +140,20 @@ class TestShlexDefault:
         monkeypatch.setattr(auth_mod.subprocess, "run", _boom)
 
         with pytest.raises(RuntimeError, match="parsed to empty argv"):
-            await _run_refresh_cmd()
+            await _run_refresh_cmd(storage)
 
         assert called["hit"] is False
 
     @pytest.mark.asyncio
     async def test_first_token_logged_basename_only(self, monkeypatch, tmp_path, caplog):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         secret_path = "/home/user/.secrets/refresh.sh"
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, f"{secret_path} --token=hunter2")
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
         caplog.set_level(logging.INFO, logger=auth_mod.logger.name)
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         # Argv reached the runner with the full path + token intact.
         assert recorder.calls[0]["args"][0] == [secret_path, "--token=hunter2"]
@@ -175,13 +174,13 @@ class TestShellOptIn:
 
     @pytest.mark.asyncio
     async def test_opt_in_uses_shell_true_with_raw_string(self, monkeypatch, tmp_path):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo $HOME | tr a-z A-Z")
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, "1")
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         call = recorder.calls[0]
         target = call["args"][0]
@@ -191,14 +190,14 @@ class TestShellOptIn:
 
     @pytest.mark.asyncio
     async def test_opt_in_emits_warning(self, monkeypatch, tmp_path, caplog):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, "1")
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
         caplog.set_level(logging.WARNING, logger=auth_mod.logger.name)
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         warnings_emitted = [
             record.getMessage() for record in caplog.records if record.levelno == logging.WARNING
@@ -228,13 +227,13 @@ class TestShellOptIn:
         most easily hit when copying ``NOTEBOOKLM_REFRESH_CMD_USE_SHELL=1``
         from one config to another.
         """
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, value)
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         call = recorder.calls[0]
         assert isinstance(call["args"][0], list), f"value={value!r} unexpectedly opted into shell"
@@ -300,14 +299,14 @@ class TestSubprocessEnv:
 
     @pytest.mark.asyncio
     async def test_auth_json_scrubbed_from_subprocess_env(self, monkeypatch, tmp_path):
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
         # A credential-equivalent payload sitting in the launching shell.
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", '{"cookies": [{"value": "secret"}]}')
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         env = recorder.calls[0]["kwargs"]["env"]
         assert "NOTEBOOKLM_AUTH_JSON" not in env, (
@@ -319,13 +318,13 @@ class TestSubprocessEnv:
         """Conservative inheritance: ``PATH`` (and the wider parent env) is
         still forwarded so the refresh command can locate its executable.
         """
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
         monkeypatch.setenv("PATH", "/custom/bin:/usr/bin")
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         env = recorder.calls[0]["kwargs"]["env"]
         assert env.get("PATH") == "/custom/bin:/usr/bin"
@@ -335,12 +334,12 @@ class TestSubprocessEnv:
         """The recursion-guard + storage-path/profile vars are injected so the
         child sees the canonical on-disk state instead of the in-env JSON.
         """
-        storage = _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
         recorder = _RecordingRun(returncode=0)
         monkeypatch.setattr(auth_mod.subprocess, "run", recorder)
 
-        await _run_refresh_cmd(profile="work")
+        await _run_refresh_cmd(storage, profile="work")
 
         env = recorder.calls[0]["kwargs"]["env"]
         assert env[refresh_mod._REFRESH_ATTEMPTED_ENV] == "1"
@@ -356,7 +355,7 @@ class TestEndToEndWithRealSubprocess:
     @pytest.mark.asyncio
     async def test_python_command_via_shlex_split(self, monkeypatch, tmp_path):
         """A real refresh script runs successfully via shlex.split."""
-        _stub_storage_path(monkeypatch, tmp_path)
+        storage = _storage_path(tmp_path)
         script = tmp_path / "refresh.py"
         marker = tmp_path / "ran.txt"
         script.write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('ok')\n")
@@ -369,6 +368,6 @@ class TestEndToEndWithRealSubprocess:
             cmd = _shlex.join([sys.executable, str(script)])
         monkeypatch.setenv(NOTEBOOKLM_REFRESH_CMD_ENV, cmd)
 
-        await _run_refresh_cmd()
+        await _run_refresh_cmd(storage)
 
         assert marker.read_text() == "ok"

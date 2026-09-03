@@ -81,15 +81,14 @@ class TestRunRefreshCmdMissing:
 class TestRunRefreshCmdSubprocessFailure:
     """``subprocess.run`` raising → RuntimeError ."""
 
-    def _stub_storage(self, monkeypatch, tmp_path):
+    def _stub_storage(self, tmp_path):
         storage = tmp_path / "storage_state.json"
         storage.write_text("{}", encoding="utf-8")
-        monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage)
         return storage
 
     @pytest.mark.asyncio
     async def test_timeout_expired_becomes_runtime_error(self, monkeypatch, tmp_path):
-        self._stub_storage(monkeypatch, tmp_path)
+        storage = self._stub_storage(tmp_path)
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
 
         def _raise_timeout(*args, **kwargs):
@@ -97,11 +96,11 @@ class TestRunRefreshCmdSubprocessFailure:
 
         monkeypatch.setattr(subprocess, "run", _raise_timeout)
         with pytest.raises(RuntimeError, match="failed to execute"):
-            await _auth_refresh._run_refresh_cmd()
+            await _auth_refresh._run_refresh_cmd(storage)
 
     @pytest.mark.asyncio
     async def test_oserror_becomes_runtime_error(self, monkeypatch, tmp_path):
-        self._stub_storage(monkeypatch, tmp_path)
+        storage = self._stub_storage(tmp_path)
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "echo hi")
 
         def _raise_oserror(*args, **kwargs):
@@ -109,16 +108,16 @@ class TestRunRefreshCmdSubprocessFailure:
 
         monkeypatch.setattr(subprocess, "run", _raise_oserror)
         with pytest.raises(RuntimeError, match="failed to execute"):
-            await _auth_refresh._run_refresh_cmd()
+            await _auth_refresh._run_refresh_cmd(storage)
 
 
 class TestRunRefreshCmdNonZeroExitBasename:
     """Non-zero exit basename extraction for shell / empty targets (390-393)."""
 
-    def _stub_storage(self, monkeypatch, tmp_path):
+    def _stub_storage(self, tmp_path):
         storage = tmp_path / "storage_state.json"
         storage.write_text("{}", encoding="utf-8")
-        monkeypatch.setattr(_auth_refresh, "get_storage_path", lambda profile=None: storage)
+        return storage
 
     def _stub_nonzero_run(self, monkeypatch):
         class _Result:
@@ -132,7 +131,7 @@ class TestRunRefreshCmdNonZeroExitBasename:
     async def test_shell_mode_string_target_basename(self, monkeypatch, tmp_path):
         # Shell-mode keeps ``run_target`` as a raw string; basename comes from
         # its first whitespace-split token .
-        self._stub_storage(monkeypatch, tmp_path)
+        storage = self._stub_storage(tmp_path)
         monkeypatch.setenv(
             _auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV,
             "/opt/secrets/do-refresh.sh --token=hunter2 | tee log",
@@ -140,7 +139,7 @@ class TestRunRefreshCmdNonZeroExitBasename:
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, "1")
         self._stub_nonzero_run(monkeypatch)
         with pytest.raises(RuntimeError) as exc_info:
-            await _auth_refresh._run_refresh_cmd()
+            await _auth_refresh._run_refresh_cmd(storage)
         message = exc_info.value.args[0]
         assert "exited 7" in message
         assert "do-refresh.sh" in message
@@ -154,14 +153,14 @@ class TestRunRefreshCmdNonZeroExitBasename:
     ):
         # Whitespace-only command string in shell-mode → ``run_target.strip()``
         # is empty so the basename falls back to the literal ``"shell"`` (393).
-        self._stub_storage(monkeypatch, tmp_path)
+        storage = self._stub_storage(tmp_path)
         # The env-not-set guard treats "" as missing; spaces bypass it while
         # still stripping to empty in the basename branch.
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "   ")
         monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_USE_SHELL_ENV, "1")
         self._stub_nonzero_run(monkeypatch)
         with pytest.raises(RuntimeError) as exc_info:
-            await _auth_refresh._run_refresh_cmd()
+            await _auth_refresh._run_refresh_cmd(storage)
         message = exc_info.value.args[0]
         assert "exited 7" in message
         assert "executable: shell" in message

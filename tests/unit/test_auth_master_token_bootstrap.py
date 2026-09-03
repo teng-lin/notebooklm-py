@@ -496,20 +496,18 @@ async def test_public_malformed_projection_preserves_ordinary_context(
     outer = RuntimeError("active caller")
 
     async def invoke():
-        with (
-            patch.object(ProfileStore, "read_master_token", autospec=True, side_effect=lower),
-            pytest.raises(mt.MasterTokenError, match="malformed or an unsupported") as raised,
-        ):
+        with pytest.raises(mt.MasterTokenError, match="malformed or an unsupported") as raised:
             await mt.remint_from_stored_token(tmp_path / "storage_state.json")
         return raised.value
 
-    if active_outer:
-        try:
-            raise outer
-        except RuntimeError:
+    with patch.object(ProfileStore, "read_master_token", autospec=True, side_effect=lower):
+        if active_outer:
+            try:
+                raise outer
+            except RuntimeError:
+                error = await invoke()
+        else:
             error = await invoke()
-    else:
-        error = await invoke()
 
     assert error.__cause__ is None
     assert error.__suppress_context__ is False

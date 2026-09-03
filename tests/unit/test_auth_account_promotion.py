@@ -34,6 +34,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -423,21 +424,8 @@ class TestRetryableSingleFlight:
         monkeypatch.setattr(ProfileStore, "update_account", _count)
 
         readers = 8
-        start = threading.Barrier(readers)
-        results: list[dict[str, Any]] = []
-        results_lock = threading.Lock()
-
-        def _read():
-            start.wait(timeout=30)
-            value = read_account_metadata(storage)
-            with results_lock:
-                results.append(value)
-
-        threads = [threading.Thread(target=_read) for _ in range(readers)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(30.0)
+        with ThreadPoolExecutor(max_workers=readers) as executor:
+            results = list(executor.map(read_account_metadata, [storage] * readers))
 
         _drain_promotions_for_tests()
 
