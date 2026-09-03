@@ -13,6 +13,7 @@ import builtins
 import logging
 from typing import Any, Literal
 
+from .._idempotency import call_unconfirmed_on_transport_loss
 from .._labels import LabelsAPI, ListSources
 from .._lookup import unwrap_or_raise
 from ..exceptions import LabelError, LabelNotFoundError, UnknownRPCMethodError
@@ -148,13 +149,17 @@ class WebLabelsAPI(LabelsAPI):
         """
         if scope not in ("all", "unlabeled"):
             raise ValueError(f"generate scope must be 'all' or 'unlabeled', got {scope!r}")
-        result = await self._rpc.rpc_call(
-            RPCMethod.CREATE_LABEL,
-            build_generate_labels_params(notebook_id, scope=scope),
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
+        result = await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.CREATE_LABEL,
+                build_generate_labels_params(notebook_id, scope=scope),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            ),
+            method=RPCMethod.CREATE_LABEL,
+            what="the automatic label generation",
         )
         return self._labels_from_envelope(
             result, notebook_id=notebook_id, method_id=RPCMethod.CREATE_LABEL.value, index=1
@@ -170,13 +175,17 @@ class WebLabelsAPI(LabelsAPI):
         mirroring the ``ADD_SOURCE_FILE`` baseline-diff precedent.
         """
         before_ids = {label.id for label in await self.list(notebook_id)}
-        result = await self._rpc.rpc_call(
-            RPCMethod.CREATE_LABEL,
-            build_create_label_params(notebook_id, name, emoji),
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
+        result = await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.CREATE_LABEL,
+                build_create_label_params(notebook_id, name, emoji),
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            ),
+            method=RPCMethod.CREATE_LABEL,
+            what="the manual label create",
         )
         after = self._labels_from_envelope(
             result, notebook_id=notebook_id, method_id=RPCMethod.CREATE_LABEL.value, index=1

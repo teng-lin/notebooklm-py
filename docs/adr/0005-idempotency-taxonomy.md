@@ -35,6 +35,9 @@ mode, while web keeps normal chaining. The latter constructs or preserves the
 domain-specific `RPCError` used by operations that already surfaced an
 `UNRESOLVED` reconciliation message. Preservation is selected explicitly with
 `preserve_exception=True`; transport text is never treated as a discriminator.
+The Drive-reference parser moved to the neutral source plane with the web
+parser's exact `google.com`, `googleusercontent.com`, and `googleapis.com` host
+families and its raw-host `%`, backslash, and slash rejection intact.
 
 ## Context
 
@@ -84,6 +87,12 @@ sharing outcome boundary includes its mandatory status readback, because that
 read can fail after the invitation or access mutation has committed. The
 registry no longer carries the unused `probe_key_fn` field.
 
+The same behavioural contract covers every public route over the other
+non-replayed mutation families shared by the backends: failed-artifact retry,
+slide revision, all three artifact export entry points, automatic/manual label
+creation, and collection creation (including the collection's required
+post-create list readback).
+
 Android's exact gRPC method names have a checked replay-safety manifest derived
 from the corresponding web registry entries: retriable reads are replay-safe;
 mutations, paid inference, and operations whose web policy disables internal
@@ -92,7 +101,9 @@ trusting an independently maintained call-site classification. A complete AST
 guardrail resolves local and imported method constants, fails closed on every
 unresolved unary/stream expression, compares every replay literal with the
 manifest, and includes negative self-tests that flip local and imported-constant
-sites. A second, behavioural
+sites. Runtime lookup also fails closed: a method absent from the production
+manifest is always single-attempt even when a generic caller declares it
+replay-safe. A second, behavioural
 manifest resolves mutating public methods through both backend MROs, injects
 transport loss through their normal test fakes, and requires both outcomes to
 carry `unconfirmed=True`; it also pins Android's cause scrubbing and proves a

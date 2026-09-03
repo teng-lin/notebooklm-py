@@ -83,7 +83,10 @@ ANDROID_RETRY_MANIFEST: dict[str, bool] = {
 def replay_safe_for(method: str, declared: bool) -> bool:
     """Apply the manifest ceiling without overriding an explicit no-replay request."""
 
-    return declared and ANDROID_RETRY_MANIFEST.get(method, True)
+    # AndroidSession is a generic transport seam and its focused tests (plus
+    # future raw callers) legitimately use method names outside the production
+    # SDK manifest. Unknown can run once, but it can never inherit replay safety.
+    return declared and ANDROID_RETRY_MANIFEST.get(method, False)
 
 
 __all__ = ["ANDROID_RETRY_MANIFEST", "replay_safe_for"]

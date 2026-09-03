@@ -362,14 +362,18 @@ class ArtifactGenerationService:
         params = build_revise_slide_params(artifact_id, slide_index, prompt)
         # v0.8.0 (#1342): a synchronous refusal (``RPCError``) propagates rather
         # than being swallowed into a soft ``status="failed"`` return.
-        result = await self._rpc.rpc_call(
-            RPCMethod.REVISE_SLIDE,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # See ``_call_generate``: a server-stated rejection reason beats the
-            # client's "feature unavailable" guess (#2188).
-            raise_on_null_status=True,
+        result = await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.REVISE_SLIDE,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # See ``_call_generate``: a server-stated rejection reason beats the
+                # client's "feature unavailable" guess (#2188).
+                raise_on_null_status=True,
+            ),
+            method=RPCMethod.REVISE_SLIDE,
+            what="the slide revision",
         )
         if result is None:
             logger.warning("REVISE_SLIDE returned null result for artifact %s", artifact_id)
@@ -410,14 +414,18 @@ class ArtifactGenerationService:
         # ``result is None`` guard below (the golden fixture pins the
         # normal-success row, so it records ``allow_null: false`` for that
         # happy-path decode — the two are not in conflict).
-        result = await self._rpc.rpc_call(
-            RPCMethod.RETRY_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # See ``_call_generate``: a server-stated rejection reason beats the
-            # client's "feature unavailable" guess (#2188).
-            raise_on_null_status=True,
+        result = await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.RETRY_ARTIFACT,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # See ``_call_generate``: a server-stated rejection reason beats the
+                # client's "feature unavailable" guess (#2188).
+                raise_on_null_status=True,
+            ),
+            method=RPCMethod.RETRY_ARTIFACT,
+            what="the failed-artifact retry",
         )
         if result is None:
             logger.warning("RETRY_ARTIFACT returned null result for artifact %s", artifact_id)

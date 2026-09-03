@@ -15,6 +15,7 @@ from notebooklm._idempotency import (
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.add import SourceAddService
 from notebooklm.exceptions import NetworkError, RPCError
+from notebooklm.rpc import RPCMethod
 from notebooklm.types import Source
 
 
@@ -88,6 +89,17 @@ def test_unresolved_commit_error_preserves_domain_error_only_when_explicit() -> 
 
     assert preserved is domain_error
     assert getattr(preserved, "unconfirmed", False) is True
+
+
+def test_unresolved_commit_error_normalizes_rpc_method_id_to_builtin_str() -> None:
+    wrapped = unresolved_commit_error(
+        RPCMethod.COPY_SOURCES,
+        "the source copy",
+        NetworkError("response lost"),
+    )
+
+    assert wrapped.method_id == RPCMethod.COPY_SOURCES.value
+    assert type(wrapped.method_id) is str
 
 
 @pytest.mark.asyncio

@@ -147,7 +147,11 @@ _Method = _MethodIdentifier | str
 
 
 def _method_id(method: _Method) -> str:
-    return method if isinstance(method, str) else method.value
+    # ``RPCMethod`` is also a ``str`` subclass. Resolve its enum value before
+    # the generic string case so exception metadata never retains an enum
+    # instance where callers expect a built-in ``str``.
+    value = getattr(method, "value", None)
+    return str(value) if isinstance(value, str) else str(method)
 
 
 def unresolved_commit_error(

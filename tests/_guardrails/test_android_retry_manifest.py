@@ -316,4 +316,5 @@ def test_android_retry_manifest_is_a_ceiling_on_caller_replay() -> None:
     assert replay_safe_for(get_project, True) is True
     assert replay_safe_for(get_project, False) is False
     assert replay_safe_for(create_note, True) is False
-    assert replay_safe_for("/third.party.Service/Method", True) is True
+    assert replay_safe_for("/third.party.Service/Method", True) is False
+    assert replay_safe_for("/third.party.Service/Method", False) is False

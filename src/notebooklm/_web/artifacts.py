@@ -15,7 +15,7 @@ from .._artifact import polling as _artifact_polling
 from .._artifact import validation as _artifact_validation
 from .._artifact.downloads import AssetDownloadService
 from .._artifacts import ArtifactsAPI
-from .._idempotency import unresolved_commit_error
+from .._idempotency import call_unconfirmed_on_transport_loss, unresolved_commit_error
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._types.enums import (
     ArtifactTypeCode,
@@ -476,13 +476,17 @@ class WebArtifactsAPI(ArtifactsAPI):
     ) -> Any:
         """Export a report to Google Docs (``export_type`` selects DOCS/SHEETS)."""
         params = [None, artifact_id, None, title, int(export_type)]
-        return await self._rpc.rpc_call(
-            RPCMethod.EXPORT_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
+        return await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.EXPORT_ARTIFACT,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            ),
+            method=RPCMethod.EXPORT_ARTIFACT,
+            what="the artifact export",
         )
 
     async def export_data_table(
@@ -493,13 +497,17 @@ class WebArtifactsAPI(ArtifactsAPI):
     ) -> Any:
         """Export a data table to Google Sheets."""
         params = [None, artifact_id, None, title, int(ExportType.SHEETS)]
-        return await self._rpc.rpc_call(
-            RPCMethod.EXPORT_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
+        return await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.EXPORT_ARTIFACT,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            ),
+            method=RPCMethod.EXPORT_ARTIFACT,
+            what="the data-table export",
         )
 
     async def export(
@@ -514,13 +522,17 @@ class WebArtifactsAPI(ArtifactsAPI):
         """Export any artifact to Drive; exactly one of ``artifact_id=``/``content=`` (``export_type`` picks Docs/Sheets)."""
         _artifact_validation.check_exactly_one_export_target(artifact_id, content)
         params = [None, artifact_id, content, title, int(export_type)]
-        return await self._rpc.rpc_call(
-            RPCMethod.EXPORT_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
+        return await call_unconfirmed_on_transport_loss(
+            lambda: self._rpc.rpc_call(
+                RPCMethod.EXPORT_ARTIFACT,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            ),
+            method=RPCMethod.EXPORT_ARTIFACT,
+            what="the artifact or content export",
         )
 
     # =========================================================================

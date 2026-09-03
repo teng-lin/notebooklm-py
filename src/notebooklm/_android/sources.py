@@ -114,10 +114,9 @@ REFRESH_SOURCE_METHOD = f"/{_SERVICE}/RefreshSource"
 _FilterValue = TypeVar("_FilterValue")
 _CORRELATION_PREFIX = "nblm-"
 _CANONICAL_ID_LENGTH = 36
-# Post-upload readiness polling: sleep between GetProject looks, and the
-# smallest wire budget a single look may be handed (capped by the caller's
-# own ``wait_timeout``) so a deadline that reads as spent on the very tick it
-# was started still gets a real request out.
+# Post-upload readiness polling sleeps between GetProject looks. The smallest wire budget
+# a single look may be handed is capped by ``wait_timeout`` so a deadline that reads as spent
+# on its first tick still gets a real request out.
 _POLL_INTERVAL = 0.5
 _POLL_WIRE_FLOOR = 1.0
 

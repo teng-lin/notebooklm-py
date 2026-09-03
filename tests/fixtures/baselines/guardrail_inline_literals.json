@@ -129,6 +129,6 @@
     "_RPC_ENUM_SNAPSHOT": 290
   },
   "tests/_guardrails/test_unconfirmed_contract.py": {
-    "UNCONFIRMED_METHOD_MANIFEST": 43
+    "UNCONFIRMED_METHOD_MANIFEST": 63
   }
 }

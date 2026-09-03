@@ -10,11 +10,18 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._android.artifact_creation import CREATE_ARTIFACT_METHOD
+from notebooklm._android.artifact_mutations import (
+    EXPORT_TO_DRIVE_METHOD,
+    GENERATE_ARTIFACT_METHOD,
+)
 from notebooklm._android.artifact_note_mind_maps import ACT_ON_SOURCES_METHOD
 from notebooklm._android.artifact_transfers import COPY_ARTIFACTS_ASYNC_METHOD
-from notebooklm._android.artifacts import AndroidArtifactsAPI
+from notebooklm._android.artifacts import DERIVE_ARTIFACT_METHOD, AndroidArtifactsAPI
+from notebooklm._android.collections import AndroidCollectionsAPI
+from notebooklm._android.labels import AndroidLabelsAPI
 from notebooklm._android.notebooks import COPY_PROJECT_METHOD, AndroidNotebooksAPI
 from notebooklm._android.notes import CREATE_NOTE_METHOD, AndroidNotesAPI
+from notebooklm._android.organization import CREATE_LABEL_METHOD
 from notebooklm._android.research import (
     DISCOVER_SOURCES_METHOD,
     START_FAST_METHOD,
@@ -28,6 +35,8 @@ from notebooklm._android.source_transfers import (
 )
 from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._web.artifacts import WebArtifactsAPI
+from notebooklm._web.collections import WebCollectionsAPI
+from notebooklm._web.labels import WebLabelsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
 from notebooklm._web.notes import NoteService, WebNotesAPI
 from notebooklm._web.research import WebResearchAPI
@@ -55,6 +64,7 @@ class _ContractCase:
     android_rpc: str
     args: tuple[Any, ...]
     kwargs: tuple[tuple[str, Any], ...] = ()
+    web_results_before_error: tuple[Any, ...] = ()
 
     @property
     def id(self) -> str:
@@ -74,9 +84,10 @@ _ARTIFACT_GENERATORS = (
     "generate_data_table",
 )
 
-# Public mutation methods whose first wire operation is non-idempotent on both
-# backends. Keep this explicit: a new public verb does not silently inherit the
-# contract merely because it happens to call one of these methods today.
+# Public methods that reach a non-idempotent mutation on both backends. A case
+# may declare safe web preflight results before the injected mutation failure.
+# Keep this explicit: a new public verb does not silently inherit the contract
+# merely because it happens to call one of these methods today.
 UNCONFIRMED_METHOD_MANIFEST = (
     _ContractCase(
         "notebooks",
@@ -138,6 +149,72 @@ UNCONFIRMED_METHOD_MANIFEST = (
         ACT_ON_SOURCES_METHOD,
         (_NOTEBOOK_ID,),
         (("source_ids", [_SOURCE_ID]),),
+    ),
+    _ContractCase(
+        "artifacts",
+        "revise_slide",
+        WebArtifactsAPI,
+        AndroidArtifactsAPI,
+        DERIVE_ARTIFACT_METHOD,
+        (_NOTEBOOK_ID, _ARTIFACT_ID, 0, "clarify this slide"),
+    ),
+    _ContractCase(
+        "artifacts",
+        "retry_failed",
+        WebArtifactsAPI,
+        AndroidArtifactsAPI,
+        GENERATE_ARTIFACT_METHOD,
+        (_NOTEBOOK_ID, _ARTIFACT_ID),
+    ),
+    _ContractCase(
+        "artifacts",
+        "export_report",
+        WebArtifactsAPI,
+        AndroidArtifactsAPI,
+        EXPORT_TO_DRIVE_METHOD,
+        (_NOTEBOOK_ID, _ARTIFACT_ID),
+    ),
+    _ContractCase(
+        "artifacts",
+        "export_data_table",
+        WebArtifactsAPI,
+        AndroidArtifactsAPI,
+        EXPORT_TO_DRIVE_METHOD,
+        (_NOTEBOOK_ID, _ARTIFACT_ID),
+    ),
+    _ContractCase(
+        "artifacts",
+        "export",
+        WebArtifactsAPI,
+        AndroidArtifactsAPI,
+        EXPORT_TO_DRIVE_METHOD,
+        (_NOTEBOOK_ID, _ARTIFACT_ID),
+    ),
+    _ContractCase(
+        "labels",
+        "generate",
+        WebLabelsAPI,
+        AndroidLabelsAPI,
+        CREATE_LABEL_METHOD,
+        (_NOTEBOOK_ID,),
+    ),
+    _ContractCase(
+        "labels",
+        "create",
+        WebLabelsAPI,
+        AndroidLabelsAPI,
+        CREATE_LABEL_METHOD,
+        (_NOTEBOOK_ID, "Review topics"),
+        web_results_before_error=([],),
+    ),
+    _ContractCase(
+        "collections",
+        "create",
+        WebCollectionsAPI,
+        AndroidCollectionsAPI,
+        CREATE_LABEL_METHOD,
+        ("Review collection",),
+        web_results_before_error=([],),
     ),
     _ContractCase(
         "sharing",
@@ -237,6 +314,10 @@ def _build_web_api(namespace: str, side_effect: Any) -> Any:
             mind_maps=MagicMock(),
             note_service=MagicMock(),
         )
+    if namespace == "labels":
+        return WebLabelsAPI(fake.rpc_executor, list_sources=AsyncMock(return_value=[]))
+    if namespace == "collections":
+        return WebCollectionsAPI(fake.rpc_executor, list_notebooks=AsyncMock(return_value=[]))
     if namespace == "sharing":
         return WebSharingAPI(fake.rpc_executor)
     if namespace == "research":
@@ -258,13 +339,21 @@ def _build_android_api(namespace: str, method: str, error: NetworkError) -> Any:
         api._transport = transport
         return api
     if namespace == "artifacts":
-        return AndroidArtifactsAPI(
+        api = AndroidArtifactsAPI(
             session=transport,
             supervisor=transport.supervisor,
             notebooks=fake,
             mind_maps=MagicMock(),
             asset_downloads=MagicMock(),
         )
+        api._require_studio_artifact_owned = AsyncMock()  # type: ignore[method-assign]
+        return api
+    if namespace == "labels":
+        return AndroidLabelsAPI(transport, list_sources=AsyncMock(return_value=[]))
+    if namespace == "collections":
+        api = AndroidCollectionsAPI(transport, list_notebooks=AsyncMock(return_value=[]))
+        api._list = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        return api
     if namespace == "sharing":
         return AndroidSharingAPI(transport)
     if namespace == "research":
@@ -291,7 +380,10 @@ async def test_cross_backend_mutations_mark_transport_loss_unconfirmed(
     assert _method_owner(case.android_type, case.method_name)
 
     web_error = NetworkError("response lost", method_id="web-test")
-    web_api = _build_web_api(case.namespace, web_error)
+    web_side_effect: Any = (
+        [*case.web_results_before_error, web_error] if case.web_results_before_error else web_error
+    )
+    web_api = _build_web_api(case.namespace, web_side_effect)
     web_exc = await _assert_unconfirmed(
         lambda: getattr(web_api, case.method_name)(*case.args, **dict(case.kwargs))
     )
@@ -319,6 +411,18 @@ async def test_web_sharing_marks_post_commit_readback_transport_loss_unconfirmed
 
     assert exc is error
     assert api._rpc.rpc_call.await_count == 2
+
+
+async def test_web_collection_create_marks_post_commit_readback_transport_loss_unconfirmed() -> (
+    None
+):
+    error = NetworkError("collection list lost after create committed", method_id="web-test")
+    api = _build_web_api("collections", [[], None, error])
+
+    exc = await _assert_unconfirmed(lambda: api.create("Review collection"))
+
+    assert exc is error
+    assert api._rpc.rpc_call.await_count == 3
 
 
 async def test_unconfirmed_contract_negative_self_test_rejects_plain_raise() -> None:
