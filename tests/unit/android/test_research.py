@@ -173,11 +173,12 @@ def test_exact_public_manifest_and_abstract_set() -> None:
         "select_cited_sources",
     }
     assert BaseResearchAPI.__abstractmethods__ == frozenset(
-        {"start", "discover", "poll", "cancel", "import_sources"}
+        {"_send_import", "start", "discover", "poll", "cancel"}
     )
     assert AndroidResearchAPI.__abstractmethods__ == frozenset()
     for name in (
         "wait_for_completion",
+        "import_sources",
         "import_sources_with_verification",
         "extract_report_urls",
         "select_cited_sources",

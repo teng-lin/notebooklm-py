@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
+from .._research_import import _ANDROID_RESEARCH_IMPORT_POLICY, _ResearchImportBatch
 from .._runtime.call_supervisor import OperationLease
 from .._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -17,11 +18,8 @@ from .._runtime.config import (
     resolve_import_research_read_timeout,
 )
 from .._types.research import (
-    RESEARCH_RESULT_TYPE_REPORT,
     RESEARCH_SOURCE_TYPE_WEB,
     RESEARCH_STATUS_CODE_COMPLETED,
-    ResearchSource,
-    ResearchSourceInput,
     ResearchStart,
     ResearchStatus,
     ResearchTask,
@@ -30,7 +28,6 @@ from ..exceptions import (
     DecodingError,
     NetworkError,
     RateLimitError,
-    ResearchTaskMismatchError,
     ServerError,
     ValidationError,
 )
@@ -103,6 +100,8 @@ def _validate_start(source: str, mode: str, query: str) -> tuple[str, str]:
 
 class AndroidResearchAPI(BaseResearchAPI):
     """Android bearer-gRPC adapter for the complete public Research contract."""
+
+    _import_policy = _ANDROID_RESEARCH_IMPORT_POLICY
 
     @asynccontextmanager
     async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
@@ -308,53 +307,35 @@ class AndroidResearchAPI(BaseResearchAPI):
                     return
                 raise mark_unconfirmed(exc) from None
 
-    async def import_sources(
+    async def _send_import(
         self,
         notebook_id: str,
-        task_id: str,
-        sources: Sequence[ResearchSourceInput],
+        batch: _ResearchImportBatch,
         *,
-        _remaining_budget: float | None = None,
+        _remaining_budget: float | None,
     ) -> list[dict[str, str]]:
-        if not sources:
-            return []
-        run_id = _validated_run_id(task_id)
-        entries = []
-        for raw in list(sources):
-            source = (
-                raw if isinstance(raw, ResearchSource) else ResearchSource.from_public_dict(raw)
+        entries = [
+            _source_proto().UserContent(
+                text_content=_source_proto().TextContent(
+                    source_name=item.source.title,
+                    content=item.source.report_markdown,
+                ),
+                text_content_type=_source_proto().UserContent.CONTENT_TYPE_MARKDOWN,
             )
-            if source.research_task_id and source.research_task_id != run_id:
-                raise ResearchTaskMismatchError(
-                    task_id=run_id,
-                    source_research_task_id=source.research_task_id,
+            if item.kind == "report"
+            else _source_proto().UserContent(
+                web_content=_source_proto().WebContent(
+                    url=item.source.url,
+                    source_name=item.source.title,
                 )
-            if source.result_type == RESEARCH_RESULT_TYPE_REPORT and source.report_markdown:
-                entries.append(
-                    _source_proto().UserContent(
-                        text_content=_source_proto().TextContent(
-                            source_name=source.title,
-                            content=source.report_markdown,
-                        ),
-                        text_content_type=_source_proto().UserContent.CONTENT_TYPE_MARKDOWN,
-                    )
-                )
-            elif source.url:
-                entries.append(
-                    _source_proto().UserContent(
-                        web_content=_source_proto().WebContent(
-                            url=source.url,
-                            source_name=source.title,
-                        )
-                    )
-                )
-        if not entries:
-            return []
+            )
+            for item in batch.items
+        ]
         async with self._transport.operation_scope("research.import_sources") as lease:
             response = await self._transport.unary(
                 FINISH_RUN_METHOD,
                 _proto().FinishDiscoverSourcesRunRequest(
-                    source_discovery_job_id=run_id,
+                    source_discovery_job_id=batch.task_id,
                     project_id=notebook_id,
                     user_content=entries,
                 ),

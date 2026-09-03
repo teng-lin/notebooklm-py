@@ -2774,7 +2774,8 @@ Notes:
 
 ### RPC: IMPORT_RESEARCH (LBwxtb)
 
-**Source:** `_web/research.py::import_sources()`
+**Source:** `_research.py::BaseResearchAPI.import_sources()` (classification) and
+`_web/research.py::WebResearchAPI._send_import()` (Web encoding/decoding)
 
 Import selected research sources into the notebook.
 

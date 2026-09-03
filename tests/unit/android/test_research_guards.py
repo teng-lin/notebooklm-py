@@ -12,6 +12,7 @@ RPC that never happened is the contract.
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -199,6 +200,22 @@ async def test_a_parseable_but_non_canonical_run_id_is_rejected(run_id: str) -> 
     assert transport.calls == []
 
 
+@pytest.mark.asyncio
+async def test_import_validates_run_id_before_materializing_source_rows() -> None:
+    """Android's canonical-id guard wins even when a later row cannot be coerced."""
+    api, transport = _api()
+
+    with pytest.raises(ValidationError, match="run_id must be a canonical UUID"):
+        await api.import_sources(
+            "nb",
+            "not-a-run-id",
+            [object()],  # type: ignore[list-item]
+        )
+
+    assert transport.scopes == []
+    assert transport.calls == []
+
+
 # ---------------------------------------------------------------------------
 # cancel
 # ---------------------------------------------------------------------------
@@ -258,7 +275,9 @@ async def test_import_of_an_empty_selection_sends_nothing() -> None:
         ),
     ],
 )
-async def test_import_of_only_unusable_sources_sends_nothing(source: dict[str, Any]) -> None:
+async def test_import_of_only_unusable_sources_sends_nothing(
+    source: dict[str, Any], caplog: pytest.LogCaptureFixture
+) -> None:
     """A row with neither a URL nor report text has no wire form, so none is sent.
 
     The selection is non-empty here, so the guard has to be the *entry* count
@@ -267,9 +286,28 @@ async def test_import_of_only_unusable_sources_sends_nothing(source: dict[str, A
     """
     api, transport = _api()
 
-    assert await api.import_sources("nb", RUN_ID, [source]) == []
+    with caplog.at_level(logging.DEBUG, logger="notebooklm._research"):
+        assert await api.import_sources("nb", RUN_ID, [source]) == []
     assert transport.scopes == []
     assert transport.calls == []
+    assert caplog.record_tuples == []
+
+
+@pytest.mark.asyncio
+async def test_android_import_accepts_normalized_untitled_report() -> None:
+    """Unlike Web, Android historically accepts a report dict with no title key."""
+    api, transport = _api({FINISH_RUN_METHOD: [research_pb2.FinishDiscoverSourcesRunResponse()]})
+
+    await api.import_sources(
+        "nb",
+        RUN_ID,
+        [{"result_type": RESEARCH_RESULT_TYPE_REPORT, "report_markdown": "# Report"}],
+    )
+
+    [(method, request)] = transport.calls
+    assert method == FINISH_RUN_METHOD
+    assert request.user_content[0].text_content.source_name == "Untitled"
+    assert request.user_content[0].text_content.content == "# Report"
 
 
 @pytest.mark.asyncio

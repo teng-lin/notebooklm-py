@@ -51,9 +51,9 @@ src/notebooklm/
 ├── _web/artifacts.py    # WebArtifactsAPI implementation
 ├── _web/artifact/       # Web artifact listing/generation/download-selection services
 ├── _chat.py             # Backend-neutral ChatAPI orchestration
-├── _research.py         # Backend-neutral BaseResearchAPI + shared workflows
-├── _research_import.py  # Neutral import classification/reconciliation helpers
-├── _web/research.py     # WebResearchAPI wire implementation
+├── _research.py         # BaseResearchAPI + shared import classification/workflows
+├── _research_import.py  # Neutral import policies/classification/reconciliation
+├── _web/research.py     # WebResearchAPI wire hooks + verification policy
 ├── _notes.py            # Backend-neutral abstract NotesAPI
 ├── _web/notes.py        # WebNotesAPI + NoteService implementation
 ├── _mind_maps_api.py    # Backend-neutral abstract MindMapsAPI
