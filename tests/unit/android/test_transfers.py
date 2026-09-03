@@ -44,7 +44,6 @@ from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import (
     ArtifactNotFoundError,
     DecodingError,
@@ -125,9 +124,7 @@ def _artifacts_api(transport: FakeTransport) -> AndroidArtifactsAPI:
         async def list_note_backed(self, *_a: Any, **_k: Any) -> list[Any]:
             return []
 
-    supervisor = CallSupervisor(
-        metrics=ClientMetrics(), drain_tracker=TransportDrainTracker(), max_concurrent_rpcs=2
-    )
+    supervisor = CallSupervisor(metrics=ClientMetrics(), max_concurrent_rpcs=2)
     return AndroidArtifactsAPI(
         session=cast(AndroidSession, transport),
         supervisor=supervisor,

@@ -364,7 +364,7 @@ async def test_await_refresh_releases_lock_when_metric_raises() -> None:
         refresh_callback=cb,
         metrics=cast(ClientMetrics, metrics),
     )
-    coord.activate_epoch(TEST_EPOCH)
+    coord.activate(TEST_EPOCH)
 
     with pytest.raises(RuntimeError, match="metrics blew up"):
         await coord.await_refresh(TEST_EPOCH)
@@ -455,7 +455,7 @@ async def test_await_refresh_is_single_flight() -> None:
         )
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
-    coord.activate_epoch(TEST_EPOCH)
+    coord.activate(TEST_EPOCH)
 
     tasks = [asyncio.create_task(coord.await_refresh(TEST_EPOCH)) for _ in range(3)]
     await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)
@@ -490,7 +490,7 @@ async def test_await_refresh_creates_new_task_after_first_done() -> None:
         )
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
-    coord.activate_epoch(TEST_EPOCH)
+    coord.activate(TEST_EPOCH)
 
     await coord.await_refresh(TEST_EPOCH)
     first_task = coord._refresh_task
@@ -513,7 +513,7 @@ async def test_refresh_process_exit_is_captured_then_re_raised_to_waiter() -> No
         raise process_exit
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
-    coord.activate_epoch(TEST_EPOCH)
+    coord.activate(TEST_EPOCH)
 
     with pytest.raises(KeyboardInterrupt, match="refresh shutdown") as raised:
         await coord.await_refresh(TEST_EPOCH)
@@ -534,7 +534,7 @@ async def test_eager_refresh_task_never_invokes_callback_under_refresh_lock() ->
         return _fresh_auth()
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
-    coord.activate_epoch(TEST_EPOCH)
+    coord.activate(TEST_EPOCH)
     loop = asyncio.get_running_loop()
     eager_factory = getattr(asyncio, "eager_task_factory", None)
     if eager_factory is None:
@@ -576,7 +576,7 @@ async def test_await_refresh_cancellation_preserves_task_slot() -> None:
         )
 
     coord = AuthRefreshCoordinator(refresh_callback=cb)
-    coord.activate_epoch(TEST_EPOCH)
+    coord.activate(TEST_EPOCH)
 
     waiter_a = asyncio.create_task(coord.await_refresh(TEST_EPOCH))
     waiter_b = asyncio.create_task(coord.await_refresh(TEST_EPOCH))

@@ -68,14 +68,9 @@ FORBIDDEN_PROPERTIES: frozenset[str] = frozenset(
         # in ``test_runtime_auth.py`` (and the unrelated ``owner._refresh_callback``
         # attribute used by the fake ``_Owner`` in ``test_web/transport/executor.py`` /
         # ``test_idempotency_registry.py``).
-        # Observability (ClientMetrics + TransportDrainTracker) bridges
-        # retired in session-shrink PR 4 — readers now go straight to
-        # ``session._metrics_obj.<attr>`` / ``session._drain_tracker.<attr>``
-        # or the lock-safe ``session.metrics_snapshot()``. The names are
-        # intentionally NOT listed here so the lint no longer flags the
-        # legitimate direct-collaborator reads in tests like
-        # ``test_client_metrics.py`` / ``test_transport_drain.py`` that
-        # exercise the helpers in isolation.
+        # Observability bridges retired in session-shrink PR 4 — readers now
+        # use the metrics collaborator or the lock-safe
+        # ``session.metrics_snapshot()``.
         "_loaded_cookie_snapshot",
         "_pending_polls",
         "_reqid_counter",
@@ -105,7 +100,6 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
         "src/notebooklm/_runtime/lifecycle.py",
         "src/notebooklm/_web/transport/auth.py",
         "src/notebooklm/_client_metrics.py",
-        "src/notebooklm/_transport_drain.py",
         "src/notebooklm/_web/transport/cookie_persistence.py",
         "src/notebooklm/_polling_registry.py",
         "src/notebooklm/_web/transport/reqid_counter.py",
@@ -115,11 +109,8 @@ CARVE_OUT_MODULES: frozenset[str] = frozenset(
         "src/notebooklm/_web/transport/errors.py",
         "src/notebooklm/_web/transport/middleware/auth_refresh.py",
         "src/notebooklm/_web/transport/middleware/chain.py",
-        "src/notebooklm/_web/transport/middleware/drain.py",
         "src/notebooklm/_web/transport/middleware/error_injection.py",
-        "src/notebooklm/_web/transport/middleware/metrics.py",
         "src/notebooklm/_web/transport/middleware/retry.py",
-        "src/notebooklm/_web/transport/middleware/semaphore.py",
         "src/notebooklm/_web/transport/middleware/tracing.py",
     }
 )

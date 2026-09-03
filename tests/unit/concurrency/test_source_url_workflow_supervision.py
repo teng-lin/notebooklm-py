@@ -10,7 +10,6 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import NonIdempotentRetryError, ValidationError
@@ -21,7 +20,6 @@ from tests._helpers.client_factory import build_client_shell_for_tests
 def _supervisor() -> CallSupervisor:
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
     supervisor.set_bound_loop(asyncio.get_running_loop())

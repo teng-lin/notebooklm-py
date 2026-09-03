@@ -354,7 +354,7 @@ async def test_concurrent_refreshes_coalesce_to_one_browser(monkeypatch, tmp_pat
         # Route N concurrent callers through ONE coordinator single-flight.
         coord = AuthRefreshCoordinator(refresh_callback=_do_refresh)
         coord.set_bound_loop(asyncio.get_running_loop())
-        coord.activate_epoch(TEST_EPOCH)
+        coord.activate(TEST_EPOCH)
         await asyncio.gather(*[coord.await_refresh(TEST_EPOCH) for _ in range(8)])
 
     assert drives["count"] == 1

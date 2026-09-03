@@ -53,7 +53,6 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
 from notebooklm._android.session import ANDROID_GRPC_TARGET, AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 
 METHOD = (
     "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject"
@@ -307,7 +306,6 @@ def _response(project_id: str = RAW_PROJECT_ID) -> read_pb2.GetProjectResponse:
 def _supervisor() -> CallSupervisor:
     return CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
 

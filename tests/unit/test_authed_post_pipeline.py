@@ -281,7 +281,7 @@ async def test_direct_transport_expected_epoch_rejects_before_kernel_or_auth(
 
         assert touched == []
         assert generation.in_flight == 0
-        assert generation.drain._in_flight_posts == 0
+        assert generation.in_flight == 0
     finally:
         await core.close()
 

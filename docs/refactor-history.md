@@ -171,7 +171,7 @@ not change, only their home module did.
 | `notebooklm._core.ERROR_INJECT_ENV_VAR` | `notebooklm._error_injection.ERROR_INJECT_ENV_VAR` | |
 | `notebooklm._core._SyntheticErrorTransport` (class) | _Removed_ | Synthetic-error substitution moved into `notebooklm._middleware.error_injection.ErrorInjectionMiddleware`. The env-var resolver (`_get_error_injection_mode`) and startup guard (`_refuse_synthetic_error_outside_test_context`) survive in `notebooklm._error_injection`. |
 | `notebooklm._core.AuthRefreshCoordinator` | `notebooklm._runtime.auth.AuthRefreshCoordinator` | Class unchanged; only the home module moved. |
-| `notebooklm._core.TransportDrainTracker` | `notebooklm._transport_drain.TransportDrainTracker` | Same. |
+| `notebooklm._core.TransportDrainTracker` | _Removed_ | Transitional duplicate accounting was folded into `notebooklm._runtime.call_supervisor.CallSupervisor`. |
 | `notebooklm._core.ClientMetrics` | `notebooklm._client_metrics.ClientMetrics` | Same. |
 | `notebooklm._core.ReqidCounter` | `notebooklm._reqid_counter.ReqidCounter` | Same. |
 | `notebooklm._core.CookiePersistence` | `notebooklm._cookie_persistence.CookiePersistence` | Same. |

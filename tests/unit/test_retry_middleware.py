@@ -744,9 +744,7 @@ async def test_missing_log_label_falls_back_to_sentinel(
     """A request without ``log_label`` admits a retry with a sentinel label.
 
     Defensive against ``__new__``-built fixtures driving the chain raw.
-    The middleware must not raise ``KeyError`` on a missing label —
-    matches DrainMiddleware's same fallback (pinned in
-    ``test_drain_middleware.py::test_missing_log_label_falls_back_to_sentinel``).
+    The middleware must not raise ``KeyError`` on a missing label.
     """
     sleep, _slept = _recording_sleep()
     terminal, _calls = _scripted_terminal(
@@ -827,12 +825,11 @@ def test_middleware_satisfies_protocol() -> None:
 async def test_non_transport_exception_propagates_without_retry() -> None:
     """``RetryMiddleware`` only catches transport exceptions; everything else flows up.
 
-    A generic ``RuntimeError`` from a deeper middleware (e.g. drain
-    rejection) must propagate without consuming the retry budget.
+    A generic ``RuntimeError`` from a deeper middleware must propagate
+    without consuming the retry budget.
     Pre-PR-12.7 the legacy transport loop only caught
     ``httpx.HTTPStatusError`` / ``httpx.RequestError``; the middleware
-    only catches the two named transport-exception types so
-    ``DrainMiddleware``'s ``RuntimeError("draining…")`` still propagates.
+    only catches the two named transport-exception types.
     """
     sleep, slept = _recording_sleep()
     boom = RuntimeError("not a transport error")

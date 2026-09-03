@@ -32,6 +32,11 @@
 > They are infrastructure services with closed lifecycle/call-policy surfaces,
 > not a resurrection of the deleted broad `Session` facade. Backend request,
 > auth, retry, codec, and exception decisions remain on their concrete stacks.
+>
+> **Runtime cleanup amendment (2026-09-03).** `CallSupervisor` is the sole
+> generation admission and drain-accounting owner. The transitional
+> `TransportDrainTracker` and its duplicate counters were removed; operation
+> scopes, child admission, idle waiting, and drain hooks all use the supervisor.
 
 ## Status
 
@@ -111,8 +116,8 @@ implementation rules change how those interfaces are satisfied at runtime.
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RpcCaller`                                                          | `RpcExecutor` directly                                                                    | none — already structurally satisfies (TYPE_CHECKING assertion in [`executor.py`](../../src/notebooklm/_web/transport/executor.py))                                                                                                                                                                                                                                                                                                                               |
 | `LoopGuard`                                                          | `ClientLifecycle` directly                                                                | **push down `assert_bound_loop()`** — currently lives on `Session.assert_bound_loop` (`_session.py:486`), which calls `_loop_affinity.assert_bound_loop(self.bound_loop)`. `ClientLifecycle` already owns `get_bound_loop` (`_session_lifecycle.py:271`); the push-down adds a trivial `assert_bound_loop()` method that calls the free function with `self.get_bound_loop()`. |
-| `OperationScopeProvider`                                             | `TransportDrainTracker` directly                                                          | **push down `operation_scope(label)`** — currently lives on `Session.operation_scope` (`_session.py:495`) as an async context manager wrapping `begin_transport_post` / `finish_transport_post` (both already on `TransportDrainTracker` at [`_transport_drain.py:139,196`](../../src/notebooklm/_transport_drain.py)). The push-down moves the contextmanager wrapper to the tracker.                                       |
-| `DrainHookRegistration` (feature-local in `_artifacts.py`)           | `TransportDrainTracker` directly                                                          | **push down `register_drain_hook(name, hook)` + the underlying `_drain_hooks` storage** — currently lives on `Session.register_drain_hook` (`_session.py:421`). The push-down moves both the method and the storage onto the tracker.                                                                                                                                                                                        |
+| `OperationScopeProvider`                                             | `CallSupervisor` directly                                                                 | **push down `operation_scope(label)`** — the current implementation lives on [`CallSupervisor`](../../src/notebooklm/_runtime/call_supervisor.py), which owns the generation counter and operation lease. |
+| `DrainHookRegistration` (feature-local in `_artifacts.py`)           | `CallSupervisor` directly                                                                 | **push down `register_drain_hook(name, hook)` + the underlying `_drain_hooks` storage** — both now live on the supervisor beside the admission state they drain. |
 | `AsyncWorkRuntime` (composes `LoopGuard` + `OperationScopeProvider`) | satisfied **transitively** by `ArtifactsRuntimeAdapter` / `UploadRuntimeAdapter` (Rule 2) | depends on the push-downs above. No dedicated `_AsyncWorkAdapter` — per Rule 2, trivial composites do not get adapter middlemen.                                                                                                                                                                                                                                                                                                                                 |
 | `AuthMetadata`                                                       | `AuthTokens` (`client._auth`) directly                                                     | `SourceUploadPipeline` receives the client-owned `AuthTokens` via `auth=client._auth`; `AuthTokens` structurally provides the `authuser` and `account_email` members required by `_web/sources/upload.py::AuthMetadata`.                                                                                                                                                                                                                                             |
 | `Kernel` (Protocol)                                                  | the concrete `Kernel` class                                                               | none — unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -171,7 +176,7 @@ class ArtifactsRuntimeAdapter:
     """
 
     rpc: RpcCaller
-    drain: TransportDrainTracker  # satisfies OperationScopeProvider + DrainHookRegistration after Wave 0.5
+    supervisor: CallSupervisor  # operation scopes + drain-hook registration
     lifecycle: ClientLifecycle  # satisfies LoopGuard after Wave 0.5
 
     async def rpc_call(self, *args: Any, **kwargs: Any) -> Any:
@@ -493,7 +498,7 @@ are recorded in the historical deletion notes below.
 The Rule 2 example dataclasses `ArtifactsRuntimeAdapter` and
 `UploadRuntimeAdapter` introduced for the artifact and upload features
 were retired. Each adapter only hid three stable collaborators
-(`RpcCaller` + `TransportDrainTracker` + `ClientLifecycle`) and had
+(`RpcCaller` + `CallSupervisor` + `ClientLifecycle`) and had
 exactly one production satisfier, so they sat at the bottom of Rule
 2's keep-vs-delete spectrum. The feature constructors now take their
 three runtime collaborators (`rpc` + `drain` + `lifecycle`) as
@@ -537,7 +542,7 @@ the `SessionCollaborators` bundle, the `RpcExecutor`, and the public feature
 APIs. The concrete `Session` class and its module were deleted, along with the
 session-method retention document and helper factory. Lifecycle entry points
 (`__aenter__`, `__aexit__`, `close`, `drain`, and `is_connected`) call
-`ClientLifecycle` and `TransportDrainTracker` directly. Static lints now enforce
+`ClientLifecycle` and `CallSupervisor` directly. Static lints now enforce
 that the deleted module, deleted helper names, deleted client attribute, and
 `ClientComposed.collaborators` alias cannot return.
 

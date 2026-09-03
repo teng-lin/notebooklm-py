@@ -21,7 +21,6 @@ from notebooklm._android.proto.labs.language.tailwind.common.protos import commo
 from notebooklm._android.session import AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import AuthError
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
@@ -131,7 +130,6 @@ async def _running_api(
     )
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=2,
     )
     loop = asyncio.get_running_loop()

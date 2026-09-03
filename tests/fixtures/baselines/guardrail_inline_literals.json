@@ -108,9 +108,6 @@
   "tests/_guardrails/test_no_facade_reach_in.py": {
     "_FORBIDDEN_PRIVATE_SERVICE_RUNTIME_IMPORT_MODULES": 35
   },
-  "tests/_guardrails/test_no_session_compat_bridges.py": {
-    "CARVE_OUT_MODULES": 21
-  },
   "tests/_guardrails/test_public_surface.py": {
     "AUTH_CROSS_BOUNDARY_NAMES": 30,
     "_AUTH_DEBLESSED_KEEP_IMPORTABLE": 40

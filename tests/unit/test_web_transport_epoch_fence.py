@@ -25,7 +25,7 @@ def _client_factory(**kwargs: object) -> httpx.AsyncClient:
 async def test_kernel_rejects_retired_epoch_before_wire_io() -> None:
     auth = AuthTokens(csrf_token="csrf", session_id="sid", cookies={"SID": "cookie"})
     kernel = Kernel(auth=auth, async_client_factory=_client_factory)
-    kernel.activate_epoch(1)
+    kernel.activate(1)
     await kernel.open(
         auth=auth,
         timeout=1,
@@ -36,12 +36,12 @@ async def test_kernel_rejects_retired_epoch_before_wire_io() -> None:
     )
     assert kernel.get_http_client(expected_epoch=1) is kernel.http_client
 
-    kernel.fence_epoch(1)
+    kernel.fence()
     with pytest.raises(RuntimeError, match="generation is retired"):
         kernel.get_http_client(expected_epoch=1)
 
     await kernel.aclose()
-    kernel.activate_epoch(2)
+    kernel.activate(2)
     await kernel.open(
         auth=auth,
         timeout=1,
@@ -67,12 +67,12 @@ async def test_auth_refresh_waiter_cannot_publish_into_reopened_generation() -> 
 
     coordinator = AuthRefreshCoordinator(refresh_callback=refresh)
     coordinator.set_bound_loop(asyncio.get_running_loop())
-    coordinator.activate_epoch(1)
+    coordinator.activate(1)
     waiter = asyncio.create_task(coordinator.await_refresh(1))
     await asyncio.sleep(0)
 
-    coordinator.fence_epoch(1)
-    coordinator.activate_epoch(2)
+    coordinator.fence()
+    coordinator.activate(2)
     gate.set()
 
     with pytest.raises(RuntimeError, match="expected=1, active=2"):

@@ -61,10 +61,10 @@ def _activate_call_supervisor(core: object) -> None:
     installed_client = kernel.http_client
     if installed_client is not None:
         install_http_client_for_test(kernel, None)
-    kernel.activate_epoch(1)
+    kernel.activate(1)
     if installed_client is not None:
         install_http_client_for_test(kernel, installed_client)
-    core._web_runtime.auth_coord.activate_epoch(1)  # type: ignore[attr-defined]
+    core._web_runtime.auth_coord.activate(1)  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

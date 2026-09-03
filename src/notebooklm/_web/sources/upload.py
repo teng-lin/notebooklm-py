@@ -23,7 +23,7 @@ from ..._idempotency import (
     unresolved_commit_error,
 )
 from ..._idempotency import mark_unconfirmed as _unconfirmed
-from ..._loop_bound import LoopBoundPrimitive
+from ..._loop_bound import EpochFenced
 from ..._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     normalize_max_concurrent_uploads,
@@ -168,7 +168,7 @@ class _TransportChildOutcome:
     error: BaseException | None = None
 
 
-class SourceUploadPipeline(LoopBoundPrimitive):
+class SourceUploadPipeline(EpochFenced):
     """Own file registration and resumable upload orchestration."""
 
     name = "web-upload"
@@ -188,6 +188,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         lister: SourceLister | None = None,
         poller: SourcePoller | None = None,
     ):
+        super().__init__("NotebookLMClient upload generation is retired")
         self._rpc = rpc
         self._supervisor = supervisor
         self._kernel = kernel
@@ -199,8 +200,6 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self._upload_semaphore: asyncio.Semaphore | None = None
         # Bounds concurrent Drive auto-route downloads (#1884); loop-bound.
         self._download_semaphore: asyncio.Semaphore | None = None
-        self._active_epoch: int | None = None
-        self._closing = False
         self._registry_lock: asyncio.Lock | None = None
         self._transport_tasks: set[asyncio.Task[Any]] = set()
         self._transport_clients: set[httpx.AsyncClient] = set()
@@ -258,7 +257,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
 
     def _live_cookies(self, expected_epoch: int) -> httpx.Cookies:
         """Return cookies only from the HTTP client owning ``expected_epoch``."""
-        self._assert_transport_epoch(expected_epoch)
+        self.assert_epoch(expected_epoch)
         return self._kernel.get_http_client(expected_epoch=expected_epoch).cookies
 
     def live_cookies(self, expected_epoch: int) -> httpx.Cookies:
@@ -305,16 +304,14 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         """Bind a lazy upload generation without issuing network I/O."""
         self.set_bound_loop(loop)
         self.reset_after_open()
-        self._active_epoch = epoch
-        self._closing = False
+        self.activate(epoch)
         self._registry_lock = asyncio.Lock()
         self._transport_tasks.clear()
         self._transport_clients.clear()
 
     async def prepare_close(self) -> None:
         """Fence first, then interrupt every old-epoch upload resource."""
-        self._closing = True
-        self._active_epoch = None
+        self.fence()
         tasks, clients = await self._snapshot_transport_resources()
         error = await self._settle_transport_resources(tasks, clients)
         if error is not None:
@@ -325,8 +322,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         # ``prepare_close`` normally installed this fence.  Repeat it before
         # the first await so rollback/partial-open cleanup is independently
         # safe and cannot race a late child registration.
-        self._closing = True
-        self._active_epoch = None
+        self.fence()
         try:
             tasks, clients = await self._snapshot_transport_resources()
             error = await self._settle_transport_resources(tasks, clients)
@@ -335,8 +331,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         finally:
             self._transport_clients.clear()
             self._transport_tasks.clear()
-            self._active_epoch = None
-            self._closing = True
+            self.fence()
             self._registry_lock = None
 
     async def _snapshot_transport_resources(
@@ -411,13 +406,6 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     first_failure = exc
         return process_exit or first_failure
 
-    def _assert_transport_epoch(self, expected_epoch: int) -> None:
-        if self._closing or self._active_epoch != expected_epoch:
-            raise RuntimeError(
-                "NotebookLMClient upload generation is retired "
-                f"(expected={expected_epoch}, active={self._active_epoch!r})."
-            )
-
     def _begin_transport_operation(
         self,
         expected_epoch: int,
@@ -426,7 +414,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         task = asyncio.current_task()
         if task is None:
             raise RuntimeError("NotebookLMClient upload transport is not open.")
-        self._assert_transport_epoch(epoch)
+        self.assert_epoch(epoch)
         self._transport_tasks.add(task)
         return epoch, task
 
@@ -447,7 +435,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
 
     def _track_transport_client(self, client: httpx.AsyncClient, epoch: int) -> None:
         """Publish a new client in one checkpoint-free fencing section."""
-        self._assert_transport_epoch(epoch)
+        self.assert_epoch(epoch)
         if self._registry_lock is None:
             raise RuntimeError("NotebookLMClient upload transport is not open.")
         self._transport_clients.add(client)
@@ -469,7 +457,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         async def _tracked() -> _TransportChildOutcome:
             task = asyncio.current_task()
             try:
-                self._assert_transport_epoch(expected_epoch)
+                self.assert_epoch(expected_epoch)
                 if task is None:
                     raise RuntimeError("NotebookLMClient upload child has no owning task.")
                 if self._registry_lock is None:
@@ -1110,7 +1098,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         expected_epoch: int,
     ) -> str:
         """Start a resumable upload session and get the upload URL."""
-        self._assert_transport_epoch(expected_epoch)
+        self.assert_epoch(expected_epoch)
         request = build_resumable_upload_start_request(
             notebook_id=notebook_id,
             filename=filename,
@@ -1123,7 +1111,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         )
 
         cookies = self._live_cookies(expected_epoch)
-        self._assert_transport_epoch(expected_epoch)
+        self.assert_epoch(expected_epoch)
         client = self._client_factory()(
             timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
             cookies=cookies,
@@ -1131,7 +1119,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         self._track_transport_client(client, expected_epoch)
         try:
             async with client:
-                self._assert_transport_epoch(expected_epoch)
+                self.assert_epoch(expected_epoch)
                 response = await client.post(
                     request.url,
                     headers=request.headers,
@@ -1170,7 +1158,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         expected_epoch: int,
     ) -> None:
         """Stream upload file content to the resumable upload URL."""
-        self._assert_transport_epoch(expected_epoch)
+        self.assert_epoch(expected_epoch)
         if logger is None:
             logger = module_logger
         path_fallback: Path | None = file_obj if isinstance(file_obj, Path) else None
@@ -1227,7 +1215,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 nonlocal finalize_started
                 try:
                     cookies = self._live_cookies(expected_epoch)
-                    self._assert_transport_epoch(expected_epoch)
+                    self.assert_epoch(expected_epoch)
                     client = self._client_factory()(
                         timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
                         cookies=cookies,
@@ -1235,7 +1223,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                     self._track_transport_client(client, expected_epoch)
                     try:
                         async with client:
-                            self._assert_transport_epoch(expected_epoch)
+                            self.assert_epoch(expected_epoch)
                             finalize_started = True
                             # The curl_cffi transport streams the request body from disk via
                             # low-level libcurl (no full-file buffer); httpx streams natively
@@ -1364,7 +1352,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
         untrusted server-named host must never reach an outbound header.
         """
         try:
-            self._assert_transport_epoch(_expected_epoch)
+            self.assert_epoch(_expected_epoch)
             upload_url = _validate_resumable_upload_url(upload_url)
             origin = _upload_url_origin(upload_url)
             headers = {
@@ -1376,7 +1364,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
                 "x-goog-upload-command": "cancel",
             }
             cookies = self._live_cookies(_expected_epoch)
-            self._assert_transport_epoch(_expected_epoch)
+            self.assert_epoch(_expected_epoch)
             client = self._client_factory()(
                 timeout=httpx.Timeout(10.0, read=10.0),
                 cookies=cookies,
@@ -1384,7 +1372,7 @@ class SourceUploadPipeline(LoopBoundPrimitive):
             self._track_transport_client(client, _expected_epoch)
             try:
                 async with client:
-                    self._assert_transport_epoch(_expected_epoch)
+                    self.assert_epoch(_expected_epoch)
                     await client.post(upload_url, headers=headers)
             finally:
                 self._transport_clients.discard(client)

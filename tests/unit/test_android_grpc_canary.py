@@ -46,7 +46,6 @@ from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.mint_service import MintedOAuthToken
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm.exceptions import AuthError
 from scripts import android_grpc_canary as canary
 
@@ -185,7 +184,6 @@ async def _running_client(service: _Service, bearer: _Bearer) -> AsyncIterator[A
     )
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=2,
     )
     loop = asyncio.get_running_loop()

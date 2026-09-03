@@ -23,13 +23,10 @@ from .._deadline import RuntimeDeadline
 from .._logging import get_request_id
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import LoopBoundPrimitive
-from .._transport_drain import TransportDrainTracker, _TransportOperationToken
 from ..types import RpcTelemetryEvent
 
 _T = TypeVar("_T")
-# Drain-hook warnings historically came from the bookkeeping module.  Keep the
-# logger stable while moving hook ownership to the supervisor.
-logger = logging.getLogger("notebooklm._transport_drain")
+logger = logging.getLogger(__name__)
 
 
 class AdmissionState(str, Enum):
@@ -47,7 +44,6 @@ class AdmissionGeneration:
 
     epoch: int
     loop: asyncio.AbstractEventLoop
-    drain: TransportDrainTracker
     condition: asyncio.Condition = field(default_factory=asyncio.Condition)
     state: AdmissionState = AdmissionState.CLOSED
     in_flight: int = 0
@@ -61,7 +57,6 @@ class AdmissionGeneration:
 class _AdmissionToken:
     generation: AdmissionGeneration
     task: asyncio.Task[Any] | None
-    drain_token: _TransportOperationToken
 
 
 @dataclass(frozen=True)
@@ -97,7 +92,7 @@ class _SettlementResult:
 
 
 class CallSupervisor(LoopBoundPrimitive):
-    """Apply ``Drain -> Metrics -> Semaphore`` around logical calls.
+    """Apply admission, metrics, and semaphore policy around logical calls.
 
     Construction is event-loop agnostic.  The drain condition and RPC
     semaphore remain lazy, and ``set_bound_loop``/``reset_after_open`` are the
@@ -108,18 +103,12 @@ class CallSupervisor(LoopBoundPrimitive):
         self,
         *,
         metrics: ClientMetrics,
-        drain_tracker: TransportDrainTracker,
         max_concurrent_rpcs: int | None,
         monotonic: Callable[[], float] | None = None,
     ) -> None:
         if max_concurrent_rpcs is not None and max_concurrent_rpcs < 1:
             raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
         self._metrics = metrics
-        # The injected tracker belongs exclusively to the first admission
-        # generation.  Every later generation receives a fresh tracker so a
-        # late epoch-N settlement keeps using epoch N's loop-local condition
-        # after the supervisor has reopened on another loop.
-        self._first_generation_drain: TransportDrainTracker | None = drain_tracker
         self._max_concurrent_rpcs = max_concurrent_rpcs
         self._rpc_semaphore: asyncio.Semaphore | None = None
         self._monotonic = time.perf_counter if monotonic is None else monotonic
@@ -198,7 +187,7 @@ class CallSupervisor(LoopBoundPrimitive):
             raise RuntimeError("Client not initialized. Use 'async with' context.")
 
         # Once a resource generation exists, retain the Phase A logical-call
-        # placement: ``started`` is recorded before Drain can reject a top-level
+        # placement: ``started`` is recorded before admission can reject a top-level
         # call in DRAINING/CLOSING.  Nested same-generation work is admitted by
         # ``call_scope``; every other state decision remains there.
         self._metrics.increment(rpc_calls_started=1)
@@ -223,14 +212,7 @@ class CallSupervisor(LoopBoundPrimitive):
             )
         if epoch <= self._last_epoch or epoch in self._retired:
             raise RuntimeError(f"admission generation {epoch} is not newer than prior epochs")
-        drain = self._first_generation_drain
-        if drain is None:
-            drain = TransportDrainTracker()
-        else:
-            self._first_generation_drain = None
-        drain.set_bound_loop(loop)
-        drain.reset_after_open()
-        generation = AdmissionGeneration(epoch=epoch, loop=loop, drain=drain)
+        generation = AdmissionGeneration(epoch=epoch, loop=loop)
         self._current = generation
         self._last_epoch = epoch
         self._rpc_semaphore = None
@@ -378,29 +360,9 @@ class CallSupervisor(LoopBoundPrimitive):
             generation.in_flight += 1
             if task is not None:
                 generation.depths[task] = depth + 1
-        try:
-            drain_token = await generation.drain.begin_transport_post(label)
-        except BaseException as exc:
-            settlement, state = self._publish_partial_settlement(
-                generation=generation,
-                task=task,
-            )
-            try:
-                await self._await_settlement(
-                    settlement,
-                    state,
-                    cancellation_already_active=isinstance(exc, asyncio.CancelledError),
-                )
-            except BaseException:
-                # The admission failure/cancellation owns precedence.  A
-                # re-cancel may detach this waiter, but the strongly retained
-                # settlement still retires the generation token.
-                pass
-            raise
         return _AdmissionToken(
             generation=generation,
             task=task,
-            drain_token=drain_token,
         )
 
     async def _finish_generation_token(
@@ -509,24 +471,6 @@ class CallSupervisor(LoopBoundPrimitive):
         state.abandoned = True
         self._report_abandoned_settlement(task, state)
 
-    def _publish_partial_settlement(
-        self,
-        *,
-        generation: AdmissionGeneration,
-        task: asyncio.Task[Any] | None,
-        child: asyncio.Task[Any] | None = None,
-    ) -> tuple[asyncio.Task[_SettlementResult], _SettlementState]:
-        """Settle a generation reservation that has no legacy drain token."""
-
-        async def _settle() -> None:
-            try:
-                if child is not None:
-                    await asyncio.gather(child, return_exceptions=True)
-            finally:
-                await self._finish_generation_token(generation, task)
-
-        return self._retain_settlement(_settle(), epoch=generation.epoch)
-
     def _publish_settlement(
         self,
         *,
@@ -536,14 +480,9 @@ class CallSupervisor(LoopBoundPrimitive):
         async def _settle() -> None:
             first_error: BaseException | None = None
             try:
-                await token.generation.drain.finish_transport_post(token.drain_token)
-            except BaseException as exc:
-                first_error = exc
-            try:
                 await self._finish_generation_token(token.generation, token.task)
             except BaseException as exc:
-                if first_error is None:
-                    first_error = exc
+                first_error = exc
             if queue_wait is not None:
                 try:
                     self._metrics.record_rpc_queue_wait(queue_wait)
@@ -594,8 +533,8 @@ class CallSupervisor(LoopBoundPrimitive):
         semaphore: asyncio.Semaphore | None,
         outcome: BaseException | None,
     ) -> None:
-        # Callback-visible order is load-bearing: release -> event -> drain
-        # finish -> queue recorder.
+        # Callback-visible order is load-bearing: release -> event -> generation
+        # settlement -> queue recorder.
         if semaphore is not None:
             semaphore.release()
 
@@ -771,7 +710,7 @@ class CallSupervisor(LoopBoundPrimitive):
         The wrapper's private gate is deliberately incomplete during task
         construction.  Even under an eager task factory, ``factory`` cannot be
         invoked until the parent token and child depth are associated while
-        the drain condition remains held.
+        the admission condition remains held.
         """
         self.assert_bound_loop()
         parent = asyncio.current_task()
@@ -835,32 +774,12 @@ class CallSupervisor(LoopBoundPrimitive):
             task = asyncio.create_task(_wrapper(), name=label)
             generation.depths[task] = generation.depths.get(task, 0) + 1
             generation.in_flight += 1
-        try:
-            drain_token = await generation.drain.begin_transport_task(task, label)
-        except BaseException as exc:
-            gate.cancel()
-            task.cancel()
-            settlement, state = self._publish_partial_settlement(
-                generation=generation,
-                task=task,
-                child=task,
-            )
-            try:
-                await self._await_settlement(
-                    settlement,
-                    state,
-                    cancellation_already_active=isinstance(exc, asyncio.CancelledError),
-                )
-            except BaseException:
-                pass
-            raise
         token = _AdmissionToken(
             generation=generation,
             task=task,
-            drain_token=drain_token,
         )
-        # No coroutine factory can run before both generation and legacy-drain
-        # tokens have been associated with the gated wrapper.
+        # No coroutine factory can run before the generation token has been
+        # associated with the gated wrapper.
         if not gate.done():
             gate.set_result(None)
         try:

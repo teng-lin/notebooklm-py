@@ -138,7 +138,7 @@ async def test_prepare_close_raises_an_ordinary_keepalive_failure_after_the_fenc
     assert task is not None
 
     # Retire the generation out from under the running keepalive.
-    fixture.kernel.fence_epoch(7)
+    fixture.kernel.fence()
     await _await_task_completion(task)
 
     with pytest.raises(RuntimeError, match="generation is retired"):
@@ -160,7 +160,7 @@ async def test_prepare_close_raises_an_auth_cancellation_failure() -> None:
         await fixture.lifecycle.prepare_close()
 
     assert raised.value is failure
-    fixture.auth_coord.fence_epoch.assert_called_once_with(2)
+    fixture.auth_coord.fence.assert_called_once_with()
     assert fixture.lifecycle._active_epoch is None
     await fixture.lifecycle.close_resources()
 

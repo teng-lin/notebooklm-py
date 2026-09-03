@@ -2,8 +2,7 @@
 
 The free helper :func:`notebooklm._loop_affinity.assert_bound_loop` is the
 new shared chokepoint that every async entry point on the seam helpers
-(``_transport_drain.TransportDrainTracker.drain``,
-``_reqid_counter.ReqidCounter.next_reqid``,
+(``_reqid_counter.ReqidCounter.next_reqid``,
 ``_runtime.auth.AuthRefreshCoordinator.await_refresh``,
 ``_artifact.polling.ArtifactPollingService.wait_for_completion``,
 ``_chat.ChatAPI.ask``,
@@ -13,8 +12,8 @@ lock bound to a dead loop.
 
 The guard in ``RuntimeTransport.perform_authed_post`` already covers the
 transport-POST path. The shared guard extends the same contract to the
-four async entry points that don't pass through that POST path (drain,
-reqid, auth refresh, artifact polling) and to the chat-ask/upload locks
+three async entry points that don't pass through that POST path (reqid,
+auth refresh, artifact polling) and to the chat-ask/upload locks
 that the transport path only catches *after* a loop-bound acquire — too late.
 
 Acceptance:
@@ -22,7 +21,7 @@ Acceptance:
 - ``bound_loop=<current loop>`` is a silent no-op (steady state).
 - ``bound_loop=<a different loop>`` raises ``RuntimeError`` with the same
   diagnostic the transport guard uses.
-- Each of the 6 guarded entry points calls :func:`assert_bound_loop` with
+- Each guarded entry point calls :func:`assert_bound_loop` with
   its own bound-loop reference before any awaits that touch loop-bound
   primitives (so cross-loop misuse never hits the lock-wait path).
 """
@@ -37,7 +36,6 @@ import pytest
 
 from notebooklm._artifact.polling import ArtifactPollingService
 from notebooklm._loop_affinity import assert_bound_loop
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.transport.auth import AuthRefreshCoordinator
 from notebooklm._web.transport.reqid_counter import ReqidCounter
 from notebooklm.auth import AuthTokens
@@ -118,28 +116,6 @@ def test_post_close_cross_loop_live_paths_preserve_uninitialized_error() -> None
 # ---------------------------------------------------------------------------
 # Per-seam wiring — each guarded entry point consults its own bound-loop.
 # ---------------------------------------------------------------------------
-
-
-def test_drain_guards_against_cross_loop_call() -> None:
-    """``TransportDrainTracker.drain`` must raise on cross-loop misuse.
-
-    Bind the tracker to loop A, then drive ``drain()`` from a fresh loop B
-    via ``asyncio.run``. The cross-loop guard at the top of ``drain``
-    must catch the mismatch before the condition acquire would otherwise
-    hang on a lock bound to loop A.
-    """
-    tracker = TransportDrainTracker()
-    other_loop = asyncio.new_event_loop()
-    try:
-        tracker.set_bound_loop(other_loop)
-
-        async def inner() -> None:
-            await tracker.drain()
-
-        with pytest.raises(RuntimeError, match="different event loop"):
-            asyncio.run(inner())
-    finally:
-        other_loop.close()
 
 
 def test_next_reqid_guards_against_cross_loop_call() -> None:

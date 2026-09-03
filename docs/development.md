@@ -141,7 +141,6 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_web/transport/sidecar.py` | `LazyWebSidecar` | Pre-registered inert Android lifecycle proxy for deprecated root `rpc_call`; owns one-time Web materialisation, close-race serialization, reopen, and phase delegation without a drain hook or keepalive. |
 | `_web/transport/composed.py` | `ClientComposed` | Write-once holder for web transport, executor, chain host, middleware metadata, and the shared runtime bundle. It owns no loop primitive or RPC semaphore. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
-| `_transport_drain.py` | `TransportDrainTracker` | Transitional in-flight bookkeeping owned by `CallSupervisor`; it is not the public drain-policy or generation owner. |
 | `_runtime/call_supervisor.py` | `CallSupervisor` | Concrete client-wide admission authority: generation-bearing call/operation leases, drain hooks, admitted child tasks, terminal RPC metrics, and the global RPC semaphore. |
 | `_web/transport/reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |

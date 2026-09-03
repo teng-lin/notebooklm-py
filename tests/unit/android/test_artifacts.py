@@ -47,7 +47,6 @@ from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._notebook_metadata import NotebookSourceIdProvider
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._types.common import UnknownTypeWarning
 from notebooklm._types.enums import (
     ArtifactTypeCode,
@@ -174,7 +173,6 @@ class FakeAssets:
 def _supervisor() -> CallSupervisor:
     return CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=2,
     )
 

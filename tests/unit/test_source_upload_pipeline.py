@@ -17,7 +17,6 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.sources.upload import (
     SourceUploadPipeline,
     _extract_register_file_source_id,
@@ -1453,7 +1452,6 @@ async def test_forced_close_gathers_stream_body_and_cannot_cancel_or_touch_reope
     loop = asyncio.get_running_loop()
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
     supervisor.set_bound_loop(loop)
@@ -1654,7 +1652,6 @@ async def test_upload_child_is_admitted_in_draining_and_rejected_in_closing() ->
     loop = asyncio.get_running_loop()
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),
-        drain_tracker=TransportDrainTracker(),
         max_concurrent_rpcs=None,
     )
     supervisor.set_bound_loop(loop)

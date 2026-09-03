@@ -15,16 +15,17 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
-from typing import IO, Any, Protocol, TypeVar, cast
+from typing import IO, Any, Protocol, cast
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 
 from .._callbacks import maybe_await_callback
-from .._deadline import RuntimeDeadline
+from .._deadline import RuntimeDeadline, await_with_deadline
 from .._loop_affinity import assert_bound_loop
-from .._loop_bound import LoopBoundPrimitive
+from .._loop_bound import EpochFenced
 from .._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS, normalize_max_concurrent_uploads
 from .._runtime.helpers import map_google_http_status
 from .._source.drive import DriveRef, parse_drive_ref
@@ -42,8 +43,6 @@ from .drive_staging import DriveStagingTransfer, ImportDriveFile
 from .errors import sanitize_escaping_exception
 from .evidence import ANDROID_EVIDENCE_PROFILE
 from .session import AndroidSession
-
-_T = TypeVar("_T")
 
 
 def _metadata_proto() -> Any:
@@ -409,21 +408,6 @@ def _upload_failure(filename: str, state: _UploadState, detail: str) -> SourceAd
     return error
 
 
-async def _bounded(awaitable: Awaitable[_T], deadline: RuntimeDeadline) -> _T:
-    remaining = deadline.remaining()
-    if remaining <= 0.0:
-        if hasattr(awaitable, "close"):
-            cast(Any, awaitable).close()
-        raise TimeoutError
-    try:
-        return await asyncio.wait_for(awaitable, timeout=remaining)
-    except asyncio.TimeoutError:
-        # Python 3.10 keeps asyncio.TimeoutError separate from the built-in
-        # TimeoutError caught by the upload transaction below. Normalize at
-        # this private boundary so public SourceAddError behavior is stable.
-        raise TimeoutError from None
-
-
 async def _settle_context_exit(
     context_manager: Any,
     exc_type: type[BaseException] | None,
@@ -463,7 +447,7 @@ async def _settle_context_exit(
         raise exit_error
 
 
-class AndroidUploadPipeline(LoopBoundPrimitive):
+class AndroidUploadPipeline(EpochFenced):
     """Own one private Android control-plane/data-plane upload transaction."""
 
     name = "android-upload"
@@ -479,6 +463,12 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         async_client_factory: AndroidHTTPClientFactory | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
+        super().__init__(
+            "Android upload belongs to a retired resource generation",
+            error_type=_RetiredEpochError,
+            initially_closing=True,
+            assert_loop=True,
+        )
         aggregate_timeout, http_timeout = _resolve_upload_timeouts(upload_timeout)
         self._transport = session
         self._bearer_provider = bearer_provider
@@ -488,8 +478,6 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         self._record_upload_queue_wait = record_upload_queue_wait
         self._async_client_factory = async_client_factory
         self._monotonic = monotonic
-        self._active_epoch: int | None = None
-        self._closing = True
         self._upload_semaphore: asyncio.Semaphore | None = None
         self._download_semaphore: asyncio.Semaphore | None = None
         self._transport_tasks: set[asyncio.Task[Any]] = set()
@@ -515,19 +503,16 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         if self._bound_loop is not loop:
             raise RuntimeError("Android upload transport was not bound by the client lifecycle.")
         assert_bound_loop(self._bound_loop)
-        self._active_epoch = epoch
-        self._closing = False
+        self.activate(epoch)
 
     async def prepare_close(self) -> None:
         if self._bound_loop is not None:
             assert_bound_loop(self._bound_loop)
-        self._closing = True
-        self._active_epoch = None
+        self.fence()
         await self._settle_resources()
 
     async def close_resources(self) -> None:
-        self._closing = True
-        self._active_epoch = None
+        self.fence()
         try:
             await self._settle_resources()
         finally:
@@ -560,12 +545,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 pass
 
     def _assert_epoch(self, expected_epoch: int) -> None:
-        assert_bound_loop(self._bound_loop)
-        if self._closing or self._active_epoch != expected_epoch:
-            raise _RetiredEpochError(
-                "Android upload belongs to a retired resource generation "
-                f"(expected={expected_epoch}, active={self._active_epoch})."
-            )
+        self.assert_epoch(expected_epoch)
         try:
             self._transport.assert_epoch(expected_epoch)
         except RuntimeError:
@@ -631,13 +611,14 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         }
         response: Any | None = None
         try:
-            response = await _bounded(
+            response = await await_with_deadline(
                 client.get(
                     self._drive_url(ref.file_id, media=False),
                     headers=headers,
                     follow_redirects=False,
                 ),
                 deadline,
+                on_timeout=TimeoutError,
             )
             assert response is not None
             status = int(response.status_code)
@@ -693,7 +674,9 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 # component timers.  Keep stream entry (including the header
                 # wait) inside our independent 300s aggregate lifecycle fence.
                 try:
-                    response = await _bounded(response_cm.__aenter__(), deadline)
+                    response = await await_with_deadline(
+                        response_cm.__aenter__(), deadline, on_timeout=TimeoutError
+                    )
                     assert response is not None
                     response_entered = True
                     status = int(response.status_code)
@@ -714,7 +697,9 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                     iterator = response.aiter_bytes()
                     while True:
                         try:
-                            chunk = await _bounded(anext(iterator), deadline)
+                            chunk = await await_with_deadline(
+                                anext(iterator), deadline, on_timeout=TimeoutError
+                            )
                         except StopAsyncIteration:
                             break
                         total += len(chunk)
@@ -722,7 +707,11 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                             raise ValidationError(
                                 f"Drive download exceeded the 200 MiB cap for {filename!r}."
                             )
-                        await _bounded(asyncio.to_thread(handle.write, chunk), deadline)
+                        await await_with_deadline(
+                            asyncio.to_thread(handle.write, chunk),
+                            deadline,
+                            on_timeout=TimeoutError,
+                        )
                 except BaseException as error:
                     exit_args = (type(error), error, error.__traceback__)
                     if response is not None:
@@ -755,9 +744,10 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 self._download_slot(),
             ):
                 self._assert_epoch(lease.epoch)
-                credential = await _bounded(
+                credential = await await_with_deadline(
                     self._bearer_provider.get(lease.epoch),
                     deadline,
+                    on_timeout=TimeoutError,
                 )
                 self._assert_epoch(lease.epoch)
                 client = self._client_factory()(
@@ -808,7 +798,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             upload_timeout=self._upload_timeout,
             http_timeout=self._http_timeout,
             monotonic=self._monotonic,
-            bounded=_bounded,
+            bounded=partial(await_with_deadline, on_timeout=TimeoutError),
         )
 
     async def add_file_via_drive_staging(
@@ -995,10 +985,10 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         deadline = RuntimeDeadline.start(self._upload_timeout, monotonic=self._monotonic)
         state = _UploadState()
         scope = self._transport.operation_scope("Android source upload")
-        lease = await _bounded(scope.__aenter__(), deadline)
+        lease = await await_with_deadline(scope.__aenter__(), deadline, on_timeout=TimeoutError)
         try:
             try:
-                source_id, filename = await _bounded(
+                source_id, filename = await await_with_deadline(
                     self._control_plane(
                         notebook_id,
                         raw_path,
@@ -1010,6 +1000,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                         register_tentative,
                     ),
                     deadline,
+                    on_timeout=TimeoutError,
                 )
             except TimeoutError:
                 raise _upload_failure(
@@ -1074,11 +1065,13 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 raise ValidationError(f"Not a regular file: {resolved}")
             return resolved
 
-        resolved = await _bounded(asyncio.to_thread(_resolve_and_check), deadline)
+        resolved = await await_with_deadline(
+            asyncio.to_thread(_resolve_and_check), deadline, on_timeout=TimeoutError
+        )
         filename = resolved.name
         semaphore = self._upload_slot()
         queued_at = self._monotonic()
-        await _bounded(semaphore.acquire(), deadline)
+        await await_with_deadline(semaphore.acquire(), deadline, on_timeout=TimeoutError)
         if self._record_upload_queue_wait is not None:
             self._record_upload_queue_wait(self._monotonic() - queued_at)
         file_obj: IO[bytes] | None = None
@@ -1092,7 +1085,9 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                     handle.close()
                     raise
 
-            file_obj, file_size = await _bounded(asyncio.to_thread(_open_and_stat), deadline)
+            file_obj, file_size = await await_with_deadline(
+                asyncio.to_thread(_open_and_stat), deadline, on_timeout=TimeoutError
+            )
             assert file_obj is not None
             self._open_files.add(file_obj)
             self._assert_epoch(expected_epoch)
@@ -1203,7 +1198,11 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         ):
             raise RuntimeError("Android bearer destination is not allowlisted")
         try:
-            credential = await _bounded(self._bearer_provider.get(expected_epoch), deadline)
+            credential = await await_with_deadline(
+                self._bearer_provider.get(expected_epoch),
+                deadline,
+                on_timeout=TimeoutError,
+            )
         except RuntimeError:
             self._assert_epoch(expected_epoch)
             raise
@@ -1246,7 +1245,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
             self._assert_epoch(expected_epoch)
             self._transport_clients.add(client)
             async with client:
-                response = await _bounded(
+                response = await await_with_deadline(
                     client.post(
                         url,
                         headers=headers,
@@ -1254,6 +1253,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                         follow_redirects=False,
                     ),
                     deadline,
+                    on_timeout=TimeoutError,
                 )
                 assert response is not None
                 status_code = int(response.status_code)
@@ -1336,7 +1336,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                 from .._curl_cffi_transport import CurlCffiAsyncClient
 
                 if isinstance(client, CurlCffiAsyncClient):
-                    response = await _bounded(
+                    response = await await_with_deadline(
                         client.stream_upload(
                             session_url,
                             file_obj,
@@ -1348,9 +1348,10 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                             stop_on_cancel=True,
                         ),
                         deadline,
+                        on_timeout=TimeoutError,
                     )
                 else:
-                    response = await _bounded(
+                    response = await await_with_deadline(
                         client.put(
                             session_url,
                             headers=headers,
@@ -1358,6 +1359,7 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
                             follow_redirects=False,
                         ),
                         deadline,
+                        on_timeout=TimeoutError,
                     )
                 assert response is not None
                 status_code = int(response.status_code)

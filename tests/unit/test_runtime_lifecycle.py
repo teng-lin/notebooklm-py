@@ -15,7 +15,6 @@ from notebooklm._auth.storage import snapshot_cookie_jar
 from notebooklm._runtime.config import CORE_LOGGER_NAME
 from notebooklm._runtime.helpers import _resolve_keepalive_interval
 from notebooklm._runtime.lifecycle import ClientLifecycle
-from notebooklm._transport_drain import TransportDrainTracker
 from notebooklm._web.transport.kernel import Kernel
 from notebooklm._web.transport.lifecycle import (
     WebTransportLifecycle,
@@ -272,7 +271,7 @@ async def test_web_open_captures_normalized_live_cookie_snapshot() -> None:
         assert fixture.kernel.http_client is not None
         assert passed_jar is fixture.kernel.http_client.cookies
         assert auth.cookie_snapshot is mirrored
-        fixture.auth_coord.activate_epoch.assert_called_once_with(7)
+        fixture.auth_coord.activate.assert_called_once_with(7)
     finally:
         await _close_web(fixture)
 
@@ -309,7 +308,7 @@ async def test_web_prepare_close_fences_generation_and_cancels_keepalive() -> No
 
     assert fixture.lifecycle._keepalive_task is None
     assert task.done()
-    fixture.auth_coord.fence_epoch.assert_called_once_with(3)
+    fixture.auth_coord.fence.assert_called_once_with()
     fixture.auth_coord.cancel_inflight_refresh.assert_awaited_once()
     await fixture.lifecycle.close_resources()
 
@@ -564,12 +563,3 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     assert web.source_uploader._kernel is web.kernel
     assert web.composed.runtime_collaborators is collaborators
     assert web.composed.runtime_collaborators.lifecycle is lifecycle
-
-
-def test_drain_tracker_reset_after_open_clears_draining_flag() -> None:
-    tracker = TransportDrainTracker()
-    tracker._draining = True
-
-    tracker.reset_after_open()
-
-    assert tracker._draining is False

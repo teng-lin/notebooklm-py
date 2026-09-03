@@ -634,7 +634,7 @@ class TestRefreshAuth:
         coordinator = web_client._require_web_runtime().auth_coord
         coordinator.set_bound_loop(asyncio.get_running_loop())
         coordinator.reset_after_open()
-        coordinator.activate_epoch(7)
+        coordinator.activate(7)
         result = await client._refresh_auth_for_epoch(
             allow_headless=True,
             expected_epoch=7,
@@ -899,10 +899,10 @@ def _activate_call_supervisor(core: NotebookLMClient) -> None:
     installed_client = kernel.http_client
     if installed_client is not None:
         install_http_client_for_test(kernel, None)
-    kernel.activate_epoch(1)
+    kernel.activate(1)
     if installed_client is not None:
         install_http_client_for_test(kernel, installed_client)
-    core._web_runtime.auth_coord.activate_epoch(1)
+    core._web_runtime.auth_coord.activate(1)
 
 
 class TestRpcCallAutoRetry:
