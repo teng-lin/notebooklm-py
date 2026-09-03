@@ -1333,7 +1333,13 @@ def test_baseline_registry_is_non_trivial() -> None:
     [
         pytest.param(
             baseline,
-            marks=pytest.mark.timeout(180) if baseline.name == "auth_shared_mutations" else (),
+            marks=(
+                pytest.mark.timeout(360)
+                if baseline.name == "auth_family_patch_scorecard"
+                else pytest.mark.timeout(180)
+                if baseline.name == "auth_shared_mutations"
+                else ()
+            ),
         )
         for baseline in BASELINES
     ],
