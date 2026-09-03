@@ -10,6 +10,12 @@ Run locally, after ``notebooklm login`` has populated the profile, with::
 
     NOTEBOOKLM_HEADLESS_REAUTH=1 pytest tests/e2e/test_headless_reauth.py -m e2e
 
+Release validation uses strict mode, which converts every missing prerequisite
+and every non-success outcome into a failure instead of a skip::
+
+    NOTEBOOKLM_HEADLESS_REAUTH=1 NOTEBOOKLM_HEADLESS_REAUTH_REQUIRE_SUCCESS=1 \
+      pytest -q tests/e2e/test_headless_reauth.py
+
 It is SKIPPED unless both:
 
 * the persistent browser profile exists and is non-empty (a real Google
@@ -58,10 +64,29 @@ def _playwright_available() -> bool:
     return True
 
 
+def _chromium_launchable() -> tuple[bool, str]:
+    """Probe the strict run's browser binary before exercising re-auth."""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            browser.close()
+    except Exception as exc:  # noqa: BLE001 - strict prerequisite diagnostic
+        return False, type(exc).__name__
+    return True, "available"
+
+
+_REQUIRE_SUCCESS = os.environ.get("NOTEBOOKLM_HEADLESS_REAUTH_REQUIRE_SUCCESS") == "1"
+
+
 _GATE = pytest.mark.skipif(
-    os.environ.get("NOTEBOOKLM_HEADLESS_REAUTH") != "1"
-    or not _profile_is_reusable()
-    or not _playwright_available(),
+    not _REQUIRE_SUCCESS
+    and (
+        os.environ.get("NOTEBOOKLM_HEADLESS_REAUTH") != "1"
+        or not _profile_is_reusable()
+        or not _playwright_available()
+    ),
     reason=(
         "headless re-auth e2e requires NOTEBOOKLM_HEADLESS_REAUTH=1, a non-empty "
         "persistent browser profile (run 'notebooklm login' first), and the "
@@ -80,10 +105,31 @@ def test_headless_reauth_against_live_profile() -> None:
     because the gate already proved opt-in + a reusable profile. Either way the
     result is one of the three honest, typed outcomes — never a silent ``None``.
     """
+    if _REQUIRE_SUCCESS:
+        assert os.environ.get("NOTEBOOKLM_HEADLESS_REAUTH") == "1", (
+            "strict headless re-auth requires NOTEBOOKLM_HEADLESS_REAUTH=1"
+        )
+        assert _profile_is_reusable(), (
+            "strict headless re-auth requires a non-empty reusable profile; "
+            "run 'notebooklm login' first"
+        )
+        assert _playwright_available(), "strict headless re-auth requires the 'browser' extra"
+        launchable, detail = _chromium_launchable()
+        assert launchable, f"strict headless re-auth requires launchable Chromium ({detail})"
+
     result = attempt_headless_reauth(
         storage_path=get_storage_path(),
         allow_headless=True,
     )
+
+    if _REQUIRE_SUCCESS:
+        assert result.status is HeadlessReauthStatus.SUCCESS, (
+            f"strict headless re-auth did not succeed: {result.status.value} ({result.reason})"
+        )
+        assert result.succeeded is True
+        assert result.storage_path == get_storage_path()
+        assert get_storage_path().exists()
+        return
 
     assert result.status in {
         HeadlessReauthStatus.SUCCESS,
