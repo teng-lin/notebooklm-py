@@ -34,6 +34,13 @@ out-of-tree private importers; no replacement shims were added. The canonical re
 | `_auth.storage_transaction` | `_auth.profile_store` |
 | `_auth.storage_writer` | `_auth.storage` |
 
+**Amended 2026-09-02 (browser-package relocation):** the browser-acquisition
+implementation moved from `_auth` to `_browser` under ADR-0036. The exact
+`browser_capture.py` shrink lock moved with the file into the separate browser
+module-size projection; it was not dropped or granted headroom. `_auth` now has
+no `_browser`/Playwright edge and reaches L3 through the neutral installed-rung
+contract in `_auth/recovery_rungs.py`.
+
 **Amended during PR 1.2 (2026-08-08):** decision 1 gains a **third** sanctioned class, *template
 adoption*. The effort's plan assumed PR 1.2 would shrink `storage.py`; it does not — converting a
 hand-rolled preamble onto a shared template is net-additive in lines, as #2152 already demonstrated

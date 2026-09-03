@@ -103,7 +103,7 @@
       "path": "src/notebooklm/_browser/__init__.py"
     },
     {
-      "lines": 1445,
+      "lines": 1439,
       "name": "browser_capture",
       "path": "src/notebooklm/_browser/browser_capture.py"
     },
@@ -123,7 +123,7 @@
       "path": "src/notebooklm/_browser/navigation_errors.py"
     },
     {
-      "lines": 148,
+      "lines": 149,
       "name": "oauth_token",
       "path": "src/notebooklm/_browser/oauth_token.py"
     }
@@ -136,7 +136,7 @@
     "function_local_edges": 1,
     "module_edges": 18,
     "modules": 6,
-    "total_lines": 2761,
+    "total_lines": 2756,
     "unique_edges": 19
   },
   "version": 1

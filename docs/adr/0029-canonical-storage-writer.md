@@ -10,7 +10,8 @@ exemption to `{migration.py}`).
 
 **Amended by [ADR-0033](0033-auth-consolidation-policy.md) (persistence merge):**
 the single sanctioned home is now `_auth/storage.py`, which absorbed this
-module; `storage_writer.py` remains only as a re-export shim. The boundary this
+module; the private `storage_writer.py` compatibility shim was subsequently
+removed early by ADR-0033's explicit 2026-09-02 policy override. The boundary this
 ADR establishes is unchanged in substance but is now enforced at **function**
 granularity — an equality-asserted allowlist of the intent-writer function names
 permitted to reach the `_atomic_io` bypass — because a module-granular assertion

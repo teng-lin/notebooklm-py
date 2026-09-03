@@ -20,17 +20,24 @@ from notebooklm._auth.recovery_rungs import (
     install_headless_rung,
     installed_headless_rung,
 )
+from notebooklm._auth.single_flight import SingleFlight
 from notebooklm._browser import headless_reauth
 from notebooklm._browser.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
 
 
 @pytest.fixture(autouse=True)
 def _restore_installed_rung() -> Generator[None, None, None]:
+    single_flight = SingleFlight.process_default()
+    cold_recovery = recovery.ColdRecoveryState.process_default()
+    single_flight._reset_for_tests()
+    cold_recovery._reset_for_tests()
     previous = installed_headless_rung()
     try:
         yield
     finally:
         install_headless_rung(previous)
+        single_flight._reset_for_tests()
+        cold_recovery._reset_for_tests()
 
 
 @pytest.mark.parametrize(

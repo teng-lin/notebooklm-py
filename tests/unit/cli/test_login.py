@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import notebooklm._app.login_browser as login_browser
 import notebooklm.cli.playwright_login_io as playwright_login_io_module
 import notebooklm.cli.services.playwright_login as _pl
 import notebooklm.cli.session_cmd as session_cmd_module
@@ -65,7 +66,7 @@ def _invoke_login_with_launch_failure(runner, tmp_path, launch_error, *cli_args)
         patch.object(_pl, "ensure_chromium_installed"),
         patch("playwright.sync_api.sync_playwright") as mock_pw,
         patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
-        patch.object(_pl, "get_browser_profile_dir", return_value=tmp_path / "profile"),
+        patch.object(login_browser, "get_browser_profile_dir", return_value=tmp_path / "profile"),
     ):
         mock_launch = mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
         mock_launch.side_effect = Exception(launch_error)
@@ -82,7 +83,7 @@ class TestLoginUrlValidation:
     def test_url_matches_default_base_host(self, monkeypatch):
         monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
 
-        from notebooklm.cli.services.playwright_login import (
+        from notebooklm._browser.browser_capture import (
             url_matches_base_host as _url_matches_base_host,
         )
 
@@ -95,7 +96,7 @@ class TestLoginUrlValidation:
     def test_url_matches_enterprise_base_host(self, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
 
-        from notebooklm.cli.services.playwright_login import (
+        from notebooklm._browser.browser_capture import (
             url_matches_base_host as _url_matches_base_host,
         )
 
@@ -106,7 +107,7 @@ class TestLoginUrlValidation:
     def test_connection_error_help_uses_enterprise_base_host(self, monkeypatch):
         monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
 
-        from notebooklm.cli.services.playwright_login import (
+        from notebooklm._browser.browser_capture import (
             connection_error_help as _connection_error_help,
         )
 
@@ -220,7 +221,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
@@ -355,7 +356,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),
@@ -734,7 +735,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -771,7 +772,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -809,7 +810,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -870,7 +871,14 @@ class TestLoginCommand:
         def fake_sync_playwright():
             return FakeSyncPlaywright()
 
-        def fake_repair(storage_path, io, *, page_html=None, quiet=False):
+        def fake_repair(
+            storage_path,
+            *,
+            emit_event,
+            run_async,
+            page_html=None,
+            quiet=False,
+        ):
             repair_calls.append(
                 {
                     "storage_path": storage_path,
@@ -885,10 +893,14 @@ class TestLoginCommand:
         with (
             patch.object(_pl, "ensure_chromium_installed"),
             patch("playwright.sync_api.sync_playwright", side_effect=fake_sync_playwright),
-            patch.object(_pl, "repair_playwright_account_metadata", side_effect=fake_repair),
+            patch.object(
+                login_browser,
+                "repair_playwright_account_metadata",
+                side_effect=fake_repair,
+            ),
         ):
             playwright_login.run_playwright_login(
-                playwright_login.PlaywrightLoginPlan(
+                login_browser.BrowserLoginPlan(
                     browser="chromium",
                     browser_profile=browser_dir,
                     storage_path=storage_file,
@@ -924,7 +936,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -971,7 +983,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1040,7 +1052,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1180,7 +1192,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1226,14 +1238,18 @@ class TestLoginCommand:
         with (
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "s.json"),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
-            # ``prepare_login_paths`` (in ``services.playwright_login``) owns
+            # ``prepare_login_paths`` (in ``_app.login_browser``) owns
             # the ``--fresh`` rmtree; patch the consumer module's ``shutil``
             # (#1367 removed the ``session_cmd`` stdlib re-export).
-            patch.object(_pl.shutil, "rmtree", side_effect=OSError("locked")) as mock_rmtree,
+            patch.object(
+                login_browser.shutil,
+                "rmtree",
+                side_effect=OSError("locked"),
+            ) as mock_rmtree,
         ):
             result = runner.invoke(cli, ["login", "--fresh"])
 
@@ -1255,7 +1271,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1308,7 +1324,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1364,7 +1380,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1419,7 +1435,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1466,7 +1482,7 @@ class TestLoginCommand:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=storage_file),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=browser_dir,
             ),
@@ -1595,7 +1611,7 @@ class TestLoginNoTraceback:
             patch("playwright.sync_api.sync_playwright") as mock_pw,
             patch_session_login_dual("get_storage_path", return_value=tmp_path / "storage.json"),
             patch.object(
-                _pl,
+                login_browser,
                 "get_browser_profile_dir",
                 return_value=tmp_path / "profile",
             ),

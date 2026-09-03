@@ -110,7 +110,7 @@
       "width": 68,
       "type": "backend",
       "label": "Resolve",
-      "sublabel": "source"
+      "sublabel": "_app plan"
     },
     {
       "id": "launch",
@@ -222,7 +222,7 @@
       "dot": "cyan",
       "title": "Capture core",
       "items": [
-        "browser_capture.py owns launch through atomic persistence",
+        "_app/login_browser orders the flow; _browser/browser_capture persists",
         "login_cookie.py projects installed-browser cookies into the same profile store"
       ]
     },

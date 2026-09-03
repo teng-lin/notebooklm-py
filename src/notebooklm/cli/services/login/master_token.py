@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...._browser.oauth_token import capture_oauth_token as _capture_oauth_token  # noqa: TID252
+from ....auth import capture_browser_oauth_token
 
 
 def capture_oauth_token(
@@ -12,4 +12,11 @@ def capture_oauth_token(
     timeout_s: float = 300.0,
 ) -> str:
     """Delegate browser-specific capture to the optional implementation package."""
-    return _capture_oauth_token(browser=browser, cdp_url=cdp_url, timeout_s=timeout_s)
+    try:
+        return capture_browser_oauth_token(
+            browser=browser,
+            cdp_url=cdp_url,
+            timeout_s=timeout_s,
+        )
+    finally:
+        del browser, cdp_url, timeout_s

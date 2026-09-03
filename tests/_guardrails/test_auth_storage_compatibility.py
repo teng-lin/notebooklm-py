@@ -1124,6 +1124,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/_app/master_token.py",
         "src/notebooklm/cli/session_cmd.py",
     ],
+    "app_host_scope_note": ["src/notebooklm/cli/services/login/cookie_jar.py"],
     "build_cookie_jar": ["src/notebooklm/_web/transport/kernel.py"],
     "build_httpx_cookies_from_storage": ["src/notebooklm/cli/auth_runtime.py"],
     "cookie_names_from_storage": [
@@ -1131,6 +1132,8 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/cli/services/login/cookie_writes.py",
         "src/notebooklm/cli/services/login/refresh.py",
     ],
+    "capture_browser_oauth_token": ["src/notebooklm/cli/services/login/master_token.py"],
+    "check_headless_reauth_readiness": ["src/notebooklm/cli/doctor_cmd.py"],
     "fetch_tokens_passive": [
         "src/notebooklm/_app/auth_check.py",
         "src/notebooklm/cli/playwright_login_io.py",
@@ -1143,6 +1146,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/cli/services/login/refresh.py",
         "src/notebooklm/cli/session_cmd.py",
     ],
+    "filter_storage_state_cookies_by_domain_policy": ["src/notebooklm/cli/_cookie_import.py"],
     "missing_cookies_hint": [
         "src/notebooklm/cli/services/login/cookie_writes.py",
         "src/notebooklm/cli/services/login/refresh.py",
@@ -1193,6 +1197,7 @@ EXPECTED_ALIAS_CALLERS = {
     ],
     "assert_account_writable": ["src/notebooklm/_app/master_token.py"],
     "bootstrap_missing_storage_from_master_token": ["src/notebooklm/_app/master_token.py"],
+    "browser_login_channels": ["src/notebooklm/_app/login_browser.py"],
     "build_cookie_jar": [
         "src/notebooklm/_app/login_cookie.py",
         "src/notebooklm/cli/helpers.py",
@@ -1200,6 +1205,7 @@ EXPECTED_ALIAS_CALLERS = {
     "convert_rookiepy_cookies_to_storage_state": ["src/notebooklm/_app/login_cookie.py"],
     "cookie_names_from_storage": ["src/notebooklm/_app/login_cookie.py"],
     "enumerate_accounts": ["src/notebooklm/_app/login_cookie.py"],
+    "ensure_browser_login_available": ["src/notebooklm/_app/login_browser.py"],
     "extract_cookies_from_storage": [
         "src/notebooklm/_app/auth_check.py",
         "src/notebooklm/_app/login_cookie.py",
@@ -1210,6 +1216,7 @@ EXPECTED_ALIAS_CALLERS = {
     "master_token_remint": ["src/notebooklm/_app/master_token.py"],
     "missing_cookies_hint": ["src/notebooklm/_app/login_cookie.py"],
     "read_master_token": ["src/notebooklm/_app/master_token.py"],
+    "run_browser_login_capture": ["src/notebooklm/_app/login_browser.py"],
 }
 
 
@@ -2185,12 +2192,12 @@ def test_first_party_facade_callers_are_frozen_in_both_import_idioms() -> None:
     assert aliases == EXPECTED_ALIAS_CALLERS
     union = {(name, path) for name, paths in direct.items() for path in paths}
     union |= {(name, path) for name, paths in aliases.items() for path in paths}
-    assert len(direct) == 14
-    assert sum(map(len, direct.values())) == 40
-    assert len(aliases) == 25
-    assert sum(map(len, aliases.values())) == 30
-    assert len({name for name, _path in union}) == 35
-    assert len(union) == 70
+    assert len(direct) == 18
+    assert sum(map(len, direct.values())) == 44
+    assert len(aliases) == 28
+    assert sum(map(len, aliases.values())) == 33
+    assert len({name for name, _path in union}) == 42
+    assert len(union) == 77
 
 
 @pytest.mark.skipif(not hasattr(ast, "TryStar"), reason="exception-group AST requires 3.11+")

@@ -15,7 +15,7 @@
           "app_flows",
           "client"
         ],
-        "note": "Click commands own parsing and rendering; services own workflow orchestration."
+        "note": "Click commands own parsing and rendering; services adapt typed application workflows."
       },
       {
         "id": "server-paths",
@@ -133,7 +133,7 @@
       "id": "app_flows",
       "type": "backend",
       "label": "Feature Cores",
-      "sublabel": "_app/ notebooks · sources · chat",
+      "sublabel": "_app/ login · notebooks · sources",
       "tag": "transport-neutral",
       "pos": [
         529,
@@ -289,7 +289,7 @@
       "items": [
         "_app/ raises only the public notebooklm.exceptions types",
         "Simple reads call client namespaces directly",
-        "Generate, wait and download flows live in the cores"
+        "Login call order, generate, wait and download flows live in the cores"
       ]
     },
     {
@@ -297,7 +297,7 @@
       "title": "Enforced boundaries",
       "items": [
         "test_app_boundary.py bans click, rich, fastmcp and fastapi",
-        "test_cli_boundary.py allows only two private imports",
+        "test_cli_boundary.py allows only the _app private package",
         "MCP and REST boundaries are pinned by their own gates"
       ]
     }

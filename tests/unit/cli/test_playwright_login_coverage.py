@@ -27,9 +27,20 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import notebooklm._app.login_browser as login_browser
+import notebooklm._browser.browser_capture as browser_capture
+from notebooklm._app.login_browser import (
+    BrowserLoginPlan,
+    LoginFlagConflict,
+    LoginPathError,
+    PreparedLoginPaths,
+    prepare_login_paths,
+    validate_login_flag_conflicts,
+)
 from notebooklm._auth import account as _auth_account
 from notebooklm._auth import cookies as _auth_cookies
 from notebooklm._auth.account import _select_playwright_account
+from notebooklm._browser.browser_capture import recover_page, windows_playwright_event_loop
 from notebooklm._env import get_base_host
 from notebooklm.cli.playwright_login_io import make_login_io
 from notebooklm.cli.services import playwright_login
@@ -37,15 +48,10 @@ from notebooklm.cli.services.playwright_login import (
     CHROMIUM_MISSING_MARKER,
     CHROMIUM_PRESENT_MARKER,
     CHROMIUM_PROBE_SOURCE,
-    Conflict,
-    PathError,
-    PreparedPaths,
     ensure_chromium_installed,
-    prepare_login_paths,
-    recover_page,
+    login_flag_conflict_message,
+    login_path_error_message,
     repair_playwright_account_metadata,
-    validate_login_flag_conflicts,
-    windows_playwright_event_loop,
 )
 
 
@@ -218,7 +224,7 @@ def test_windows_event_loop_swaps_and_restores_policy(monkeypatch) -> None:
         asyncio, "set_event_loop_policy", lambda policy: swapped_policies.append(policy)
     )
     monkeypatch.setattr(asyncio, "DefaultEventLoopPolicy", _DefaultPolicy)
-    monkeypatch.setattr(playwright_login.sys, "platform", "win32")
+    monkeypatch.setattr(browser_capture.sys, "platform", "win32")
     with windows_playwright_event_loop():
         # First swap installs a fresh DefaultEventLoopPolicy.
         assert isinstance(swapped_policies[-1], _DefaultPolicy)
@@ -228,7 +234,7 @@ def test_windows_event_loop_swaps_and_restores_policy(monkeypatch) -> None:
 
 def test_windows_event_loop_noop_off_win32(monkeypatch) -> None:
     """Off win32 the context manager is a pure no-op."""
-    monkeypatch.setattr(playwright_login.sys, "platform", "linux")
+    monkeypatch.setattr(browser_capture.sys, "platform", "linux")
     with windows_playwright_event_loop():
         pass  # no exception, nothing swapped
 
@@ -480,8 +486,8 @@ def test_validate_flags_account_requires_browser_cookies() -> None:
     result = validate_login_flag_conflicts(
         **_base_flags(browser_cookies=None, account_email="bob@example.com")
     )
-    assert isinstance(result, Conflict)
-    assert "require --browser-cookies" in result.message
+    assert isinstance(result, LoginFlagConflict)
+    assert "require --browser-cookies" in login_flag_conflict_message(result)
 
 
 def test_validate_flags_all_accounts_with_account_conflicts() -> None:
@@ -489,22 +495,22 @@ def test_validate_flags_all_accounts_with_account_conflicts() -> None:
     result = validate_login_flag_conflicts(
         **_base_flags(all_accounts=True, account_email="bob@example.com")
     )
-    assert isinstance(result, Conflict)
-    assert "cannot be combined with --account" in result.message
+    assert isinstance(result, LoginFlagConflict)
+    assert "cannot be combined with --account" in login_flag_conflict_message(result)
 
 
 def test_validate_flags_all_accounts_with_storage_conflicts() -> None:
     """--all-accounts + --storage returns a Conflict ."""
     result = validate_login_flag_conflicts(**_base_flags(all_accounts=True, storage="/tmp/s.json"))
-    assert isinstance(result, Conflict)
-    assert "cannot be combined with --storage" in result.message
+    assert isinstance(result, LoginFlagConflict)
+    assert "cannot be combined with --storage" in login_flag_conflict_message(result)
 
 
 def test_validate_flags_update_requires_all_accounts() -> None:
     """--update without --all-accounts returns a Conflict."""
     result = validate_login_flag_conflicts(**_base_flags(update=True, all_accounts=False))
-    assert isinstance(result, Conflict)
-    assert "--update only applies to --all-accounts" in result.message
+    assert isinstance(result, LoginFlagConflict)
+    assert "--update only applies to --all-accounts" in login_flag_conflict_message(result)
 
 
 def test_validate_flags_clean_combo_passes() -> None:
@@ -517,19 +523,19 @@ def test_validate_flags_clean_combo_passes() -> None:
 # ---------------------------------------------------------------------------
 def test_prepare_login_paths_explicit_storage(tmp_path, monkeypatch) -> None:
     """Explicit ``--storage`` wins and is returned verbatim ."""
-    monkeypatch.setattr(playwright_login.sys, "platform", "linux")
+    monkeypatch.setattr(login_browser.sys, "platform", "linux")
     browser_profile = tmp_path / "profile"
     # Patch the real consumer bindings the code resolves through, not the
     # transitional ``_resolve_paths_helper`` precedence shim. ``prepare_login_paths``
     # looks both names up on this module, so patching them here bites the call.
     fake_browser_profile_dir = MagicMock(return_value=browser_profile)
     fake_storage_path = MagicMock(return_value=tmp_path / "ignored")
-    monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
-    monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
+    monkeypatch.setattr(login_browser, "get_browser_profile_dir", fake_browser_profile_dir)
+    monkeypatch.setattr(login_browser, "get_storage_path", fake_storage_path)
     outcome = prepare_login_paths(
         profile=None, storage=str(tmp_path / "explicit.json"), fresh=False
     )
-    assert isinstance(outcome, PreparedPaths)
+    assert isinstance(outcome, PreparedLoginPaths)
     assert outcome.storage_path == Path(str(tmp_path / "explicit.json"))
     assert outcome.browser_profile == browser_profile
     assert outcome.fresh_cleared is False
@@ -546,8 +552,8 @@ def test_prepare_login_paths_isolates_custom_storage_profiles(tmp_path) -> None:
     outcome_a = prepare_login_paths(profile="work", storage=str(storage_a), fresh=False)
     outcome_b = prepare_login_paths(profile="work", storage=str(storage_b), fresh=False)
 
-    assert isinstance(outcome_a, PreparedPaths)
-    assert isinstance(outcome_b, PreparedPaths)
+    assert isinstance(outcome_a, PreparedLoginPaths)
+    assert isinstance(outcome_b, PreparedLoginPaths)
     assert outcome_a.browser_profile == tmp_path / "A.json.browser_profile"
     assert outcome_b.browser_profile == tmp_path / "B.json.browser_profile"
 
@@ -560,7 +566,7 @@ def test_prepare_login_paths_marks_new_custom_profile_as_owned(tmp_path) -> None
         fresh=False,
     )
 
-    assert isinstance(outcome, PreparedPaths)
+    assert isinstance(outcome, PreparedLoginPaths)
     assert (outcome.browser_profile / ".notebooklm-owned").is_file()
 
 
@@ -577,8 +583,8 @@ def test_prepare_login_paths_fresh_refuses_unmarked_custom_profile(tmp_path) -> 
         fresh=True,
     )
 
-    assert isinstance(outcome, PathError)
-    assert "Refusing to delete" in outcome.message
+    assert isinstance(outcome, LoginPathError)
+    assert "Refusing to delete" in login_path_error_message(outcome)
     assert payload.read_text() == "external"
 
 
@@ -600,7 +606,7 @@ def test_prepare_login_paths_fresh_refuses_arbitrary_conventional_profile(
         fresh=True,
     )
 
-    assert isinstance(outcome, PathError)
+    assert isinstance(outcome, LoginPathError)
     assert payload.read_text() == "external"
 
 
@@ -625,7 +631,7 @@ def test_prepare_login_paths_fresh_accepts_explicit_named_profile_without_marker
         fresh=True,
     )
 
-    assert isinstance(outcome, PreparedPaths)
+    assert isinstance(outcome, PreparedLoginPaths)
     assert outcome.fresh_cleared is True
     assert not payload.exists()
 
@@ -649,7 +655,7 @@ def test_prepare_login_paths_fresh_clears_only_matching_custom_profile(tmp_path)
         fresh=True,
     )
 
-    assert isinstance(outcome, PreparedPaths)
+    assert isinstance(outcome, PreparedLoginPaths)
     assert outcome.fresh_cleared is True
     assert browser_a.is_dir()
     assert ownership_a.is_file()
@@ -659,16 +665,16 @@ def test_prepare_login_paths_fresh_clears_only_matching_custom_profile(tmp_path)
 
 def test_prepare_login_paths_with_profile(tmp_path, monkeypatch) -> None:
     """The profile branch resolves via ``get_storage_path(profile=...)`` ."""
-    monkeypatch.setattr(playwright_login.sys, "platform", "linux")
+    monkeypatch.setattr(login_browser.sys, "platform", "linux")
     browser_profile = tmp_path / "profile"
     profile_storage = tmp_path / "work" / "storage.json"
     # Patch the real consumer bindings the code resolves through directly.
     fake_browser_profile_dir = MagicMock(return_value=browser_profile)
     fake_storage_path = MagicMock(return_value=profile_storage)
-    monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
-    monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
+    monkeypatch.setattr(login_browser, "get_browser_profile_dir", fake_browser_profile_dir)
+    monkeypatch.setattr(login_browser, "get_storage_path", fake_storage_path)
     outcome = prepare_login_paths(profile="work", storage=None, fresh=False)
-    assert isinstance(outcome, PreparedPaths)
+    assert isinstance(outcome, PreparedLoginPaths)
     assert outcome.storage_path == profile_storage
     assert outcome.browser_profile == browser_profile
     # The profile branch forwards the profile name to the storage resolver.
@@ -711,15 +717,13 @@ def test_run_playwright_login_capture_html_error_is_swallowed(tmp_path) -> None:
             side_effect=lambda: _FakeSyncPlaywright(),
         ),
         patch.object(
-            playwright_login,
+            login_browser,
             "repair_playwright_account_metadata",
-            side_effect=lambda storage_path, io, *, page_html=None, quiet=False: (
-                repair_calls.append(page_html)
-            ),
+            side_effect=lambda storage_path, **kwargs: repair_calls.append(kwargs["page_html"]),
         ),
     ):
         playwright_login.run_playwright_login(
-            playwright_login.PlaywrightLoginPlan(
+            BrowserLoginPlan(
                 browser="chromium",
                 browser_profile=browser_dir,
                 storage_path=storage_file,
@@ -780,7 +784,7 @@ def test_run_playwright_login_cookie_forcing_inner_recovery_reraises(tmp_path) -
         pytest.raises(PlaywrightError, match="ERR_SOMETHING_ELSE"),
     ):
         playwright_login.run_playwright_login(
-            playwright_login.PlaywrightLoginPlan(
+            BrowserLoginPlan(
                 browser="chromium",
                 browser_profile=browser_dir,
                 storage_path=storage_file,
@@ -807,16 +811,16 @@ def test_redact_subprocess_output_skips_non_string_env_value() -> None:
 # ---------------------------------------------------------------------------
 def test_prepare_login_paths_win32_skips_mode(tmp_path, monkeypatch) -> None:
     """On win32 the parent dirs are created without ``mode=`` ."""
-    monkeypatch.setattr(playwright_login.sys, "platform", "win32")
+    monkeypatch.setattr(login_browser.sys, "platform", "win32")
     browser_profile = tmp_path / "profile"
     storage_target = tmp_path / "win" / "storage.json"
     # Patch the real consumer bindings the code resolves through directly.
     fake_browser_profile_dir = MagicMock(return_value=browser_profile)
     fake_storage_path = MagicMock(return_value=storage_target)
-    monkeypatch.setattr(playwright_login, "get_browser_profile_dir", fake_browser_profile_dir)
-    monkeypatch.setattr(playwright_login, "get_storage_path", fake_storage_path)
+    monkeypatch.setattr(login_browser, "get_browser_profile_dir", fake_browser_profile_dir)
+    monkeypatch.setattr(login_browser, "get_storage_path", fake_storage_path)
     outcome = prepare_login_paths(profile=None, storage=None, fresh=False)
-    assert isinstance(outcome, PreparedPaths)
+    assert isinstance(outcome, PreparedLoginPaths)
     assert outcome.storage_path == storage_target
     assert outcome.browser_profile == browser_profile
     assert storage_target.parent.is_dir()
@@ -828,18 +832,16 @@ def test_prepare_login_paths_win32_skips_mode(tmp_path, monkeypatch) -> None:
 
 def test_prepare_login_paths_fresh_wipe_success_flags_cleared(tmp_path, monkeypatch) -> None:
     """A ``--fresh`` wipe of an existing profile sets ``fresh_cleared``."""
-    monkeypatch.setattr(playwright_login.sys, "platform", "linux")
+    monkeypatch.setattr(login_browser.sys, "platform", "linux")
     browser_profile = tmp_path / "profile"
     browser_profile.mkdir()
     storage_target = tmp_path / "store" / "storage.json"
     monkeypatch.setattr(
-        playwright_login, "get_browser_profile_dir", MagicMock(return_value=browser_profile)
+        login_browser, "get_browser_profile_dir", MagicMock(return_value=browser_profile)
     )
-    monkeypatch.setattr(
-        playwright_login, "get_storage_path", MagicMock(return_value=storage_target)
-    )
+    monkeypatch.setattr(login_browser, "get_storage_path", MagicMock(return_value=storage_target))
     outcome = prepare_login_paths(profile=None, storage=None, fresh=True)
-    assert isinstance(outcome, PreparedPaths)
+    assert isinstance(outcome, PreparedLoginPaths)
     assert outcome.fresh_cleared is True
     # The pre-existing profile dir was removed then recreated as an empty dir.
     assert browser_profile.is_dir()
@@ -848,20 +850,18 @@ def test_prepare_login_paths_fresh_wipe_success_flags_cleared(tmp_path, monkeypa
 
 def test_prepare_login_paths_fresh_wipe_oserror_returns_path_error(tmp_path, monkeypatch) -> None:
     """An OSError during the ``--fresh`` wipe returns a :class:`PathError`."""
-    monkeypatch.setattr(playwright_login.sys, "platform", "linux")
+    monkeypatch.setattr(login_browser.sys, "platform", "linux")
     browser_profile = tmp_path / "profile"
     browser_profile.mkdir()
     storage_target = tmp_path / "store" / "storage.json"
     monkeypatch.setattr(
-        playwright_login, "get_browser_profile_dir", MagicMock(return_value=browser_profile)
+        login_browser, "get_browser_profile_dir", MagicMock(return_value=browser_profile)
     )
-    monkeypatch.setattr(
-        playwright_login, "get_storage_path", MagicMock(return_value=storage_target)
-    )
-    monkeypatch.setattr(playwright_login.shutil, "rmtree", MagicMock(side_effect=OSError("locked")))
+    monkeypatch.setattr(login_browser, "get_storage_path", MagicMock(return_value=storage_target))
+    monkeypatch.setattr(login_browser.shutil, "rmtree", MagicMock(side_effect=OSError("locked")))
     outcome = prepare_login_paths(profile=None, storage=None, fresh=True)
-    assert isinstance(outcome, PathError)
-    assert "Cannot clear browser profile: locked" in outcome.message
+    assert isinstance(outcome, LoginPathError)
+    assert "Cannot clear browser profile: locked" in login_path_error_message(outcome)
 
 
 # ---------------------------------------------------------------------------
@@ -910,7 +910,7 @@ def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> Non
         pytest.raises(PlaywrightError, match="Protocol error"),
     ):
         playwright_login.run_playwright_login(
-            playwright_login.PlaywrightLoginPlan(
+            BrowserLoginPlan(
                 browser="chromium",
                 browser_profile=browser_dir,
                 storage_path=storage_file,
@@ -965,7 +965,7 @@ def test_run_playwright_login_io_fail_inside_block_still_closes_context(tmp_path
         pytest.raises(SystemExit) as exc_info,
     ):
         playwright_login.run_playwright_login(
-            playwright_login.PlaywrightLoginPlan(
+            BrowserLoginPlan(
                 browser="chromium",
                 browser_profile=browser_dir,
                 storage_path=storage_file,

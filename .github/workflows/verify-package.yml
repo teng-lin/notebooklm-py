@@ -48,6 +48,30 @@ jobs:
         VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+    - name: Download exact published wheel for base-install smoke
+      shell: bash
+      run: |
+        mkdir -p published-dist
+        if [ "${{ inputs.source }}" = "testpypi" ]; then
+          python -m pip download --disable-pip-version-check \
+            --no-deps --no-cache-dir --only-binary=:all: \
+            --index-url https://test.pypi.org/simple/ \
+            --dest published-dist \
+            "notebooklm-py==${{ steps.version.outputs.version }}"
+        else
+          python -m pip download --disable-pip-version-check \
+            --no-deps --no-cache-dir --only-binary=:all: \
+            --dest published-dist \
+            "notebooklm-py==${{ steps.version.outputs.version }}"
+        fi
+
+    - name: Verify published base wheel without browser extra
+      shell: bash
+      run: |
+        wheels=(published-dist/notebooklm_py-*.whl)
+        test "${#wheels[@]}" -eq 1
+        python scripts/check_base_wheel.py --wheel "${wheels[0]}"
+
     - name: Sync locked deps + non-cookies extras
       # Pull every runtime + tooling dep from `uv.lock` (the same lockfile
       # contributors install from) so the verify step exercises the full

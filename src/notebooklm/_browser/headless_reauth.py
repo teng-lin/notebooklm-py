@@ -128,10 +128,10 @@ class _DriveRecord:
     ``claim()`` calls ``asyncio.get_running_loop()`` to create the leader
     ``asyncio.Task``. This drive has no loop at its coalescing point and
     structurally cannot get one. :func:`attempt_headless_reauth` is a SYNC
-    entry, and its only production caller deliberately runs it *off* the loop —
-    ``asyncio.to_thread(attempt_headless_reauth, ...)`` in
-    :func:`notebooklm._auth.recovery.try_headless_reauth` — because the browser
-    drive blocks. Inside that worker thread ``claim()`` raises ``RuntimeError:
+    entry in ``_browser``. Its installed :func:`headless_rung` adapter is the
+    only production caller, and :mod:`notebooklm._auth.recovery` deliberately
+    invokes that registered rung through ``asyncio.to_thread`` because the
+    browser drive blocks. Inside that worker thread ``claim()`` raises ``RuntimeError:
     no running event loop`` (measured, not inferred; pinned by
     ``test_single_flight_is_unreachable_from_the_sync_drive_entry``).
 
@@ -152,7 +152,7 @@ class _DriveRecord:
       loop-less callers — today that is its whitebox tests
       (``test_concurrent_explicit_attempts_coalesce_to_one_browser``) and any
       future non-``recovery`` caller. The entry is private
-      (``notebooklm._auth``, fenced off from the CLI by ``test_cli_boundary``),
+      (``notebooklm._browser``, fenced off from the CLI by ``test_cli_boundary``),
       so that residual is small but real. (2) *Keying*: the ``source``
       discriminator (``"profile"`` vs ``"cdp"``) is resolved INSIDE
       :func:`attempt_headless_reauth` by :func:`resolve_cdp_url`, which also

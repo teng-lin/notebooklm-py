@@ -858,6 +858,9 @@ Browser login opens in the Windows host browser. The storage file is saved in th
 
 ### Headless Servers & Containers
 
-**Playwright is only required for the `notebooklm login` command.** All other operations use standard HTTP requests via `httpx`.
+**Playwright is required only for interactive `notebooklm login` and the optional,
+explicitly enabled layer-3 browser recovery path.** Ordinary RPC operations use
+standard HTTP requests via `httpx`; a base install with supplied storage state
+does not import Playwright.
 
 For the install + auth-bootstrap recipe (run `notebooklm login` on a workstation, copy `storage_state.json` to the server, set `NOTEBOOKLM_AUTH_JSON`), see the canonical Persona D guide: [docs/installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).

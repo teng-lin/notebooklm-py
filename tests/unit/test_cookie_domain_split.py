@@ -133,7 +133,7 @@ class TestWriteTimeFilterParity:
         """
         from notebooklm._auth import cookie_filter, storage
         from notebooklm._browser import browser_capture
-        from notebooklm.cli.services.playwright_login import (
+        from notebooklm.auth import (
             filter_storage_state_cookies_by_domain_policy as playwright_filter,
         )
 
@@ -152,10 +152,10 @@ class TestWriteTimeFilterParity:
         Because all three CLI writers call this one function, proving parity for
         the writer proves it for every login/import path.
         """
-        from notebooklm.auth import replace_from_login
-        from notebooklm.cli.services.playwright_login import (
+        from notebooklm.auth import (
             filter_storage_state_cookies_by_domain_policy as playwright_filter,
         )
+        from notebooklm.auth import replace_from_login
 
         probe_domains = [
             ".google.com",

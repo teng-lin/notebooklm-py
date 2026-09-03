@@ -66,6 +66,13 @@ jobs:
         # immediately. See issue #829 for the recovery trade-off.
         retention-days: 1
 
+    - name: Verify built base wheel without browser extra
+      shell: bash
+      run: |
+        wheels=(dist/notebooklm_py-*.whl)
+        test "${#wheels[@]}" -eq 1
+        python scripts/check_base_wheel.py --wheel "${wheels[0]}"
+
     - name: Install built wheel + release-smoke extras in a clean venv
       # Canonical contributor extras (`[browser,dev,markdown]`) match the
       # install path documented in `docs/installation.md`; `impersonate` is

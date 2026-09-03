@@ -609,14 +609,13 @@ remaining multi-step and cross-scope relationships.
 
 ## Authentication subpackage
 
-[`auth.py`](../src/notebooklm/auth.py) is a thin public facade that
-re-exports the canonical implementations under
-[`_auth/`](../src/notebooklm/_auth). ADR-0014 closed ADR-0003's deferred
-flat-re-export goal: `AuthTokens` and `load_auth_from_storage()` now live
-in `_auth.tokens`, `_validate_required_cookies` is a direct
-`_auth.cookie_policy` re-export, and `async def enumerate_accounts` is the
-only remaining `auth.py` function body because it binds `_poke_session` as
-the default dependency.
+[`auth.py`](../src/notebooklm/auth.py) is the public capability facade over
+canonical implementations under [`_auth/`](../src/notebooklm/_auth) and the
+optional browser-acquisition package. Most names are direct, identity-preserving
+aliases. Its small function layer owns `enumerate_accounts`, installs a neutral
+default L3 recovery rung, and lazily imports `_browser` for first-party login,
+readiness, and OAuth-capture capabilities. Importing the base package therefore
+loads neither `_browser` nor Playwright.
 
 Three visuals separate concerns that are easy to conflate: the
 [authentication architecture](https://teng-lin.github.io/notebooklm-py/diagrams/04-authentication.html) shows ownership,
@@ -644,7 +643,7 @@ ADR-0033 constrains consolidation; and ADR-0034 defines the current storage obje
 | [`_auth/cookie_policy.py`](../src/notebooklm/_auth/cookie_policy.py) | Domain allowlist, cookie-domain builder (`build_cookie_domain_allowlist`), and cookie policy decisions. |
 | [`_auth/cookie_semantics.py`](../src/notebooklm/_auth/cookie_semantics.py) | Shared cookie-shape and expiry semantics used by sanitized auth loaders and persistence boundaries. |
 | [`_auth/cookie_types.py`](../src/notebooklm/_auth/cookie_types.py) | The canonical `Cookie` / `CookieJar` types (ADR-0031 Stage 1): constructors from every input shape, converters to httpx/storage-state, and the cookie-set policy questions as methods. A delegating wrapper — policy still lives in `cookie_policy`/`cookies`. |
-| [`_browser/browser_capture.py`](../src/notebooklm/_browser/browser_capture.py) | **One deep module for the browser launch→navigate→capture→filter→heal→persist core** (ADR-0033 sanctioned merge — absorbed `browser_state_validation.py` and `login_wait_trace.py`), lazy `playwright`; shared by the interactive CLI login adapter and the layer-3 headless re-auth layer (ADR-0021). Both capture arms construct `RemintWriteRequest` and consume `ProfileStore.replace_from_remint() -> ReplaceResult` directly. The headless arm classifies the landing URL (authenticated→capture, redirected-to-login→`HeadlessLoginRequiredError`). `run_cdp_capture` is an alternative credential source: attach to an operator-pointed already-running Chrome over CDP (`connect_over_cdp`, disconnect-only teardown) using the SAME landing classification + cookie-domain allowlist. Absorbed sections: (1) **login-wait DEBUG tracing** — `log_observed_navigations` logs each main-frame navigation observed during the five-minute interactive wait at DEBUG so `notebooklm -vv login` is self-diagnosing when a login never lands; inert unless DEBUG is enabled (no listener attached) and it swallows every listener exception, so it can never destabilise the wait. Redaction goes through its own `trace_url`, which keeps **only** scheme + host — deliberately stricter than `extraction._safe_url` (which preserves the path outside a Google-OAuth allowlist), because this traces arbitrary SSO redirects where a federated IdP can carry a one-time assertion in the path. The two redactors are **kept distinct on purpose**. (2) **captured-state heal** — `heal_captured_state`, a best-effort in-memory PSIDTS heal for Playwright-captured state that preserves cookie attributes, returns `(state, error)` and never raises, so a failed heal cannot discard a completed sign-in. `browser_launch_errors.py` stays a separate leaf for cohesion — a channel registry plus a pure classifier, testable without a browser. |
+| [`_browser/browser_capture.py`](../src/notebooklm/_browser/browser_capture.py) | **One deep module for the browser launch→navigate→capture→filter→heal→persist core** (ADR-0033 sanctioned merge — absorbed `browser_state_validation.py` and `login_wait_trace.py`), lazy `playwright`; shared by the interactive `_app/login_browser.py` flow and the layer-3 headless re-auth layer (ADR-0021/ADR-0036). Both capture arms construct `RemintWriteRequest` and consume `ProfileStore.replace_from_remint() -> ReplaceResult` directly. The headless arm classifies the landing URL (authenticated→capture, redirected-to-login→`HeadlessLoginRequiredError`). `run_cdp_capture` is an alternative credential source: attach to an operator-pointed already-running Chrome over CDP (`connect_over_cdp`, disconnect-only teardown) using the SAME landing classification + cookie-domain allowlist. Absorbed sections: (1) **login-wait DEBUG tracing** — `log_observed_navigations` logs each main-frame navigation observed during the five-minute interactive wait at DEBUG so `notebooklm -vv login` is self-diagnosing when a login never lands; inert unless DEBUG is enabled (no listener attached) and it swallows every listener exception, so it can never destabilise the wait. Redaction goes through its own `trace_url`, which keeps **only** scheme + host — deliberately stricter than `extraction._safe_url` (which preserves the path outside a Google-OAuth allowlist), because this traces arbitrary SSO redirects where a federated IdP can carry a one-time assertion in the path. The two redactors are **kept distinct on purpose**. (2) **captured-state heal** — `heal_captured_state`, a best-effort in-memory PSIDTS heal for Playwright-captured state that preserves cookie attributes, returns `(state, error)` and never raises, so a failed heal cannot discard a completed sign-in. `browser_launch_errors.py` stays a separate leaf for cohesion — a channel registry plus a pure classifier, testable without a browser. |
 | [`_browser/navigation_errors.py`](../src/notebooklm/_browser/navigation_errors.py) | Transport-neutral leaf for `browser_capture`: classifies a Playwright navigation failure from its message. `navigation_error_code` extracts the `net::ERR_*` token (anchored, so it cannot return arbitrary text after a stray `net::`) — used to log a failure without logging the credential-bearing URL Playwright embeds in it. |
 | [`_browser/browser_launch_errors.py`](../src/notebooklm/_browser/browser_launch_errors.py) | Transport-neutral leaf for `browser_capture`: the `CHANNEL_BROWSERS` channel registry plus `classify_launch_failure`, which maps a Playwright launch failure to actionable help or to `None` so the original exception propagates. |
 | [`_browser/headless_reauth.py`](../src/notebooklm/_browser/headless_reauth.py) | Layer-3 browser recovery implementation. It maps its browser-specific result onto `_auth.recovery_rungs`, resolves explicit storage paths to their own persistent browser profile, and remains opt-in/local-unattended-only. |
@@ -793,7 +792,7 @@ The cross-command helpers form a small internal CLI stack:
 |--------|------|
 | [`cli/runtime.py`](../src/notebooklm/cli/runtime.py) | Leaf runtime helpers: root `--quiet` lookup and the single `asyncio.run(...)` bridge for sync Click handlers. |
 | [`cli/auth_runtime.py`](../src/notebooklm/cli/auth_runtime.py) | Shared auth bootstrap, command-body error wrapping, and optional opened-client workflow helper. |
-| [`cli/master_token_login.py`](../src/notebooklm/cli/master_token_login.py) | Command driver for `notebooklm login --master-token[-refresh]`: resolves paths and renders the outcome over the public `master_token_bootstrap` / `master_token_remint` / `assert_account_writable` adapters. Coordination lives in `_auth/master_token_bootstrap.py`; only interactive browser `oauth_token` capture ([`cli/services/login/master_token.py`](../src/notebooklm/cli/services/login/master_token.py)) stays CLI-side (ADR-0023/ADR-0034). |
+| [`cli/master_token_login.py`](../src/notebooklm/cli/master_token_login.py) | Command driver for `notebooklm login --master-token[-refresh]`: resolves paths and renders the outcome over the public `master_token_bootstrap` / `master_token_remint` / `assert_account_writable` adapters. Coordination lives in `_auth/master_token_bootstrap.py`; the CLI-side OAuth adapter delegates interactive capture through the lazy `auth.py` capability and scrubs credential-bearing arguments from failure frames (ADR-0023/ADR-0036). |
 | [`cli/services/auth_refresh.py`](../src/notebooklm/cli/services/auth_refresh.py) | Pure re-export of `notebooklm.auth.bootstrap_missing_storage_from_master_token` for `auth refresh`'s missing-storage preflight. `_auth/master_token_bootstrap.py` owns the four-state machine; `_auth/master_token.py` owns the v0.x enum-to-bool collapse. |
 | [`cli/services/auth_source.py`](../src/notebooklm/cli/services/auth_source.py) | Single resolver for CLI auth-source precedence (`--storage`, `NOTEBOOKLM_AUTH_JSON`, active profile). |
 | [`cli/context.py`](../src/notebooklm/cli/context.py) | Profile/storage-scoped `context.json` persistence for active notebook and conversation state. Account metadata now lives unified in-band in `storage_state.json` (`_auth/storage.py`); `context.json` is only its pre-v0.5.0 legacy source, promoted in-band on read and no longer written here (#2103 PR-0). |
@@ -807,16 +806,13 @@ The boundary is enforced statically by
 [`tests/_guardrails/test_cli_boundary.py`](../tests/_guardrails/test_cli_boundary.py):
 CLI modules may import public `notebooklm` modules and their own
 intra-CLI private helpers, but not `notebooklm._*`, `notebooklm.rpc.*`,
-or private names from public modules. **Two sanctioned exceptions** to the
-`notebooklm._*` rule are whitelisted in that gate: `notebooklm._app`
-(the transport-neutral business-logic layer every adapter consumes) and the
-single package `notebooklm._browser` (the browser acquisition implementation
-browser launch→capture→filter→persist core that the Playwright login adapter
-[`cli/services/playwright_login.py`](../src/notebooklm/cli/services/playwright_login.py)
-sits over, per ADR-0021 — interactive presentation stays in `cli/` while the
-implementation is isolated from `_auth`, reachable by the client runtime through a neutral rung and the
-shipped opt-in layer-3 headless re-auth path). No other `_auth.*` module may be imported by
-the CLI — the rest stays behind the `auth.py` facade. The same test keeps
+or private names from public modules. The sole sanctioned private-package
+exception is `notebooklm._app`, the transport-neutral business-logic layer
+every adapter consumes. Browser login coordination lives in
+[`_app/login_browser.py`](../src/notebooklm/_app/login_browser.py); its injected
+capabilities cross the lazy `auth.py` facade into `_browser`, so no CLI module
+imports `notebooklm._browser` directly. No `_auth.*` module may be imported by
+the CLI either. The same test keeps
 low-level helpers (`runtime`, `context`, `resolve`, `rendering`,
 `auth_runtime`, `options`) from growing upward dependencies on command modules
 or the `cli.helpers` compatibility facade.
@@ -1258,7 +1254,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/transport/middleware/chain.py` | Constructs the middleware chain in the canonical ADR-0009 order |
 | `_web/transport/middleware/*.py` | Production web middlewares (`retry`, `auth`, `error_injection`, `tracing`) plus retained historical drain/metrics/semaphore modules that are no longer wired after the supervisor migration |
 | `rpc/types.py` | RPC method IDs (source of truth) |
-| `auth.py` | Authentication facade — **almost pure re-exports** (the only remaining function body is `async def enumerate_accounts`, which binds `_poke_session` as a default dependency; ADR-0003 records the optional-`async` audit command). Every other top-level name forwards from the relevant `_auth/*` module: `auth._validate_required_cookies` is identity-equal to `_auth.cookie_policy._validate_required_cookies`, and `load_auth_from_storage` / `AuthTokens` live in `_auth/tokens.py`. **ADR-0003's flat-re-export goal was closed by ADR-0014.** Tests that need to rebind policy names patch `_auth.cookie_policy.X` directly. |
+| `auth.py` | Authentication facade — primarily eager `_auth/*` aliases, plus a deliberately small lazy capability boundary. `enumerate_accounts` retains its bound `_poke_session` dependency; the browser helpers lazily import `_browser` only when invoked, and module initialization installs `_default_headless_rung` into `_auth.recovery_rungs` without importing the browser implementation. Base imports therefore remain browser-free. Policy/storage aliases remain identity-equal to their owners, including `filter_storage_state_cookies_by_domain_policy` and `app_host_scope_note`. These internal-ledger names are intentionally absent from public `__all__`. |
 | `_auth/paths.py` | Storage paths and filesystem helpers |
 | `_auth/extraction.py` | Cookie/token extraction from browser sessions |
 | `_auth/cookies.py` | Compatibility cookie loaders/converters and logging boundaries over the pure codecs + `_update_cookie_input` |
@@ -1294,7 +1290,7 @@ src/notebooklm/
 ├── __init__.py                  # Public exports
 ├── __main__.py                  # `python -m notebooklm` entry point
 ├── client.py                    # NotebookLMClient
-├── auth.py                      # Authentication facade — almost pure re-exports (`enumerate_accounts` exception; ADR-0003 flat-re-export goal closed by ADR-0014; see file table above)
+├── auth.py                      # Authentication facade — eager auth aliases + narrow lazy browser capabilities (see file table above)
 ├── types.py                     # Dataclasses
 ├── artifacts.py                 # Public artifact-generation retry helpers
 ├── config.py                    # Public config facade over _env
@@ -1349,6 +1345,7 @@ src/notebooklm/
 │   ├── labels.py                # Click-free label core: create/sources/generate/rename/emoji/add/remove/delete + the composite resolve_label_id (<id|name>) resolver + LabelResolutionError (injected notebook/source resolvers; members→titles JOIN render stays in cli/services/label_listing.py)
 │   ├── collections.py           # Click-free collection core: list/notebooks/create/rename/add/remove/delete + the composite resolve_collection_id (<id|name>) resolver + CollectionResolutionError (account-level; no notebook scope)
 │   ├── language.py              # Click-free language core: SUPPORTED_LANGUAGES catalog + is_supported_language + LanguageConfigStore (injected config-path/home/atomic-update; get/save/get_language/set_language)
+│   ├── login_browser.py         # Markup-free browser-login plan/orchestration: conflict validation, path preparation, event stream, capture ordering, and account repair over injected public-auth capabilities
 │   ├── login_cookie.py          # Click-free login/cookie-import operations: request validation, browser-jar probing, account projection, and profile-write orchestration over call-time public auth capabilities
 │   ├── master_token.py          # Click-free master-token operations: bootstrap/remint/status plans and results with bounded credential-bearing context, narrow status errors, and call-time public auth capabilities
 │   ├── mcp_install.py           # Click-free `mcp install <client>` core: supported-client catalog (claude-desktop/claude-code/cursor/windsurf) + per-OS resolve_config_path + uvx build_server_block + merge_server_config read-modify-merge into mcpServers (created/updated/unchanged; never clobbers unrelated keys); UnsupportedClientError. CLI owns the atomic write (cli/mcp_cmd.py)
@@ -1748,7 +1745,7 @@ src/notebooklm/
     ├── notebook_cmd.py          # list, create, delete, rename
     ├── note_cmd.py              # note commands
     ├── options.py               # Shared CLI option decorators
-    ├── playwright_login_io.py   # Command-side LoginIO sink + wrappers for the Playwright login service (#1391)
+    ├── playwright_login_io.py   # Command-side LoginIO sink + thin wrappers over the browser-login app core (#1391)
     ├── polling_ui.py            # Command-layer UI helpers for long-running polling
     ├── profile_cmd.py           # Profile management CLI commands
     ├── rendering.py             # CLI rendering helpers
@@ -1780,12 +1777,12 @@ src/notebooklm/
         │   ├── exceptions.py
         │   ├── firefox_accounts.py
         │   ├── io_seam.py        # Caller-injected LoginIO Protocol + resolver (#1393)
-        │   ├── master_token.py   # Interactive oauth_token capture only (coordination in _auth/master_token_bootstrap.py; v0.x adapters in _auth/master_token.py)
+        │   ├── master_token.py   # Thin, frame-scrubbing delegate to the auth facade's interactive OAuth-capture capability
         │   ├── outcomes.py
         │   ├── profile_targets.py
         │   ├── refresh.py
         │   └── rookie_cookies_errors.py
-        ├── playwright_login.py  # Playwright-driven Google login service
+        ├── playwright_login.py  # CLI-only Chromium preflight, Rich event rendering, and thin invocation wrappers over `_app/login_browser.py`
         ├── playwright_redaction.py # Subprocess-output redaction helpers for the Playwright login service
         ├── polling.py           # Shared polling helpers for CLI wait commands
         ├── research.py          # `research wait` CLI adapter over `_app/research.py` — re-exports plan/result/outcome; injects cli.resolve.resolve_notebook_id + cli.research_import.import_research_sources defaults (preserves their patch seams)
@@ -1821,7 +1818,7 @@ src/notebooklm/
 
 - [ADR-0001](./adr/0001-layered-core-seams-and-property-bridge-policy.md) — Layered seams + property-bridge policy (superseded; shims retired).
 - [ADR-0002](./adr/0002-capability-protocol-pattern.md) — Capability Protocol pattern (Superseded by ADR-0013).
-- [ADR-0003](./adr/0003-auth-facade-write-through.md) — `auth.py` write-through facade (Superseded — closed by [ADR-0014](./adr/0014-feature-local-runtime-adapters.md); `auth.py` is now almost pure re-exports with `enumerate_accounts` as the sole function-body exception).
+- [ADR-0003](./adr/0003-auth-facade-write-through.md) — `auth.py` write-through facade (Superseded — closed by [ADR-0014](./adr/0014-feature-local-runtime-adapters.md); ADR-0036 later added a narrow lazy browser-capability boundary without making Playwright import-time mandatory).
 - [ADR-0004](./adr/0004-loop-affinity-contract.md) — Loop-affinity contract (Accepted; enforced by `_loop_affinity.assert_bound_loop`).
 - [ADR-0005](./adr/0005-idempotency-taxonomy.md) — Mutating-RPC idempotency taxonomy (Accepted; enforced by `_web.policy.IdempotencyRegistry`).
 - [ADR-0006](./adr/0006-vcr-scrubber-strategy.md) — VCR cassette scrubber strategy (Accepted).
@@ -1854,6 +1851,7 @@ src/notebooklm/
 - [ADR-0033](./adr/0033-auth-consolidation-policy.md) — `_auth` consolidation ceilings and function-granular write boundary (Accepted; amended by ADR-0034).
 - [ADR-0034](./adr/0034-auth-storage-object-model.md) — Current auth storage object model and owner extraction (Accepted; Phase 12C complete).
 - [ADR-0035](./adr/0035-mobile-resilience-transport.md) — Explicit Android backend as a resilience transport (Accepted; all eleven namespaces now close their former Web compatibility seams).
+- [ADR-0036](./adr/0036-browser-acquisition-package.md) — Browser acquisition package and neutral login orchestration (Accepted; browser implementation isolated behind lazy auth capabilities).
 
 ## See also
 

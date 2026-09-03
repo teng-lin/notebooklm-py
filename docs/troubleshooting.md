@@ -709,7 +709,10 @@ Some features have daily/hourly quotas:
 
 ### Download Requirements
 
-Artifact downloads (audio, video, images) use `httpx` with cookies from your storage state. **Playwright is NOT required for downloads**—only for the initial `notebooklm login`.
+Artifact downloads (audio, video, images) use `httpx` with cookies from your
+storage state. **Playwright is not required for downloads themselves**—it is
+used only by interactive `notebooklm login` or, when explicitly enabled, the
+optional layer-3 browser recovery path.
 
 If downloads fail with authentication errors:
 
@@ -752,7 +755,11 @@ playwright install-deps chromium
 
 **`playwright install chromium` fails with `TypeError: onExit is not a function`:**
 
-This is an environment-specific Playwright install failure that has been observed with some newer Playwright builds on Linux. `notebooklm-py` only needs a working browser install for `notebooklm login`; the workaround is to install a known-good Playwright version in a clean virtual environment.
+This is an environment-specific Playwright install failure that has been observed
+with some newer Playwright builds on Linux. `notebooklm-py` needs a working
+browser install for interactive `notebooklm login` and for explicitly enabled
+layer-3 browser recovery; the workaround is to install a known-good Playwright
+version in a clean virtual environment.
 
 **Workaround** (intentionally uses `pip` rather than the canonical `uv sync --frozen` flow from [installation.md#e-contributor](installation.md#e-contributor) — this workaround needs to *override* the `playwright>=1.40.0` constraint to a specific older version, which `uv sync --frozen` would refuse):
 ```bash

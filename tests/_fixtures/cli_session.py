@@ -128,6 +128,7 @@ def patch_session_login_dual(name: str, **patch_kwargs: Any) -> Iterator[Any]:
     # ``patch_session_login_dual("get_storage_path", ...)`` call covers
     # every call site without requiring per-test patches.
     p3t3_modules = (
+        "notebooklm._app.login_browser",
         "notebooklm.cli.services.playwright_login",
         "notebooklm.cli.services.session_context",
         "notebooklm.cli.services.auth_diagnostics",

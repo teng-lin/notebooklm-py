@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed six deprecated private `_auth` compatibility modules earlier than their documented
   next-major removal window. Private importers must use `_auth.cookie_filter` instead of
   `_auth._browser_cookie_filter`, `_auth.psidts_recovery` instead of
-  `_auth.browser_cookie_recovery`, `_auth.browser_capture` instead of
+  `_auth.browser_cookie_recovery`, `_browser.browser_capture` instead of
   `_auth.browser_state_validation` or `_auth.login_wait_trace`, `_auth.profile_store` for
   transaction primitives instead of `_auth.storage_transaction`, and `_auth.storage` instead of
   `_auth.storage_writer`.

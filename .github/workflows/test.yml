@@ -87,6 +87,14 @@ jobs:
       # matrix instead — `server` is not wired into the CLI command tree.
       run: uv run python -c "import notebooklm, notebooklm.notebooklm_cli, notebooklm.client, notebooklm.artifacts"
 
+    - name: Verify built base wheel without browser extra
+      shell: bash
+      run: |
+        uv build --wheel --out-dir dist
+        wheels=(dist/notebooklm_py-*.whl)
+        test "${#wheels[@]}" -eq 1
+        uv run python scripts/check_base_wheel.py --wheel "${wheels[0]}"
+
     - name: Run pre-commit checks
       run: uv run pre-commit run --all-files
 

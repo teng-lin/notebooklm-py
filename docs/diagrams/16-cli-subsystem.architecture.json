@@ -203,9 +203,9 @@
     {
       "id": "capture",
       "type": "security",
-      "label": "Credential Sources",
-      "sublabel": "browser · cookies · OAuth",
-      "tag": "sanctioned import",
+      "label": "Browser Login App",
+      "sublabel": "_app/login_browser.py",
+      "tag": "neutral orchestration",
       "pos": [
         1063,
         460
@@ -219,7 +219,7 @@
   "boundaries": [
     {
       "kind": "region",
-      "label": "cli/ · imports no notebooklm._* except _app and browser_capture",
+      "label": "cli/ · imports no notebooklm._* except _app",
       "wraps": [
         "root",
         "command",
@@ -329,7 +329,7 @@
       "id": "login-capture",
       "from": "login",
       "to": "capture",
-      "label": "capture",
+      "label": "typed plan",
       "variant": "security"
     }
   ],
@@ -339,6 +339,7 @@
       "title": "Thin adapter",
       "items": [
         "Commands own Click options, rendering and exit codes; services own workflows",
+        "Browser orchestration lives in _app and reaches _browser through auth.py",
         "The CLI never builds batchexecute payloads or imports rpc/"
       ]
     },

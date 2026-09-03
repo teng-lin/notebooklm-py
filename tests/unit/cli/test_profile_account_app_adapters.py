@@ -220,15 +220,16 @@ def test_repair_adapter_preserves_unlisted_error_and_scrubs_frame(monkeypatch) -
         if traceback.tb_frame.f_code.co_name == "repair_playwright_account_metadata":
             frames.append(traceback.tb_frame.f_locals)
         traceback = traceback.tb_next
-    assert len(frames) == 1
-    assert not {
+    assert len(frames) == 2
+    sensitive_locals = {
         "storage_path",
         "io",
         "page_html",
         "request",
         "operation",
         "result",
-    } & set(frames[0])
+    }
+    assert all(not sensitive_locals & set(frame) for frame in frames)
 
 
 def test_repair_adapter_preserves_cancellation_identity(monkeypatch) -> None:

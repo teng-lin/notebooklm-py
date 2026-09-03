@@ -870,6 +870,7 @@ def test_auth_cookie_policy_facade_delegates_to_private_module() -> None:
     assert auth.ALLOWED_COOKIE_DOMAINS is cookie_policy.ALLOWED_COOKIE_DOMAINS
     assert auth.GOOGLE_REGIONAL_CCTLDS is cookie_policy.GOOGLE_REGIONAL_CCTLDS
     assert auth.MINIMUM_REQUIRED_COOKIES is cookie_policy.MINIMUM_REQUIRED_COOKIES
+    assert auth.app_host_scope_note is cookie_policy.app_host_scope_note
     assert auth._auth_domain_priority is cookie_policy._auth_domain_priority
     assert auth._is_google_domain is cookie_policy._is_google_domain
     assert auth._is_allowed_auth_domain is cookie_policy._is_allowed_auth_domain

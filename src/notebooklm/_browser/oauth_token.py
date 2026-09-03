@@ -14,9 +14,10 @@ from .._auth.master_token_types import MasterTokenError
 
 # ADR-0034 Phase 11D: ``MasterTokenBootstrapper`` now owns that coordination;
 # ``_auth.master_token`` retains the exact v0.x transaction adapters.
-# The single ``_auth`` module the CLI-boundary guardrail sanctions;
-# ``classify_launch_failure`` lives in its ``browser_launch_errors`` leaf and
-# is re-exported there.
+# ``classify_launch_failure`` remains owned by the sibling
+# ``browser_launch_errors`` leaf and is re-exported through ``browser_capture``
+# for private import continuity. CLI callers reach this module only through the
+# public auth capability facade.
 from .browser_capture import classify_launch_failure, sync_playwright_context
 
 _EMBEDDED_SETUP_URL = "https://accounts.google.com/EmbeddedSetup"

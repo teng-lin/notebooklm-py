@@ -1,6 +1,12 @@
 {
   "sites": [
     {
+      "attribute": "ensure_playwright_available",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture"
+    },
+    {
       "attribute": "get_base_host",
       "count": 1,
       "idiom": "patch.object",
@@ -10,6 +16,12 @@
       "attribute": "replace_captured_profile",
       "count": 1,
       "idiom": "patch.object",
+      "module": "browser_capture"
+    },
+    {
+      "attribute": "run_browser_capture",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
       "module": "browser_capture"
     },
     {
@@ -43,6 +55,12 @@
       "module": "headless_reauth"
     },
     {
+      "attribute": "headless_reauth_readiness",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "headless_reauth"
+    },
+    {
       "attribute": "run_browser_capture",
       "count": 17,
       "idiom": "monkeypatch.setattr",
@@ -55,6 +73,12 @@
       "module": "headless_reauth"
     },
     {
+      "attribute": "capture_oauth_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token"
+    },
+    {
       "attribute": "sync_playwright_context",
       "count": 7,
       "idiom": "monkeypatch.setattr",
@@ -64,23 +88,23 @@
   "summary": {
     "TOTAL": {
       "private": 17,
-      "public": 45,
-      "total": 62
+      "public": 49,
+      "total": 66
     },
     "browser_capture": {
       "private": 0,
-      "public": 3,
-      "total": 3
+      "public": 5,
+      "total": 5
     },
     "headless_reauth": {
       "private": 17,
-      "public": 35,
-      "total": 52
+      "public": 36,
+      "total": 53
     },
     "oauth_token": {
       "private": 0,
-      "public": 7,
-      "total": 7
+      "public": 8,
+      "total": 8
     }
   },
   "version": 1

@@ -407,6 +407,39 @@ def test_release_publish_smokes_install_impersonate_extra(workflow_path: Path) -
     assert '"${WHEEL}[browser,dev,markdown,impersonate]"' in install
 
 
+def test_pr_and_release_workflows_verify_clean_base_wheel() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    quality = workflow["jobs"]["quality"]
+    pr_smoke = str(_step(quality, "Verify built base wheel without browser extra")["run"])
+    assert "uv build --wheel" in pr_smoke
+    assert "scripts/check_base_wheel.py" in pr_smoke
+
+    for workflow_path in (PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW):
+        release = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+        job = release["jobs"]["build-and-test"]
+        smoke = _step(job, "Verify built base wheel without browser extra")
+        assert "scripts/check_base_wheel.py" in str(smoke["run"])
+        assert job["steps"].index(smoke) > job["steps"].index(
+            _step(job, "Upload distribution artifacts")
+        )
+
+
+def test_verify_package_downloads_exact_wheel_before_clean_base_smoke() -> None:
+    workflow = yaml.safe_load(VERIFY_PACKAGE_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["verify"]
+    download = _step(job, "Download exact published wheel for base-install smoke")
+    smoke = _step(job, "Verify published base wheel without browser extra")
+
+    assert "pip download" in str(download["run"])
+    assert "--no-deps" in str(download["run"])
+    assert "--only-binary=:all:" in str(download["run"])
+    assert "published-dist/notebooklm_py-*.whl" in str(smoke["run"])
+    assert "scripts/check_base_wheel.py" in str(smoke["run"])
+    assert job["steps"].index(smoke) < job["steps"].index(
+        _step(job, "Sync locked deps + non-cookies extras")
+    )
+
+
 def test_repository_lint_is_a_bounded_manual_only_job() -> None:
     """Deep repo audits have one manual lane, not one per compatibility cell."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
