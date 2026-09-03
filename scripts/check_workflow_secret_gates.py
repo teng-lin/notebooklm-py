@@ -446,6 +446,12 @@ def _scan_workflow(path: Path) -> list[str]:
     ci_secret_hits: list[tuple[int, str, int]] = []
     saw_any_job = False
 
+    def record_ci_secret_hit(line_no: int, binding: str, step_index: int) -> None:
+        """Record one protected binding/reference without double-counting a line."""
+        hit = (line_no, binding, step_index)
+        if hit not in ci_secret_hits:
+            ci_secret_hits.append(hit)
+
     def flush_job() -> None:
         """Evaluate pending hits for the closing job, append violations."""
         if current_job is None:
@@ -624,7 +630,7 @@ def _scan_workflow(path: Path) -> list[str]:
 
         flow_bindings = _flow_style_ci_bindings(searchable)
         for binding in sorted(flow_bindings):
-            ci_secret_hits.append((i, binding, current_step_index if in_step else -1))
+            record_ci_secret_hit(i, binding, current_step_index if in_step else -1)
             violations.append(
                 f"{path}:{i}: {binding} must use a block-style `env:` mapping so its "
                 "secret gate can be audited."
@@ -633,7 +639,7 @@ def _scan_workflow(path: Path) -> list[str]:
         binding_match = _CI_SECRET_BINDING_KEY_RE.match(searchable)
         if binding_match:
             binding = binding_match.group("binding")
-            ci_secret_hits.append((i, binding, current_step_index if in_step else -1))
+            record_ci_secret_hit(i, binding, current_step_index if in_step else -1)
             if binding_match.group("value") in ("|", ">", "|-", ">-", "|+", ">+"):
                 violations.append(
                     f"{path}:{i}: {binding} must use a single-line scalar so its selected "
@@ -662,6 +668,12 @@ def _scan_workflow(path: Path) -> list[str]:
             secret_name = m_secret.group(1) or m_secret.group(2) or "<dynamic>"
             if secret_name in _BENIGN_SECRETS:
                 continue
+            if secret_name in _CI_SECRET_BINDINGS:
+                record_ci_secret_hit(
+                    i,
+                    secret_name,
+                    current_step_index if in_step else -1,
+                )
             if secret_name in _FORBIDDEN_CI_SECRET_NAMES:
                 violations.append(
                     f"{path}:{i}: legacy or pooled CI secret secrets.{secret_name} is forbidden."

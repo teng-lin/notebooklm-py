@@ -658,13 +658,15 @@ async def test_partial_preparation_never_publishes_managed_activation(
     contracts: tuple[dict[str, Any], dict[str, Any]],
 ) -> None:
     manager, client, store, _clock = _manager(tmp_path, contracts)
+    masked: list[str] = []
     client.chat.ask_error = RuntimeError("seed failed with reference-id")
     with pytest.raises(RuntimeError):
-        await _provision(manager, tmp_path)
+        await _provision(manager, tmp_path, mask=masked.append)
     assert not (tmp_path / "github-env").exists()
     manifest = store.read(template_id=TEMPLATE_ID)
     assert len(manifest["copies"]) == 1
     assert manifest["copies"][0]["prepared"] is False
+    assert masked == [manifest["copies"][0]["notebook_id"]]
 
 
 @pytest.mark.asyncio

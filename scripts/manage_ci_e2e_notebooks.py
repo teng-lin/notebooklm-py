@@ -977,6 +977,8 @@ class NotebookLifecycleManager:
         for role in MODE_ROLES[mode]:
             row = await self.copy_one(manifest, role)
             notebook_id = str(row["notebook_id"])
+            if mask is not None:
+                mask(notebook_id)
             await self._validate_copy_shape(notebook_id)
             if role == "reference":
                 await self.prepare_reference(notebook_id)
@@ -992,9 +994,6 @@ class NotebookLifecycleManager:
                 "prepared role IDs are not distinct from each other and the template"
             )
         lines = github_env_lines(mode, manifest["copies"])
-        if mask is not None:
-            for notebook_id in role_ids:
-                mask(notebook_id)
         atomic_append_lines(github_env, lines)
         return manifest
 

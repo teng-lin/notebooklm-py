@@ -214,6 +214,22 @@ def _public_id_kind(artifact: Any) -> str:
     return "studio_task"
 
 
+def _matches_operation_target(operation: JournalOperation, artifact: Any) -> bool:
+    expected_family = "report" if operation.family == "study_guide" else operation.family
+    return _family(artifact) == expected_family and _public_id_kind(artifact) == operation.id_kind
+
+
+def _has_untracked_operation_target(
+    operation: JournalOperation,
+    inventory: dict[str, Any],
+    tracked_ids: set[str],
+) -> bool:
+    return any(
+        resource_id not in tracked_ids and _matches_operation_target(operation, artifact)
+        for resource_id, artifact in inventory.items()
+    )
+
+
 def _validate_transition(
     operation: JournalOperation,
     event: str,
@@ -479,8 +495,13 @@ async def verify_journal(
         raise JournalError("delete-confirmed resource is still present")
     tracked = {operation.resource_id: operation for operation in accepted_operations}
     tracked.pop(None, None)
-    untracked_artifacts = [
-        artifact for resource_id, artifact in by_id.items() if resource_id not in tracked
+    tracked_ids = set(tracked)
+    quota_no_commit_operations = [
+        operation
+        for operation in operations.values()
+        if operation.lifecycle == "test_owned"
+        and "quota_no_commit_observed" in operation.event_names
+        and not (operation.event_names & {"delete_confirmed", "rate_limited_rejected"})
     ]
     unresolved_test_owned = [
         operation
@@ -489,12 +510,7 @@ async def verify_journal(
         and not (operation.event_names & {"delete_confirmed", "rate_limited_rejected"})
         and (
             "quota_no_commit_observed" not in operation.event_names
-            or any(
-                _family(artifact)
-                == ("report" if operation.family == "study_guide" else operation.family)
-                and _public_id_kind(artifact) == operation.id_kind
-                for artifact in untracked_artifacts
-            )
+            or _has_untracked_operation_target(operation, by_id, tracked_ids)
         )
     ]
     if unresolved_test_owned:
@@ -545,6 +561,11 @@ async def verify_journal(
         current_inventory = await client.artifacts.list(notebook_id)
         current_by_id = {artifact.id: artifact for artifact in current_inventory}
         current_ids = set(current_by_id)
+        if any(
+            _has_untracked_operation_target(operation, current_by_id, tracked_ids)
+            for operation in quota_no_commit_operations
+        ):
+            raise JournalError("test-owned operation has no verified deletion")
         for resource_id, operation in tracked.items():
             artifact = current_by_id.get(resource_id)
             if artifact is None or resource_id in authorized_deleted:

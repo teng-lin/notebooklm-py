@@ -378,6 +378,31 @@ def test_quoted_template_binding_still_requires_strict_ci_gate(
     assert "canonical repository" in err
 
 
+def test_template_secret_alias_still_requires_strict_ci_gate(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_template_alias.yml",
+        """
+        name: bad-template-alias
+        on: workflow_dispatch
+        jobs:
+          live:
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            env:
+              TEMPLATE_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
+            steps:
+            - run: python validate.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "canonical repository" in err
+    assert "exact consumer step" in err
+
+
 @pytest.mark.parametrize(
     ("flow_step", "continuation"),
     [
