@@ -86,6 +86,7 @@ jobs:
       env:
         ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
         MANUAL_BASE: ${{ inputs.account_rotation_base || 'auto' }}
+        TEST_FILTER: ${{ inputs.test_filter }}
       shell: bash
       run: |
         set -euo pipefail
@@ -120,34 +121,38 @@ jobs:
         web = read_outputs("web-slot.out")
         android = read_outputs("android-slot.out")
         readonly = read_outputs("readonly-slot.out")
-        matrix = {
-            "include": [
-                {"os": "ubuntu-latest", "backend": "web", "lane": "nightly-web-ubuntu",
-                 "mode": "full", "selection": "not variants",
-                 "account_slot": web["account_slot"],
-                 "master_token_secret_name": web["master_token_secret_name"]},
-                {"os": "macos-latest", "backend": "android",
-                 "lane": "nightly-android-macos", "mode": "full",
-                 "selection": "not variants", "account_slot": android["account_slot"],
-                 "master_token_secret_name": android["master_token_secret_name"]},
+        include = [
+            {"os": "ubuntu-latest", "backend": "web", "lane": "nightly-web-ubuntu",
+             "mode": "full", "selection": "not variants",
+             "account_slot": web["account_slot"],
+             "master_token_secret_name": web["master_token_secret_name"]},
+            {"os": "macos-latest", "backend": "android",
+             "lane": "nightly-android-macos", "mode": "full",
+             "selection": "not variants", "account_slot": android["account_slot"],
+             "master_token_secret_name": android["master_token_secret_name"]},
+        ]
+        if not os.environ["TEST_FILTER"]:
+            include.append(
                 {"os": "windows-latest", "backend": "web",
                  "lane": "nightly-readonly-windows", "mode": "readonly",
                  "selection": "readonly and not variants",
                  "account_slot": readonly["account_slot"],
-                 "master_token_secret_name": readonly["master_token_secret_name"]},
-            ]
-        }
+                 "master_token_secret_name": readonly["master_token_secret_name"]}
+            )
+        matrix = {"include": include}
         value = json.dumps(matrix, separators=(",", ":"))
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
             stream.write(f"matrix={value}\n")
             stream.write(f"rotation_day={web['rotation_day']}\n")
+            stream.write(f"readonly_slot={readonly['account_slot']}\n")
         PY
     - name: Summarize safe lane selection
       env:
         ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
         WEB_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[0].account_slot }}
         ANDROID_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[1].account_slot }}
-        READONLY_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[2].account_slot }}
+        READONLY_SLOT: ${{ steps.plan.outputs.readonly_slot }}
+        TEST_FILTER: ${{ inputs.test_filter }}
         SELECTION_MODE: ${{ (inputs.account_rotation_base == '' || inputs.account_rotation_base == 'auto') && 'automatic' || 'manual base' }}
         ROTATION_DAY: ${{ steps.plan.outputs.rotation_day }}
       shell: bash
@@ -161,7 +166,11 @@ jobs:
           echo "| --- | --- | --- | --- | --- | --- |"
           echo "| nightly-web-ubuntu | Ubuntu | web | full | $WEB_SLOT | $SELECTION_MODE |"
           echo "| nightly-android-macos | macOS | android | full | $ANDROID_SLOT | $SELECTION_MODE |"
-          echo "| nightly-readonly-windows | Windows | web | readonly | $READONLY_SLOT | $SELECTION_MODE |"
+          if [ -n "$TEST_FILTER" ]; then
+            echo "| nightly-readonly-windows | Windows | web | omitted | $READONLY_SLOT | filtered dispatch |"
+          else
+            echo "| nightly-readonly-windows | Windows | web | readonly | $READONLY_SLOT | $SELECTION_MODE |"
+          fi
         } >> "$GITHUB_STEP_SUMMARY"
 
   compatibility:
@@ -483,8 +492,7 @@ jobs:
         python -c 'from pathlib import Path; import os; Path(os.environ["E2E_COVERAGE_FLOOR_SENTINEL"]).unlink(missing_ok=True)'
         if [ -n "$TEST_FILTER" ]; then
           unset E2E_ENFORCE_COVERAGE_FLOOR
-          uv run pytest -m "${{ matrix.selection }}" -s -v --tb=short \
-            --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
+          uv run pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
         else
           uv run pytest tests/e2e -m "${{ matrix.selection }}" -s -v --tb=short \
             --reruns 1 --reruns-delay 30

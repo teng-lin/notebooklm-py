@@ -442,24 +442,23 @@ class TestMcpArtifacts:
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
-    async def test_artifact_list(self, client, generation_notebook_id):
+    async def test_artifact_list(self, client, read_only_notebook_id):
         """``studio_list`` returns the notebook's merged notes+artifacts as a list."""
-        structured = await _call(client, "studio_list", {"notebook": generation_notebook_id})
+        structured = await _call(client, "studio_list", {"notebook": read_only_notebook_id})
         assert isinstance(structured["items"], list)
 
     @pytest.mark.asyncio
     @pytest.mark.readonly
-    async def test_download_existing_artifact(self, client, generation_notebook_id, tmp_path):
+    async def test_download_existing_artifact(self, client, read_only_notebook_id, tmp_path):
         """Download an EXISTING artifact (no fresh generation) to a local path.
 
-        Reuses whatever downloadable artifact the notebook already has (generation
-        e2e populates them nightly). Skips cleanly when none is present so this
-        never depends on cross-file test ordering.
+        Reuses a downloadable artifact from the prepared reference copy. Skips
+        cleanly when none is present, so this never depends on cross-file ordering.
         """
-        listing = await _call(client, "studio_list", {"notebook": generation_notebook_id})
+        listing = await _call(client, "studio_list", {"notebook": read_only_notebook_id})
         candidate = _pick_downloadable_artifact(listing["items"])
         if candidate is None:
-            pytest.skip("no existing downloadable artifact on the generation notebook")
+            pytest.skip("no existing downloadable artifact on the reference notebook")
 
         # A merged item's hyphenated ``type`` IS the studio_download key.
         dl_type = candidate["type"]
@@ -468,7 +467,7 @@ class TestMcpArtifacts:
             client,
             "studio_download",
             {
-                "notebook": generation_notebook_id,
+                "notebook": read_only_notebook_id,
                 "artifact_type": dl_type,
                 "path": str(out_path),
             },

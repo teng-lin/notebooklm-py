@@ -1564,6 +1564,10 @@ nightly runs, the Android/macOS lane, the read-only Windows lane, and Verify Pac
 explicitly set journal mode to `off`. The removed detached `verify-artifacts.yml` workflow and its persistent
 generation notebook are no longer part of CI.
 
+An unfiltered nightly run includes all three live lanes. A manual dispatch with
+`test_filter` runs the requested node only on the two full lanes and omits the Windows
+read-only lane, because an arbitrary node ID is not guaranteed to carry the `readonly` marker.
+
 #### Operations runbooks
 
 - Disable a failing slot by removing it from `NOTEBOOKLM_CI_ACCOUNT_SLOTS`;

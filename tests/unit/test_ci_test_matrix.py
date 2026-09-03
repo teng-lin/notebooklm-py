@@ -22,6 +22,7 @@ TESTPYPI_PUBLISH_WORKFLOW = (
 SUPPORTED_OSES = ["ubuntu-latest", "macos-latest", "windows-latest"]
 SUPPORTED_PYTHONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 GENERATION_E2E = Path(__file__).resolve().parents[1] / "e2e" / "test_generation.py"
+E2E_DIR = Path(__file__).resolve().parents[1] / "e2e"
 
 
 def _step(job: dict[str, object], name: str) -> dict[str, object]:
@@ -46,6 +47,38 @@ def test_cinematic_video_is_opt_in_but_one_ordinary_video_remains_default() -> N
         and node.name == "test_generate_video_default"
     )
     assert "pytest.mark.variants" not in {ast.unparse(node) for node in default.decorator_list}
+
+
+def test_readonly_e2e_tests_never_request_mutating_managed_role_fixtures() -> None:
+    offenders: list[str] = []
+
+    def inspect(
+        path: Path,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        *,
+        inherited_readonly: bool = False,
+    ) -> None:
+        decorators = {ast.unparse(decorator) for decorator in node.decorator_list}
+        if not inherited_readonly and "pytest.mark.readonly" not in decorators:
+            return
+        fixtures = {argument.arg for argument in (*node.args.posonlyargs, *node.args.args)}
+        forbidden = fixtures & {"generation_notebook_id", "multi_source_notebook_id"}
+        if forbidden:
+            offenders.append(f"{path.name}::{node.name}: {sorted(forbidden)}")
+
+    for path in sorted(E2E_DIR.glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inspect(path, node)
+            elif isinstance(node, ast.ClassDef):
+                inherited = "pytest.mark.readonly" in {
+                    ast.unparse(decorator) for decorator in node.decorator_list
+                }
+                for member in node.body:
+                    if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        inspect(path, member, inherited_readonly=inherited)
+    assert offenders == []
 
 
 def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
@@ -338,6 +371,7 @@ def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
     assert planner_run.count('"mode": "full"') == 2
     assert planner_run.count('"mode": "readonly"') == 1
     assert '"selection": "readonly and not variants"' in planner_run
+    assert 'if not os.environ["TEST_FILTER"]' in planner_run
 
     install = str(_step(job, "Install dependencies")["run"])
     assert "uv sync --frozen" in install
@@ -378,6 +412,8 @@ def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
 
     primary_command = str(primary["run"])
     assert '-m "${{ matrix.selection }}"' in primary_command
+    filtered_branch = primary_command.split("else", 1)[0]
+    assert "${{ matrix.selection }}" not in filtered_branch
 
     curl_smoke = _step(job, "curl_cffi transport smoke")
     assert "matrix.lane == 'nightly-web-ubuntu'" in str(curl_smoke["if"])
