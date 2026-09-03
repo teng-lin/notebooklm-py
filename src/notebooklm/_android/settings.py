@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, cast
 
+from .._runtime.call_supervisor import OperationLease
 from .._settings import SettingsAPI
 from ..exceptions import DecodingError
 from ..types import AccountLimits, UserSettings
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .session import AndroidSession
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
@@ -76,6 +80,15 @@ def _decode_account(account: Any) -> UserSettings:
 
 class AndroidSettingsAPI(SettingsAPI):
     """Native output-language and quota settings over the account RPCs."""
+
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
 
     def __init__(self, session: AndroidSession) -> None:
         self._transport = session

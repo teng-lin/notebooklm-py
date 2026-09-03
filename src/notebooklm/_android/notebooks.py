@@ -5,12 +5,14 @@ from __future__ import annotations
 import builtins
 import logging
 import re
-from contextvars import ContextVar
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, cast
 
 from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
+from .._runtime.call_supervisor import OperationLease
 from ..exceptions import (
     AuthError,
     DecodingError,
@@ -21,6 +23,7 @@ from ..exceptions import (
     ValidationError,
 )
 from ..types import NextStepSuggestion, Notebook, NotebookDescription, PromptSuggestion
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .session import AndroidSession
 
 logger = logging.getLogger(__name__)
@@ -106,16 +109,21 @@ class AndroidNotebooksAPI(NotebooksAPI):
 
     _create_method_id = f"/{_SERVICE}/CreateProject"
 
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
+
     def __init__(
         self,
         session: AndroidSession,
         sources_api: NotebookSourceLister,
     ) -> None:
         self._transport = session
-        self._workflow_epoch: ContextVar[int | None] = ContextVar(
-            "android_notebook_workflow_epoch",
-            default=None,
-        )
         self._created_chat_session_ids: dict[str, str] = {}
         super().__init__(sources_api)
 
@@ -129,10 +137,6 @@ class AndroidNotebooksAPI(NotebooksAPI):
             self._created_chat_session_ids[notebook.id] = notebook.chat_sessions[0].id
             while len(self._created_chat_session_ids) > _MAX_CREATED_CHAT_SESSION_HINTS:
                 self._created_chat_session_ids.pop(next(iter(self._created_chat_session_ids)))
-
-    def _epoch_kwargs(self) -> dict[str, Any]:
-        epoch = self._workflow_epoch.get()
-        return {} if epoch is None else {"expected_epoch": epoch}
 
     async def _get_project_response(
         self,
@@ -151,7 +155,6 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 request,
                 replay_safe=True,
                 response_type=wire.WireGetProjectResponse,
-                **self._epoch_kwargs(),
             )
             _notebook_codec().validate_project_identity(
                 response.project,
@@ -182,7 +185,6 @@ class AndroidNotebooksAPI(NotebooksAPI):
             request,
             replay_safe=True,
             response_type=proto.ListRecentlyViewedProjectsResponse,
-            **self._epoch_kwargs(),
         )
         return [
             _notebook_codec().decode_project(project, method_id=LIST_RECENT_PROJECTS_METHOD)
@@ -224,15 +226,6 @@ class AndroidNotebooksAPI(NotebooksAPI):
             )
         ]
 
-    async def create(self, title: str) -> Notebook:
-        """Create through the base transport-neutral probe workflow."""
-        async with self._transport.operation_scope("notebooks.create") as lease:
-            token = self._workflow_epoch.set(lease.epoch)
-            try:
-                return await super().create(title)
-            finally:
-                self._workflow_epoch.reset(token)
-
     async def _send_create(self, title: str) -> Notebook:
         # evidence: docs/android/proto-evidence-ledger.md#notebook-method-ledger
         notebook_proto = _notebook_proto()
@@ -242,7 +235,6 @@ class AndroidNotebooksAPI(NotebooksAPI):
             notebook_proto.CreateProjectRequest(name=title),
             replay_safe=False,
             response_type=read_proto.Project,
-            **self._epoch_kwargs(),
         )
         try:
             notebook = _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)

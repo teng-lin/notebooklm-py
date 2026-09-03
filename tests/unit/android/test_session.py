@@ -12,6 +12,12 @@ import pytest
 
 import notebooklm._android.session as session_module
 from notebooklm._android.auth import BearerCredential
+from notebooklm._android.epoch import (
+    bind_workflow_epoch,
+    reset_workflow_epoch,
+    workflow_epoch_for,
+)
+from notebooklm._android.notebooks import AndroidNotebooksAPI
 from notebooklm._android.session import (
     ANDROID_GRPC_MAX_RECEIVE_MESSAGE_BYTES,
     ANDROID_GRPC_TARGET,
@@ -1062,6 +1068,135 @@ async def test_a_unary_call_naming_a_retired_generation_is_refused() -> None:
         )
 
     assert channel.invocations == []
+
+
+def test_workflow_epoch_is_session_tagged_and_nested_tokens_restore_the_outer_value() -> None:
+    first = object()
+    second = object()
+
+    outer = bind_workflow_epoch(first, 1)
+    try:
+        assert workflow_epoch_for(first) == 1
+        assert workflow_epoch_for(second) is None
+
+        inner = bind_workflow_epoch(first, 2)
+        try:
+            assert workflow_epoch_for(first) == 2
+        finally:
+            reset_workflow_epoch(inner)
+        assert workflow_epoch_for(first) == 1
+    finally:
+        reset_workflow_epoch(outer)
+    assert workflow_epoch_for(first) is None
+
+
+@pytest.mark.asyncio
+async def test_workflow_epoch_token_must_be_reset_in_its_originating_task() -> None:
+    session = object()
+    token = bind_workflow_epoch(session, 1)
+    try:
+        with pytest.raises(ValueError, match="different Context"):
+            await asyncio.create_task(asyncio.to_thread(reset_workflow_epoch, token))
+    finally:
+        reset_workflow_epoch(token)
+
+
+@pytest.mark.asyncio
+async def test_child_task_keeps_copied_workflow_epoch_after_parent_reset() -> None:
+    session = object()
+    release = asyncio.Event()
+    token = bind_workflow_epoch(session, 1)
+
+    async def read_copied_epoch() -> int | None:
+        await release.wait()
+        return workflow_epoch_for(session)
+
+    child = asyncio.create_task(read_copied_epoch())
+    reset_workflow_epoch(token)
+    release.set()
+
+    assert await child == 1
+    assert workflow_epoch_for(session) is None
+
+
+@pytest.mark.asyncio
+async def test_child_task_cannot_enter_an_inherited_scope_after_its_epoch_retires() -> None:
+    session, _bearer, first_channel, grpc, supervisor = await _open()
+    api = AndroidNotebooksAPI(session, SimpleNamespace())
+    release = asyncio.Event()
+
+    async def create_after_reopen() -> None:
+        await release.wait()
+        await api.create("stale child")
+
+    async with api._operation_scope("test.parent"):
+        child = asyncio.create_task(create_after_reopen())
+
+    await supervisor.begin_closing(1)
+    await session.prepare_close()
+    await session.close_resources()
+    supervisor.mark_closed(1)
+
+    second_channel = _Channel()
+    grpc.channel = second_channel
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(2)
+    supervisor.start_accepting(2)
+    session.set_bound_loop(loop)
+    session.reset_after_open()
+    await session.open(loop, 2)
+
+    release.set()
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await child
+
+    assert first_channel.invocations == []
+    assert second_channel.invocations == []
+
+
+@pytest.mark.asyncio
+async def test_omitted_unary_and_stream_epochs_reject_a_retired_workflow_generation() -> None:
+    session, _bearer, first_channel, grpc, supervisor = await _open()
+    token = bind_workflow_epoch(session, 1)
+    try:
+        await supervisor.begin_closing(1)
+        await session.prepare_close()
+        await session.close_resources()
+        supervisor.mark_closed(1)
+
+        second_channel = _Channel()
+        grpc.channel = second_channel
+        loop = asyncio.get_running_loop()
+        supervisor.set_bound_loop(loop)
+        supervisor.reset_after_open()
+        supervisor.prepare_generation(2)
+        supervisor.start_accepting(2)
+        session.set_bound_loop(loop)
+        session.reset_after_open()
+        await session.open(loop, 2)
+
+        with pytest.raises(RuntimeError, match="retired resource generation"):
+            await session.unary(
+                METHOD,
+                _Message(b"request"),
+                replay_safe=True,
+                response_type=_Message,
+            )
+        with pytest.raises(RuntimeError, match="retired resource generation"):
+            async for _item in session.stream(
+                METHOD,
+                _Message(b"request"),
+                replay_safe=True,
+                response_type=_Message,
+            ):
+                pass
+    finally:
+        reset_workflow_epoch(token)
+
+    assert first_channel.invocations == []
+    assert second_channel.invocations == []
 
 
 @pytest.mark.asyncio

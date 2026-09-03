@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import builtins
+import contextlib
 from abc import ABC, abstractmethod
 from typing import Any
 
+from ._runtime.call_supervisor import OperationLease
 from .types import Note
 
 
@@ -25,6 +27,13 @@ class NotesAPI(ABC):
             notes = await client.notes.list(notebook_id)
             await client.notes.delete(notebook_id, note.id)
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     @abstractmethod
     async def list(self, notebook_id: str) -> list[Note]:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import builtins
 import json
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import httpx
@@ -12,7 +14,7 @@ import httpx
 from .._artifacts import ArtifactsAPI
 from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import NotebookSourceIdProvider
-from .._runtime.call_supervisor import CallSupervisor
+from .._runtime.call_supervisor import CallSupervisor, OperationLease
 from .._types.artifacts import _status_from_code
 from .._types.enums import (
     ArtifactStatus,
@@ -20,16 +22,6 @@ from .._types.enums import (
     AudioFormat,
     AudioLength,
     ExportType,
-    InfographicDetail,
-    InfographicOrientation,
-    InfographicStyle,
-    QuizDifficulty,
-    QuizQuantity,
-    ReportFormat,
-    SlideDeckFormat,
-    SlideDeckLength,
-    VideoFormat,
-    VideoStyle,
 )
 from .._types.research import MindMapResult
 from ..exceptions import (
@@ -86,6 +78,7 @@ from .artifact_transfers import (
 )
 from .assets import AndroidAssetDownloadService, RepresentationKind
 from .codecs.artifacts import decode_artifact, decode_artifacts, decode_report_suggestions
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .errors import sanitize_escaping_exception
 from .session import AndroidSession
 from .write_safety import call_unconfirmed_on_transport_loss
@@ -125,6 +118,15 @@ def _audio_length_code(value: Any) -> int:
 
 class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin, ArtifactsAPI):
     """Evidence-qualified Android implementation of the public artifact API."""
+
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
 
     def __init__(
         self,
@@ -283,34 +285,46 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
         source_ids: builtins.list[str],
         **options: Any,
     ) -> GenerationStatus:
-        return await self._send_create_artifact_at_epoch(
-            notebook_id,
-            family,
-            source_ids,
-            expected_epoch=None,
-            **options,
-        )
-
-    async def _send_create_artifact_at_epoch(
-        self,
-        notebook_id: str,
-        family: str,
-        source_ids: builtins.list[str],
-        *,
-        expected_epoch: int | None,
-        **options: Any,
-    ) -> GenerationStatus:
+        if family == "audio" and not source_ids:
+            label = family.replace("_", " ").title()
+            raise ValidationError(f"{label} generation requires at least one source id")
         if family == "audio":
-            return await self._send_create_audio_at_epoch(
-                notebook_id,
-                source_ids,
-                language=options.get("language"),
-                instructions=options.get("instructions"),
-                audio_format=options.get("audio_format"),
-                audio_length=options.get("audio_length"),
-                expected_epoch=expected_epoch,
+            language_code = _validate_audio_language(options.get("language"))
+            instructions = options.get("instructions")
+            if instructions is not None and not isinstance(instructions, str):
+                raise ValidationError("instructions must be a string or None")
+            format_code = _audio_format_code(options.get("audio_format"))
+            episode_length = _audio_length_code(options.get("audio_length"))
+
+            # evidence: docs/android/proto-evidence-ledger.md#artifact-audio-overview-request
+            generation_options = _PROTO.AudioOverviewGenerationOptions(
+                episode_focus=instructions or "",
+                episode_length=episode_length,
+                source_ids=[_READ_PROTO.SourceId(id=source_id) for source_id in source_ids],
+                language_code=language_code,
             )
-        if family in {
+            generation_options.MergeFromString(
+                _WIRE_PROTO.WireAudioOverviewGenerationOptionsProjection(
+                    format=format_code
+                ).SerializeToString()
+            )
+            request = _PROTO.CreateArtifactRequest(
+                project_id=notebook_id,
+                artifact=_PROTO.Artifact(
+                    type=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW,
+                    sources=[
+                        _PROTO.ArtifactSource(source_id=_READ_PROTO.SourceId(id=source_id))
+                        for source_id in source_ids
+                    ],
+                    audio_overview=_PROTO.AudioOverviewArtifact(
+                        generation_options=generation_options
+                    ),
+                ),
+            )
+            expected_type = ArtifactTypeCode.AUDIO.value
+            expected_variant = None
+            family_label = "audio"
+        elif family in {
             "video",
             "cinematic_video",
             "report",
@@ -327,91 +341,28 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
                 source_ids,
                 **options,
             )
-            response = await create_artifact_once(
-                self._transport,
-                plan.request,
-                method=CREATE_ARTIFACT_METHOD,
-                expected_epoch=expected_epoch,
-            )
-            try:
-                artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
-                if artifact._artifact_type != plan.expected_type or (
-                    plan.expected_variant is not None
-                    and artifact._variant not in (None, plan.expected_variant)
-                ):
-                    raise DecodingError(
-                        f"Android {plan.family_label} creation returned a different artifact "
-                        "family.",
-                        method_id=CREATE_ARTIFACT_METHOD,
-                    )
-                validate_echoed_source_ids(
-                    artifact, source_ids, plan.family_label, CREATE_ARTIFACT_METHOD
-                )
-            except DecodingError as error:
-                raise mark_unconfirmed(error) from None
-            return GenerationStatus(
-                task_id=artifact.id,
-                status=_status_from_code(artifact.status),
-                url=artifact.url,
-            )
-        raise AssertionError(f"unreachable artifact family: {family}")
+            request = plan.request
+            expected_type = plan.expected_type
+            expected_variant = plan.expected_variant
+            family_label = plan.family_label
+        else:
+            raise AssertionError(f"unreachable artifact family: {family}")
 
-    async def _send_create_audio_at_epoch(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str],
-        *,
-        language: Any,
-        instructions: Any,
-        audio_format: Any,
-        audio_length: Any,
-        expected_epoch: int | None,
-    ) -> GenerationStatus:
-        if not source_ids:
-            raise ValidationError("Audio generation requires at least one source id")
-        language_code = _validate_audio_language(language)
-        if instructions is not None and not isinstance(instructions, str):
-            raise ValidationError("instructions must be a string or None")
-        format_code = _audio_format_code(audio_format)
-        episode_length = _audio_length_code(audio_length)
-
-        # evidence: docs/android/proto-evidence-ledger.md#artifact-audio-overview-request
-        generation_options = _PROTO.AudioOverviewGenerationOptions(
-            episode_focus=instructions or "",
-            episode_length=episode_length,
-            source_ids=[_READ_PROTO.SourceId(id=source_id) for source_id in source_ids],
-            language_code=language_code,
-        )
-        generation_options.MergeFromString(
-            _WIRE_PROTO.WireAudioOverviewGenerationOptionsProjection(
-                format=format_code
-            ).SerializeToString()
-        )
-        request = _PROTO.CreateArtifactRequest(
-            project_id=notebook_id,
-            artifact=_PROTO.Artifact(
-                type=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW,
-                sources=[
-                    _PROTO.ArtifactSource(source_id=_READ_PROTO.SourceId(id=source_id))
-                    for source_id in source_ids
-                ],
-                audio_overview=_PROTO.AudioOverviewArtifact(generation_options=generation_options),
-            ),
-        )
         response = await create_artifact_once(
             self._transport,
             request,
             method=CREATE_ARTIFACT_METHOD,
-            expected_epoch=expected_epoch,
         )
         try:
             artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
-            if artifact._artifact_type != ArtifactTypeCode.AUDIO.value:
+            if artifact._artifact_type != expected_type or (
+                expected_variant is not None and artifact._variant not in (None, expected_variant)
+            ):
                 raise DecodingError(
-                    "Android audio creation returned a different artifact family.",
+                    f"Android {family_label} creation returned a different artifact family.",
                     method_id=CREATE_ARTIFACT_METHOD,
                 )
-            validate_echoed_source_ids(artifact, source_ids, "audio", CREATE_ARTIFACT_METHOD)
+            validate_echoed_source_ids(artifact, source_ids, family_label, CREATE_ARTIFACT_METHOD)
         except DecodingError as error:
             raise mark_unconfirmed(error) from None
         return GenerationStatus(
@@ -430,269 +381,14 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
         if source_ids == []:
             label = family.replace("_", " ").title()
             raise ValidationError(f"{label} generation requires at least one source id")
-        async with self._transport.operation_scope(f"artifacts.generate_{family}") as lease:
+        async with self._operation_scope(f"artifacts.generate_{family}"):
             resolved_source_ids = await self._resolve_source_ids(notebook_id, source_ids)
-            return await self._send_create_artifact_at_epoch(
+            return await self._send_create_artifact(
                 notebook_id,
                 family,
                 resolved_source_ids,
-                expected_epoch=lease.epoch,
                 **options,
             )
-
-    async def generate_quiz(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        instructions: str | None = None,
-        quantity: QuizQuantity | None = None,
-        difficulty: QuizDifficulty | None = None,
-    ) -> GenerationStatus:
-        """Generate a quiz within one source-resolution and mutation lease."""
-        if source_ids == []:
-            raise ValidationError("Quiz generation requires at least one source id")
-        normalize_creation_options(
-            "quiz",
-            instructions=instructions,
-            quantity=quantity,
-            difficulty=difficulty,
-        )
-        async with self._transport.operation_scope("artifacts.generate_quiz") as lease:
-            resolved_source_ids = await self._resolve_source_ids(notebook_id, source_ids)
-            return await self._send_create_artifact_at_epoch(
-                notebook_id,
-                "quiz",
-                resolved_source_ids,
-                expected_epoch=lease.epoch,
-                instructions=instructions,
-                quantity=quantity,
-                difficulty=difficulty,
-            )
-
-    async def generate_audio(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        audio_format: AudioFormat | None = None,
-        audio_length: AudioLength | None = None,
-    ) -> GenerationStatus:
-        if source_ids == []:
-            raise ValidationError("Audio generation requires at least one source id")
-        if language is not None and not isinstance(language, str):
-            raise ValidationError("language must be a non-empty string")
-        if instructions is not None and not isinstance(instructions, str):
-            raise ValidationError("instructions must be a string or None")
-        _audio_format_code(audio_format)
-        _audio_length_code(audio_length)
-        language_code = _validate_audio_language(self._resolve_language(language))
-
-        async with self._transport.operation_scope("artifacts.generate_audio") as lease:
-            resolved_source_ids = await self._resolve_source_ids(notebook_id, source_ids)
-            return await self._send_create_audio_at_epoch(
-                notebook_id,
-                resolved_source_ids,
-                language=language_code,
-                instructions=instructions,
-                audio_format=audio_format,
-                audio_length=audio_length,
-                expected_epoch=lease.epoch,
-            )
-
-    async def generate_video(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        video_format: VideoFormat | None = None,
-        video_style: VideoStyle | None = None,
-        style_prompt: str | None = None,
-    ) -> GenerationStatus:
-        language_code = _validate_audio_language(self._resolve_language(language))
-        normalized = normalize_creation_options(
-            "video",
-            language=language_code,
-            instructions=instructions,
-            video_format=video_format,
-            video_style=video_style,
-            style_prompt=style_prompt,
-        )
-        return await self._generate_supported_family(
-            notebook_id,
-            "video",
-            source_ids,
-            language=language_code,
-            instructions=instructions,
-            video_format=video_format,
-            video_style=video_style,
-            style_prompt=normalized["style_prompt"],
-        )
-
-    async def generate_cinematic_video(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-    ) -> GenerationStatus:
-        language_code = _validate_audio_language(self._resolve_language(language))
-        normalize_creation_options(
-            "cinematic_video",
-            language=language_code,
-            instructions=instructions,
-        )
-        return await self._generate_supported_family(
-            notebook_id,
-            "cinematic_video",
-            source_ids,
-            language=language_code,
-            instructions=instructions,
-        )
-
-    async def generate_report(
-        self,
-        notebook_id: str,
-        report_format: ReportFormat = ReportFormat.BRIEFING_DOC,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        custom_prompt: str | None = None,
-        extra_instructions: str | None = None,
-    ) -> GenerationStatus:
-        language_code = _validate_audio_language(self._resolve_language(language))
-        normalized = normalize_creation_options(
-            "report",
-            report_format=report_format,
-            language=language_code,
-            custom_prompt=custom_prompt,
-            extra_instructions=extra_instructions,
-        )
-        return await self._generate_supported_family(
-            notebook_id,
-            "report",
-            source_ids,
-            report_format=normalized["report_format"],
-            language=language_code,
-            custom_prompt=custom_prompt,
-            extra_instructions=extra_instructions,
-        )
-
-    async def generate_study_guide(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        extra_instructions: str | None = None,
-    ) -> GenerationStatus:
-        return await self.generate_report(
-            notebook_id,
-            report_format=ReportFormat.STUDY_GUIDE,
-            source_ids=source_ids,
-            language=language,
-            extra_instructions=extra_instructions,
-        )
-
-    async def generate_flashcards(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        instructions: str | None = None,
-        quantity: QuizQuantity | None = None,
-        difficulty: QuizDifficulty | None = None,
-    ) -> GenerationStatus:
-        normalize_creation_options(
-            "flashcards",
-            instructions=instructions,
-            quantity=quantity,
-            difficulty=difficulty,
-        )
-        return await self._generate_supported_family(
-            notebook_id,
-            "flashcards",
-            source_ids,
-            instructions=instructions,
-            quantity=quantity,
-            difficulty=difficulty,
-        )
-
-    async def generate_infographic(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        orientation: InfographicOrientation | None = None,
-        detail_level: InfographicDetail | None = None,
-        style: InfographicStyle | None = None,
-    ) -> GenerationStatus:
-        language_code = _validate_audio_language(self._resolve_language(language))
-        normalize_creation_options(
-            "infographic",
-            language=language_code,
-            instructions=instructions,
-            orientation=orientation,
-            detail_level=detail_level,
-            style=style,
-        )
-        return await self._generate_supported_family(
-            notebook_id,
-            "infographic",
-            source_ids,
-            language=language_code,
-            instructions=instructions,
-            orientation=orientation,
-            detail_level=detail_level,
-            style=style,
-        )
-
-    async def generate_slide_deck(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-        slide_format: SlideDeckFormat | None = None,
-        slide_length: SlideDeckLength | None = None,
-    ) -> GenerationStatus:
-        language_code = _validate_audio_language(self._resolve_language(language))
-        normalize_creation_options(
-            "slide_deck",
-            language=language_code,
-            instructions=instructions,
-            slide_format=slide_format,
-            slide_length=slide_length,
-        )
-        return await self._generate_supported_family(
-            notebook_id,
-            "slide_deck",
-            source_ids,
-            language=language_code,
-            instructions=instructions,
-            slide_format=slide_format,
-            slide_length=slide_length,
-        )
-
-    async def generate_data_table(
-        self,
-        notebook_id: str,
-        source_ids: builtins.list[str] | None = None,
-        language: str | None = "en",
-        instructions: str | None = None,
-    ) -> GenerationStatus:
-        language_code = _validate_audio_language(self._resolve_language(language))
-        normalize_creation_options(
-            "data_table",
-            language=language_code,
-            instructions=instructions,
-        )
-        return await self._generate_supported_family(
-            notebook_id,
-            "data_table",
-            source_ids,
-            language=language_code,
-            instructions=instructions,
-        )
 
     async def revise_slide(
         self,

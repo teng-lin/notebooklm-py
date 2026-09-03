@@ -74,7 +74,7 @@ async def create_artifact_once(
     request: Any,
     *,
     method: str,
-    expected_epoch: int | None,
+    expected_epoch: int | None = None,
 ) -> Any:
     """Send ``CreateArtifact`` once and preserve an ambiguous commit outcome."""
 

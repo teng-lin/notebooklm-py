@@ -8,8 +8,8 @@ import logging
 import time
 import uuid
 from collections import Counter, defaultdict
-from collections.abc import Callable, Collection, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Callable, Collection, Sequence
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from pathlib import Path
@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol, TypeVar, cast
 
 from .._deadline import RuntimeDeadline
 from .._idempotency import mark_unconfirmed
+from .._runtime.call_supervisor import OperationLease
 from .._source.batch import SourceUrlBatchItem
 from .._sources import SourcesAPI, validate_search
 from .._types.documents import StructuredDocument
@@ -43,6 +44,7 @@ from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_d
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .errors import sanitize_async_boundary
 from .phenotype import PhenotypeTokenProvider
 from .play_books import (
@@ -369,6 +371,15 @@ def _merge_commit_proof(
 
 class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
     """Android source adapter installed by public Android backend selection."""
+
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
 
     def __init__(
         self,

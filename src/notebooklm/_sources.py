@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import contextlib
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Sequence
@@ -12,6 +13,7 @@ from time import monotonic
 from typing import Any, Literal
 
 from ._lookup import unwrap_or_raise
+from ._runtime.call_supervisor import OperationLease
 from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult
 from ._types.research import SourceGuide
@@ -75,6 +77,13 @@ class SourcesAPI(ABC):
     The base owns identity lookup and readiness polling over the abstract
     :meth:`list` operation.
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     def __init__(self) -> None:
         """Initialize transport-neutral source polling state."""

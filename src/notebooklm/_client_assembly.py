@@ -288,7 +288,7 @@ def _assemble_android_backend(
         asset_downloads=asset_downloads,
     )
     client.mind_maps = AndroidMindMapsAPI(
-        supervisor=shared.call_supervisor,
+        session=session,
         artifacts=client.artifacts,
         notes=client.notes,
     )

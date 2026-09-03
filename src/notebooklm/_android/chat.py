@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any, cast
 from uuid import uuid4
 
 from .._chat import _TURN_COUNT_INITIAL_LIMIT, _TURN_COUNT_MAX_LIMIT, ChatAPI, _PostedAsk
 from .._conversation_cache import ConversationCache
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
+from .._runtime.call_supervisor import OperationLease
 from .._runtime.config import (
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CHAT_TIMEOUT,
@@ -33,6 +35,7 @@ from ..types import (
 )
 from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
 from .codecs.notebooks import validate_project_identity
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
 from .session import AndroidSession
 
@@ -98,6 +101,15 @@ def _cancellable_chat_request_context() -> Any:
 
 class AndroidChatAPI(ChatAPI):
     """Android chat adapter installed by public Android backend selection."""
+
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
 
     def __init__(
         self,

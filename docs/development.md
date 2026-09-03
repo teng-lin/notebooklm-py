@@ -155,6 +155,7 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_web/transport/errors.py` | transport exceptions, `parse_retry_after`, `raise_mapped_post_error` | Terminal `Kernel.post` error mapping for middleware retry/auth behavior. |
 | `_web/transport/streaming_post.py` | `stream_post_with_size_cap` | Low-level POST streaming and response-size guard. |
 | `_android/session.py` | `AndroidSession` | Selected-Android bearer/gRPC lifecycle participant: lazy channel, deadline/status mapping, and shared `CallSupervisor` admission/telemetry. |
+| `_android/epoch.py` | Android workflow epoch context | Session-tagged task-local epoch propagation shared by Android namespace scope hooks and omitted-epoch session calls. |
 | `_conversation_cache.py` | `ConversationCache` | Per-instance true-LRU conversation cache for `ChatAPI` continuity. Caps the conversation count (`MAX_CONVERSATION_CACHE_SIZE`) and the turns retained per conversation (`MAX_TURNS_PER_CONVERSATION`). |
 | `_polling_registry.py` | `PollRegistry` | Pending-poll registry shared by long-running artifact generations. |
 | `_web/transport/cookie_persistence.py` | `CookiePersistence` | Per-path typed baselines, ordered `ProfileStore` cookie merges, `__Secure-1PSIDTS` rotation, and the concrete v0.x snapshot adapter. |

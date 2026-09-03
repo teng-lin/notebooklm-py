@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import builtins
+import contextlib
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 
+from ._runtime.call_supervisor import OperationLease
 from .types import Collection, Notebook
 
 # Narrow capability: just ``notebooks.list() -> list[Notebook]`` (account-level,
@@ -25,6 +27,13 @@ class CollectionsAPI(ABC):
             await client.collections.rename(coll.id, "Research Q4")
             await client.collections.delete(coll.id)
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     @abstractmethod
     async def list(self) -> builtins.list[Collection]:

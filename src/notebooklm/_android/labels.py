@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Literal, NoReturn
 
 from .._idempotency import mark_unconfirmed
 from .._labels import LabelsAPI, ListSources
+from .._runtime.call_supervisor import OperationLease
 from ..exceptions import DecodingError, LabelError, LabelNotFoundError, NetworkError, RPCError
 from ..types import Label, Source
 from .codecs.organization import decode_created_labels
+from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .organization import (
     CREATE_LABEL_METHOD,
     DELETE_LABELS_METHOD,
@@ -38,6 +42,15 @@ def _raise_label_write_miss(label_id: str, error: RPCError) -> None:
 
 class AndroidLabelsAPI(LabelsAPI):
     """Evidence-qualified manual source-label CRUD and membership adapter."""
+
+    @asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[OperationLease]:
+        async with self._transport.operation_scope(label) as lease:
+            token = bind_workflow_epoch(self._transport, lease.epoch)
+            try:
+                yield lease
+            finally:
+                reset_workflow_epoch(token)
 
     def __init__(
         self,

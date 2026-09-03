@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import builtins
+import contextlib
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from ._lookup import unwrap_or_raise
+from ._runtime.call_supervisor import OperationLease
 from ._types.mind_maps import MindMap, MindMapKind
 from .exceptions import MindMapNotFoundError
 from .types import ArtifactType
@@ -18,6 +20,13 @@ if TYPE_CHECKING:
 
 class MindMapsAPI(ABC):
     """``client.mind_maps`` — one surface over both mind-map backends."""
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     def __init__(self, *, artifacts: ArtifactsAPI, notes: NotesAPI) -> None:
         self._artifacts = artifacts
@@ -192,6 +201,24 @@ class MindMapsAPI(ABC):
             Now re-fetches and returns the renamed ``MindMap`` (issue #1255).
             Added the ``return_object`` opt-out.
         """
+        async with self._operation_scope("mind_maps.rename"):
+            return await self._rename_in_scope(
+                notebook_id,
+                mind_map_id,
+                new_title,
+                kind=kind,
+                return_object=return_object,
+            )
+
+    async def _rename_in_scope(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        new_title: str,
+        *,
+        kind: MindMapKind | None = None,
+        return_object: bool = True,
+    ) -> MindMap | None:
         if kind is None:
             # Auto-detect inline so the note-backed list is fetched once rather
             # than twice (a separate ``_detect_kind`` call would re-issue
@@ -269,6 +296,16 @@ class MindMapsAPI(ABC):
             now returns ``None`` (issue #1211). Auto-detect (``kind=None``) is
             now idempotent on a missing target rather than raising (issue #1291).
         """
+        async with self._operation_scope("mind_maps.delete"):
+            await self._delete_in_scope(notebook_id, mind_map_id, kind=kind)
+
+    async def _delete_in_scope(
+        self,
+        notebook_id: str,
+        mind_map_id: str,
+        *,
+        kind: MindMapKind | None = None,
+    ) -> None:
         if kind is None:
             try:
                 kind = await self._detect_kind(notebook_id, mind_map_id)
@@ -282,7 +319,6 @@ class MindMapsAPI(ABC):
         else:
             await self._artifacts.delete(notebook_id, mind_map_id)
 
-    @abstractmethod
     async def get_tree(
         self,
         notebook_id: str,
@@ -317,6 +353,22 @@ class MindMapsAPI(ABC):
             ``LIST_ARTIFACTS`` round-trip on the explicit-kind fast path (issue
             #1355).
         """
+        async with self._operation_scope("mind_maps.get_tree"):
+            read_interactive = getattr(self._artifacts, "_get_interactive_mind_map_tree", None)
+            if read_interactive is None or not callable(read_interactive):
+                raise TypeError("artifacts must provide the interactive tree seam")
+            if kind is MindMapKind.INTERACTIVE:
+                return await read_interactive(notebook_id, mind_map_id)
+
+            for mind_map in await self.list_note_backed(notebook_id):
+                if mind_map.id == mind_map_id:
+                    return mind_map.tree
+            if kind is MindMapKind.NOTE_BACKED:
+                return None
+
+            if await self._find_interactive(notebook_id, mind_map_id) is not None:
+                return await read_interactive(notebook_id, mind_map_id)
+            return None
 
     async def _detect_kind(self, notebook_id: str, mind_map_id: str) -> MindMapKind:
         """Resolve a bare id to its backing (note collection first, then studio).
@@ -330,12 +382,13 @@ class MindMapsAPI(ABC):
         mutate-existing re-raises, derived reads return the uniform-empty
         value, idempotent delete swallows it).
         """
-        for mind_map in await self.list_note_backed(notebook_id):
-            if mind_map.id == mind_map_id:
-                return MindMapKind.NOTE_BACKED
-        if await self._find_interactive(notebook_id, mind_map_id) is not None:
-            return MindMapKind.INTERACTIVE
-        raise MindMapNotFoundError(mind_map_id)
+        async with self._operation_scope("mind_maps._detect_kind"):
+            for mind_map in await self.list_note_backed(notebook_id):
+                if mind_map.id == mind_map_id:
+                    return MindMapKind.NOTE_BACKED
+            if await self._find_interactive(notebook_id, mind_map_id) is not None:
+                return MindMapKind.INTERACTIVE
+            raise MindMapNotFoundError(mind_map_id)
 
     async def _find_interactive(
         self,

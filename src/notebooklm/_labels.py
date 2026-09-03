@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import builtins
+import contextlib
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from typing import Literal
 
+from ._runtime.call_supervisor import OperationLease
 from .types import Label, Source
 
 # Narrow capability: just ``sources.list(notebook_id) -> list[Source]``.
@@ -25,6 +27,13 @@ class LabelsAPI(ABC):
             members = await client.labels.sources(nb, mine.id)
             await client.labels.delete(nb, [mine.id])
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     @abstractmethod
     async def list(self, notebook_id: str) -> builtins.list[Label]:

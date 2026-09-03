@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import weakref
@@ -14,6 +15,7 @@ from typing import Any
 from ._conversation_cache import ConversationCache
 from ._loop_bound import LoopBoundPrimitive
 from ._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
+from ._runtime.call_supervisor import OperationLease
 from ._runtime.contracts import LoopGuard
 from ._types.documents import StructuredDocument, utf16_len
 from ._types.enums import ChatGoal, ChatResponseLength
@@ -157,6 +159,13 @@ class ChatAPI(LoopBoundPrimitive, ABC):
                 conversation_id=result.conversation_id
             )
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
+        """Return the backend's scope for one multi-call workflow."""
+
+        return contextlib.nullcontext(None)
 
     def __init__(
         self,
