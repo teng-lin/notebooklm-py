@@ -125,6 +125,14 @@ async def test_create_recovers_through_transport_neutral_hook_and_probe() -> Non
     assert api._take_created_chat_session_id(created.id) is None
 
 
+def test_created_chat_session_hint_storage_is_owned_and_consumed_by_base() -> None:
+    api = _FakeNotebooksAPI(list_results=[], create_results=[])
+    api._created_chat_session_ids["notebook"] = "session"
+
+    assert api._take_created_chat_session_id("notebook") == "session"
+    assert api._take_created_chat_session_id("notebook") is None
+
+
 @pytest.mark.asyncio
 async def test_copy_validates_then_returns_the_single_hook_result() -> None:
     copied = Notebook(id="nb-copy", title="  Copy  ")

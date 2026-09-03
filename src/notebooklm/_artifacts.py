@@ -16,7 +16,7 @@ from ._artifact import validation as _artifact_validation  # noqa: F401
 from ._artifact.downloads import AssetDownloadService, DownloadResult
 from ._artifact.polling import ArtifactPollingService
 from ._env import get_default_language
-from ._notebook_metadata import NotebookSourceIdProvider
+from ._notebook_metadata import NotebookSourceIdProvider, reconcile_copy_mapping
 from ._polling_registry import PollRegistry
 from ._runtime.call_supervisor import OperationLease
 from ._types.enums import (
@@ -35,7 +35,7 @@ from ._types.enums import (
     VideoStyle,
 )
 from ._types.research import MindMapResult
-from .exceptions import ArtifactNotFoundError, DecodingError, ValidationError
+from .exceptions import ArtifactNotFoundError, ValidationError
 from .types import (
     Artifact,
     ArtifactCustomizationChoices,
@@ -852,30 +852,22 @@ class ArtifactsAPI(ABC):
             raise ValidationError("target_notebook_id must not be empty")
 
         transfer = await self._send_copy(notebook_id, artifact_ids, target_notebook_id)
-        copied = transfer.items
-        if not copied:
-            if transfer.malformed_count:
-                raise DecodingError(
-                    "CopyArtifactsAsync returned only malformed mapping entries",
-                    raw_response=transfer.raw_response,
-                    method_id=transfer.method_id,
-                )
-            raise ArtifactNotFoundError(
-                ", ".join(artifact_ids),
-                method_id=transfer.method_id,
-            )
-        missing = set(artifact_ids) - {item.original_id for item in copied}
-        if missing:
-            logger.warning(
-                "CopyArtifactsAsync copied %d of %d artifact(s) into %s; not copied: %s",
-                len(copied),
-                len(artifact_ids),
-                target_notebook_id,
-                ", ".join(sorted(missing)),
-            )
-        return copied
+        return reconcile_copy_mapping(
+            artifact_ids,
+            transfer.items,
+            original_id=lambda item: item.original_id,
+            operation="CopyArtifactsAsync",
+            item_label="artifact",
+            target_notebook_id=target_notebook_id,
+            method_id=transfer.method_id,
+            malformed_count=transfer.malformed_count,
+            raw_response=transfer.raw_response,
+            empty_error=ArtifactNotFoundError(
+                ", ".join(artifact_ids), method_id=transfer.method_id
+            ),
+            warning_logger=logger,
+        )
 
-    @abstractmethod
     async def get_customization_choices(
         self, notebook_id: str | None = None
     ) -> ArtifactCustomizationChoices:
@@ -894,6 +886,14 @@ class ArtifactsAPI(ABC):
 
         .. versionadded:: 0.9.0
         """
+        return await self._read_customization_choices(notebook_id)
+
+    @abstractmethod
+    async def _read_customization_choices(
+        self, notebook_id: str | None = None
+    ) -> ArtifactCustomizationChoices:
+        """Read and decode the selected backend's customization table."""
+        raise NotImplementedError
 
 
 __all__ = ["ArtifactsAPI"]

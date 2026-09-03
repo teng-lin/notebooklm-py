@@ -9,12 +9,81 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from notebooklm._notebook_metadata import NotebookMetadataService
+from notebooklm._notebook_metadata import NotebookMetadataService, reconcile_copy_mapping
 from notebooklm._web.notebooks import create_default_source_lister
 from notebooklm._web.sources import WebSourcesAPI
-from notebooklm.exceptions import RPCError
+from notebooklm.exceptions import DecodingError, RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import Notebook, NotebookMetadata, Source, SourceType
+
+
+def test_reconcile_copy_mapping_preserves_order_duplicate_set_and_partial_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    items = [("source-b", "copy-b"), ("source-a", "copy-a")]
+    copy_logger = logging.getLogger("tests.copy_mapping")
+
+    with caplog.at_level(logging.WARNING, logger=copy_logger.name):
+        result = reconcile_copy_mapping(
+            ["source-a", "source-a", "source-b", "source-c"],
+            items,
+            original_id=lambda item: item[0],
+            operation="CopySourcesAsync",
+            item_label="source",
+            target_notebook_id="target",
+            method_id="copy.method",
+            malformed_count=1,
+            raw_response="raw",
+            empty_error=LookupError("missing"),
+            warning_logger=copy_logger,
+        )
+
+    assert result is items
+    assert result == [("source-b", "copy-b"), ("source-a", "copy-a")]
+    assert caplog.messages == [
+        "CopySourcesAsync copied 2 of 4 source(s) into target; not copied: source-c"
+    ]
+
+
+def test_reconcile_copy_mapping_preserves_empty_exception_identity() -> None:
+    empty_error = LookupError("missing")
+
+    with pytest.raises(LookupError) as raised:
+        reconcile_copy_mapping(
+            ["source-a"],
+            [],
+            original_id=lambda item: item,
+            operation="CopySourcesAsync",
+            item_label="source",
+            target_notebook_id="target",
+            method_id="copy.method",
+            malformed_count=0,
+            raw_response=None,
+            empty_error=empty_error,
+            warning_logger=logging.getLogger("tests.copy_mapping"),
+        )
+
+    assert raised.value is empty_error
+
+
+def test_reconcile_copy_mapping_preserves_malformed_raw_response() -> None:
+    with pytest.raises(DecodingError) as raised:
+        reconcile_copy_mapping(
+            ["artifact-a"],
+            [],
+            original_id=lambda item: item,
+            operation="CopyArtifactsAsync",
+            item_label="artifact",
+            target_notebook_id="target",
+            method_id="copy.method",
+            malformed_count=1,
+            raw_response="[['broken']]",
+            empty_error=LookupError("missing"),
+            warning_logger=logging.getLogger("tests.copy_mapping"),
+        )
+
+    assert raised.value.method_id == "copy.method"
+    assert raised.value.raw_response == "[['broken']]"
 
 
 class RecordingRpc:

@@ -109,16 +109,10 @@ class AndroidArtifactTransferMixin:
             malformed_count=malformed,
         )
 
-    async def get_customization_choices(
+    async def _read_customization_choices(
         self, notebook_id: str | None = None
     ) -> ArtifactCustomizationChoices:
-        """Return the Studio option tables (``GetArtifactCustomizationChoices``).
-
-        Account-level: an empty request, a bogus project id and every
-        ``artifact_type`` returned the identical 3238-byte table live, so only
-        the request context is required; ``project_id`` is sent when given to
-        mirror the app's exact request shape.
-        """
+        """Read and decode the Android customization table."""
         request = _PROTO.GetArtifactCustomizationChoicesRequest(request_context=_request_context())
         if notebook_id:
             request.project_id = notebook_id

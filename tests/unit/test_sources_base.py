@@ -3,22 +3,30 @@
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from notebooklm._sources import SourcesAPI
+from notebooklm._sources import SourcesAPI, _TransferResult
 from notebooklm._web.sources import WebSourcesAPI
-from notebooklm.exceptions import RPCError, SourceNotFoundError, ValidationError
-from notebooklm.types import Source, SourceStatus, SourceType
+from notebooklm.exceptions import DecodingError, RPCError, SourceNotFoundError, ValidationError
+from notebooklm.types import CopiedSource, Source, SourceStatus, SourceType
 
 
 class _ConcreteSources(SourcesAPI):
-    def __init__(self, sources: list[Source] | Exception) -> None:
+    def __init__(
+        self,
+        sources: list[Source] | Exception,
+        *,
+        copy_result: _TransferResult[CopiedSource] | Exception | None = None,
+    ) -> None:
         super().__init__()
         self._listed = sources
+        self.copy_result = copy_result
+        self.copy_calls: list[tuple[str, list[str], str]] = []
         self.list_calls: list[
             tuple[str, bool, Collection[SourceStatus] | None, Collection[SourceType] | None]
         ] = []
@@ -79,7 +87,18 @@ class _ConcreteSources(SourcesAPI):
     get_fulltext = _unsupported
     _send_add_urls_async = _unsupported
     _send_append_text = _unsupported
-    _send_copy = _unsupported
+
+    async def _send_copy(
+        self,
+        notebook_id: str,
+        source_ids: list[str],
+        target_notebook_id: str,
+    ) -> _TransferResult[CopiedSource]:
+        self.copy_calls.append((notebook_id, source_ids, target_notebook_id))
+        if isinstance(self.copy_result, Exception):
+            raise self.copy_result
+        assert self.copy_result is not None
+        return self.copy_result
 
 
 @pytest.mark.asyncio
@@ -159,6 +178,42 @@ async def test_batch_adapter_seam_is_typed_nonabstract_and_unsupported_by_defaul
     assert "_add_urls_batch" not in SourcesAPI.__abstractmethods__
     with pytest.raises(NotImplementedError):
         await _ConcreteSources([])._add_urls_batch("nb_1", ["https://example.com"])
+
+
+@pytest.mark.asyncio
+async def test_copy_uses_neutral_mapping_policy_with_source_exception_identity(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    copied = CopiedSource(original_id="source-a", source=Source(id="copy-a"))
+    api = _ConcreteSources([], copy_result=_TransferResult([copied], "fake.CopySourcesAsync"))
+
+    with caplog.at_level(logging.WARNING, logger="notebooklm._sources"):
+        result = await api.copy("nb", ["source-b", "source-a"], "target")
+
+    assert result == [copied]
+    assert api.copy_calls == [("nb", ["source-b", "source-a"], "target")]
+    assert caplog.messages == [
+        "CopySourcesAsync copied 1 of 2 source(s) into target; not copied: source-b"
+    ]
+
+    empty = _ConcreteSources([], copy_result=_TransferResult([], "fake.CopySourcesAsync"))
+    with pytest.raises(SourceNotFoundError) as missing:
+        await empty.copy("nb", ["source-a"], "target")
+    assert missing.value.method_id == "fake.CopySourcesAsync"
+
+    malformed = _ConcreteSources(
+        [],
+        copy_result=_TransferResult(
+            [],
+            "fake.CopySourcesAsync",
+            malformed_count=1,
+            raw_response="[['broken']]",
+        ),
+    )
+    with pytest.raises(DecodingError) as decoding:
+        await malformed.copy("nb", ["source-a"], "target")
+    assert decoding.value.method_id == "fake.CopySourcesAsync"
+    assert decoding.value.raw_response == "[['broken']]"
 
 
 def test_web_facade_inherits_every_neutral_concrete_workflow() -> None:

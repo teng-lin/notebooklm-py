@@ -10,7 +10,7 @@ import pytest
 from notebooklm._artifacts import ArtifactsAPI, _ArtifactCopyResult
 from notebooklm._types.enums import ExportType
 from notebooklm.exceptions import ArtifactNotFoundError, DecodingError, RPCError, ValidationError
-from notebooklm.types import Artifact, CopiedArtifact
+from notebooklm.types import Artifact, ArtifactCustomizationChoices, CopiedArtifact
 
 
 class _ConcreteArtifacts(ArtifactsAPI):
@@ -21,11 +21,14 @@ class _ConcreteArtifacts(ArtifactsAPI):
         *,
         copy_result: _ArtifactCopyResult | Exception | None = None,
         export_result: Any = None,
+        customization_result: ArtifactCustomizationChoices | None = None,
     ) -> None:
         self.copy_result = copy_result
         self.export_result = export_result
+        self.customization_result = customization_result or ArtifactCustomizationChoices()
         self.copy_calls: list[tuple[str, list[str], str]] = []
         self.export_calls: list[tuple[str, str | None, str, ExportType, str | None]] = []
+        self.customization_calls: list[str | None] = []
 
     async def _send_copy(
         self,
@@ -51,6 +54,12 @@ class _ConcreteArtifacts(ArtifactsAPI):
         self.export_calls.append((notebook_id, artifact_id, title, export_type, content))
         return self.export_result
 
+    async def _read_customization_choices(
+        self, notebook_id: str | None = None
+    ) -> ArtifactCustomizationChoices:
+        self.customization_calls.append(notebook_id)
+        return self.customization_result
+
     async def _unsupported(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
@@ -67,13 +76,21 @@ class _ConcreteArtifacts(ArtifactsAPI):
     download_slide_deck = _unsupported
     download_video = _unsupported
     generate_mind_map = _unsupported
-    get_customization_choices = _unsupported
     get_prompt = _unsupported
     list = _unsupported
     rename = _unsupported
     retry_failed = _unsupported
     revise_slide = _unsupported
     suggest_reports = _unsupported
+
+
+@pytest.mark.asyncio
+async def test_customization_choices_delegates_to_the_single_typed_read_hook() -> None:
+    expected = ArtifactCustomizationChoices()
+    api = _ConcreteArtifacts(customization_result=expected)
+
+    assert await api.get_customization_choices("nb") is expected
+    assert api.customization_calls == ["nb"]
 
 
 @pytest.mark.asyncio

@@ -588,24 +588,10 @@ class WebArtifactsAPI(ArtifactsAPI):
             raw_response=reprlib.repr(rows) if malformed else None,
         )
 
-    async def get_customization_choices(
+    async def _read_customization_choices(
         self, notebook_id: str | None = None
     ) -> ArtifactCustomizationChoices:
-        """Return the Studio "Customize" option tables (``GetArtifactCustomizationChoices``).
-
-        Account-level: the server returns the same ~3.3 KB table for an empty
-        request, a bogus notebook id and every artifact type (live, both front
-        doors, 2026-09-01), so ``notebook_id`` is optional and only fills the
-        request's ``project_id`` slot. Audio / video / slide-deck rows carry the wire codes
-        of :class:`~notebooklm.types.AudioFormat`,
-        :class:`~notebooklm.types.VideoFormat` and
-        :class:`~notebooklm.types.SlideDeckFormat`; report presets carry the
-        full generation directive each preset expands to. This is an
-        availability table rather than an exhaustive enum manifest; dedicated
-        options such as cinematic video may be omitted.
-
-        .. versionadded:: 0.9.0
-        """
+        """Read and decode the Web customization table."""
         # ``allow_null=False``: the server always serves the table, so a null
         # (status-bearing or not) is drift / rejection, never "no choices".
         result = await self._rpc.rpc_call(
