@@ -249,12 +249,21 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
         implementation_class_name="WebMindMapsAPI",
         abstract_methods=frozenset(
             {
+                "_list_studio_mind_map_rows",
+                "_read_interactive_tree",
                 "_send_rename_note_backed",
-                "generate",
+                "_start_interactive_mind_map",
                 "list_note_backed",
             }
         ),
-        wire_hooks=frozenset({"_send_rename_note_backed"}),
+        wire_hooks=frozenset(
+            {
+                "_list_studio_mind_map_rows",
+                "_read_interactive_tree",
+                "_send_rename_note_backed",
+                "_start_interactive_mind_map",
+            }
+        ),
     ),
 )
 
@@ -330,6 +339,8 @@ _ANDROID_INHERITED_WORKFLOWS = {
             "get",
             "get_or_none",
             "get_tree",
+            "generate",
+            "list",
             "rename",
         }
     ),
@@ -359,7 +370,16 @@ _ANDROID_INHERITED_WORKFLOWS = {
 _TEMPLATE_HOOKS = frozenset({"_operation_scope"})
 
 _WIRE_HOOK_PREFIXES = ("_send_",)
-_WIRE_HOOK_NAMES = frozenset({"_cancel_generation", "_get_session_status", "_stream_answer"})
+_WIRE_HOOK_NAMES = frozenset(
+    {
+        "_cancel_generation",
+        "_get_session_status",
+        "_list_studio_mind_map_rows",
+        "_read_interactive_tree",
+        "_start_interactive_mind_map",
+        "_stream_answer",
+    }
+)
 
 _ARTIFACT_DOCSTRING_SHA256 = {
     ("ArtifactsAPI", "class"): "a46bd93059bf56db9586a741a0df1aca8b49a30cf74007a74e27997166ebb482",

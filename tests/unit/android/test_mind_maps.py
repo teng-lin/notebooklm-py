@@ -260,7 +260,7 @@ async def test_interactive_generate_uses_live_create_wait_list_and_tree_seams() 
         instructions="focus",
     )
     artifacts.wait_for_completion.assert_awaited_once_with("notebook-1", "interactive")
-    artifacts.list.assert_awaited_once()
+    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
     artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("notebook-1", "interactive")
     notes._list_note_backed_mind_maps.assert_not_awaited()
 
@@ -455,8 +455,7 @@ async def test_auto_detect_rename_hydrates_interactive_map() -> None:
         _variant=4,
     )
     api, artifacts, notes = _graph(artifacts=[before])
-    artifacts.list.return_value = [before]
-    artifacts._list_all_studio.return_value = [after]
+    artifacts._list_all_studio.side_effect = [[before], [after]]
 
     renamed = await api.rename("notebook-1", "interactive", "Renamed")
 
@@ -467,8 +466,8 @@ async def test_auto_detect_rename_hydrates_interactive_map() -> None:
         MindMapKind.INTERACTIVE,
     )
     assert notes._list_note_backed_mind_maps.await_count == 2
-    artifacts.list.assert_awaited_once_with("notebook-1")
-    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
+    assert artifacts._list_all_studio.await_count == 2
+    artifacts.list.assert_not_awaited()
     artifacts.rename.assert_awaited_once_with(
         "notebook-1",
         "interactive",
@@ -491,7 +490,7 @@ async def test_auto_detect_delete_dispatches_and_missing_is_idempotent() -> None
     assert await api.delete("notebook-1", "interactive") is None
     artifacts.delete.assert_awaited_once_with("notebook-1", "interactive")
 
-    artifacts.list.return_value = []
+    artifacts._list_all_studio.return_value = []
     assert await api.delete("notebook-1", "missing") is None
     assert artifacts.delete.await_count == 1
 
@@ -513,7 +512,7 @@ async def test_get_tree_reads_note_backed_and_auto_detects_missing() -> None:
 
     notes._list_note_backed_mind_maps.return_value = []
     assert await api.get_tree("notebook-1", "missing") is None
-    artifacts.list.assert_awaited_once_with("notebook-1")
+    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
 
 
 @pytest.mark.asyncio
@@ -526,7 +525,7 @@ async def test_get_tree_auto_detected_interactive_reads_exact_app_tree_after_det
     }
 
     notes._list_note_backed_mind_maps.assert_awaited_once_with("notebook-1")
-    artifacts.list.assert_awaited_once_with("notebook-1")
+    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
     artifacts._get_interactive_mind_map_tree.assert_awaited_once_with("notebook-1", "interactive")
 
 
@@ -545,7 +544,7 @@ async def test_explicit_interactive_rename_composes_without_note_reads() -> None
         is None
     )
 
-    artifacts.list.assert_awaited_once_with("notebook-1")
+    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
     artifacts.rename.assert_awaited_once_with(
         "notebook-1",
         "interactive",
@@ -570,7 +569,7 @@ async def test_explicit_interactive_rename_preserves_missing_error() -> None:
             return_object=False,
         )
 
-    artifacts.list.assert_awaited_once_with("notebook-1")
+    artifacts._list_all_studio.assert_awaited_once_with("notebook-1")
     artifacts.rename.assert_not_awaited()
     notes.list_mind_maps.assert_not_awaited()
 
