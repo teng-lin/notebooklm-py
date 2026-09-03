@@ -614,9 +614,9 @@ gate the destructive ones.
 ## Troubleshooting
 
 - **`AUTH` errors / "not authenticated".** Run `notebooklm login` (or `notebooklm -p <profile> login`)
-  in a terminal. If the server never managed to authenticate (it opens its client lazily, on first use),
-  no restart is needed — the next tool call retries the open and picks up the refreshed credentials.
-  Check with the `server_info` tool, which reports auth health.
+  in a terminal. If the server never managed to authenticate, no restart is needed: it starts opening
+  its client in the background at startup and retries a failed open on the next tool call, so it picks
+  up the refreshed credentials. Check with the `server_info` tool, which reports auth health.
 - **`uvx` / `uv` not found.** Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux)
   or `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows). The desktop launcher also
   searches common install dirs beyond `PATH`.
