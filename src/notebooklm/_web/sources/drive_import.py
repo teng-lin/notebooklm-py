@@ -427,12 +427,19 @@ class DriveFetcher:
     ) -> DriveDownload | _ConfirmRedirect:
         file_id = ref.file_id
         status = response.status_code
+        status_error: httpx.HTTPStatusError | None = None
+        if status == 401 or status == 429 or status >= 500:
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as error:
+                status_error = error
         # 403 is NOT decided here: Drive returns 403 + an HTML permission page,
         # which the discriminator handles below.
         map_google_http_status(
             response,
             filename=f"fetching Drive file {file_id}",
             chain=True,
+            cause=status_error,
         )
 
         content_type = response.headers.get("content-type", "")

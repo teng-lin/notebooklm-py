@@ -2321,7 +2321,7 @@ async def test_delete_preflights_ownership_and_is_idempotent_after_that_proof() 
     assert method == DELETE_ARTIFACT_METHOD
     assert request == _PROTO.DeleteArtifactRequest(artifact_id="artifact-1")
     assert kwargs == {
-        "replay_safe": False,
+        "replay_safe": True,
         "response_type": empty_pb2.Empty,
         "expected_epoch": 7,
     }
@@ -2370,7 +2370,7 @@ async def test_rename_preflights_etag_updates_once_and_reads_back() -> None:
     assert list(request.update_mask.paths) == ["title"]
     assert request.etag == "etag-before"
     assert kwargs == {
-        "replay_safe": False,
+        "replay_safe": True,
         "response_type": _PROTO.Artifact,
         "expected_epoch": 7,
     }
@@ -2408,7 +2408,7 @@ async def test_rename_rejects_wrong_bare_update_identity_without_replay() -> Non
         UPDATE_ARTIFACT_METHOD,
     ]
     assert session.calls[1][2] == {
-        "replay_safe": False,
+        "replay_safe": True,
         "response_type": _PROTO.Artifact,
         "expected_epoch": 7,
     }

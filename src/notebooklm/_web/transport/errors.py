@@ -12,57 +12,12 @@ __all__ = [
 ]
 
 import logging
-import math
 import time
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 from typing import NoReturn
 
 import httpx
 
-# Upper bound on Retry-After wait. Caps both integer-seconds and HTTP-date forms
-# so a malicious or buggy server can't force a multi-hour pause.
-MAX_RETRY_AFTER_SECONDS = 300
-
-
-def parse_retry_after(value: str | None) -> int | None:
-    """Parse a Retry-After header: integer-seconds OR HTTP-date (RFC 7231).
-
-    Fractional-seconds (e.g. ``"1.5"``) are non-conformant but emitted by some
-    servers/proxies; they are accepted and rounded UP so we never retry faster
-    than the server asked.
-
-    Returns seconds-until-retry as a non-negative int, clamped to
-    ``MAX_RETRY_AFTER_SECONDS``. Returns ``None`` for empty or unparseable input.
-    """
-    if not value:
-        return None
-    value = value.strip()
-    # Integer-seconds form (most common)
-    try:
-        return min(MAX_RETRY_AFTER_SECONDS, max(0, int(value)))
-    except ValueError:
-        pass
-    # Fractional-seconds form: non-RFC-7231 but emitted by some servers/proxies.
-    # Round UP so we never retry faster than the server asked. Reject non-finite
-    # (inf/nan) values, which float() accepts but math.ceil() can't handle.
-    try:
-        seconds = float(value)
-        if math.isfinite(seconds):
-            return min(MAX_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
-    except ValueError:
-        pass
-    # HTTP-date form (RFC 7231 section 7.1.1.1)
-    try:
-        dt = parsedate_to_datetime(value)
-    except (TypeError, ValueError):
-        return None
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    delta = (dt - datetime.now(timezone.utc)).total_seconds()
-    return min(MAX_RETRY_AFTER_SECONDS, max(0, int(delta)))
+from ..._runtime.helpers import MAX_RETRY_AFTER_SECONDS, parse_retry_after
 
 
 class TransportAuthExpired(Exception):

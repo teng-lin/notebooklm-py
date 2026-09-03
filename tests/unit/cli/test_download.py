@@ -791,6 +791,26 @@ class TestDownloadAuthPropagation:
         assert "notebooklm login" in payload["hint"]
         assert [row["status"] for row in payload["artifacts"]] == ["failed", "downloaded"]
 
+    def test_download_all_text_auth_error_prints_login_guidance(
+        self, runner, mock_auth, mock_fetch_tokens, tmp_path
+    ):
+        from notebooklm.exceptions import AuthError
+
+        mock_client = create_mock_client()
+        output_dir = tmp_path / "downloads"
+        mock_client.artifacts.list = AsyncMock(return_value=[make_artifact("audio_1", "First", 1)])
+        mock_client.artifacts.download_audio = AsyncMock(side_effect=AuthError("expired"))
+
+        result = runner.invoke(
+            cli,
+            ["download", "audio", "--all", str(output_dir), "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "Authentication error" in result.output
+        assert "notebooklm login" in result.output
+
 
 def test_download_envelope_projects_bulk_auth_fields() -> None:
     from notebooklm._app.download import DownloadOutcome, DownloadResult

@@ -486,7 +486,7 @@ async def test_waiting_branches_use_one_exact_read_then_optional_no_readback_tit
     assert methods.count(MUTATE_SOURCE_METHOD) == int(expect_mutation)
     if expect_mutation:
         assert methods[-1] == MUTATE_SOURCE_METHOD
-        assert session.calls[-1][2]["replay_safe"] is False
+        assert session.calls[-1][2]["replay_safe"] is True
         assert session.calls[-1][2]["expected_epoch"] == 7
 
 
@@ -1186,6 +1186,34 @@ async def test_hostile_session_capability_never_reaches_bearer_logs_exception_or
         if "/src/notebooklm/" in frame.tb_frame.f_code.co_filename:
             assert secret not in repr(frame.tb_frame.f_locals)
             assert "bearer-secret" not in repr(frame.tb_frame.f_locals)
+        frame = frame.tb_next
+
+
+@pytest.mark.asyncio
+async def test_drive_staging_auth_error_public_traceback_retains_no_bearer_owner(
+    tmp_path: Path,
+) -> None:
+    harness = HTTPHarness()
+    harness.drive_stage_status = 401
+    _, bearer, pipeline, api = await _graph(harness)
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+
+    with pytest.raises(AuthError) as captured:
+        await api.add_file(NOTEBOOK_ID, path)
+
+    error = captured.value
+    assert bearer.invalidated == [1]
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    frame = error.__traceback__
+    while frame is not None:
+        if "/src/notebooklm/" in frame.tb_frame.f_code.co_filename:
+            values = tuple(frame.tb_frame.f_locals.values())
+            assert api not in values
+            assert pipeline not in values
+            assert bearer not in values
+            assert not any(getattr(value, "_bearer_provider", None) is bearer for value in values)
         frame = frame.tb_next
 
 

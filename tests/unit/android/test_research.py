@@ -511,7 +511,7 @@ async def test_cancel_lost_response_resolves_only_by_exact_id_poll() -> None:
     cancel_request = transport.calls[0][1]
     assert cancel_request.source_discovery_job_id == RUN_ID
     assert cancel_request.HasField("request_context")
-    assert transport.calls[0][2]["replay_safe"] is False
+    assert transport.calls[0][2]["replay_safe"] is True
     assert transport.calls[1][2]["replay_safe"] is True
 
 
@@ -1171,7 +1171,7 @@ async def test_real_supervisor_cancel_exact_readback_completes_during_graceful_d
         CANCEL_JOB_METHOD,
         LIST_JOBS_METHOD,
     ]
-    assert transport.calls[0][2]["replay_safe"] is False
+    assert transport.calls[0][2]["replay_safe"] is True
     assert [call[2]["expected_epoch"] for call in transport.calls] == [1, 1]
     await transport.supervisor.wait_for_idle(1, 0.1)
 

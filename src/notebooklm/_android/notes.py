@@ -318,7 +318,7 @@ class AndroidNotesAPI(NotesAPI):
                 response = await self._transport.unary(
                     MUTATE_NOTE_METHOD,
                     request,
-                    replay_safe=False,
+                    replay_safe=True,
                     response_type=proto.MutateNoteResponse,
                     expected_epoch=lease.epoch,
                 )
@@ -376,7 +376,7 @@ class AndroidNotesAPI(NotesAPI):
                 await self._transport.unary(
                     DELETE_NOTES_METHOD,
                     request,
-                    replay_safe=False,
+                    replay_safe=True,
                     response_type=proto.DeleteNotesResponse,
                     expected_epoch=lease.epoch,
                 )
@@ -435,7 +435,7 @@ class AndroidNotesAPI(NotesAPI):
                 await self._transport.unary(
                     DELETE_NOTES_METHOD,
                     request,
-                    replay_safe=False,
+                    replay_safe=True,
                     response_type=proto.DeleteNotesResponse,
                     expected_epoch=lease.epoch,
                 )

@@ -35,7 +35,16 @@ from notebooklm.exceptions import (
     ServerError,
 )
 
-METHOD = "/package.Service/Method"
+METHOD = (
+    "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/GetProject"
+)
+MUTATION_METHOD = (
+    "/google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService/CreateProject"
+)
+STREAM_METHOD = (
+    "/google.internal.labs.tailwind.orchestration.v1."
+    "LabsTailwindOrchestrationService/GenerateFreeFormStreamed"
+)
 BEARER = "ya29.session-secret"
 
 
@@ -269,6 +278,21 @@ async def test_open_is_lazy_and_unary_uses_fixed_tls_channel_and_metadata() -> N
 
 
 @pytest.mark.asyncio
+async def test_unary_rejects_stale_replay_literal_before_wire_dispatch() -> None:
+    session, _, channel, _, _ = await _open()
+
+    with pytest.raises(ValueError, match="disagrees with policy"):
+        await session.unary(
+            METHOD,
+            _Message(b"request"),
+            replay_safe=False,
+            response_type=_Message,
+        )
+
+    assert channel.invocations == []
+
+
+@pytest.mark.asyncio
 async def test_unary_appends_augmented_metadata() -> None:
     session, _, channel, _, _ = await _open()
 
@@ -279,7 +303,7 @@ async def test_unary_appends_augmented_metadata() -> None:
     assert await session.unary(
         METHOD,
         _Message(b"request"),
-        replay_safe=False,
+        replay_safe=True,
         response_type=_Message,
         metadata_augmentor=augment,
     ) == _Message(b"response")
@@ -305,7 +329,7 @@ async def test_metadata_augmentor_rechecks_epoch_before_wire_dispatch() -> None:
         session.unary(
             METHOD,
             _Message(b"request"),
-            replay_safe=False,
+            replay_safe=True,
             response_type=_Message,
             metadata_augmentor=augment,
         )
@@ -418,7 +442,7 @@ async def test_safe_read_replays_unauthenticated_once_and_mutation_never_replays
     mutation, mutation_bearer, _, _, _ = await _open(channel=mutation_channel)
     with pytest.raises(AuthError) as captured:
         await mutation.unary(
-            METHOD,
+            MUTATION_METHOD,
             _Message(b"mutation"),
             replay_safe=False,
             response_type=_Message,
@@ -452,7 +476,7 @@ async def test_safe_read_replays_unavailable_once_and_mutation_never_replays() -
     mutation, _, _, _, _ = await _open(channel=mutation_channel)
     with pytest.raises(ServerError) as captured:
         await mutation.unary(
-            METHOD,
+            MUTATION_METHOD,
             _Message(b"mutation"),
             replay_safe=False,
             response_type=_Message,
@@ -500,7 +524,7 @@ async def test_mutating_rpc_never_replays_new_retry_classes(status: _Status) -> 
     session, _, _, _, supervisor = await _open(channel=channel, sleep=sleep)
     with pytest.raises((RateLimitError, ServerError)):
         await session.unary(
-            METHOD,
+            MUTATION_METHOD,
             _Message(b"mutation"),
             replay_safe=False,
             response_type=_Message,
@@ -542,7 +566,7 @@ async def test_unary_status_mapping_is_sanitized(status, error_type) -> None:
 
     with pytest.raises(error_type) as captured:
         await session.unary(
-            METHOD,
+            MUTATION_METHOD,
             _Message(b"request"),
             replay_safe=False,
             response_type=_Message,
@@ -552,7 +576,7 @@ async def test_unary_status_mapping_is_sanitized(status, error_type) -> None:
     assert BEARER not in str(error)
     assert error.__cause__ is None
     assert error.__context__ is None
-    assert error.method_id == METHOD
+    assert error.method_id == MUTATION_METHOD
     traceback = error.__traceback__
     while traceback is not None:
         local_values = traceback.tb_frame.f_locals
@@ -582,7 +606,7 @@ async def test_unknown_wire_error_debug_log_contains_type_not_sensitive_message(
         await session.unary(
             METHOD,
             _Message(b"request"),
-            replay_safe=False,
+            replay_safe=True,
             response_type=_Message,
         )
 
@@ -597,7 +621,7 @@ async def test_stream_is_lazy_holds_scope_and_never_replays_auth_failure() -> No
     channel = _Channel()
     channel.stream_outcomes = [[_Message(b"one"), _RawRpcError(_Status.UNAUTHENTICATED)]]
     session, bearer, _, _, supervisor = await _open(channel=channel)
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
 
     assert supervisor._metrics.snapshot().rpc_calls_started == 0
     assert channel.invocations == []
@@ -625,7 +649,7 @@ async def test_stream_auth_failure_invalidates_bearer_for_the_next_unary() -> No
     )
 
     stream = session.stream(
-        METHOD,
+        STREAM_METHOD,
         _Message(b"stream"),
         replay_safe=False,
         response_type=_Message,
@@ -636,7 +660,7 @@ async def test_stream_auth_failure_invalidates_bearer_for_the_next_unary() -> No
     assert await session.unary(
         METHOD,
         _Message(b"read"),
-        replay_safe=False,
+        replay_safe=True,
         response_type=_Message,
     ) == _Message(b"ok")
     assert bearer.invalidated == [1]
@@ -662,7 +686,7 @@ async def test_stream_uses_one_aggregate_deadline_across_frames() -> None:
         timeout=1.0,
         monotonic=monotonic,
     )
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
 
     assert await anext(stream) == _Message(b"one")
     with pytest.raises(RPCTimeoutError):
@@ -677,7 +701,7 @@ async def test_stream_aclose_cancels_wire_call_and_releases_scope() -> None:
     channel = _Channel()
     channel.stream_outcomes = [[_Message(b"one"), _Message(b"two")]]
     session, _, _, _, supervisor = await _open(channel=channel)
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
     assert await anext(stream) == _Message(b"one")
 
     await stream.aclose()
@@ -692,7 +716,7 @@ async def test_stream_enforces_cumulative_response_byte_cap_and_cancels_wire() -
     channel.stream_outcomes = [[_Message(b"one"), _Message(b"two")]]
     session, _, _, _, supervisor = await _open(channel=channel)
     stream = session.stream(
-        METHOD,
+        STREAM_METHOD,
         _Message(b"request"),
         response_type=_Message,
         max_response_bytes=3,
@@ -704,7 +728,7 @@ async def test_stream_enforces_cumulative_response_byte_cap_and_cancels_wire() -
 
     assert captured.value.limit_bytes == 3
     assert captured.value.bytes_read == 6
-    assert captured.value.method_id == METHOD
+    assert captured.value.method_id == STREAM_METHOD
     assert channel.stream_calls[0].cancelled
     assert supervisor._current is not None and supervisor._current.in_flight == 0
 
@@ -763,7 +787,7 @@ async def test_preopen_error_stream_laziness_missing_extra_and_phased_close() ->
             replay_safe=True,
             response_type=_Message,
         )
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
     with pytest.raises(RuntimeError, match="Client not initialized"):
         await anext(stream)
 
@@ -1081,7 +1105,7 @@ async def test_a_deadline_reached_while_minting_reports_deadline_exceeded() -> N
     session, _bearer, _channel, _grpc, _sup = await _open(bearer=bearer, timeout=0.01)
 
     with pytest.raises(RPCTimeoutError):
-        await session.unary(METHOD, _Message(b"request"), replay_safe=False, response_type=_Message)
+        await session.unary(METHOD, _Message(b"request"), replay_safe=True, response_type=_Message)
 
 
 @pytest.mark.asyncio
@@ -1096,7 +1120,7 @@ async def test_a_deadline_reached_inside_the_augmentor_reports_deadline_exceeded
         await session.unary(
             METHOD,
             _Message(b"request"),
-            replay_safe=False,
+            replay_safe=True,
             response_type=_Message,
             metadata_augmentor=augment,
         )
@@ -1124,13 +1148,13 @@ async def test_waiting_for_a_call_slot_past_the_deadline_is_a_timeout_not_an_err
     )
 
     holder = asyncio.create_task(
-        session.unary(METHOD, _Message(b"a"), replay_safe=False, response_type=_Message)
+        session.unary(METHOD, _Message(b"a"), replay_safe=True, response_type=_Message)
     )
     await asyncio.sleep(0)
 
     with pytest.raises(RPCTimeoutError):
         await session.unary(
-            METHOD, _Message(b"b"), replay_safe=False, response_type=_Message, timeout=0.01
+            METHOD, _Message(b"b"), replay_safe=True, response_type=_Message, timeout=0.01
         )
 
     blocker.set()
@@ -1171,7 +1195,7 @@ async def test_a_stream_deadline_reached_while_minting_reports_deadline_exceeded
     bearer.wait = asyncio.Event()
     session, _bearer, _channel, _grpc, _sup = await _open(bearer=bearer, timeout=0.01)
 
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
     with pytest.raises(RPCTimeoutError):
         async for _item in stream:
             pass
@@ -1192,7 +1216,7 @@ async def test_a_stream_deadline_reached_mid_iteration_reports_deadline_exceeded
     )
 
     received = []
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
     with pytest.raises(RPCTimeoutError):
         async for item in stream:
             received.append(item)
@@ -1216,7 +1240,7 @@ async def test_an_unmapped_stream_wire_error_logs_only_its_type(caplog) -> None:
     session, _bearer, _channel, _grpc, _sup = await _open(channel=channel)
 
     with caplog.at_level(logging.DEBUG, logger="notebooklm._android.session"):
-        stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+        stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
         with pytest.raises(RPCError):
             async for _item in stream:
                 pass
@@ -1244,7 +1268,7 @@ async def test_a_stream_cancel_that_itself_fails_is_swallowed() -> None:
     channel.unary_stream = unary_stream  # type: ignore[method-assign]
     session, _bearer, _channel, _grpc, _sup = await _open(channel=channel)
 
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
     with pytest.raises(ServerError):
         async for _item in stream:
             pass
@@ -1267,11 +1291,11 @@ async def test_a_stream_waiting_for_a_call_slot_past_its_deadline_times_out() ->
     )
 
     holder = asyncio.create_task(
-        session.unary(METHOD, _Message(b"a"), replay_safe=False, response_type=_Message)
+        session.unary(METHOD, _Message(b"a"), replay_safe=True, response_type=_Message)
     )
     await asyncio.sleep(0)
 
-    stream = session.stream(METHOD, _Message(b"b"), response_type=_Message, timeout=0.01)
+    stream = session.stream(STREAM_METHOD, _Message(b"b"), response_type=_Message, timeout=0.01)
     with pytest.raises(RPCTimeoutError):
         async for _item in stream:
             pass
@@ -1338,7 +1362,7 @@ async def test_a_stream_call_without_a_cancel_hook_is_abandoned_cleanly() -> Non
     channel.unary_stream = unary_stream  # type: ignore[method-assign]
     session, _bearer, _channel, _grpc, _sup = await _open(channel=channel)
 
-    stream = session.stream(METHOD, _Message(b"request"), response_type=_Message)
+    stream = session.stream(STREAM_METHOD, _Message(b"request"), response_type=_Message)
     with pytest.raises(ServerError):
         async for _item in stream:
             pass

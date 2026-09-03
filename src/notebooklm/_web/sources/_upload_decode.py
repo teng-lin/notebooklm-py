@@ -470,7 +470,12 @@ def _raise_from_upload_http_status(exc: httpx.HTTPStatusError, filename: str) ->
     """
     status = exc.response.status_code
     reason = exc.response.reason_phrase
-    map_google_http_status(exc.response, filename=f"uploading {filename!r}", chain=True)
+    map_google_http_status(
+        exc.response,
+        filename=f"uploading {filename!r}",
+        chain=True,
+        cause=exc,
+    )
     if status == 403:
         raise AuthError(f"Authentication failed uploading {filename!r} (HTTP {status})") from exc
     if 300 <= status < 400:

@@ -67,9 +67,22 @@ class _FakeResponse:
         self._body = body
         self.url = httpx.URL(url)
         self.body_reads = 0  # number of aiter_bytes() iterations started
+        self.status_error: httpx.HTTPStatusError | None = None
         # Thread names alive while the body is being produced — lets a test prove
         # the disk writes run on a dedicated writer thread (off the event loop).
         self.threads_during_stream: set[str] = set()
+
+    def raise_for_status(self) -> None:
+        raw = httpx.Response(
+            self.status_code,
+            request=httpx.Request("GET", self.url),
+            headers=self.headers,
+        )
+        try:
+            raw.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            self.status_error = error
+            raise
 
     async def aiter_bytes(self, chunk_size: int = 65536) -> Any:
         self.body_reads += 1
@@ -380,8 +393,9 @@ class TestDriveFetcherHtmlClassification:
 
     async def test_401_maps_to_auth_error(self, tmp_path: Path) -> None:
         response = _FakeResponse(status_code=401, headers={"content-type": "text/html"})
-        with pytest.raises(AuthError, match="authentication expired"):
+        with pytest.raises(AuthError, match="authentication expired") as captured:
             await _fetcher(response, temp_dir=tmp_path)(DriveRef(_FILE_ID))
+        assert captured.value.__cause__ is response.status_error
 
     async def test_403_html_falls_through_to_pointer_not_auth(self, tmp_path: Path) -> None:
         # A 403 permission page must NOT be declared auth-expired; it goes to the

@@ -821,6 +821,38 @@ class AndroidUploadPipeline(LoopBoundPrimitive):
         title: str | None,
         import_drive_file: ImportDriveFile,
     ) -> Source:
+        """Run Drive staging without retaining this bearer-owning pipeline."""
+
+        pipeline = self
+        result: Source | None = None
+        failure: BaseException | None = None
+        try:
+            result = await pipeline._add_file_via_drive_staging_impl(
+                notebook_id,
+                canonical_path,
+                mime_type,
+                wait_timeout=wait_timeout,
+                title=title,
+                import_drive_file=import_drive_file,
+            )
+        except BaseException as error:
+            failure = sanitize_escaping_exception(error)
+        finally:
+            del self, pipeline
+        if failure is not None:
+            raise failure
+        return cast(Source, result)
+
+    async def _add_file_via_drive_staging_impl(
+        self,
+        notebook_id: str,
+        canonical_path: Path,
+        mime_type: str | None,
+        *,
+        wait_timeout: float,
+        title: str | None,
+        import_drive_file: ImportDriveFile,
+    ) -> Source:
         """Add a file the mobile upload frontend cannot parse, by way of Drive.
 
         Three consequences the caller should know:

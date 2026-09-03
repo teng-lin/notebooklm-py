@@ -36,7 +36,7 @@ class TestAutoRefreshIntegration:
             observed_epochs.append(expected_epoch)
             return client._auth
 
-        monkeypatch.setattr(client, "_refresh_auth_for_epoch", fake_refresh_auth)
+        monkeypatch.setattr(client, "_refresh_web_auth_for_epoch", fake_refresh_auth)
 
         async with client:
             expected_epoch = client._collaborators.auth_coord._active_epoch

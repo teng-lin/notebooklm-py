@@ -85,7 +85,7 @@ class AndroidSettingsAPI(SettingsAPI):
         response = await self._transport.unary(
             GET_OR_CREATE_ACCOUNT_METHOD,
             proto.GetOrCreateAccountRequest(request_context=_request_context()),
-            replay_safe=False,
+            replay_safe=True,
             response_type=proto.GetOrCreateAccountResponse,
             expected_epoch=expected_epoch,
         )
@@ -116,7 +116,7 @@ class AndroidSettingsAPI(SettingsAPI):
             account = await self._transport.unary(
                 MUTATE_ACCOUNT_METHOD,
                 request,
-                replay_safe=False,
+                replay_safe=True,
                 response_type=proto.Account,
                 expected_epoch=lease.epoch,
             )

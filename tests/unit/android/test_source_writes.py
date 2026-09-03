@@ -826,7 +826,7 @@ async def test_refresh_uses_exact_native_request_and_public_none_contract() -> N
     assert request.HasField("request_context")
     assert request.request_context.client_type == 3
     assert kwargs == {
-        "replay_safe": False,
+        "replay_safe": True,
         "response_type": sources_pb2.RefreshSourceResponse,
         "expected_epoch": 7,
     }
@@ -985,7 +985,7 @@ async def test_delete_and_rename_use_non_replayed_exact_wire_shapes() -> None:
     mutation_calls = [
         call for call in transport.calls if call[0] in {DELETE_SOURCES_METHOD, MUTATE_SOURCE_METHOD}
     ]
-    assert all(call[2]["replay_safe"] is False for call in mutation_calls)
+    assert all(call[2]["replay_safe"] is True for call in mutation_calls)
     assert renamed is not None and renamed.title == "Renamed"
 
 

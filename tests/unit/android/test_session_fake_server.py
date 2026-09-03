@@ -38,6 +38,7 @@ from notebooklm.exceptions import (
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT = f"/{_SERVICE}/GetProject"
+CREATE_PROJECT = f"/{_SERVICE}/CreateProject"
 GENERATE_STREAMED = f"/{_SERVICE}/GenerateFreeFormStreamed"
 # A string that must never leak from ``context.abort`` details into public text.
 ABORT_DETAILS = "server-secret-abort-details"
@@ -134,6 +135,11 @@ def _handler(service: _Service) -> Any:
         _SERVICE,
         {
             "GetProject": grpc.unary_unary_rpc_method_handler(
+                service.get_project,
+                request_deserializer=read_pb2.GetProjectRequest.FromString,
+                response_serializer=read_pb2.GetProjectResponse.SerializeToString,
+            ),
+            "CreateProject": grpc.unary_unary_rpc_method_handler(
                 service.get_project,
                 request_deserializer=read_pb2.GetProjectRequest.FromString,
                 response_serializer=read_pb2.GetProjectResponse.SerializeToString,
@@ -248,6 +254,16 @@ async def _get_project(harness: _Harness, *, replay_safe: bool = True, **kwargs:
         GET_PROJECT,
         _get_project_request(),
         replay_safe=replay_safe,
+        response_type=read_pb2.GetProjectResponse,
+        **kwargs,
+    )
+
+
+async def _mutate_project(harness: _Harness, **kwargs: Any) -> Any:
+    return await harness.session.unary(
+        CREATE_PROJECT,
+        _get_project_request(),
+        replay_safe=False,
         response_type=read_pb2.GetProjectResponse,
         **kwargs,
     )
@@ -397,14 +413,14 @@ async def test_unary_abort_status_maps_to_public_exception_without_details(
     service = _Service(on_unary=_abort_unary(code))
     async with _running_session(service) as harness:
         with pytest.raises(error_type) as captured:
-            await _get_project(harness, replay_safe=False)
+            await _mutate_project(harness)
 
     error = captured.value
     assert type(error) is error_type
     assert ABORT_DETAILS not in str(error)
     assert ABORT_DETAILS not in repr(error)
     assert error.__cause__ is None and error.__context__ is None
-    assert error.method_id == GET_PROJECT
+    assert error.method_id == CREATE_PROJECT
     if isinstance(error, RPCTimeoutError):
         assert error.timeout_seconds == 1.0
     else:
@@ -490,7 +506,7 @@ async def test_mutation_never_retries_unauthenticated() -> None:
     service = _Service(on_unary=_abort_unary(grpc.StatusCode.UNAUTHENTICATED))
     async with _running_session(service) as harness:
         with pytest.raises(AuthError):
-            await _get_project(harness, replay_safe=False)
+            await _mutate_project(harness)
 
     assert service.unary_calls == 1
     assert harness.bearer.invalidated == [1]

@@ -14,9 +14,11 @@ from __future__ import annotations
 
 __all__ = [
     "AUTH_ERROR_PATTERNS",
+    "MAX_RETRY_AFTER_SECONDS",
     "_resolve_keepalive_interval",
     "is_auth_error",
     "map_google_http_status",
+    "parse_retry_after",
     "resolve_sleep",
 ]
 
@@ -68,7 +70,7 @@ _LEGACY_AUTH_RPC_MESSAGES = frozenset(
         "authentication required. run 'notebooklm login' to re-authenticate.",
     }
 )
-_MAX_GOOGLE_RETRY_AFTER_SECONDS = 300
+MAX_RETRY_AFTER_SECONDS = 300
 
 
 def _resolve_keepalive_interval(keepalive: float | None, min_interval: float) -> float | None:
@@ -114,6 +116,7 @@ def map_google_http_status(
     *,
     filename: str,
     chain: bool,
+    cause: Exception | None = None,
 ) -> None:
     """Map Google HTTP auth, throttle, and server statuses consistently.
 
@@ -128,12 +131,8 @@ def map_google_http_status(
     if status != 401 and status != 429 and status < 500:
         return
 
-    cause: Exception | None = None
-    if chain:
-        try:
-            response.raise_for_status()
-        except Exception as error:
-            cause = error
+    if chain and cause is None:
+        raise ValueError("chain=True requires the original caught HTTP exception")
 
     if status == 401:
         public_error: Exception = AuthError(
@@ -142,7 +141,7 @@ def map_google_http_status(
         )
     elif status == 429:
         raw_retry_after = getattr(response, "headers", {}).get("retry-after")
-        retry_after = _parse_google_retry_after(raw_retry_after)
+        retry_after = parse_retry_after(raw_retry_after)
         message = f"Google throttled the download/request while {filename}; retry after a delay."
         public_error = RateLimitError(message, retry_after=retry_after)
     else:
@@ -156,7 +155,7 @@ def map_google_http_status(
     raise public_error from None
 
 
-def _parse_google_retry_after(value: object) -> int | None:
+def parse_retry_after(value: object) -> int | None:
     """Parse Google's integer, fractional, or HTTP-date Retry-After value."""
 
     if not isinstance(value, str) or not value.strip():
@@ -165,7 +164,7 @@ def _parse_google_retry_after(value: object) -> int | None:
     try:
         seconds = float(value)
         if math.isfinite(seconds):
-            return min(_MAX_GOOGLE_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
+            return min(MAX_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
     except ValueError:
         pass
     try:
@@ -173,7 +172,7 @@ def _parse_google_retry_after(value: object) -> int | None:
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         delta = (parsed - datetime.now(timezone.utc)).total_seconds()
-        return min(_MAX_GOOGLE_RETRY_AFTER_SECONDS, max(0, int(delta)))
+        return min(MAX_RETRY_AFTER_SECONDS, max(0, int(delta)))
     except (OverflowError, TypeError, ValueError):
         return None
 

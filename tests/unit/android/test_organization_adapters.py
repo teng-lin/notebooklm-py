@@ -186,11 +186,13 @@ class FakeOrganizationServer:
             MUTATE_LABEL_METHOD: organization_pb2.MutateLabelResponse,
             DELETE_LABELS_METHOD: organization_pb2.DeleteLabelsResponse,
         }
-        assert kwargs == {
-            "replay_safe": False,
-            "response_type": response_types[method],
-            "expected_epoch": self.epoch,
-        }
+        assert kwargs["response_type"] is response_types[method]
+        assert kwargs["expected_epoch"] == self.epoch
+        variant = kwargs.get("operation_variant")
+        assert kwargs["replay_safe"] is (
+            method == MUTATE_LABEL_METHOD
+            and (variant is None or str(variant).startswith("remove_"))
+        )
         assert request.HasField("request_context")
         if method == CREATE_LABEL_METHOD:
             if request.HasField("auto_create"):

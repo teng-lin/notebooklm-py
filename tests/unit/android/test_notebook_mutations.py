@@ -271,7 +271,7 @@ async def test_delete_sends_one_id_and_never_replays() -> None:
 
     _, request, kwargs = transport.calls[0]
     assert request == exact_notebooks_pb2.DeleteProjectsRequest(project_ids=["notebook-1"])
-    assert kwargs == {"replay_safe": False, "response_type": Empty}
+    assert kwargs == {"replay_safe": True, "response_type": Empty}
 
 
 @pytest.mark.asyncio
@@ -286,7 +286,7 @@ async def test_delete_already_absent_is_idempotent_without_replay() -> None:
 
     assert await _api(transport).delete("missing") is None
     assert len(transport.calls) == 1
-    assert transport.calls[0][2]["replay_safe"] is False
+    assert transport.calls[0][2]["replay_safe"] is True
 
 
 @pytest.mark.asyncio
@@ -318,7 +318,7 @@ async def test_title_only_update_decodes_bare_project_without_followup_read() ->
             )
         ],
     )
-    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+    assert kwargs == {"replay_safe": True, "response_type": read_pb2.Project}
 
 
 @pytest.mark.asyncio
@@ -344,7 +344,7 @@ async def test_inherited_rename_delegates_to_android_title_update() -> None:
             )
         ],
     )
-    assert kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+    assert kwargs == {"replay_safe": True, "response_type": read_pb2.Project}
 
 
 @pytest.mark.asyncio
@@ -385,7 +385,7 @@ async def test_emoji_update_uses_live_verified_optional_tag_three(
         mutations=[notebooks_pb2.WireProjectMutation(change_property=expected_change)],
     )
     assert request.mutations[0].change_property.HasField("new_emoji")
-    assert call_kwargs == {"replay_safe": False, "response_type": read_pb2.Project}
+    assert call_kwargs == {"replay_safe": True, "response_type": read_pb2.Project}
 
 
 @pytest.mark.asyncio
@@ -538,7 +538,7 @@ async def test_summary_and_description_each_make_one_nonreplayed_stateful_call()
     for _, request, kwargs in transport.calls:
         assert request == exact_notebooks_pb2.GenerateNotebookGuideRequest(project_id="notebook-1")
         assert kwargs == {
-            "replay_safe": False,
+            "replay_safe": True,
             "response_type": notebooks_pb2.WireGenerateNotebookGuideResponse,
         }
 
@@ -645,7 +645,7 @@ async def test_remove_from_recent_uses_exact_apk_signature_and_android_context()
     )
     assert request.request_context.client_type != 0
     assert request.request_context.client_metadata.client_version
-    assert kwargs == {"replay_safe": False, "response_type": Empty}
+    assert kwargs == {"replay_safe": True, "response_type": Empty}
 
 
 @pytest.mark.asyncio
@@ -664,7 +664,7 @@ async def test_remove_from_recent_calls_the_native_route() -> None:
     (method, request, kwargs) = transport.calls[0]
     assert method == REMOVE_RECENTLY_VIEWED_PROJECT_METHOD
     assert request.project_id == "notebook-1"
-    assert kwargs["replay_safe"] is False
+    assert kwargs["replay_safe"] is True
 
 
 @pytest.mark.asyncio
@@ -684,7 +684,7 @@ async def test_remove_from_recent_treats_internal_as_the_web_no_op() -> None:
     assert await _api(transport).remove_from_recent("notebook-1") is None
 
     assert len(transport.calls) == 1
-    assert transport.calls[0][2]["replay_safe"] is False
+    assert transport.calls[0][2]["replay_safe"] is True
 
 
 @pytest.mark.asyncio

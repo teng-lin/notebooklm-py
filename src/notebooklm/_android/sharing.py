@@ -188,7 +188,7 @@ class AndroidSharingAPI(SharingAPI):
                     lambda: self._transport.unary(
                         MUTATE_PROJECT_METHOD,
                         request,
-                        replay_safe=False,
+                        replay_safe=True,
                         response_type=_read_proto().Project,
                         expected_epoch=lease.epoch,
                     )

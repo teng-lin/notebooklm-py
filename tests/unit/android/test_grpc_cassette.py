@@ -625,6 +625,7 @@ async def test_server_stream_record_and_replay_pins_shape_and_frame_type(tmp_pat
         async for item in record_session.stream(
             METHOD,
             read_pb2.GetProjectRequest(project_id=RAW_PROJECT_ID),
+            replay_safe=True,
             response_type=read_pb2.GetProjectResponse,
         )
     ]
@@ -646,6 +647,7 @@ async def test_server_stream_record_and_replay_pins_shape_and_frame_type(tmp_pat
         async for item in replay_session.stream(
             METHOD,
             read_pb2.GetProjectRequest(project_id=SAFE_PROJECT_ID),
+            replay_safe=True,
             response_type=read_pb2.GetProjectResponse,
         )
     ]

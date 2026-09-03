@@ -96,11 +96,18 @@ def _google_response(status: int, *, retry_after: str | None = None) -> httpx.Re
 
 def test_google_http_status_maps_web_auth_and_chains_http_cause() -> None:
     response = _google_response(401)
+    with pytest.raises(httpx.HTTPStatusError) as original:
+        response.raise_for_status()
 
     with pytest.raises(AuthError, match="notebooklm login") as excinfo:
-        map_google_http_status(response, filename="downloading report.pdf", chain=True)
+        map_google_http_status(
+            response,
+            filename="downloading report.pdf",
+            chain=True,
+            cause=original.value,
+        )
 
-    assert isinstance(excinfo.value.__cause__, httpx.HTTPStatusError)
+    assert excinfo.value.__cause__ is original.value
 
 
 def test_google_http_status_maps_android_auth_without_secret_bearing_cause() -> None:

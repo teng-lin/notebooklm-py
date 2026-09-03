@@ -352,6 +352,7 @@ class DriveStagingTransfer:
             del self
 
         if failure is not None:
+            del transfer
             raise sanitize_escaping_exception(failure) from None
         assert file_id is not None
 
