@@ -314,7 +314,8 @@ async def test_unary_stream_failure_does_not_retain_wire_secrets_in_traceback_lo
     frame = caught.value.__traceback__
     inspected_raw_frame = False
     while frame is not None:
-        if frame.tb_frame.f_code.co_filename.endswith("/notebooklm/raw.py"):
+        frame_path = Path(frame.tb_frame.f_code.co_filename)
+        if frame_path.name == "raw.py" and frame_path.parent.name == "notebooklm":
             inspected_raw_frame = True
             local_values = tuple(frame.tb_frame.f_locals.values())
             assert metadata_secret not in repr(local_values)

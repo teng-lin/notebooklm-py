@@ -273,6 +273,8 @@ class ArtifactsAPI(ABC):
     ) -> GenerationStatus:
         """Generate a Video Overview."""
         language = self._resolve_language(language)
+        if style_prompt is not None and not isinstance(style_prompt, str):
+            raise ValidationError("style_prompt must be a string or None")
         normalized_style_prompt = style_prompt.strip() if style_prompt is not None else None
         if video_format == VideoFormat.CINEMATIC and normalized_style_prompt:
             raise ValidationError("style_prompt is not supported for cinematic videos")
