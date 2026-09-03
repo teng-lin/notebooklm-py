@@ -10,6 +10,7 @@ guards that reject an unattributable response.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -117,9 +118,15 @@ def test_unresolved_batch_error_previews_three_urls_and_reports_the_total() -> N
 
     error = _unresolved_batch_error(urls, "boom.", RuntimeError("cause"))
 
-    assert "… (5 total)" in str(error)
-    assert "https://u2.example.com" in str(error)
-    assert "https://u3.example.com" not in str(error)
+    # Assert on the previewed SET, not substring containment. Besides being the
+    # stronger check (it pins exactly which three are shown, and their order),
+    # ``"<url>" in <text>`` trips CodeQL's incomplete-url-substring-sanitization
+    # rule, which cannot tell a message assertion from a URL security check.
+    rendered = str(error)
+    previewed = re.findall(r"'(https://[^']+)'", rendered)
+
+    assert previewed == urls[:3]
+    assert "… (5 total)" in rendered
     assert getattr(error, "unconfirmed", False) is True
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import traceback
 from pathlib import Path
 from typing import Any
@@ -1358,7 +1359,11 @@ async def test_a_second_close_cancellation_does_not_displace_the_first() -> None
     with pytest.raises(asyncio.CancelledError) as raised:
         await close_task
 
-    assert raised.value.args == ("first",)
+    # Python 3.10 drops the optional cancellation message when a cancel is
+    # caught and republished through shielded cleanup; 3.11+ preserves it.
+    # Neither may REPLACE it with the later message, which is the contract.
+    assert raised.value.args == (("first",) if sys.version_info >= (3, 11) else ())
+    assert raised.value.args != ("second",)
     assert client.closed == 1
 
 

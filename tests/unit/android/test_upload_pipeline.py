@@ -14,6 +14,7 @@ import builtins
 import inspect
 import io
 import os
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -953,6 +954,20 @@ async def test_a_transport_error_becomes_an_opaque_start_failure() -> None:
     assert outcome == upload_module._HTTPFailure("transport")
 
 
+#: On Python 3.10/3.11 ``asyncio.wait_for`` wraps its awaitable in a Task, so a
+#: ``BaseException`` raised inside it is re-raised into the EVENT LOOP by
+#: ``Task.__step`` rather than reaching the awaiting frame — which tears down the
+#: xdist worker instead of being caught by ``pytest.raises``. Python 3.12 removed
+#: that wrapping. The production guard is version-independent; only this way of
+#: observing it is not, so these two cases are pinned on 3.12+.
+_NEEDS_UNWRAPPED_WAIT_FOR = pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="asyncio.wait_for wraps in a Task before 3.12, so a BaseException "
+    "escapes to the event loop instead of the awaiting frame",
+)
+
+
+@_NEEDS_UNWRAPPED_WAIT_FOR
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "interrupt",
@@ -1061,8 +1076,11 @@ async def test_a_finalize_response_without_aclose_is_left_alone() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "interrupt",
-    [KeyboardInterrupt, SystemExit, asyncio.CancelledError],
-    ids=["keyboard-interrupt", "system-exit", "cancellation"],
+    [
+        pytest.param(KeyboardInterrupt, id="keyboard-interrupt", marks=_NEEDS_UNWRAPPED_WAIT_FOR),
+        pytest.param(SystemExit, id="system-exit", marks=_NEEDS_UNWRAPPED_WAIT_FOR),
+        pytest.param(asyncio.CancelledError, id="cancellation"),
+    ],
 )
 async def test_a_progress_callback_may_still_abort_the_whole_upload(
     interrupt: type[BaseException],
