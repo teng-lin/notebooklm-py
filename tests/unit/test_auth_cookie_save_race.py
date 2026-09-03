@@ -462,15 +462,16 @@ class TestRefreshAuthOnBoundSessionIsNoOp:
         # The client is opened with a stale in-memory copy: *PSIDTS=STALE,
         # mirroring the §3.4.1 timeline where another process has already
         # rotated to ONDISK on disk.
-        auth = AuthTokens(
-            cookies={
-                ("__Secure-1PSIDTS", ".google.com"): "STALE",
-                ("SID", ".google.com"): "sid-bound",
-            },
-            csrf_token="csrf-old",
-            session_id="sid-old",
-            storage_path=storage,
-        )
+        with pytest.warns(DeprecationWarning, match="synchronous storage/recovery I/O"):
+            auth = AuthTokens(
+                cookies={
+                    ("__Secure-1PSIDTS", ".google.com"): "STALE",
+                    ("SID", ".google.com"): "sid-bound",
+                },
+                csrf_token="csrf-old",
+                session_id="sid-old",
+                storage_path=storage,
+            )
 
         # Bound-session homepage GET: no Set-Cookie header, so no rotation.
         httpx_mock.add_response(
@@ -582,15 +583,16 @@ class TestSnapshotRefreshedAfterSave:
             ],
         )
 
-        auth = AuthTokens(
-            cookies={
-                ("__Secure-1PSIDTS", ".google.com"): "OPEN",
-                ("SID", ".google.com"): "sid",
-            },
-            csrf_token="csrf",
-            session_id="sid",
-            storage_path=storage,
-        )
+        with pytest.warns(DeprecationWarning, match="synchronous storage/recovery I/O"):
+            auth = AuthTokens(
+                cookies={
+                    ("__Secure-1PSIDTS", ".google.com"): "OPEN",
+                    ("SID", ".google.com"): "sid",
+                },
+                csrf_token="csrf",
+                session_id="sid",
+                storage_path=storage,
+            )
 
         # Two homepage responses — refresh_auth is called twice.
         for _ in range(2):
@@ -1021,7 +1023,8 @@ class TestRefreshCmdReplacementBaseline:
             content=b'"SNlM0e":"csrf" "FdrFJe":"sid"',
         )
 
-        auth = await auth_mod.AuthTokens.from_storage(path=storage)
+        with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+            auth = await auth_mod.AuthTokens.from_storage(path=storage)
 
         assert auth.cookie_snapshot is not None
         snapshot = auth.cookie_snapshot
@@ -1179,15 +1182,16 @@ class TestBaselineNotAdvancedOnSaveFailure:
             ],
         )
 
-        auth = AuthTokens(
-            cookies={
-                ("SID", ".google.com"): "sid",
-                ("__Secure-1PSIDTS", ".google.com"): "psidts",
-            },
-            csrf_token="csrf",
-            session_id="sid",
-            storage_path=storage,
-        )
+        with pytest.warns(DeprecationWarning, match="synchronous storage/recovery I/O"):
+            auth = AuthTokens(
+                cookies={
+                    ("SID", ".google.com"): "sid",
+                    ("__Secure-1PSIDTS", ".google.com"): "psidts",
+                },
+                csrf_token="csrf",
+                session_id="sid",
+                storage_path=storage,
+            )
 
         # Make every save_cookies_to_storage call return False (silent failure).
         # Phase 2 PR 4: inject the cookie-saver seam directly via
@@ -1242,7 +1246,8 @@ class TestBaselineNotAdvancedOnSaveFailure:
         )
         monkeypatch.setattr(ProfileStore, "merge_cookie_observation", failed_merge)
 
-        auth = await auth_mod.AuthTokens.from_storage(path=storage)
+        with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+            auth = await auth_mod.AuthTokens.from_storage(path=storage)
         core = build_client_shell_for_tests(auth)
         await core.__aenter__()
         try:
@@ -1400,15 +1405,16 @@ class TestCASRejectReturnsFalse:
                 _stored_cookie("__Secure-1PSIDTS", "psidts0"),
             ],
         )
-        auth = AuthTokens(
-            cookies={
-                ("SID", ".google.com"): "sid0",
-                ("__Secure-1PSIDTS", ".google.com"): "psidts0",
-            },
-            csrf_token="t",
-            session_id="s",
-            storage_path=storage,
-        )
+        with pytest.warns(DeprecationWarning, match="synchronous storage/recovery I/O"):
+            auth = AuthTokens(
+                cookies={
+                    ("SID", ".google.com"): "sid0",
+                    ("__Secure-1PSIDTS", ".google.com"): "psidts0",
+                },
+                csrf_token="t",
+                session_id="s",
+                storage_path=storage,
+            )
         core = build_client_shell_for_tests(auth)
         await core.__aenter__()
 
@@ -1597,7 +1603,8 @@ class TestCASVariantAware:
         # Pre-client save runs through the real save_cookies_to_storage; the
         # CAS rejection must keep SIBLING on disk and the variant-aware
         # baseline-preservation must end up with the bare-host snapshot.
-        auth = await auth_mod.AuthTokens.from_storage(path=storage)
+        with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+            auth = await auth_mod.AuthTokens.from_storage(path=storage)
 
         assert _cookie_value(storage, "OSID", "accounts.google.com") == "SIBLING", (
             "First save must CAS-reject via the variant-aware lookup so the "
@@ -1716,15 +1723,16 @@ class TestSaveCookiesSeesLatestBaselineUnderContention:
             ],
         )
 
-        auth = AuthTokens(
-            cookies={
-                ("SID", ".google.com"): "sid",
-                ("__Secure-1PSIDTS", ".google.com"): "v0",
-            },
-            csrf_token="t",
-            session_id="s",
-            storage_path=storage,
-        )
+        with pytest.warns(DeprecationWarning, match="synchronous storage/recovery I/O"):
+            auth = AuthTokens(
+                cookies={
+                    ("SID", ".google.com"): "sid",
+                    ("__Secure-1PSIDTS", ".google.com"): "v0",
+                },
+                csrf_token="t",
+                session_id="s",
+                storage_path=storage,
+            )
 
         captured_calls: list[tuple[str, dict | None]] = []
         real_save = auth_mod.save_cookies_to_storage

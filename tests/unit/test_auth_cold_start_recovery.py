@@ -43,6 +43,8 @@ from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import MissingDependencyError
 
 _PERSONAL_HOST_PATTERN = "|".join(re.escape(host) for host in sorted(PERSONAL_APP_HOSTS))
+
+pytestmark = pytest.mark.filterwarnings("ignore:AuthTokens\\.from_storage:DeprecationWarning")
 _PERSONAL_HOMEPAGE_PATTERN = re.compile(rf"^https://(?:{_PERSONAL_HOST_PATTERN})/(?:\?.*)?$")
 
 
@@ -192,8 +194,8 @@ async def test_auth_tokens_cold_start_remints_from_sibling_master_token(
     mint.assert_awaited_once()
     assert tokens.csrf_token == "csrf-fresh"
     assert tokens.session_id == "session-fresh"
-    assert tokens.flat_cookies["SID"] == "fresh"
-    assert tokens.flat_cookies["RECOVERY_DELTA"] == "kept"
+    assert tokens.cookie_jar.get("SID") == "fresh"
+    assert tokens.cookie_jar.get("RECOVERY_DELTA") == "kept"
     assert tokens.account_email == "agent@example.com"
     stored_names = {
         cookie["name"] for cookie in json.loads(storage.read_text(encoding="utf-8"))["cookies"]
@@ -228,7 +230,7 @@ async def test_client_factory_reaches_cold_master_token_recovery(
         client = await NotebookLMClient.from_storage(path=str(storage))._build()
 
     assert client.auth.csrf_token == "csrf"
-    assert client.auth.flat_cookies["SID"] == "fresh"
+    assert client.auth.cookie_jar.get("SID") == "fresh"
 
 
 @pytest.mark.asyncio
@@ -257,7 +259,7 @@ async def test_auth_tokens_cold_start_headless_recovery_is_explicit(
 
     tokens = await AuthTokens.from_storage(storage, allow_headless=True)
 
-    assert tokens.flat_cookies["SID"] == "browser-fresh"
+    assert tokens.cookie_jar.get("SID") == "browser-fresh"
     assert tokens.csrf_token == "csrf-browser"
 
 
@@ -294,7 +296,7 @@ async def test_auth_tokens_cold_start_headless_recovery_honors_env(
         install_headless_rung(previous)
 
     assert drives == 1
-    assert tokens.flat_cookies["SID"] == "browser-fresh"
+    assert tokens.cookie_jar.get("SID") == "browser-fresh"
     assert tokens.csrf_token == "csrf-browser"
 
 
@@ -358,7 +360,7 @@ async def test_concurrent_cold_start_coalesces_one_master_token_mint(
         )
 
     assert mint_count == 1
-    assert first.flat_cookies["SID"] == second.flat_cookies["SID"] == "fresh"
+    assert first.cookie_jar.get("SID") == second.cookie_jar.get("SID") == "fresh"
 
 
 @pytest.mark.asyncio
@@ -406,7 +408,7 @@ async def test_cancelled_waiter_does_not_cancel_shared_master_token_mint(
         tokens = await follower
 
     assert mint_count == 1
-    assert tokens.flat_cookies["SID"] == "fresh"
+    assert tokens.cookie_jar.get("SID") == "fresh"
 
 
 @pytest.mark.asyncio
@@ -694,7 +696,7 @@ async def test_headless_retry_that_still_redirects_falls_through_to_l4(
 
     assert drives == 1
     assert mints == 1
-    assert tokens.flat_cookies["SID"] == "master-fresh"
+    assert tokens.cookie_jar.get("SID") == "master-fresh"
 
 
 @pytest.mark.asyncio

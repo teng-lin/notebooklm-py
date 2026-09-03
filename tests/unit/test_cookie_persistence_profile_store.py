@@ -45,6 +45,7 @@ def _auth(path: Path | None) -> AuthTokens:
         csrf_token="csrf",
         session_id="session",
         storage_path=path,
+        cookie_jar=_live(),
     )
 
 

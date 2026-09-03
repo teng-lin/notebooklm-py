@@ -65,11 +65,16 @@ def _write_recovered_storage(path: Path) -> None:
 
 
 def _auth(storage_path: Path | None = None) -> AuthTokens:
+    jar = httpx.Cookies()
+    jar.set("SID", "dead_sid", domain=".google.com", path="/")
+    jar.set("__Secure-1PSIDTS", "dead", domain=".google.com", path="/")
+    jar.set("HSID", "h", domain=".google.com", path="/")
     return AuthTokens(
         cookies={"SID": "dead_sid", "__Secure-1PSIDTS": "dead", "HSID": "h"},
         csrf_token="old_csrf",
         session_id="old_session",
         storage_path=storage_path,
+        cookie_jar=jar,
     )
 
 

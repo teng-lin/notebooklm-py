@@ -48,11 +48,15 @@ def _storage_auth(tmp_path) -> tuple[AuthTokens, "object"]:
             }
         )
     )
+    jar = httpx.Cookies()
+    jar.set("SID", "initial_sid", domain=".google.com", path="/")
+    jar.set("__Secure-1PSIDTS", "test_1psidts", domain=".google.com", path="/")
     auth = AuthTokens(
         cookies={"SID": "initial_sid", "__Secure-1PSIDTS": "test_1psidts"},
         csrf_token="test_csrf",
         session_id="test_session",
         storage_path=storage_path,
+        cookie_jar=jar,
     )
     return auth, storage_path
 
@@ -470,11 +474,15 @@ class TestSaveCookiesUnification:
         within the same process."""
         from notebooklm.client import NotebookLMClient
 
+        jar = httpx.Cookies()
+        jar.set("SID", "x", domain=".google.com", path="/")
+        jar.set("__Secure-1PSIDTS", "test_1psidts", domain=".google.com", path="/")
         auth = AuthTokens(
             cookies={"SID": "x", "__Secure-1PSIDTS": "test_1psidts"},
             csrf_token="t",
             session_id="s",
             storage_path=tmp_path / "storage_state.json",
+            cookie_jar=jar,
         )
         (tmp_path / "storage_state.json").write_text('{"cookies": []}')
 
@@ -540,11 +548,16 @@ class TestSaveCookiesUnification:
                 }
             )
         )
+        jar = httpx.Cookies()
+        jar.set("SID", "x", domain=".google.com", path="/")
+        jar.set("__Secure-1PSIDTS", "test_1psidts", domain=".google.com", path="/")
+        jar.set("HSID", "y", domain=".google.com", path="/")
         auth = AuthTokens(
             cookies={"SID": "x", "__Secure-1PSIDTS": "test_1psidts", "HSID": "y"},
             csrf_token="old_csrf",
             session_id="old_session",
             storage_path=storage_path,
+            cookie_jar=jar,
         )
 
         # NotebookLM homepage with new tokens (refresh_auth scrapes these)

@@ -46,11 +46,15 @@ def _make_core(tmp_path: Path, *, cookie_saver=None) -> NotebookLMClient:
     the legacy ``notebooklm._core.save_cookies_to_storage`` monkeypatch.
     """
     storage_path = tmp_path / "storage_state.json"
+    jar = httpx.Cookies()
+    jar.set("SID", "x", domain=".google.com", path="/")
+    jar.set("__Secure-1PSIDTS", "y", domain=".google.com", path="/")
     auth = AuthTokens(
         cookies={"SID": "x", "__Secure-1PSIDTS": "y"},
         csrf_token="t",
         session_id="s",
         storage_path=storage_path,
+        cookie_jar=jar,
     )
     storage_path.write_text('{"cookies": []}')
     return build_client_shell_for_tests(auth, cookie_saver=cookie_saver)

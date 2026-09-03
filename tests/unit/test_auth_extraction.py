@@ -37,11 +37,12 @@ class TestAuthTokens:
             ("__Secure-1PSIDTS", ".google.com", "/"): "test_1psidts",
             ("HSID", ".google.com", "/"): "def",
         }
-        assert tokens.flat_cookies == {
-            "SID": "abc",
-            "__Secure-1PSIDTS": "test_1psidts",
-            "HSID": "def",
-        }
+        with pytest.warns(DeprecationWarning, match="flat_cookies"):
+            assert tokens.flat_cookies == {
+                "SID": "abc",
+                "__Secure-1PSIDTS": "test_1psidts",
+                "HSID": "def",
+            }
         assert tokens.csrf_token == "csrf123"
         assert tokens.session_id == "sess456"
 

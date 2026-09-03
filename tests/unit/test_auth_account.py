@@ -296,7 +296,8 @@ class TestAuthuserPlumbing:
             content=b'"SNlM0e":"csrf_env" "FdrFJe":"sess_env"',
         )
 
-        auth = await AuthTokens.from_storage()
+        with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+            auth = await AuthTokens.from_storage()
 
         assert auth.storage_path is None
         assert auth.authuser == 2

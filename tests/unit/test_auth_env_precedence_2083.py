@@ -163,7 +163,10 @@ async def test_auth_tokens_from_storage_keeps_env_auth_under_a_profile(
         raise RuntimeError("stop after resolution")
 
     monkeypatch.setattr(tokens.SessionSeedLoader, "load", stop_after_resolution)
-    with pytest.raises(RuntimeError, match="stop after resolution"):
+    with (
+        pytest.raises(RuntimeError, match="stop after resolution"),
+        pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"),
+    ):
         await tokens.AuthTokens.from_storage(profile="work")
 
     assert isinstance(seen.get("source"), tokens.InlineAuthSource)

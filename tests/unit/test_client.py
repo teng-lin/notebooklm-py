@@ -99,6 +99,9 @@ class TestClientContextManager:
 class TestFromStorage:
     @staticmethod
     def _auth(storage_path):
+        jar = httpx.Cookies()
+        jar.set("SID", "test_sid", domain=".google.com", path="/")
+        jar.set("__Secure-1PSIDTS", "test_1psidts", domain=".google.com", path="/")
         return AuthTokens(
             cookies={
                 ("SID", ".google.com", "/"): "test_sid",
@@ -107,6 +110,7 @@ class TestFromStorage:
             csrf_token="test_csrf",
             session_id="test_session",
             storage_path=storage_path,
+            cookie_jar=jar,
         )
 
     class CapturingClient(NotebookLMClient):

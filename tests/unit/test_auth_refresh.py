@@ -855,9 +855,11 @@ class TestFetchTokensAutoRefresh:
         html = '"SNlM0e":"csrf_ok" "FdrFJe":"sess_ok"'
         httpx_mock.add_response(url="https://notebook.google.com/", content=html.encode())
 
-        tokens = await AuthTokens.from_storage(profile="work")
+        with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+            tokens = await AuthTokens.from_storage(profile="work")
 
-        assert tokens.flat_cookies["SID"] == "fresh"
+        with pytest.warns(DeprecationWarning, match="flat_cookies"):
+            assert tokens.flat_cookies["SID"] == "fresh"
         assert tokens.csrf_token == "csrf_ok"
         assert tokens.session_id == "sess_ok"
         assert "_NOTEBOOKLM_REFRESH_ATTEMPTED" not in os.environ

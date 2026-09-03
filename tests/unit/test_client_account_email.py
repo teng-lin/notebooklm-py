@@ -38,7 +38,11 @@ def _make_auth(
     storage_path=None,
     cookie_jar: httpx.Cookies | None = None,
 ) -> AuthTokens:
-    """Build minimal AuthTokens with the identity fields under test."""
+    if cookie_jar is None:
+        cookie_jar = httpx.Cookies()
+        cookie_jar.set("SID", "x", domain=".google.com", path="/")
+        cookie_jar.set("__Secure-1PSIDTS", "y", domain=".google.com", path="/")
+        cookie_jar.set("HSID", "z", domain=".google.com", path="/")
     return AuthTokens(
         cookies={"SID": "x", "__Secure-1PSIDTS": "y", "HSID": "z"},
         csrf_token="csrf",

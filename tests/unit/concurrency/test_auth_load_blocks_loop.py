@@ -137,8 +137,8 @@ async def test_from_storage_save_does_not_block_event_loop(
     heartbeat_task = asyncio.create_task(_heartbeat())
     try:
         # Give the heartbeat one tick to start, then drive the save path.
-        await asyncio.sleep(0)
-        tokens = await AuthTokens.from_storage(storage_file)
+        with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+            tokens = await AuthTokens.from_storage(storage_file)
     finally:
         stop.set()
         await heartbeat_task
@@ -274,8 +274,8 @@ async def test_from_storage_load_recovery_does_not_block_event_loop(
 
     heartbeat_task = asyncio.create_task(_heartbeat())
     try:
-        await asyncio.sleep(0)
-        tokens = await AuthTokens.from_storage(storage_file)
+        with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+            tokens = await AuthTokens.from_storage(storage_file)
     finally:
         stop.set()
         await heartbeat_task

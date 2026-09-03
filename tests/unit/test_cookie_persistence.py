@@ -26,13 +26,16 @@ from notebooklm.auth import (
 )
 from tests._helpers.client_factory import build_client_shell_for_tests
 
+_UNSET = object()
 
-def _auth_tokens(storage_path: Path | None = None) -> AuthTokens:
+
+def _auth_tokens(storage_path: Path | None = None, *, cookie_jar: Any = _UNSET) -> AuthTokens:
     return AuthTokens(
         cookies={"SID": "sid", "__Secure-1PSIDTS": "psidts"},
         csrf_token="csrf",
         session_id="session",
         storage_path=storage_path,
+        cookie_jar=_jar() if cookie_jar is _UNSET else cookie_jar,
     )
 
 
@@ -97,7 +100,7 @@ async def test_direct_client_preserves_auth_baseline_across_pre_open_sibling_wri
         [_stored_cookie("SID", "old"), _stored_cookie("__Secure-1PSIDTS", "psidts")],
     )
     with pytest.warns(DeprecationWarning):
-        auth = _auth_tokens(path)
+        auth = _auth_tokens(path, cookie_jar=None)
     auth.cookie_snapshot = snapshot_cookie_jar(_jar(sid="old"))
     core = build_client_shell_for_tests(auth)
     persistence = core._web_runtime.cookie_persistence

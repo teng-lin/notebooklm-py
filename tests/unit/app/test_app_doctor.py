@@ -176,7 +176,8 @@ def test_reports_legacy_layout_without_migration(home: Path) -> None:
         _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
     )
 
-    report = _run()
+    with pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"):
+        report = _run()
 
     assert report.checks["migration"] == {"status": "fail", "detail": "legacy layout detected"}
     assert report.checks["profile_dir"]["status"] == "fail"
@@ -350,7 +351,8 @@ def test_fix_no_longer_greenlights_a_wide_mode_dir_after_migration(home: Path) -
     # A legacy file alongside profiles/ puts migration into its "warn" state.
     _write_json(home / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
 
-    report = _run(fix=True, platform="linux")
+    with pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"):
+        report = _run(fix=True, platform="linux")
 
     assert f"Fixed permissions on {profile_dir}" in report.fixes_applied
     assert report.checks["profile_dir"] == {"status": "pass", "detail": str(profile_dir)}
@@ -413,7 +415,8 @@ def test_warn_only_layout_has_no_failures(home: Path) -> None:
     _write_json(profile_dir / "storage_state.json", _storage([{"name": "SID", "value": "x"}]))
     _write_json(home / "context.json", {"current_notebook": "nb_123"})
 
-    report = _run()
+    with pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"):
+        report = _run()
 
     assert report.checks["migration"]["status"] == "warn"
     assert not report.has_failures
@@ -554,7 +557,8 @@ def test_fix_migrates_legacy_layout(home: Path) -> None:
     _write_json(home / "storage_state.json", storage_payload)
     _write_json(home / "context.json", context_payload)
 
-    report = _run(fix=True)
+    with pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"):
+        report = _run(fix=True)
 
     profile_dir = home / "profiles" / "default"
     assert not (home / "storage_state.json").exists()

@@ -40,6 +40,7 @@ def _auth(storage_path: Path) -> AuthTokens:
         csrf_token="csrf",
         session_id="session",
         storage_path=storage_path,
+        cookie_jar=_tagged_jar("initial"),
     )
 
 

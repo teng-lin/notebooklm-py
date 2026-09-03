@@ -33,6 +33,10 @@ TEST_EPOCH = 1
 
 
 def _auth(**overrides: object) -> AuthTokens:
+    jar = httpx.Cookies()
+    jar.set("SID", "test_sid", domain=".google.com", path="/")
+    jar.set("__Secure-1PSIDTS", "test_1psidts", domain=".google.com", path="/")
+    jar.set("HSID", "test_hsid", domain=".google.com", path="/")
     values = {
         "cookies": {
             "SID": "test_sid",
@@ -41,6 +45,7 @@ def _auth(**overrides: object) -> AuthTokens:
         },
         "csrf_token": "old_csrf",
         "session_id": "old_session",
+        "cookie_jar": jar,
     }
     values.update(overrides)
     return AuthTokens(**values)

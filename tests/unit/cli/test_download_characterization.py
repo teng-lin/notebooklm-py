@@ -180,27 +180,20 @@ def _parse_json_stdout(result: Any) -> dict:
 @pytest.fixture
 def mock_auth():
     """Stub auth loading + token fetching so the CLI workflow runs end-to-end."""
-    from notebooklm.auth import AuthTokens
-
-    auth = AuthTokens(
-        cookies={
-            "SID": "test",
-            "HSID": "test",
-            "SSID": "test",
-            "APISID": "test",
-            "SAPISID": "test",
-        },
-        csrf_token="csrf",
-        session_id="session",
-    )
+    cookies = {
+        "SID": "test",
+        "HSID": "test",
+        "SSID": "test",
+        "APISID": "test",
+        "SAPISID": "test",
+    }
 
     with (
-        patch.object(helpers_module, "load_auth_from_storage") as mock_load,
+        patch.object(helpers_module, "load_auth_from_storage", return_value=cookies) as mock_load,
         patch.object(
             auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch,
     ):
-        mock_load.return_value = auth.flat_cookies
         mock_fetch.return_value = ("csrf", "session")
         yield mock_load
 

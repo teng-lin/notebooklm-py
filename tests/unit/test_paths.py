@@ -267,7 +267,10 @@ class TestGetStoragePath:
         home.mkdir()
         (home / "storage_state.json").write_text("{}")
 
-        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
             result = get_storage_path()
             assert result == home / "storage_state.json"
 
@@ -499,7 +502,10 @@ class TestGetMasterTokenPath:
         home.mkdir()
         (home / "storage_state.json").write_text("{}")  # triggers the legacy fallback
 
-        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
             storage = get_storage_path()  # resolves to the legacy home-root file
             assert storage == home / "storage_state.json"
             result = get_master_token_path()
@@ -527,7 +533,10 @@ class TestGetContextPath:
         home.mkdir()
         (home / "context.json").write_text("{}")
 
-        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
             result = get_context_path()
             assert result == home / "context.json"
 
@@ -629,7 +638,10 @@ class TestGetBrowserProfileDir:
         home = tmp_path / "home"
         (home / "browser_profile").mkdir(parents=True)
 
-        with patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True):
+        with (
+            patch.dict(os.environ, {"NOTEBOOKLM_HOME": str(home)}, clear=True),
+            pytest.warns(DeprecationWarning, match="pre-profiles home-root layout"),
+        ):
             result = get_browser_profile_dir()
             assert result == home / "browser_profile"
 

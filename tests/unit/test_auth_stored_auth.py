@@ -271,7 +271,8 @@ async def test_inherited_from_storage_constructs_runtime_subclass_exactly_once(m
 
     monkeypatch.setattr(_auth_tokens, "_load_stored_auth", fake_load)
 
-    result = await DerivedAuth.from_storage()
+    with pytest.warns(DeprecationWarning, match="AuthTokens.from_storage"):
+        result = await DerivedAuth.from_storage()
 
     assert type(result) is DerivedAuth
     assert calls == 1

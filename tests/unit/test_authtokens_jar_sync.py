@@ -85,7 +85,8 @@ def test_flat_cookies_reflects_the_refresh() -> None:
     """The legacy flat read is derived from ``cookies``, so it inherits the fix."""
     auth = _auth(SID="old")
     auth.replace_cookie_jar(_jar(SID="new"))
-    assert auth.flat_cookies["SID"] == "new"
+    with pytest.warns(DeprecationWarning, match="flat_cookies"):
+        assert auth.flat_cookies["SID"] == "new"
 
 
 @pytest.mark.parametrize("value", ["", "x" * 200])

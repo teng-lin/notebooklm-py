@@ -1116,7 +1116,8 @@ class TestGetAuthTokens:
             ("SID", ".google.com", "/"): "test_sid",
             ("__Secure-1PSIDTS", ".google.com", "/"): "test_1psidts",
         }
-        assert auth.flat_cookies == {"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"}
+        with pytest.warns(DeprecationWarning, match="flat_cookies"):
+            assert auth.flat_cookies == {"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"}
         assert auth.csrf_token == "csrf_token"
         assert auth.session_id == "session_id"
 
