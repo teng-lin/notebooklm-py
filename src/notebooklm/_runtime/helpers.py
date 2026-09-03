@@ -162,6 +162,10 @@ def parse_retry_after(value: object) -> int | None:
         return None
     value = value.strip()
     try:
+        return min(MAX_RETRY_AFTER_SECONDS, max(0, int(value)))
+    except ValueError:
+        pass
+    try:
         seconds = float(value)
         if math.isfinite(seconds):
             return min(MAX_RETRY_AFTER_SECONDS, max(0, math.ceil(seconds)))
