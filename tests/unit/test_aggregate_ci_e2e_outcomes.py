@@ -29,31 +29,31 @@ def test_every_lane_accepts_all_success(lane: str) -> None:
 
 
 def test_successful_retry_recovers_only_primary_failure() -> None:
-    states = successful("nightly-web-windows")
+    states = successful("nightly-web-ubuntu")
     states["primary"] = "failure"
-    assert aggregate_module.aggregate(lane="nightly-web-windows", mode="full", states=states) == []
+    assert aggregate_module.aggregate(lane="nightly-web-ubuntu", mode="full", states=states) == []
 
 
 def test_missing_lastfailed_keeps_primary_red() -> None:
-    states = successful("nightly-web-windows")
+    states = successful("nightly-web-ubuntu")
     states.update(primary="failure", lastfailed="failure", retry="not_applicable")
-    failures = aggregate_module.aggregate(lane="nightly-web-windows", mode="full", states=states)
+    failures = aggregate_module.aggregate(lane="nightly-web-ubuntu", mode="full", states=states)
     assert "phase_failed:primary" in failures
     assert "retry_unavailable:lastfailed" in failures
 
 
 @pytest.mark.parametrize("phase", ["auth", "purge", "cleanup"])
 def test_root_required_phase_cannot_be_skipped(phase: str) -> None:
-    states = successful("nightly-web-windows")
+    states = successful("nightly-web-ubuntu")
     states.update(lastfailed="not_applicable", retry="not_applicable")
     states[phase] = "not_applicable"
     assert f"required_phase_skipped:{phase}" in aggregate_module.aggregate(
-        lane="nightly-web-windows", mode="full", states=states
+        lane="nightly-web-ubuntu", mode="full", states=states
     )
 
 
 def test_failed_setup_requires_consumers_to_be_not_applicable() -> None:
-    states = successful("nightly-web-windows")
+    states = successful("nightly-web-ubuntu")
     states["provision"] = "failure"
     states["preflight"] = "not_applicable"
     states["journal_policy"] = "not_applicable"
@@ -63,7 +63,7 @@ def test_failed_setup_requires_consumers_to_be_not_applicable() -> None:
     states["smoke"] = "not_applicable"
     states["coverage"] = "not_applicable"
     states["verifier"] = "not_applicable"
-    failures = aggregate_module.aggregate(lane="nightly-web-windows", mode="full", states=states)
+    failures = aggregate_module.aggregate(lane="nightly-web-ubuntu", mode="full", states=states)
     assert failures == ["phase_failed:provision"]
 
 
@@ -87,28 +87,28 @@ def test_wrong_mode_or_phase_set_is_configuration_error() -> None:
 
 
 def test_filtered_web_lane_allows_only_explicit_nonproducer_verifier_skip() -> None:
-    states = successful("nightly-web-windows")
+    states = successful("nightly-web-ubuntu")
     states.update(lastfailed="not_applicable", retry="not_applicable", verifier="not_applicable")
     assert (
         aggregate_module.aggregate(
-            lane="nightly-web-windows", mode="full", states=states, producer=False
+            lane="nightly-web-ubuntu", mode="full", states=states, producer=False
         )
         == []
     )
     assert "required_phase_skipped:verifier" in aggregate_module.aggregate(
-        lane="nightly-web-windows", mode="full", states=states, producer=True
+        lane="nightly-web-ubuntu", mode="full", states=states, producer=True
     )
 
 
 def test_verifier_remains_required_after_retry_failure() -> None:
-    states = successful("nightly-web-windows")
+    states = successful("nightly-web-ubuntu")
     states.update(primary="failure", lastfailed="success", retry="failure")
     assert "required_phase_skipped:verifier" in aggregate_module.aggregate(
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         states={**states, "verifier": "not_applicable"},
     )
-    failures = aggregate_module.aggregate(lane="nightly-web-windows", mode="full", states=states)
+    failures = aggregate_module.aggregate(lane="nightly-web-ubuntu", mode="full", states=states)
     assert "phase_failed:retry" in failures
     assert "dependency_violation:verifier" not in failures
 

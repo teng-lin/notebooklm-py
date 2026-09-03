@@ -92,16 +92,22 @@ jobs:
         rotation_day=$(date -u +%F)
         python scripts/select_ci_account.py \
           --enabled-slots "$ENABLED_SLOTS" \
-          --lane nightly-web-windows \
+          --lane nightly-web-ubuntu \
           --rotation-day "$rotation_day" \
           --manual-base "$MANUAL_BASE" \
           --github-output "$RUNNER_TEMP/web-slot.out"
         python scripts/select_ci_account.py \
           --enabled-slots "$ENABLED_SLOTS" \
-          --lane nightly-android-windows \
+          --lane nightly-android-macos \
           --rotation-day "$rotation_day" \
           --manual-base "$MANUAL_BASE" \
           --github-output "$RUNNER_TEMP/android-slot.out"
+        python scripts/select_ci_account.py \
+          --enabled-slots "$ENABLED_SLOTS" \
+          --lane nightly-readonly-windows \
+          --rotation-day "$rotation_day" \
+          --manual-base "$MANUAL_BASE" \
+          --github-output "$RUNNER_TEMP/readonly-slot.out"
         python - <<'PY'
         import json
         import os
@@ -113,14 +119,22 @@ jobs:
 
         web = read_outputs("web-slot.out")
         android = read_outputs("android-slot.out")
+        readonly = read_outputs("readonly-slot.out")
         matrix = {
             "include": [
-                {"os": "windows-latest", "backend": "web", "lane": "nightly-web-windows",
+                {"os": "ubuntu-latest", "backend": "web", "lane": "nightly-web-ubuntu",
+                 "mode": "full", "selection": "not variants",
                  "account_slot": web["account_slot"],
                  "master_token_secret_name": web["master_token_secret_name"]},
-                {"os": "windows-latest", "backend": "android",
-                 "lane": "nightly-android-windows", "account_slot": android["account_slot"],
+                {"os": "macos-latest", "backend": "android",
+                 "lane": "nightly-android-macos", "mode": "full",
+                 "selection": "not variants", "account_slot": android["account_slot"],
                  "master_token_secret_name": android["master_token_secret_name"]},
+                {"os": "windows-latest", "backend": "web",
+                 "lane": "nightly-readonly-windows", "mode": "readonly",
+                 "selection": "readonly and not variants",
+                 "account_slot": readonly["account_slot"],
+                 "master_token_secret_name": readonly["master_token_secret_name"]},
             ]
         }
         value = json.dumps(matrix, separators=(",", ":"))
@@ -133,6 +147,7 @@ jobs:
         ENABLED_SLOTS: ${{ vars.NOTEBOOKLM_CI_ACCOUNT_SLOTS }}
         WEB_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[0].account_slot }}
         ANDROID_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[1].account_slot }}
+        READONLY_SLOT: ${{ fromJSON(steps.plan.outputs.matrix).include[2].account_slot }}
         SELECTION_MODE: ${{ (inputs.account_rotation_base == '' || inputs.account_rotation_base == 'auto') && 'automatic' || 'manual base' }}
         ROTATION_DAY: ${{ steps.plan.outputs.rotation_day }}
       shell: bash
@@ -142,10 +157,11 @@ jobs:
         {
           echo "### Live account plan"
           echo "Rotation day: $ROTATION_DAY; enabled slot count: $enabled_count"
-          echo "| Lane | Backend | Slot | Selection |"
-          echo "| --- | --- | --- | --- |"
-          echo "| nightly-web-windows | web | $WEB_SLOT | $SELECTION_MODE |"
-          echo "| nightly-android-windows | android | $ANDROID_SLOT | $SELECTION_MODE |"
+          echo "| Lane | Runner | Backend | Suite | Slot | Selection |"
+          echo "| --- | --- | --- | --- | --- | --- |"
+          echo "| nightly-web-ubuntu | Ubuntu | web | full | $WEB_SLOT | $SELECTION_MODE |"
+          echo "| nightly-android-macos | macOS | android | full | $ANDROID_SLOT | $SELECTION_MODE |"
+          echo "| nightly-readonly-windows | Windows | web | readonly | $READONLY_SLOT | $SELECTION_MODE |"
         } >> "$GITHUB_STEP_SUMMARY"
 
   compatibility:
@@ -277,8 +293,7 @@ jobs:
       cancel-in-progress: false
     defaults:
       run:
-        # The live matrix is Windows-only and its lifecycle/retry scripts use
-        # Bash syntax. Pinning the shell avoids PowerShell parsing them.
+        # Lifecycle and retry scripts use Bash syntax on every runner.
         shell: bash
     env:
       NOTEBOOKLM_BACKEND: ${{ matrix.backend }}
@@ -363,6 +378,7 @@ jobs:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
         SUMMARY_BACKEND: ${{ matrix.backend }}
         SUMMARY_LANE: ${{ matrix.lane }}
+        SUMMARY_MODE: ${{ matrix.mode }}
         SUMMARY_SLOT: ${{ matrix.account_slot }}
       run: |
         uv run python scripts/manage_ci_e2e_notebooks.py provision \
@@ -370,7 +386,7 @@ jobs:
           --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
           --contract tests/fixtures/e2e_template_contract.json \
           --prepared-contract tests/fixtures/e2e_prepared_role_contract.json \
-          --mode full --lane "${{ matrix.lane }}" \
+          --mode "${{ matrix.mode }}" --lane "${{ matrix.lane }}" \
           --account-slot "${{ matrix.account_slot }}" \
           --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
         python - <<'PY'
@@ -385,15 +401,18 @@ jobs:
             "backend": os.environ["SUMMARY_BACKEND"],
             "lane": os.environ["SUMMARY_LANE"],
             "account_slot": os.environ["SUMMARY_SLOT"],
-            "mode": "full",
+            "mode": os.environ["SUMMARY_MODE"],
         }
         if any(manifest.get(key) != value for key, value in expected.items()):
             raise RuntimeError("manifest summary metadata mismatch")
         copies = manifest.get("copies")
-        if not isinstance(copies, list) or len(copies) != 3:
+        roles = {
+            "full": ("reference", "generation", "multi-source"),
+            "readonly": ("reference",),
+        }[expected["mode"]]
+        if not isinstance(copies, list) or len(copies) != len(roles):
             raise RuntimeError("manifest summary role count mismatch")
         rows = {row.get("role"): row for row in copies if isinstance(row, dict)}
-        roles = ("reference", "generation", "multi-source")
         if set(rows) != set(roles):
             raise RuntimeError("manifest summary roles mismatch")
         if any(row.get("status") not in {"confirmed", "reconciled"} for row in rows.values()):
@@ -408,10 +427,11 @@ jobs:
             "### Prepared managed roles",
             f"- Lane/backend/slot: {expected['lane']} / {expected['backend']} / {expected['account_slot']}",
             f"- Template contract: version=1 fingerprint={fingerprint}",
-            f"- Copy outcomes: total=3 confirmed={outcomes['confirmed']} reconciled={outcomes['reconciled']}",
+            f"- Copy outcomes: total={len(roles)} confirmed={outcomes['confirmed']} reconciled={outcomes['reconciled']}",
             "- Reference checks: seeded_notes=1 history=passed",
-            "- Clean-role residuals: generation=0 multi-source=0",
         ]
+        if expected["mode"] == "full":
+            lines.append("- Clean-role residuals: generation=0 multi-source=0")
         with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
             stream.write("\n".join(lines) + "\n")
         PY
@@ -444,7 +464,7 @@ jobs:
       env:
         TEST_FILTER: ${{ inputs.test_filter }}
       run: |
-        if [ "${{ matrix.backend }}" = web ] && [ -z "$TEST_FILTER" ]; then
+        if [ "${{ matrix.lane }}" = nightly-web-ubuntu ] && [ -z "$TEST_FILTER" ]; then
           umask 077
           : > "$CI_E2E_JOURNAL"
           echo "NOTEBOOKLM_E2E_GENERATION_JOURNAL_MODE=required" >> "$GITHUB_ENV"
@@ -463,9 +483,11 @@ jobs:
         python -c 'from pathlib import Path; import os; Path(os.environ["E2E_COVERAGE_FLOOR_SENTINEL"]).unlink(missing_ok=True)'
         if [ -n "$TEST_FILTER" ]; then
           unset E2E_ENFORCE_COVERAGE_FLOOR
-          uv run pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
+          uv run pytest -m "${{ matrix.selection }}" -s -v --tb=short \
+            --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
         else
-          uv run pytest tests/e2e -m "not variants" -s -v --tb=short --reruns 1 --reruns-delay 30
+          uv run pytest tests/e2e -m "${{ matrix.selection }}" -s -v --tb=short \
+            --reruns 1 --reruns-delay 30
         fi
     - name: Validate lastfailed cache
       id: lastfailed
@@ -495,7 +517,7 @@ jobs:
         uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short
     - name: curl_cffi transport smoke
       id: smoke
-      if: steps.preflight.outcome == 'success' && matrix.backend == 'web'
+      if: steps.preflight.outcome == 'success' && matrix.lane == 'nightly-web-ubuntu'
       continue-on-error: true
       env:
         NOTEBOOKLM_TRANSPORT: curl_cffi
@@ -536,7 +558,7 @@ jobs:
     - name: Compute verifier budget
       id: verifier_budget
       if: >-
-        always() && matrix.backend == 'web' && inputs.test_filter == '' &&
+        always() && matrix.lane == 'nightly-web-ubuntu' && inputs.test_filter == '' &&
         steps.journal_policy.outcome == 'success' &&
         (steps.primary.outcome == 'success' ||
          (steps.primary.outcome == 'failure' &&
@@ -550,7 +572,7 @@ jobs:
     - name: Verify generation operation journal
       id: verifier
       if: >-
-        always() && matrix.backend == 'web' && inputs.test_filter == '' &&
+        always() && matrix.lane == 'nightly-web-ubuntu' && inputs.test_filter == '' &&
         steps.journal_policy.outcome == 'success' &&
         (steps.primary.outcome == 'success' ||
          (steps.primary.outcome == 'failure' &&
@@ -597,12 +619,12 @@ jobs:
         journal.with_name(f".{journal.name}.lock").unlink(missing_ok=True)
         Path(os.environ["CI_E2E_MANIFEST"]).unlink(missing_ok=True)
         PY
-    - name: Aggregate Web lane outcomes
+    - name: Aggregate full Web lane outcomes
       id: aggregate_web
-      if: always() && matrix.backend == 'web'
+      if: always() && matrix.lane == 'nightly-web-ubuntu'
       run: >-
         python scripts/aggregate_ci_e2e_outcomes.py
-        --lane nightly-web-windows --mode full
+        --lane nightly-web-ubuntu --mode full
         --producer ${{ inputs.test_filter == '' && 'required' || 'off' }}
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
         --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
@@ -619,10 +641,27 @@ jobs:
         --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}
     - name: Aggregate Android lane outcomes
       id: aggregate_android
-      if: always() && matrix.backend == 'android'
+      if: always() && matrix.lane == 'nightly-android-macos'
       run: >-
         python scripts/aggregate_ci_e2e_outcomes.py
-        --lane nightly-android-windows --mode full --producer required
+        --lane nightly-android-macos --mode full --producer required
+        --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
+        --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase provision=${{ steps.sweep.outcome == 'success' && (steps.provision.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase preflight=${{ steps.provision.outcome == 'success' && (steps.preflight.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase journal_policy=${{ steps.preflight.outcome == 'success' && (steps.journal_policy.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase primary=${{ steps.journal_policy.outcome == 'success' && (steps.primary.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase lastfailed=${{ steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase retry=${{ steps.primary.outcome == 'failure' && steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase coverage=${{ (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'failure' || (steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) && (steps.coverage.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
+        --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}
+    - name: Aggregate read-only Windows lane outcomes
+      id: aggregate_readonly
+      if: always() && matrix.lane == 'nightly-readonly-windows'
+      run: >-
+        python scripts/aggregate_ci_e2e_outcomes.py
+        --lane nightly-readonly-windows --mode readonly --producer required
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
         --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase provision=${{ steps.sweep.outcome == 'success' && (steps.provision.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}

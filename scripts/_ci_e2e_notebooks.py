@@ -24,21 +24,56 @@ RESERVED_PREFIX = "notebooklm-py-ci/"
 ACCOUNT_SLOTS = ("A", "B", "C")
 BACKENDS = ("web", "android")
 LANES = (
-    "nightly-web-windows",
-    "nightly-android-windows",
+    "nightly-web-ubuntu",
+    "nightly-android-macos",
+    "nightly-readonly-windows",
     "rpc-health-web",
     "rpc-health-android",
     "verify-package",
 )
+_LEGACY_TITLE_LANES = ("nightly-web-windows", "nightly-android-windows")
+LANE_BACKENDS: Mapping[str, str] = {
+    "nightly-web-ubuntu": "web",
+    "nightly-android-macos": "android",
+    "nightly-readonly-windows": "web",
+    "rpc-health-web": "web",
+    "rpc-health-android": "android",
+    "verify-package": "web",
+}
 ROLES = ("reference", "generation", "multi-source", "rpc")
 MODE_ROLES: Mapping[str, tuple[str, ...]] = {
     "full": ("reference", "generation", "multi-source"),
+    "readonly": ("reference",),
     "rpc": ("rpc",),
 }
+_LANE_MODES: Mapping[str, tuple[str, ...]] = {
+    "nightly-web-ubuntu": ("full",),
+    "nightly-android-macos": ("full",),
+    "nightly-readonly-windows": ("readonly",),
+    "rpc-health-web": ("rpc",),
+    "rpc-health-android": (),
+    "verify-package": ("full",),
+}
 _ROLE_LANES: Mapping[str, tuple[str, ...]] = {
-    "reference": ("nightly-web-windows", "nightly-android-windows", "verify-package"),
-    "generation": ("nightly-web-windows", "nightly-android-windows", "verify-package"),
-    "multi-source": ("nightly-web-windows", "nightly-android-windows", "verify-package"),
+    "reference": (
+        "nightly-web-ubuntu",
+        "nightly-android-macos",
+        "nightly-readonly-windows",
+        *_LEGACY_TITLE_LANES,
+        "verify-package",
+    ),
+    "generation": (
+        "nightly-web-ubuntu",
+        "nightly-android-macos",
+        *_LEGACY_TITLE_LANES,
+        "verify-package",
+    ),
+    "multi-source": (
+        "nightly-web-ubuntu",
+        "nightly-android-macos",
+        *_LEGACY_TITLE_LANES,
+        "verify-package",
+    ),
     "rpc": ("rpc-health-web",),
 }
 COPY_STATUSES = ("intent", "confirmed", "reconciled", "deleted", "delete_failed")
@@ -56,7 +91,7 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,256}$")
 _TITLE_RE = re.compile(
     rf"^{re.escape(RESERVED_PREFIX)}"
     rf"(?P<run_id>[0-9]+)/(?P<run_attempt>[0-9]+)/"
-    rf"(?P<lane>{'|'.join(re.escape(value) for value in LANES)})/"
+    rf"(?P<lane>{'|'.join(re.escape(value) for value in (*LANES, *_LEGACY_TITLE_LANES))})/"
     rf"(?P<role>{'|'.join(re.escape(value) for value in ROLES)})/"
     r"(?P<nonce>[0-9a-f]{32})$"
 )
@@ -184,12 +219,16 @@ def validate_manifest(
         raise ManifestError("manifest lane is not allowlisted")
     if mode not in MODE_ROLES:
         raise ManifestError("manifest mode is not allowlisted")
+    if mode not in _LANE_MODES[lane]:
+        raise ManifestError("manifest lane and mode are not a normative combination")
     if any(lane not in _ROLE_LANES[role] for role in MODE_ROLES[mode]):
         raise ManifestError("manifest lane and mode are not a normative combination")
     if account_slot not in ACCOUNT_SLOTS:
         raise ManifestError("manifest account slot is not allowlisted")
     if backend not in BACKENDS:
         raise ManifestError("manifest backend is not allowlisted")
+    if LANE_BACKENDS[lane] != backend:
+        raise ManifestError("manifest lane and backend are not a normative combination")
     if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
         raise ManifestError("manifest template fingerprint is malformed")
     if expected:
@@ -440,6 +479,13 @@ def github_env_lines(mode: str, copies: Sequence[Mapping[str, Any]]) -> list[str
             f"NOTEBOOKLM_GENERATION_NOTEBOOK_ID={ids['generation']}",
             f"NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID={ids['multi-source']}",
             "NOTEBOOKLM_E2E_MANAGED_MODE=full",
+            "NOTEBOOKLM_E2E_REFERENCE_PREPARED=1",
+            "NOTEBOOKLM_E2E_MANAGED_COPIES=1",
+        ]
+    if mode == "readonly":
+        return [
+            f"NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID={ids['reference']}",
+            "NOTEBOOKLM_E2E_MANAGED_MODE=readonly",
             "NOTEBOOKLM_E2E_REFERENCE_PREPARED=1",
             "NOTEBOOKLM_E2E_MANAGED_COPIES=1",
         ]

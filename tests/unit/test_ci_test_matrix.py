@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -20,12 +21,31 @@ TESTPYPI_PUBLISH_WORKFLOW = (
 )
 SUPPORTED_OSES = ["ubuntu-latest", "macos-latest", "windows-latest"]
 SUPPORTED_PYTHONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+GENERATION_E2E = Path(__file__).resolve().parents[1] / "e2e" / "test_generation.py"
 
 
 def _step(job: dict[str, object], name: str) -> dict[str, object]:
     steps = job["steps"]
     assert isinstance(steps, list)
     return next(step for step in steps if isinstance(step, dict) and step.get("name") == name)
+
+
+def test_cinematic_video_is_opt_in_but_one_ordinary_video_remains_default() -> None:
+    tree = ast.parse(GENERATION_E2E.read_text(encoding="utf-8"))
+    classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+
+    cinematic = classes["TestCinematicVideoGeneration"]
+    assert "pytest.mark.variants" in {ast.unparse(node) for node in cinematic.decorator_list}
+
+    ordinary = classes["TestVideoGeneration"]
+    assert "pytest.mark.variants" not in {ast.unparse(node) for node in ordinary.decorator_list}
+    default = next(
+        node
+        for node in ordinary.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "test_generate_video_default"
+    )
+    assert "pytest.mark.variants" not in {ast.unparse(node) for node in default.decorator_list}
 
 
 def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
@@ -290,8 +310,8 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
     assert job["steps"].index(playwright_step) < job["steps"].index(floor_step)
 
 
-def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
-    """The account planner keeps exactly the two managed Windows lanes."""
+def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
+    """Full Web runs on Ubuntu, full Android on macOS, and read-only Web on Windows."""
     workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["e2e"]
     planner = workflow["jobs"]["plan-live-lanes"]
@@ -307,11 +327,17 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert job["timeout-minutes"] == 360
 
     planner_run = str(_step(planner, "Select live account slots")["run"])
-    assert "--lane nightly-web-windows" in planner_run
-    assert "--lane nightly-android-windows" in planner_run
-    assert planner_run.count('"os": "windows-latest"') == 2
-    assert '"backend": "web"' in planner_run
-    assert '"backend": "android"' in planner_run
+    assert "--lane nightly-web-ubuntu" in planner_run
+    assert "--lane nightly-android-macos" in planner_run
+    assert "--lane nightly-readonly-windows" in planner_run
+    assert planner_run.count('"os": "ubuntu-latest"') == 1
+    assert planner_run.count('"os": "macos-latest"') == 1
+    assert planner_run.count('"os": "windows-latest"') == 1
+    assert planner_run.count('"backend": "web"') == 2
+    assert planner_run.count('"backend": "android"') == 1
+    assert planner_run.count('"mode": "full"') == 2
+    assert planner_run.count('"mode": "readonly"') == 1
+    assert '"selection": "readonly and not variants"' in planner_run
 
     install = str(_step(job, "Install dependencies")["run"])
     assert "uv sync --frozen" in install
@@ -327,7 +353,7 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert provision["if"] == "steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'"
     provision_command = str(provision["run"])
     assert "manage_ci_e2e_notebooks.py provision" in provision_command
-    assert "--mode full" in provision_command
+    assert '--mode "${{ matrix.mode }}"' in provision_command
     assert "--github-env" in provision_command
 
     preflight = _step(job, "Backend preflight")
@@ -351,11 +377,10 @@ def test_nightly_e2e_runs_explicit_web_and_android_backends() -> None:
     assert "tests/e2e --last-failed --last-failed-no-failures=none" in retry_command
 
     primary_command = str(primary["run"])
-    assert 'tests/e2e -m "not variants"' in primary_command
-    assert "readonly and not variants" not in primary_command
+    assert '-m "${{ matrix.selection }}"' in primary_command
 
     curl_smoke = _step(job, "curl_cffi transport smoke")
-    assert "matrix.backend == 'web'" in str(curl_smoke["if"])
+    assert "matrix.lane == 'nightly-web-ubuntu'" in str(curl_smoke["if"])
 
     verifier = _step(job, "Verify generation operation journal")
     assert "--mode journal" in str(verifier["run"])

@@ -96,7 +96,7 @@ def test_failed_mint_is_auth_category_and_scrubs_child_output(tmp_path, capsys) 
     with pytest.raises(auth.AuthenticationError):
         auth.materialize(
             account_slot="C",
-            profile="ci-C-nightly-web-windows",
+            profile="ci-C-nightly-web-ubuntu",
             env=_env(tmp_path, token),
             run=run,
             sleep=lambda _: None,

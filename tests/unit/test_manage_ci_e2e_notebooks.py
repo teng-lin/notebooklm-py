@@ -411,10 +411,15 @@ async def _provision(
     mode: str = "full",
     mask: Any = None,
 ) -> dict[str, Any]:
+    lane = {
+        "full": "nightly-web-ubuntu",
+        "readonly": "nightly-readonly-windows",
+        "rpc": "rpc-health-web",
+    }[mode]
     return await manager.provision(
         run_id="100",
         run_attempt="2",
-        lane="rpc-health-web" if mode == "rpc" else "nightly-web-windows",
+        lane=lane,
         mode=mode,
         account_slot="A",
         backend="web",
@@ -425,7 +430,7 @@ async def _provision(
 
 
 def test_title_grammar_is_exact_and_normative() -> None:
-    title = build_title("10", "2", "nightly-web-windows", "reference", "a" * 32)
+    title = build_title("10", "2", "nightly-web-ubuntu", "reference", "a" * 32)
     parsed = parse_title(title)
     assert parsed is not None
     assert parsed.run_id == "10"
@@ -439,11 +444,27 @@ def test_title_grammar_is_exact_and_normative() -> None:
         assert parse_title(bad) is None
 
 
+@pytest.mark.parametrize("lane", ["nightly-web-windows", "nightly-android-windows"])
+def test_legacy_lane_titles_remain_sweepable_but_cannot_authorize_new_manifests(lane: str) -> None:
+    title = build_title("10", "2", lane, "reference", "a" * 32)
+    assert parse_title(title) is not None
+    with pytest.raises(ManifestError, match="lane is not allowlisted"):
+        new_manifest(
+            run_id="10",
+            run_attempt="2",
+            lane=lane,
+            mode="full",
+            account_slot="A",
+            backend="web",
+            template_fingerprint=FINGERPRINT,
+        )
+
+
 def test_manifest_validation_fails_closed_on_version_role_id_and_template() -> None:
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         account_slot="A",
         backend="web",
@@ -452,7 +473,7 @@ def test_manifest_validation_fails_closed_on_version_role_id_and_template() -> N
     manifest["copies"].append(
         new_copy_row(
             role="reference",
-            title=build_title("1", "1", "nightly-web-windows", "reference", "b" * 32),
+            title=build_title("1", "1", "nightly-web-ubuntu", "reference", "b" * 32),
         )
     )
     validate_manifest(manifest, template_id=TEMPLATE_ID)
@@ -469,11 +490,54 @@ def test_manifest_validation_fails_closed_on_version_role_id_and_template() -> N
             validate_manifest(bad, template_id=TEMPLATE_ID)
 
 
+@pytest.mark.parametrize(
+    ("lane", "mode"),
+    [
+        ("nightly-readonly-windows", "full"),
+        ("nightly-web-ubuntu", "readonly"),
+        ("nightly-android-macos", "readonly"),
+    ],
+)
+def test_manifest_rejects_non_normative_nightly_lane_modes(lane: str, mode: str) -> None:
+    with pytest.raises(ManifestError, match="normative combination"):
+        new_manifest(
+            run_id="1",
+            run_attempt="1",
+            lane=lane,
+            mode=mode,
+            account_slot="A",
+            backend="web",
+            template_fingerprint=FINGERPRINT,
+        )
+
+
+@pytest.mark.parametrize(
+    ("lane", "backend"),
+    [
+        ("nightly-web-ubuntu", "android"),
+        ("nightly-android-macos", "web"),
+        ("nightly-readonly-windows", "android"),
+    ],
+)
+def test_manifest_rejects_non_normative_nightly_lane_backends(lane: str, backend: str) -> None:
+    mode = "readonly" if lane == "nightly-readonly-windows" else "full"
+    with pytest.raises(ManifestError, match="lane and backend"):
+        new_manifest(
+            run_id="1",
+            run_attempt="1",
+            lane=lane,
+            mode=mode,
+            account_slot="A",
+            backend=backend,
+            template_fingerprint=FINGERPRINT,
+        )
+
+
 def test_manifest_rejects_duplicate_role_ids() -> None:
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         account_slot="A",
         backend="web",
@@ -482,7 +546,7 @@ def test_manifest_rejects_duplicate_role_ids() -> None:
     for role, nonce in (("reference", "1" * 32), ("generation", "2" * 32)):
         row = new_copy_row(
             role=role,
-            title=build_title("1", "1", "nightly-web-windows", role, nonce),
+            title=build_title("1", "1", "nightly-web-ubuntu", role, nonce),
         )
         row.update(status="confirmed", candidate_notebook_id="same-id", notebook_id="same-id")
         manifest["copies"].append(row)
@@ -497,7 +561,7 @@ def test_atomic_store_enforces_posix_modes_and_fsyncs_parent(tmp_path: Path) -> 
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         account_slot="A",
         backend="web",
@@ -519,7 +583,7 @@ def test_atomic_store_never_chmods_an_existing_caller_owned_parent(tmp_path: Pat
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         account_slot="A",
         backend="web",
@@ -536,7 +600,7 @@ def test_windows_store_rejects_escape_and_accepts_isolated_regular_file(tmp_path
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         account_slot="A",
         backend="web",
@@ -564,7 +628,7 @@ def test_posix_store_rejects_runner_escape_before_creating_parent(tmp_path: Path
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         account_slot="A",
         backend="web",
@@ -617,18 +681,40 @@ async def test_rpc_provision_creates_one_role_and_dual_fallback_binding(
     assert lines[-1] == "NOTEBOOKLM_E2E_MANAGED_MODE=rpc"
 
 
-@pytest.mark.parametrize("backend", ["web", "android"])
 @pytest.mark.asyncio
-async def test_full_mode_uses_three_distinct_roles_on_both_windows_backends(
+async def test_readonly_provision_creates_only_a_managed_reference_copy(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    manifest = await _provision(manager, tmp_path, mode="readonly")
+    assert [row["role"] for row in manifest["copies"]] == ["reference"]
+    assert len(client.notebooks.copy_calls) == 1
+    lines = (tmp_path / "github-env").read_text().splitlines()
+    assert lines == [
+        "NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=copy-1",
+        "NOTEBOOKLM_E2E_MANAGED_MODE=readonly",
+        "NOTEBOOKLM_E2E_REFERENCE_PREPARED=1",
+        "NOTEBOOKLM_E2E_MANAGED_COPIES=1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("backend", "lane"),
+    [("web", "nightly-web-ubuntu"), ("android", "nightly-android-macos")],
+)
+@pytest.mark.asyncio
+async def test_full_mode_uses_three_distinct_roles_on_designated_os_lanes(
     tmp_path: Path,
     contracts: tuple[dict[str, Any], dict[str, Any]],
     backend: str,
+    lane: str,
 ) -> None:
     manager, client, _store, _clock = _manager(tmp_path, contracts)
     manifest = await manager.provision(
         run_id="100",
         run_attempt="2",
-        lane=f"nightly-{backend}-windows",
+        lane=lane,
         mode="full",
         account_slot="B",
         backend=backend,
@@ -1239,6 +1325,11 @@ async def test_sweep_applies_every_owner_prefix_age_template_current_and_title_g
             old,
             SharePermission.OWNER,
         ),
+        "legacy-copy": (
+            build_title("8", "1", "nightly-web-windows", "reference", "8" * 32),
+            old,
+            SharePermission.OWNER,
+        ),
         "viewer-copy": (
             build_title("2", "1", "rpc-health-web", "rpc", "2" * 32),
             old,
@@ -1275,8 +1366,8 @@ async def test_sweep_applies_every_owner_prefix_age_template_current_and_title_g
         current_run_attempt="7",
         now=datetime.now(timezone.utc),
     )
-    assert result.eligible == result.deleted == 1
-    assert client.notebooks.delete_calls == ["eligible-copy"]
+    assert result.eligible == result.deleted == 2
+    assert client.notebooks.delete_calls == ["eligible-copy", "legacy-copy"]
 
 
 @pytest.mark.asyncio
@@ -1674,7 +1765,7 @@ def test_store_refuses_symlink_manifest(tmp_path: Path) -> None:
     manifest = new_manifest(
         run_id="1",
         run_attempt="1",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         mode="full",
         account_slot="A",
         backend="web",

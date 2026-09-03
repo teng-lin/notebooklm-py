@@ -70,6 +70,17 @@ def test_read_only_fixture_uses_managed_reference(monkeypatch) -> None:
     assert e2e.read_only_notebook_id.__wrapped__() == "reference-role"
 
 
+def test_managed_readonly_mode_requires_only_the_prepared_reference(monkeypatch) -> None:
+    install(
+        monkeypatch,
+        NOTEBOOKLM_E2E_MANAGED_MODE="readonly",
+        NOTEBOOKLM_GENERATION_NOTEBOOK_ID=None,
+        NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID=None,
+    )
+    assert e2e._managed_bindings() == {"NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID": "reference-role"}
+    assert e2e.read_only_notebook_id.__wrapped__() == "reference-role"
+
+
 def test_managed_mind_map_download_selects_only_completed_interactive_artifacts() -> None:
     processing = SimpleNamespace(is_interactive_mind_map=True, is_completed=False)
     completed = SimpleNamespace(is_interactive_mind_map=True, is_completed=True)

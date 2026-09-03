@@ -24,7 +24,7 @@ def test_selector_output_is_version_pinned_but_contains_only_safe_alias_fields()
     assert SCHEMA_VERSION == 1
     record = select_account(
         enabled_slots="A,B,C",
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         rotation_day="1970-01-01",
     )
     assert set(record) == {
@@ -66,8 +66,9 @@ def test_future_account_concurrency_contract_is_pinned_in_approved_spec() -> Non
     selector = (ROOT / "scripts" / "select_ci_account.py").read_text()
     aggregator = (ROOT / "scripts" / "aggregate_ci_e2e_outcomes.py").read_text()
     for lane in (
-        "nightly-web-windows",
-        "nightly-android-windows",
+        "nightly-web-ubuntu",
+        "nightly-android-macos",
+        "nightly-readonly-windows",
         "rpc-health-web",
         "rpc-health-android",
         "verify-package",

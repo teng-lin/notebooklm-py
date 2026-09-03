@@ -198,17 +198,18 @@ def test_nightly_full_copy_journal_and_cleanup_dag_is_explicit() -> None:
     assert _step(job, "purge")["if"] == "always()"
 
     provision = str(_step(job, "provision")["run"])
-    assert "--mode full" in provision
+    assert '--mode "${{ matrix.mode }}"' in provision
     assert "--github-env" in provision
     journal = str(_step(job, "journal_policy")["run"])
-    assert "matrix.backend" in journal
+    assert "matrix.lane" in journal
+    assert "nightly-web-ubuntu" in journal
     assert "NOTEBOOKLM_E2E_GENERATION_JOURNAL_MODE=required" in journal
     assert "NOTEBOOKLM_E2E_GENERATION_JOURNAL_MODE=off" in journal
     verifier = str(_step(job, "verifier")["run"])
     assert "--mode journal" in verifier
     assert "steps.verifier_budget.outputs.timeout" in verifier
     verifier_if = str(_step(job, "verifier")["if"])
-    assert "matrix.backend == 'web'" in verifier_if
+    assert "matrix.lane == 'nightly-web-ubuntu'" in verifier_if
     assert "inputs.test_filter == ''" in verifier_if
     assert "steps.journal_policy.outcome == 'success'" in verifier_if
     assert "steps.primary.outcome == 'success'" in verifier_if
@@ -266,7 +267,8 @@ def test_rpc_and_package_lanes_have_their_designated_lifecycles() -> None:
 def test_aggregate_producer_policy_matches_lane_contract() -> None:
     nightly = str(_load("nightly.yml"))
     assert "inputs.test_filter == '' && 'required' || 'off'" in nightly
-    assert "--lane nightly-android-windows --mode full --producer required" in nightly
+    assert "--lane nightly-android-macos --mode full --producer required" in nightly
+    assert "--lane nightly-readonly-windows --mode readonly --producer required" in nightly
 
     rpc = str(_load("rpc-health.yml"))
     assert "--lane rpc-health-web --mode rpc --producer required" in rpc
@@ -296,7 +298,8 @@ def test_safe_summaries_cover_selection_and_lifecycle_counts() -> None:
     nightly = _load("nightly.yml")["jobs"]["e2e"]
     nightly_provision = str(_step(nightly, "provision")["run"])
     assert "Template contract: version=1 fingerprint=" in nightly_provision
-    assert "Copy outcomes: total=3" in nightly_provision
+    assert '"readonly": ("reference",)' in nightly_provision
+    assert "Copy outcomes: total={len(roles)}" in nightly_provision
     assert "Clean-role residuals: generation=0 multi-source=0" in nightly_provision
     assert 'row["notebook_id"]' not in nightly_provision
     assert "Coverage floor:" in str(_step(nightly, "coverage")["run"])

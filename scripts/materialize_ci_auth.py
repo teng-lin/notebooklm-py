@@ -22,8 +22,9 @@ AUTH_ERROR = 3
 INFRASTRUCTURE_ERROR = 4
 _SLOTS = ("A", "B", "C")
 _LANES = (
-    "nightly-web-windows",
-    "nightly-android-windows",
+    "nightly-web-ubuntu",
+    "nightly-android-macos",
+    "nightly-readonly-windows",
     "rpc-health-web",
     "rpc-health-android",
     "verify-package",

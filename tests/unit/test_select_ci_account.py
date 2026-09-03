@@ -29,7 +29,7 @@ SPEC.loader.exec_module(selector)
 def test_rotation_across_pool_sizes(slots: str, day: str, expected: str) -> None:
     result = selector.select_account(
         enabled_slots=slots,
-        lane="nightly-web-windows",
+        lane="nightly-web-ubuntu",
         rotation_day=day,
     )
     assert result["account_slot"] == expected
@@ -38,8 +38,9 @@ def test_rotation_across_pool_sizes(slots: str, day: str, expected: str) -> None
 @pytest.mark.parametrize(
     ("lane", "expected"),
     [
-        ("nightly-web-windows", "A"),
-        ("nightly-android-windows", "B"),
+        ("nightly-web-ubuntu", "A"),
+        ("nightly-android-macos", "B"),
+        ("nightly-readonly-windows", "C"),
         ("rpc-health-web", "C"),
         ("rpc-health-android", "A"),
         ("verify-package", "A"),
@@ -54,7 +55,7 @@ def test_manual_base_preserves_lane_offset() -> None:
     assert (
         selector.select_account(
             enabled_slots="A,B,C",
-            lane="nightly-android-windows",
+            lane="nightly-android-macos",
             rotation_day="2026-09-02",
             manual_base="C",
         )["account_slot"]
@@ -93,7 +94,7 @@ def test_malformed_pool_is_rejected(slots: str | None) -> None:
     with pytest.raises(selector.ConfigurationError):
         selector.select_account(
             enabled_slots=slots,
-            lane="nightly-web-windows",
+            lane="nightly-web-ubuntu",
             rotation_day="2026-09-02",
         )
 

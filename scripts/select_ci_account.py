@@ -12,8 +12,9 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 ALLOWED_SLOTS = ("A", "B", "C")
 LANE_OFFSETS = {
-    "nightly-web-windows": 0,
-    "nightly-android-windows": 1,
+    "nightly-web-ubuntu": 0,
+    "nightly-android-macos": 1,
+    "nightly-readonly-windows": 2,
     "rpc-health-web": 2,
     "rpc-health-android": 3,
     "verify-package": 0,

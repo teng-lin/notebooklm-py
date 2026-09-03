@@ -24,7 +24,7 @@ _BASE_COPY_DEPENDENCIES = {
 }
 
 POLICIES = {
-    "nightly-web-windows": LanePolicy(
+    "nightly-web-ubuntu": LanePolicy(
         mode="full",
         applicable=frozenset(
             {
@@ -54,8 +54,34 @@ POLICIES = {
             "verifier": ("journal_policy", "primary", "retry"),
         },
     ),
-    "nightly-android-windows": LanePolicy(
+    "nightly-android-macos": LanePolicy(
         mode="full",
+        applicable=frozenset(
+            {
+                "auth",
+                "sweep",
+                "provision",
+                "preflight",
+                "journal_policy",
+                "primary",
+                "lastfailed",
+                "retry",
+                "coverage",
+                "cleanup",
+                "purge",
+            }
+        ),
+        dependencies={
+            **_BASE_COPY_DEPENDENCIES,
+            "journal_policy": ("preflight",),
+            "primary": ("journal_policy",),
+            "lastfailed": ("primary",),
+            "retry": ("primary", "lastfailed"),
+            "coverage": ("primary",),
+        },
+    ),
+    "nightly-readonly-windows": LanePolicy(
+        mode="readonly",
         applicable=frozenset(
             {
                 "auth",
@@ -238,7 +264,7 @@ def aggregate(*, lane: str, mode: str, states: dict[str, str], producer: bool = 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane", required=True, choices=tuple(POLICIES))
-    parser.add_argument("--mode", required=True, choices=("full", "rpc", "template"))
+    parser.add_argument("--mode", required=True, choices=("full", "readonly", "rpc", "template"))
     parser.add_argument("--phase", action="append", default=[], metavar="NAME=STATE")
     parser.add_argument(
         "--producer",
@@ -266,7 +292,7 @@ def main(argv: list[str] | None = None) -> int:
                 "false": "failure",
                 "not_applicable": "not_applicable",
             }[args.lastfailed_present]
-        if args.producer == "off" and args.lane != "nightly-web-windows":
+        if args.producer == "off" and args.lane != "nightly-web-ubuntu":
             raise OutcomeError("producer=off is allowlisted only for filtered Web nightly")
         errors = aggregate(
             lane=args.lane,

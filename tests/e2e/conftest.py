@@ -362,7 +362,7 @@ E2E_TEST_DIR = Path(__file__).resolve().parent
 _MANAGED_FLAG_ENV = "NOTEBOOKLM_E2E_MANAGED_COPIES"
 _MANAGED_MODE_ENV = "NOTEBOOKLM_E2E_MANAGED_MODE"
 _MANAGED_REFERENCE_READY_ENV = "NOTEBOOKLM_E2E_REFERENCE_PREPARED"
-_MANAGED_ROLE_ENVS = (
+_MANAGED_FULL_ROLE_ENVS = (
     "NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID",
     "NOTEBOOKLM_GENERATION_NOTEBOOK_ID",
     "NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID",
@@ -379,7 +379,7 @@ def _is_path_under(path: Path, directory: Path) -> bool:
 
 
 def _managed_bindings() -> dict[str, str] | None:
-    """Validate and return workflow-owned full-mode notebook bindings."""
+    """Validate and return workflow-owned notebook bindings for the selected mode."""
     activation = os.environ.get(_MANAGED_FLAG_ENV)
     if activation is None:
         if any(
@@ -390,14 +390,19 @@ def _managed_bindings() -> dict[str, str] | None:
         return None
     if activation != "1":
         raise ValueError(f"{_MANAGED_FLAG_ENV} must be exactly 1 when present")
-    if os.environ.get(_MANAGED_MODE_ENV) != "full":
-        raise ValueError(f"{_MANAGED_MODE_ENV} must be full for pytest E2E")
-    bindings = {name: os.environ.get(name, "") for name in _MANAGED_ROLE_ENVS}
+    mode = os.environ.get(_MANAGED_MODE_ENV)
+    if mode == "full":
+        role_envs = _MANAGED_FULL_ROLE_ENVS
+    elif mode == "readonly":
+        role_envs = ("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID",)
+    else:
+        raise ValueError(f"{_MANAGED_MODE_ENV} must be full or readonly for pytest E2E")
+    bindings = {name: os.environ.get(name, "") for name in role_envs}
     missing = [name for name, value in bindings.items() if not value]
     if missing:
-        raise ValueError("managed full mode is missing role bindings: " + ", ".join(missing))
+        raise ValueError(f"managed {mode} mode is missing role bindings: " + ", ".join(missing))
     if len(set(bindings.values())) != len(bindings):
-        raise ValueError("managed full-mode role bindings must be distinct")
+        raise ValueError(f"managed {mode}-mode role bindings must be distinct")
     if os.environ.get(_MANAGED_REFERENCE_READY_ENV) != "1":
         raise ValueError("managed reference preparation marker is missing")
     return bindings

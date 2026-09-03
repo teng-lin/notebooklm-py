@@ -552,7 +552,7 @@ lock sibling and the two invocations never contend.
    green run that never exercised the adapter surface. Add both extras
    (CI installs `--extra mcp --extra server --extra impersonate`) to run them.
 
-   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a reduced 7-cell compatibility matrix on every PR: Python 3.10–3.14 on Ubuntu, plus one Python 3.12 cell each on macOS and Windows. The full 15-cell matrix (all three OSes crossed with Python 3.10–3.14) runs nightly against one resolved commit before the dedicated coverage and two full Windows live-E2E jobs, one each for the Web and Android backends. Manual nightly dispatches also run the full compatibility matrix by default; untick `run_compatibility` for a quick E2E-only rerun.
+   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a reduced 7-cell compatibility matrix on every PR: Python 3.10–3.14 on Ubuntu, plus one Python 3.12 cell each on macOS and Windows. The full 15-cell matrix (all three OSes crossed with Python 3.10–3.14) runs nightly against one resolved commit before dedicated coverage and three live-E2E jobs: full Web on Ubuntu, full Android on macOS, and read-only Web on Windows. Manual nightly dispatches also run the full compatibility matrix by default; untick `run_compatibility` for a quick E2E-only rerun.
 
 2. **Authenticate:**
    ```bash
@@ -586,7 +586,7 @@ uv run pytest tests/unit tests/integration -m "not repo_lint"
 # E2E tests (requires auth + test notebook)
 uv run pytest tests/e2e -m readonly        # Read-only tests only
 uv run pytest tests/e2e -m "not variants"  # Skip parameter variants
-uv run pytest tests/e2e --include-variants # All tests including variants
+uv run pytest tests/e2e --include-variants # Includes costly cinematic-video generation
 
 # Select a profile for E2E tests
 uv run pytest tests/e2e -m e2e --profile work
@@ -826,7 +826,7 @@ uv run python scripts/manage_ci_e2e_notebooks.py provision \
   --backend web \
   --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
   --contract tests/fixtures/e2e_template_contract.json \
-  --mode full --lane nightly-web-windows --account-slot A \
+  --mode full --lane nightly-web-ubuntu --account-slot A \
   --manifest "$RUNNER_TEMP/notebooklm-e2e.json" \
   --github-env "$RUNNER_TEMP/github-env"
 
@@ -837,11 +837,12 @@ uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
   --manifest "$RUNNER_TEMP/notebooklm-e2e.json"
 ```
 
-Cleanup is mandatory even when validation or pytest fails. Managed mode publishes three distinct
-role IDs (`reference`, `generation`, and `multi-source`) and the activation flag last. With that
-flag present, pytest never consults profile cache files, creates a role notebook, cleans copied
-children on first use, or deletes a workflow-owned copy during teardown. `temp_notebook` and other
-function-level CRUD fixtures retain their existing lifecycle.
+Cleanup is mandatory even when validation or pytest fails. Managed full mode publishes three
+distinct role IDs (`reference`, `generation`, and `multi-source`); managed read-only mode publishes
+only `reference`. Both publish the activation flag last. With that flag present, pytest never
+consults profile cache files, creates a role notebook, cleans copied children on first use, or
+deletes a workflow-owned copy during teardown. `temp_notebook` and other function-level CRUD
+fixtures retain their existing lifecycle.
 
 Before workflow cutover, maintainers must create and validate the immutable template, grant every
 enabled account copy access, upload one independently revocable master-token secret per enabled
@@ -1425,7 +1426,7 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `test.yml` | Push/PR | Reduced 7-cell compatibility matrix (Ubuntu × Python 3.10–3.14, plus macOS/Windows on 3.12), linting, type checking |
-| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch on `main` | Full compatibility/coverage plus managed-copy Web and Android E2E; the Web lane settles its generation journal before cleanup |
+| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch on `main` | Full compatibility/coverage plus managed-copy full Web/Ubuntu, full Android/macOS, and read-only Web/Windows E2E; the full Web lane settles its generation journal before cleanup |
 | `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch on `main` | RPC monitoring on a disposable fallback copy plus the template-read-only [Android gRPC canary](#android-grpc-canary) |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
 | `verify-package.yml` | Manual dispatch on `main` | Verify TestPyPI or PyPI install plus managed-copy E2E; artifact inventory is advisory |
@@ -1546,8 +1547,8 @@ printf '%s' "$NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID" | \
 gh variable set --repo teng-lin/notebooklm-py NOTEBOOKLM_CI_ACCOUNT_SLOTS --body A
 ```
 
-Qualify A through Web/Windows and Android/Windows before adding B, then C. The
-ordered repository variable accepts only `A`, `B`, and `C`; start at `A`, then
+Qualify A through Web/Ubuntu, Android/macOS, and read-only Web/Windows before adding B,
+then C. The ordered repository variable accepts only `A`, `B`, and `C`; start at `A`, then
 use `A,B` and finally `A,B,C` after the documented soak. Do not reorder it to
 prefer an account. Manual dispatch input `account_rotation_base` overrides the
 daily base, while stable lane offsets still shard matrix lanes.
@@ -1557,10 +1558,10 @@ Every authenticated job uses `notebooklm-account-<slot>` concurrency with
 100 waiting jobs per group; check queued account jobs before a bulk manual
 dispatch. It is not an unbounded durable queue.
 
-The Web nightly producer uses one runner-temp append-only journal across the
+The full Web/Ubuntu nightly producer uses one runner-temp append-only journal across the
 primary pytest process, the cooldown retry, and the in-lane verifier. Filtered
-nightly runs, Android lanes, and Verify Package explicitly set journal mode to
-`off`. The removed detached `verify-artifacts.yml` workflow and its persistent
+nightly runs, the Android/macOS lane, the read-only Windows lane, and Verify Package
+explicitly set journal mode to `off`. The removed detached `verify-artifacts.yml` workflow and its persistent
 generation notebook are no longer part of CI.
 
 #### Operations runbooks
@@ -1573,9 +1574,10 @@ generation notebook are no longer part of CI.
   previous template until one scheduled cycle succeeds; never mutate it in CI.
 - For cleanup alerts, account for the lane offset when choosing
   `account_rotation_base`. In the ordered enabled-slot list, use the affected
-  slot for offset-0 lanes (`nightly-web-windows` and `verify-package`), the
-  previous slot cyclically for `nightly-android-windows` (offset 1), two slots
-  before it for `rpc-health-web` (offset 2), and three slots before it for
+  slot for offset-0 lanes (`nightly-web-ubuntu` and `verify-package`), the
+  previous slot cyclically for `nightly-android-macos` (offset 1), two slots
+  before it for `nightly-readonly-windows` and `rpc-health-web` (offset 2), and
+  three slots before it for
   `rpc-health-android` (offset 3). With only one enabled slot every base is that
   slot. Confirm the intended slot in the workflow's account-plan summary before
   its authenticated job starts. Inspect account-owned titles under the exact
