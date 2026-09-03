@@ -5,7 +5,7 @@ import contextlib
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from ._env import get_base_url
@@ -20,6 +20,7 @@ from .exceptions import (
     RateLimitError,
     RPCError,
     ServerError,
+    ValidationError,
 )
 from .types import (
     NextStepSuggestion,
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 ShareUrlBuilder = Callable[[str, str | None], str]
+_CopyFailureChain = Literal["explicit", "suppress"]
 
 
 def build_share_url(base_url: str, notebook_id: str, artifact_id: str | None = None) -> str:
@@ -67,10 +69,12 @@ class NotebooksAPI(ABC):
     """Backend-neutral operations on NotebookLM notebooks.
 
     The public namespace class owns transport-independent orchestration. Concrete
-    backends implement each one-call operation and the sole ``_send_create`` hook.
+    backends implement each one-call operation and the create/copy send hooks.
     """
 
     _create_method_id: str
+    _copy_method_id: str
+    _copy_failure_chain: _CopyFailureChain
 
     def _operation_scope(
         self, label: str
@@ -346,9 +350,42 @@ class NotebooksAPI(ABC):
     async def _send_create(self, title: str) -> Notebook:
         """Send one backend create operation and decode the notebook."""
 
-    @abstractmethod
     async def copy(self, notebook_id: str, title: str) -> Notebook:
-        """Copy a notebook, including its sources and Studio artifacts."""
+        """Copy a notebook, including its sources and Studio artifacts.
+
+        ``CopyProject`` has no caller-provided idempotency token. Internal
+        transport retries are disabled so a lost response cannot create a
+        second copy. If the call fails after the server commits, callers must
+        disambiguate the intended copy from their notebook list.
+        """
+        if not notebook_id:
+            raise ValidationError("notebook_id must not be empty")
+        if not title or not title.strip():
+            raise ValidationError("title must not be empty")
+
+        try:
+            return await self._send_copy(notebook_id, title)
+        except (NetworkError, RateLimitError, ServerError) as exc:
+            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+            failure = unresolved_commit_error(
+                self._copy_method_id,
+                "CopyProject",
+                RPCError(
+                    "UNRESOLVED — CopyProject may have committed before its response was "
+                    "lost. Do not blindly retry; list notebooks and resolve copies "
+                    "manually first.",
+                    method_id=self._copy_method_id,
+                    rpc_code=rpc_code,
+                ),
+                preserve_exception=True,
+            )
+            if self._copy_failure_chain == "explicit":
+                raise failure from exc
+            raise failure from None
+
+    @abstractmethod
+    async def _send_copy(self, notebook_id: str, title: str) -> Notebook:
+        """Send one backend copy operation and decode the new notebook."""
 
     @abstractmethod
     async def get(self, notebook_id: str) -> Notebook:

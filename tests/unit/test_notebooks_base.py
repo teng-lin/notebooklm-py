@@ -8,7 +8,13 @@ from typing import Any
 import pytest
 
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm.exceptions import NetworkError
+from notebooklm.exceptions import (
+    NetworkError,
+    RateLimitError,
+    RPCError,
+    ServerError,
+    ValidationError,
+)
 from notebooklm.types import Notebook, NotebookDescription, PromptSuggestion
 
 
@@ -18,24 +24,36 @@ class _EmptySourceLister:
 
 
 class _FakeNotebooksAPI(NotebooksAPI):
-    """Minimal backend proving shared orchestration needs only ``_send_create``."""
+    """Minimal backend proving shared orchestration needs only narrow send hooks."""
 
     _create_method_id = "fake.CreateNotebook"
+    _copy_method_id = "fake.CopyNotebook"
+    _copy_failure_chain = "explicit"
 
     def __init__(
         self,
         *,
         list_results: list[list[Notebook]],
         create_results: list[Notebook | Exception],
+        copy_results: list[Notebook | Exception] | None = None,
     ) -> None:
         super().__init__(_EmptySourceLister())
         self._list_results = list_results
         self._create_results = create_results
+        self._copy_results = copy_results or []
         self.sent_titles: list[str] = []
+        self.sent_copies: list[tuple[str, str]] = []
 
     async def _send_create(self, title: str) -> Notebook:
         self.sent_titles.append(title)
         result = self._create_results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    async def _send_copy(self, notebook_id: str, title: str) -> Notebook:
+        self.sent_copies.append((notebook_id, title))
+        result = self._copy_results.pop(0)
         if isinstance(result, Exception):
             raise result
         return result
@@ -65,9 +83,6 @@ class _FakeNotebooksAPI(NotebooksAPI):
         raise NotImplementedError
 
     async def get(self, notebook_id: str) -> Notebook:
-        raise NotImplementedError
-
-    async def copy(self, notebook_id: str, title: str) -> Notebook:
         raise NotImplementedError
 
     async def delete(self, notebook_id: str) -> None:
@@ -108,3 +123,51 @@ async def test_create_recovers_through_transport_neutral_hook_and_probe() -> Non
     assert result is created
     assert api.sent_titles == ["Base orchestration"]
     assert api._take_created_chat_session_id(created.id) is None
+
+
+@pytest.mark.asyncio
+async def test_copy_validates_then_returns_the_single_hook_result() -> None:
+    copied = Notebook(id="nb-copy", title="Copy")
+    api = _FakeNotebooksAPI(
+        list_results=[],
+        create_results=[],
+        copy_results=[copied],
+    )
+
+    assert await api.copy("nb-source", "Copy") is copied
+    assert api.sent_copies == [("nb-source", "Copy")]
+
+    for notebook_id, title in (("", "Copy"), ("nb-source", ""), ("nb-source", "  ")):
+        with pytest.raises(ValidationError):
+            await api.copy(notebook_id, title)
+    assert api.sent_copies == [("nb-source", "Copy")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "rpc_code"),
+    [
+        (NetworkError("lost"), None),
+        (RateLimitError("limited", rpc_code=8), 8),
+        (ServerError("unavailable", rpc_code=14), 14),
+    ],
+)
+async def test_copy_replaces_transient_failure_with_chained_unconfirmed_error(
+    failure: NetworkError | RateLimitError | ServerError,
+    rpc_code: int | None,
+) -> None:
+    api = _FakeNotebooksAPI(
+        list_results=[],
+        create_results=[],
+        copy_results=[failure],
+    )
+
+    with pytest.raises(RPCError, match="list notebooks.*manually") as raised:
+        await api.copy("nb-source", "Copy")
+
+    assert raised.value is not failure
+    assert raised.value.__cause__ is failure
+    assert getattr(raised.value, "unconfirmed", False) is True
+    assert raised.value.method_id == "fake.CopyNotebook"
+    assert raised.value.rpc_code == rpc_code
+    assert api.sent_copies == [("nb-source", "Copy")]

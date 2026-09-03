@@ -71,9 +71,9 @@
     "_NON_AUTHTOKENS_CANDIDATES": 30
   },
   "tests/_guardrails/test_backend_abstract_contracts.py": {
-    "BASE_ABSTRACT_CONTRACTS": 165,
+    "BASE_ABSTRACT_CONTRACTS": 166,
     "_ANDROID_IMPLEMENTATIONS": 33,
-    "_ANDROID_INHERITED_WORKFLOWS": 96
+    "_ANDROID_INHERITED_WORKFLOWS": 97
   },
   "tests/_guardrails/test_backend_boundaries.py": {
     "LAZY_WEB_IMPORT_ALLOWLIST": 34
