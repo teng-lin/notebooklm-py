@@ -106,7 +106,14 @@ jobs:
       # checker is the only thing standing between a typo and a maintainer's
       # release run. `--ignore-missing-imports` keeps this green on the lean
       # install this job uses (no `mcp`/`server` extras).
-      run: uv run mypy src/notebooklm scripts/_live_auth_scenarios --ignore-missing-imports
+      run: >-
+        uv run mypy src/notebooklm scripts/_live_auth_scenarios
+        scripts/audit_auth_patch_sites.py
+        scripts/audit_auth_shared_mutations.py
+        scripts/check_auth_behavior_scenario_policy.py
+        scripts/check_auth_coverage_delta.py
+        scripts/check_auth_lifecycle_cleanup_policy.py
+        --ignore-missing-imports
 
     - name: Assert workflow permissions are scoped
       run: uv run python scripts/check_workflow_permissions.py
@@ -178,6 +185,114 @@ jobs:
       # cassettes. Scan their JSON/HTML/YAML once here rather than repeating the
       # filesystem walk across every OS/Python compatibility cell.
       run: uv run python tests/scripts/check_cassettes_clean.py --secrets-only --recursive tests/fixtures tests/unit/fixtures
+
+  auth-patch-coverage-delta:
+    name: auth-patch-coverage-delta
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.custom_branch || github.ref }}
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Detect auth patch-coupling scope
+      id: scope
+      shell: bash
+      run: |
+        base=$(git merge-base HEAD origin/main)
+        echo "base=$base" >> "$GITHUB_OUTPUT"
+        git diff --name-only "$base" HEAD > "$RUNNER_TEMP/auth-patch-changed.txt"
+        if grep -Eq '^(src/notebooklm/(_auth/|_browser/)|src/notebooklm/auth\.py|tests/|scripts/(audit_auth_|check_auth_)|\.github/workflows/test\.yml|docs/(adr/|development\.md))' "$RUNNER_TEMP/auth-patch-changed.txt"; then
+          echo "run=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "run=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Set up Python
+      if: steps.scope.outputs.run == 'true'
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv
+      if: steps.scope.outputs.run == 'true'
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Create isolated base and head workspaces
+      if: steps.scope.outputs.run == 'true'
+      shell: bash
+      run: |
+        git worktree add --detach "$RUNNER_TEMP/auth-patch-base" "${{ steps.scope.outputs.base }}"
+        git worktree add --detach "$RUNNER_TEMP/auth-patch-head" HEAD
+
+    - name: Run merge-base nightly coverage sequence
+      if: steps.scope.outputs.run == 'true'
+      shell: bash
+      run: |
+        workspace="$RUNNER_TEMP/auth-patch-base"
+        cd "$workspace"
+        uv sync --frozen --extra browser --extra dev --extra markdown --extra mcp --extra server --extra impersonate --extra cookies
+        uv run playwright install chromium
+        uv run playwright install-deps chromium
+        uv run pytest -n auto --dist loadgroup -m "not repo_lint and not requires_playwright and not requires_chromium" --cov=src/notebooklm --cov-report= --cov-fail-under=0
+        uv run pytest tests/unit -m "(requires_playwright or requires_chromium) and not reality" -n 0 --cov=src/notebooklm --cov-append --cov-report=term-missing --cov-report="json:$RUNNER_TEMP/coverage-base.json" --cov-fail-under=90
+        uv run python scripts/check_coverage_thresholds.py --coverage-json "$RUNNER_TEMP/coverage-base.json"
+
+    - name: Run head nightly coverage sequence
+      if: steps.scope.outputs.run == 'true'
+      shell: bash
+      run: |
+        workspace="$RUNNER_TEMP/auth-patch-head"
+        cd "$workspace"
+        uv sync --frozen --extra browser --extra dev --extra markdown --extra mcp --extra server --extra impersonate --extra cookies
+        uv run playwright install chromium
+        uv run playwright install-deps chromium
+        uv run pytest -n auto --dist loadgroup -m "not repo_lint and not requires_playwright and not requires_chromium" --cov=src/notebooklm --cov-report= --cov-fail-under=0
+        uv run pytest tests/unit -m "(requires_playwright or requires_chromium) and not reality" -n 0 --cov=src/notebooklm --cov-append --cov-report=term-missing --cov-report="json:$RUNNER_TEMP/coverage-head.json" --cov-fail-under=90
+        uv run python scripts/check_coverage_thresholds.py --coverage-json "$RUNNER_TEMP/coverage-head.json"
+
+    - name: Collect merge-base and head scenario nodes
+      if: steps.scope.outputs.run == 'true'
+      shell: bash
+      run: |
+        uv --project "$RUNNER_TEMP/auth-patch-base" run python "$GITHUB_WORKSPACE/scripts/check_auth_behavior_scenario_policy.py" collect --workspace "$RUNNER_TEMP/auth-patch-base" --output "$RUNNER_TEMP/collection-base.json"
+        uv --project "$RUNNER_TEMP/auth-patch-head" run python "$GITHUB_WORKSPACE/scripts/check_auth_behavior_scenario_policy.py" collect --workspace "$RUNNER_TEMP/auth-patch-head" --output "$RUNNER_TEMP/collection-head.json"
+
+    - name: Validate auth behavior and coverage delta
+      if: steps.scope.outputs.run == 'true'
+      shell: bash
+      run: |
+        uv --project "$RUNNER_TEMP/auth-patch-head" run pytest -q \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_audit_auth_patch_sites.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_audit_auth_shared_mutations.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_behavior_scenario_policy.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_coverage_allowance_policy.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_lifecycle_cleanup_policy.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_check_auth_coverage_delta.py" \
+          --no-cov
+        uv --project "$RUNNER_TEMP/auth-patch-head" run python "$RUNNER_TEMP/auth-patch-head/scripts/check_auth_lifecycle_cleanup_policy.py" --policy "$RUNNER_TEMP/auth-patch-head/tests/fixtures/policies/auth_lifecycle_cleanup.json" --tests-dir "$RUNNER_TEMP/auth-patch-head/tests" --head-collection "$RUNNER_TEMP/collection-head.json"
+        uv run python scripts/check_auth_behavior_scenario_policy.py validate --base-collection "$RUNNER_TEMP/collection-base.json" --head-collection "$RUNNER_TEMP/collection-head.json" --base-revision "${{ steps.scope.outputs.base }}"
+        uv run python scripts/check_auth_coverage_delta.py --base-json "$RUNNER_TEMP/coverage-base.json" --head-json "$RUNNER_TEMP/coverage-head.json" --changed-since "${{ steps.scope.outputs.base }}" --base-workspace "$RUNNER_TEMP/auth-patch-base" --head-workspace "$RUNNER_TEMP/auth-patch-head" --scenario-policy tests/fixtures/policies/auth_behavior_scenarios.json --allowance-policy tests/fixtures/policies/auth_coverage_allowances.json --report "$RUNNER_TEMP/auth-patch-coverage-delta.json"
+
+    - name: Upload auth patch coverage evidence on failure
+      if: failure() && steps.scope.outputs.run == 'true'
+      uses: actions/upload-artifact@v6
+      with:
+        name: auth-patch-coverage-delta
+        path: |
+          ${{ runner.temp }}/coverage-base.json
+          ${{ runner.temp }}/coverage-head.json
+          ${{ runner.temp }}/collection-base.json
+          ${{ runner.temp }}/collection-head.json
+          ${{ runner.temp }}/auth-patch-coverage-delta.json
+
+    - name: Report intentional out-of-scope skip
+      if: steps.scope.outputs.run != 'true'
+      run: echo "auth-patch-coverage-delta intentionally skipped; no auth patch-coupling files changed"
 
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})

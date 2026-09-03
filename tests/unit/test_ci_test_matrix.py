@@ -84,8 +84,9 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "--dist loadgroup" in suite_command
     assert "--no-cov" in suite_command
 
-    workflow_text = WORKFLOW.read_text(encoding="utf-8")
-    assert "--cov" not in workflow_text
+    # The ordinary compatibility matrix stays coverage-free.  The dedicated
+    # merge-base/head auth delta job below is the sole PR-workflow exception.
+    assert "--cov" not in str(test_job)
     step_names = {step.get("name") for step in test_job["steps"]}
     assert "Run tests with coverage" not in step_names
     assert "Run compatibility tests without coverage" not in step_names
@@ -140,6 +141,60 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "-m requires_playwright" in smoke_command
     assert "-n 0" in smoke_command
     assert "--no-cov" in smoke_command
+
+
+def test_auth_patch_coverage_delta_is_required_shape_and_always_completes() -> None:
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["auth-patch-coverage-delta"]
+    assert job["name"] == "auth-patch-coverage-delta"
+    assert job["runs-on"] == "ubuntu-latest"
+    assert "if" not in job
+    checkout = next(step for step in job["steps"] if "actions/checkout@" in str(step.get("uses")))
+    assert checkout["with"]["fetch-depth"] == 0
+
+    scope = _step(job, "Detect auth patch-coupling scope")
+    assert scope["id"] == "scope"
+    assert "git merge-base HEAD origin/main" in str(scope["run"])
+    assert 'git diff --name-only "$base" HEAD' in str(scope["run"])
+    assert 'echo "run=true"' in str(scope["run"])
+
+    base = _step(job, "Run merge-base nightly coverage sequence")
+    head = _step(job, "Run head nightly coverage sequence")
+    for step, filename in ((base, "coverage-base.json"), (head, "coverage-head.json")):
+        assert step["if"] == "steps.scope.outputs.run == 'true'"
+        command = str(step["run"])
+        assert "--dist loadgroup" in command
+        assert "not repo_lint and not requires_playwright and not requires_chromium" in command
+        assert "(requires_playwright or requires_chromium) and not reality" in command
+        assert "--cov-append" in command
+        assert f"json:$RUNNER_TEMP/{filename}" in command
+        assert "--cov-fail-under=90" in command
+        assert "scripts/check_coverage_thresholds.py" in command
+        assert "playwright install chromium" in command
+        assert "playwright install-deps chromium" in command
+
+    collection = str(_step(job, "Collect merge-base and head scenario nodes")["run"])
+    assert "collection-base.json" in collection
+    assert "collection-head.json" in collection
+    validation = str(_step(job, "Validate auth behavior and coverage delta")["run"])
+    assert "--base-collection" in validation and "--head-collection" in validation
+    assert "scripts/check_auth_coverage_delta.py" in validation
+    assert "--base-workspace" in validation and "--head-workspace" in validation
+    assert "test_audit_auth_patch_sites.py" in validation
+    assert "test_audit_auth_shared_mutations.py" in validation
+    assert "test_auth_behavior_scenario_policy.py" in validation
+    assert "test_auth_coverage_allowance_policy.py" in validation
+    assert "test_auth_lifecycle_cleanup_policy.py" in validation
+    assert "test_check_auth_coverage_delta.py" in validation
+    assert "scripts/check_auth_lifecycle_cleanup_policy.py" in validation
+    assert "--head-collection" in validation
+
+    upload = _step(job, "Upload auth patch coverage evidence on failure")
+    assert upload["if"] == "failure() && steps.scope.outputs.run == 'true'"
+    assert "coverage-base.json" in str(upload["with"]["path"])
+    assert "coverage-head.json" in str(upload["with"]["path"])
+    skip = _step(job, "Report intentional out-of-scope skip")
+    assert skip["if"] == "steps.scope.outputs.run != 'true'"
 
 
 def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:

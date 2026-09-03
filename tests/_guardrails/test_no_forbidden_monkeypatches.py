@@ -589,7 +589,10 @@ def test_no_private_attr_patch_object_outside_allowlist() -> None:
         'Private-attribute ``patch.object(<alias>, "_private…")`` patch(es)',
         "Migrate the test to constructor injection via "
         "``tests/_fixtures/make_fake_core(...)`` or patch a PUBLIC attribute "
-        "of the collaborator. Converting to a string-target "
+        "of the collaborator. Inside ``_auth``/``_browser`` that form must also "
+        "satisfy the full-joint auth-family ratchet and final survivor policy; "
+        "moving it to ``notebooklm.auth`` or an auth-owned class/singleton is "
+        "not remediation. Converting to a string-target "
         '``patch("notebooklm…")`` form is NOT a fix: private string targets '
         "trip patterns (d)/(f) in this file, and the overall string-patch "
         "population is growth-capped by "

@@ -172,6 +172,27 @@ def test_guard_detects_novel_high_entropy_token(tmp_path: Path) -> None:
     )
 
 
+def test_auth_audit_owner_entropy_exception_requires_canonical_path(tmp_path: Path) -> None:
+    canonical = FIXTURES_DIR / "baselines" / "auth_patch_sites.json"
+    clean = _run_guard("--secrets-only", str(canonical))
+    assert clean.returncode == 0, clean.stdout
+
+    baseline_dir = tmp_path / "baselines"
+    baseline_dir.mkdir()
+    baseline = baseline_dir / "auth_patch_sites.json"
+    identifier = "test_" + "OwnerQualifierWithManyDistinctCharacters0123456789" * 2
+    baseline.write_text(f'{{"owner_qualname": "{identifier}"}}\n', encoding="utf-8")
+    lookalike = _run_guard("--secrets-only", str(baseline))
+    assert lookalike.returncode == 1
+    assert "high-entropy token" in lookalike.stdout
+
+    known_token = "ya2" + "9." + "C" * 40
+    baseline.write_text(f'{{"owner_qualname": "{known_token}"}}\n', encoding="utf-8")
+    leaked = _run_guard("--secrets-only", str(baseline))
+    assert leaked.returncode == 1
+    assert "Leak (auth token)" in leaked.stdout
+
+
 # --- Signed blob-capability URLs (#2120 / #2215) ---------------------------
 # These must be caught in BOTH scan modes. ``--secrets-only`` reaches the
 # detector via ``_CREDENTIAL_DETECTORS``; the full cassette scan routes through

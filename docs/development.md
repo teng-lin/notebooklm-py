@@ -995,6 +995,9 @@ surface change is a deliberate, diff-visible act. These **regenerable baselines*
 | `auth_patch_sites` | auth test patch-site audit | `tests/fixtures/baselines/auth_patch_sites.json` |
 | `browser_import_graph` | package-aware imports under `notebooklm._browser` | `tests/fixtures/baselines/browser_import_graph.json` |
 | `browser_patch_sites` | browser test patch-site audit | `tests/fixtures/baselines/browser_patch_sites.json` |
+| `auth_facade_patch_sites` | public `notebooklm.auth` no-growth relocation sentinel | `tests/fixtures/baselines/auth_facade_patch_sites.json` |
+| `auth_family_patch_scorecard` | combined full-joint auth/browser/facade scorecard | `tests/fixtures/baselines/auth_family_patch_scorecard.json` |
+| `auth_shared_mutations` | class/singleton/process-default mutation audit | `tests/fixtures/baselines/auth_shared_mutations.json` |
 | `module_size` | live over-budget and ADR-0033 shrink-locked LOC | `tests/fixtures/baselines/module_size.json` |
 | `storage_transaction_policy` | AST-derived lock-policy callers | `tests/fixtures/baselines/storage_transaction_policy.json` |
 | `guardrail_inline_literals` | grandfathered large guardrail literals | `tests/fixtures/baselines/guardrail_inline_literals.json` |
@@ -1017,6 +1020,22 @@ guardrail literal, acknowledge it explicitly:
 ```bash
 python scripts/regen_baselines.py --allow-growth
 ```
+
+Auth mutation projections are schema-v2 shrink-only ratchets. Review full
+package/target/path/lexical-owner rows and total counts alongside the
+private-name column; a non-underscore target is not necessarily public API.
+Authored scenario, lifecycle-cleanup, and coverage-allowance policies live in
+`tests/fixtures/policies/` and are never emitted by baseline regeneration.
+Every in-scope pull request also runs the always-present Ubuntu
+`auth-patch-coverage-delta` job, which uses isolated merge-base/head workspaces,
+the nightly coverage selection, pytest node/parameter/fixture-closure
+collection, and exact statement/branch preservation. Out-of-scope changes take
+an explicit successful skip path so a required check cannot remain pending.
+The initial schema-v2 scorecard is `_auth` 244 (145 private-name), `_browser`
+66 (17 private-name), public facade 526, and shared-lifetime mutation 188. The
+private-package total is 310; the one-site increase over the legacy projection
+is a formerly invisible, statically resolvable constant-named `_auth` patch,
+not new test behavior.
 
 Run the complete AST/path/contract guard suite locally with:
 
