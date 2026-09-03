@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from .._hop_credentials import CredentialPolicy
+from .._hop_credentials import CredentialPolicy, HopCredentials
 from ..exceptions import AuthError
 
 MAX_DOWNLOAD_REDIRECTS = 20
@@ -163,6 +163,22 @@ async def _bounded_text(response: Any) -> bytes | None:
     return bytes(body)
 
 
+async def _credentials_for_hop(
+    credential_for: CredentialPolicy,
+    url: str,
+    assert_active: Callable[[], None],
+) -> HopCredentials | None:
+    """Acquire one hop credential without retaining it on acquisition failure."""
+
+    credentials = None
+    try:
+        credentials = await credential_for(url)
+        assert_active()
+        return credentials
+    finally:
+        del assert_active, credential_for, credentials, url
+
+
 def _auth_error(status: int, approved_host: str) -> AuthError:
     return AuthError(
         f"Authentication required for {approved_host} (HTTP {status}) -- try `notebooklm login`"
@@ -194,13 +210,7 @@ async def guarded_transfer(
             if host is None:
                 return TransferFailure("url_policy", safe_host(current_url), hop)
 
-            credentials = None
-            try:
-                credentials = await credential_for(current_url)
-                assert_active()
-            except BaseException:
-                del credentials
-                raise
+            credentials = await _credentials_for_hop(credential_for, current_url, assert_active)
 
             response_cm: Any | None = None
             response: Any | None = None
