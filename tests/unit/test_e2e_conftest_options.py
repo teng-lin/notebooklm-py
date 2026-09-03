@@ -566,6 +566,7 @@ class TestRateLimitSkipSummary:
         pytester.makepyprojecttoml(
             """
             [tool.pytest.ini_options]
+            asyncio_default_fixture_loop_scope = "function"
             markers = [
                 "live_chat_ask: chat ask floor marker",
             ]

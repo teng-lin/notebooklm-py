@@ -15,6 +15,7 @@ def test_e2e_auto_marker_is_visible_to_marker_selection_and_root_fixture(
     pytester.makepyprojecttoml(
         """
         [tool.pytest.ini_options]
+        asyncio_default_fixture_loop_scope = "function"
         markers = ["e2e: end-to-end tests"]
         """
     )
@@ -67,6 +68,7 @@ def test_e2e_auto_marker_makes_not_e2e_select_nothing(pytester: pytest.Pytester)
     pytester.makepyprojecttoml(
         """
         [tool.pytest.ini_options]
+        asyncio_default_fixture_loop_scope = "function"
         markers = ["e2e: end-to-end tests"]
         """
     )
