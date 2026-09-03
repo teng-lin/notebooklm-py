@@ -21,9 +21,11 @@ deliberate post-heal asymmetry the pre-split control flow hid.
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 import pytest
+from pytest_httpx import HTTPXMock
 
 from notebooklm._auth import cookie_policy as _cookie_policy
 from notebooklm._auth import psidts_recovery as recovery
@@ -46,6 +48,21 @@ def _rows(*names: str) -> list[dict[str, Any]]:
 
 _COMPLETE = ("SID", "__Secure-1PSIDTS", "APISID", "SAPISID", "LSID")
 _NO_PSIDTS = ("SID", "APISID", "SAPISID", "LSID")
+_ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
+
+
+def _add_rotation_response(httpx_mock: HTTPXMock) -> None:
+    httpx_mock.add_response(
+        url=_ROTATE_URL_RE,
+        headers=[
+            (
+                "Set-Cookie",
+                "__Secure-1PSIDTS=fresh; Domain=.google.com; Path=/; "
+                "Secure; HttpOnly; SameSite=Lax",
+            )
+        ],
+        content=b'["identity.hfcr",600]',
+    )
 
 
 class TestValidateIsPure:
@@ -83,18 +100,15 @@ class TestValidateIsPure:
         recovery.validate(rows)
         assert rows == before
 
-    def test_validate_never_fires_a_heal(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.no_default_keepalive_mock
+    def test_validate_never_fires_a_heal(self, httpx_mock: HTTPXMock) -> None:
         """No network from the pure path, even on a heal-eligible failure."""
-        called = False
-
-        def _boom(_rows: list[dict[str, Any]]) -> bool:
-            nonlocal called
-            called = True
-            return False
-
-        monkeypatch.setattr(recovery, "recover_psidts_in_memory", _boom)
-        recovery.validate(_rows(*_NO_PSIDTS))
-        assert called is False
+        rows = _rows(*_NO_PSIDTS)
+        before = copy.deepcopy(rows)
+        _, result = recovery.validate(rows)
+        assert result.ok is False
+        assert rows == before
+        assert httpx_mock.get_requests() == []
 
 
 class TestWrapperComposition:
@@ -109,25 +123,23 @@ class TestWrapperComposition:
 
         return _heal
 
-    def test_valid_set_short_circuits_before_healing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(recovery, "recover_psidts_in_memory", self._stub_heal(False))
+    @pytest.mark.no_default_keepalive_mock
+    def test_valid_set_short_circuits_before_healing(self, httpx_mock: HTTPXMock) -> None:
         rows = _rows(*_COMPLETE)
         _, error = recovery.validate_with_recovery(rows)
         assert error is None
+        assert httpx_mock.get_requests() == []
 
+    @pytest.mark.no_default_keepalive_mock
     def test_successful_heal_clears_the_error_and_mutates_in_place(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, httpx_mock: HTTPXMock
     ) -> None:
         """The in-place mutation is a contract, not an implementation detail.
 
         ``cli/services/login/refresh.py`` documents and depends on the healed
         rows being visible to the caller afterward.
         """
-        monkeypatch.setattr(
-            recovery,
-            "recover_psidts_in_memory",
-            self._stub_heal(True, ("__Secure-1PSIDTS",)),
-        )
+        _add_rotation_response(httpx_mock)
         rows = _rows(*_NO_PSIDTS)
         state, error = recovery.validate_with_recovery(rows)
         assert error is None
@@ -142,17 +154,38 @@ class TestWrapperComposition:
         _, error = recovery.validate_with_recovery(_rows(*_NO_PSIDTS))
         assert isinstance(error, _cookie_policy.RequiredCookieValidationError)
 
-    def test_declined_heal_preserves_the_original_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr(recovery, "recover_psidts_in_memory", self._stub_heal(False))
-        rows = _rows(*_NO_PSIDTS)
+    @pytest.mark.no_default_keepalive_mock
+    def test_declined_heal_preserves_the_original_error(self, httpx_mock: HTTPXMock) -> None:
+        """Missing secondary bindings decline healing before any HTTP request.
+
+        The pre-heal validator has already selected ``psidts_unroutable``;
+        declining the heal must preserve that original typed reason and rows.
+        """
+        rows = _rows("SID")
+        rows.append(
+            {
+                "name": "__Secure-1PSIDTS",
+                "value": "host-scoped",
+                "domain": "notebook.google.com",
+                "path": "/",
+                "http_only": True,
+                "secure": True,
+                "expires": None,
+            }
+        )
         before = copy.deepcopy(rows)
         _, error = recovery.validate_with_recovery(rows)
         assert isinstance(error, _cookie_policy.RequiredCookieValidationError)
+        assert error.reason == "psidts_unroutable"
         assert rows == before  # a declined heal leaves the rows untouched
+        assert httpx_mock.get_requests() == []
 
-    def test_post_heal_recheck_is_presence_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.no_default_keepalive_mock
+    def test_post_heal_recheck_is_presence_only(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        httpx_mock: HTTPXMock,
+    ) -> None:
         """Pins the asymmetry the pre-split control flow hid.
 
         After a successful heal the wrapper re-runs the Tier-1 **presence**
@@ -185,12 +218,8 @@ class TestWrapperComposition:
             "fixture no longer reaches the routing check; the test would be vacuous"
         )
 
-        # The heal supplies a properly-scoped PSIDTS, as a real rotation would.
-        monkeypatch.setattr(
-            recovery,
-            "recover_psidts_in_memory",
-            self._stub_heal(True, ("__Secure-1PSIDTS",)),
-        )
+        # The HTTP boundary supplies a properly-scoped PSIDTS, as a real rotation would.
+        _add_rotation_response(httpx_mock)
         calls = {"n": 0}
         real_check = recovery._check_routable
 
@@ -209,17 +238,12 @@ class TestWrapperComposition:
 
 
 class TestHealIsSeparable:
+    @pytest.mark.no_default_keepalive_mock
     def test_heal_delegates_to_the_single_rotation_implementation(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, httpx_mock: HTTPXMock
     ) -> None:
         """``heal`` is a named seam over the one in-memory rotation (Stage 0)."""
-        seen: list[list[dict[str, Any]]] = []
-
-        def _spy(rows: list[dict[str, Any]]) -> bool:
-            seen.append(rows)
-            return True
-
-        monkeypatch.setattr(recovery, "recover_psidts_in_memory", _spy)
+        _add_rotation_response(httpx_mock)
         rows = _rows(*_NO_PSIDTS)
         assert recovery.heal(rows) is True
-        assert seen == [rows]
+        assert "__Secure-1PSIDTS" in {row["name"] for row in rows}

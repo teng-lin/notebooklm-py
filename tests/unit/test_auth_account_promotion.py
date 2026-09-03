@@ -34,6 +34,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -424,20 +425,24 @@ class TestRetryableSingleFlight:
 
         readers = 8
         start = threading.Barrier(readers)
-        results: list[dict[str, Any]] = []
-        results_lock = threading.Lock()
+        entered = threading.local()
 
-        def _read():
-            start.wait(timeout=30)
-            value = read_account_metadata(storage)
-            with results_lock:
-                results.append(value)
+        class GatedPath(type(storage)):
+            def read_text(self, *args, **kwargs):
+                if threading.current_thread().name.startswith("account-read") and not getattr(
+                    entered, "value", False
+                ):
+                    entered.value = True
+                    start.wait(timeout=30)
+                return super().read_text(*args, **kwargs)
 
-        threads = [threading.Thread(target=_read) for _ in range(readers)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(30.0)
+        gated_storage = GatedPath(storage)
+
+        # The stateful path gates each worker inside the mapped production call.
+        # No auth operation is hidden in a nested helper, and the context manager
+        # still joins every worker if an assertion or read fails.
+        with ThreadPoolExecutor(max_workers=readers, thread_name_prefix="account-read") as executor:
+            results = list(executor.map(read_account_metadata, [gated_storage] * readers))
 
         _drain_promotions_for_tests()
 

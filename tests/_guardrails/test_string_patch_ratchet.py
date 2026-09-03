@@ -117,7 +117,10 @@ STRING_PATCH_CEILINGS: dict[str, int] = {}
 _REMEDIATION = (
     "Remove the new string-target patch site(s): use ``patch.object`` on a "
     "PUBLIC attribute of a locally-imported alias, or constructor injection "
-    "via ``tests/_fixtures/make_fake_core(...)``. Do NOT switch to a private "
+    "via ``tests/_fixtures/make_fake_core(...)``. For ``_auth``/``_browser``, "
+    "the full-joint auth-family ratchet and final survivor policy also apply; "
+    "do not relocate the patch to ``notebooklm.auth`` or a shared class/singleton. "
+    "Do NOT switch to a private "
     "string target or a private ``patch.object`` attribute name — those forms "
     "fail ``tests/_guardrails/test_no_forbidden_monkeypatches.py``."
 )

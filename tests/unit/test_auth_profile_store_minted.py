@@ -214,17 +214,9 @@ def test_request_copy_failure_escapes_without_rewriting_the_exception() -> None:
 
 def test_store_uses_one_exact_raw_bounded_lock_and_never_orders_io(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "nested" / "A.json"
     locks = RecordingLocks()
-    commits: list[tuple[Path, dict[str, Any]]] = []
-
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda target, payload: commits.append((target, payload)),
-    )
 
     assert ProfileStore(path, locks=locks).replace_minted_session(_request()) is None  # type: ignore[arg-type]
     assert path.parent.is_dir()
@@ -236,8 +228,13 @@ def test_store_uses_one_exact_raw_bounded_lock_and_never_orders_io(
             deadline_seconds=90.0,
         )
     ]
-    assert len(commits) == 1
-    assert commits[0][0] is path
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["cookies"] == CookieJar((_cookie(),)).to_storage_state()["cookies"]
+    assert payload["origins"] == []
+    assert payload["notebooklm"] == {
+        "version": 1,
+        "account": {"authuser": 0, "email": "owner@example.com"},
+    }
 
 
 @pytest.mark.parametrize("state", [LockState.CONTENDED, LockState.UNAVAILABLE])
@@ -247,6 +244,18 @@ def test_store_lock_miss_raises_exactly_before_every_held_operation(
     caplog: pytest.LogCaptureFixture,
     state: LockState,
 ) -> None:
+    class FilterMustNotRun(str):
+        def __deepcopy__(self, memo: dict[int, object]) -> FilterMustNotRun:
+            return self
+
+        def startswith(
+            self,
+            prefix: str | tuple[str, ...],
+            start: int = 0,
+            end: int | None = None,
+        ) -> bool:
+            pytest.fail("lock miss must not enter the filter projection")
+
     path = tmp_path / "custom.json"
     locks = RecordingLocks(state)
     store = ProfileStore(path, locks=locks)  # type: ignore[arg-type]
@@ -255,47 +264,45 @@ def test_store_lock_miss_raises_exactly_before_every_held_operation(
         "read_document",
         lambda: pytest.fail("lock miss must not read"),
     )
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda state: pytest.fail("lock miss must not filter"),
-    )
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda path, payload: pytest.fail("lock miss must not commit"),
-    )
 
     with (
         caplog.at_level(logging.DEBUG, logger="notebooklm.auth"),
         pytest.raises(LockUnavailableError) as raised,
     ):
-        store.replace_minted_session(_request())
+        request = _request(cookies=CookieJar((_cookie(domain=FilterMustNotRun(".google.com")),)))
+        store.replace_minted_session(request)
     assert str(raised.value) == (
         f"persist_minted_jar: storage lock unavailable at {tmp_path / '.custom.json.lock'}"
     )
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
     assert caplog.records == []
+    assert not path.exists()
 
 
 @pytest.mark.parametrize("raw", ["{", "[]"])
 def test_corrupt_existing_destination_is_unknown_and_refused_without_filter(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     raw: str,
 ) -> None:
+    class FilterMustNotRun(str):
+        def __deepcopy__(self, memo: dict[int, object]) -> FilterMustNotRun:
+            return self
+
+        def startswith(
+            self,
+            prefix: str | tuple[str, ...],
+            start: int = 0,
+            end: int | None = None,
+        ) -> bool:
+            pytest.fail("owner refusal must precede filtering")
+
     path = tmp_path / "A.json"
     path.write_text(raw, encoding="utf-8")
     original = path.read_bytes()
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda state: pytest.fail("owner refusal must precede filtering"),
-    )
-
+    request = _request(cookies=CookieJar((_cookie(domain=FilterMustNotRun(".google.com")),)))
     with pytest.raises(_MintedSessionOwnershipRefused) as raised:
-        ProfileStore(path, locks=RecordingLocks()).replace_minted_session(_request())  # type: ignore[arg-type]
+        ProfileStore(path, locks=RecordingLocks()).replace_minted_session(request)  # type: ignore[arg-type]
     assert str(raised.value) == UNKNOWN_OWNER_MESSAGE
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
@@ -539,7 +546,23 @@ def test_non_owner_failures_escape_unchanged_in_exact_order(
 
     real_exists = Path.exists
     real_read = store.read_document
-    real_filter = profile_store.filter_storage_state_cookies_by_domain_policy
+
+    class ObservedDomain(str):
+        # The filter allowlist probes the raw domain once for its leading dot.
+        # Its exact allowlist match then short-circuits the remaining policy.
+        def __deepcopy__(self, memo: dict[int, object]) -> ObservedDomain:
+            return self
+
+        def startswith(
+            self,
+            prefix: str | tuple[str, ...],
+            start: int = 0,
+            end: int | None = None,
+        ) -> bool:
+            events.append("filter")
+            if category == "filter":
+                raise marker
+            return super().startswith(prefix, start, len(self) if end is None else end)
 
     def exists(target: Path) -> bool:
         if target == path:
@@ -556,12 +579,6 @@ def test_non_owner_failures_escape_unchanged_in_exact_order(
             raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
         return real_read()
 
-    def filter_state(state: dict[str, Any]) -> dict[str, Any]:
-        events.append("filter")
-        if category == "filter":
-            raise marker
-        return real_filter(state)
-
     def commit(target: Path, payload: dict[str, Any]) -> None:
         events.append("commit")
         if category == "commit":
@@ -569,18 +586,17 @@ def test_non_owner_failures_escape_unchanged_in_exact_order(
 
     monkeypatch.setattr(Path, "exists", exists)
     monkeypatch.setattr(store, "read_document", read)
-    monkeypatch.setattr(
-        profile_store, "filter_storage_state_cookies_by_domain_policy", filter_state
-    )
     monkeypatch.setattr(profile_store, "_commit_profile_json", commit)
+
+    request = _request(cookies=CookieJar((_cookie(domain=ObservedDomain(".google.com")),)))
 
     with caplog.at_level(logging.DEBUG, logger="notebooklm.auth"):
         if category == "unicode":
             with pytest.raises(UnicodeDecodeError) as raised:
-                store.replace_minted_session(_request())
+                store.replace_minted_session(request)
         else:
             with pytest.raises(RuntimeError) as raised:
-                store.replace_minted_session(_request())
+                store.replace_minted_session(request)
             assert raised.value is marker
     expected = {
         "exists": ["acquire", "exists", "release"],
@@ -688,11 +704,34 @@ def _raw_http_cookie(
     )
 
 
-def test_adapter_eagerly_iterates_raw_jar_once_and_snapshots_both_inputs(
+@pytest.mark.parametrize(
+    ("mode", "message"),
+    [
+        pytest.param("snapshot", None, id="snapshot"),
+        pytest.param("copy_failure", None, id="copy-failure"),
+        pytest.param("owner_refusal", UNKNOWN_OWNER_MESSAGE, id="unknown-owner"),
+        pytest.param(
+            "owner_refusal",
+            "This profile already belongs to owner@example.com, but the mint is for "
+            "other@example.com. Minting here would overwrite owner@example.com's session and "
+            "master token. Pass force=True to overwrite this profile intentionally.",
+            id="mismatched-owner",
+        ),
+        pytest.param("store_failure", None, id="non-owner-error"),
+    ],
+)
+def test_adapter_composition_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    mode: str,
+    message: str | None,
 ) -> None:
+    """One minimal compatibility probe covers every facade projection."""
+
     raw_cookie = _raw_http_cookie()
+    marker = OSError("commit failed")
+    copy_marker = RuntimeError("email copy failed")
 
     class LiveJar:
         def __init__(self) -> None:
@@ -705,116 +744,77 @@ def test_adapter_eagerly_iterates_raw_jar_once_and_snapshots_both_inputs(
                 raise AssertionError("live jar must be observed exactly once")
             return (raw_cookie,)
 
-    live = LiveJar()
-    email = MutableEmail("owner@example.com", ["before"])
+    class FailsCopy:
+        def __deepcopy__(self, memo: dict[int, object]) -> object:
+            raise copy_marker
+
+    constructed: list[Path] = []
     captured: list[tuple[Path, MintedSessionWriteRequest]] = []
+    snapshot_email = MutableEmail("owner@example.com", ["before"])
 
     class FakeStore:
         def __init__(self, path: Path) -> None:
+            if mode == "copy_failure":
+                pytest.fail("copy failure must precede store construction")
             self.path = path
+            constructed.append(path)
 
         def replace_minted_session(self, request: MintedSessionWriteRequest) -> None:
             captured.append((self.path, request))
-            raw_cookie.value = "mutated-after-snapshot"
-            email.notes.append("mutated-after-snapshot")
+            if mode == "snapshot":
+                raw_cookie.value = "mutated-after-snapshot"
+                snapshot_email.notes.append("mutated-after-snapshot")
+            elif mode == "owner_refusal":
+                raise _MintedSessionOwnershipRefused(message or "")
+            elif mode == "store_failure":
+                raise marker
 
     monkeypatch.setattr(storage, "ProfileStore", FakeStore)
-    assert storage.persist_minted_jar(tmp_path / "custom.json", live, email=email) is None  # type: ignore[arg-type]
-    assert live.iterations == 1
-    assert len(captured) == 1
-    target, request = captured[0]
-    assert target == tmp_path / "custom.json"
-    assert request.email == "owner@example.com"
-    assert request.email.notes == ["before"]  # type: ignore[union-attr]
-    assert request.cookies.to_storage_rows() == [
-        {
-            "name": "SID",
-            "value": "secret-value",
-            "domain": ".google.com",
-            "path": "/",
-            "expires": -1,
-            "httpOnly": True,
-            "secure": False,
-            "sameSite": "None",
-        }
-    ]
-
-
-def test_adapter_snapshot_failure_precedes_store_parent_lock_filter_read_commit_and_logs(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    marker = RuntimeError("email copy failed")
-
-    class FailsCopy:
-        def __deepcopy__(self, memo: dict[int, object]) -> object:
-            raise marker
-
-    monkeypatch.setattr(
-        storage,
-        "ProfileStore",
-        lambda path: pytest.fail("copy failure must precede store construction"),
-    )
     path = tmp_path / "missing" / "A.json"
-    with (
-        caplog.at_level(logging.DEBUG, logger="notebooklm.auth"),
-        pytest.raises(RuntimeError) as raised,
-    ):
-        storage.persist_minted_jar(
-            path,
-            httpx.Cookies(),
-            email=FailsCopy(),  # type: ignore[arg-type]
-        )
-    assert raised.value is marker
-    assert not path.parent.exists()
-    assert caplog.records == []
-
-
-@pytest.mark.parametrize(
-    "message",
-    [
-        UNKNOWN_OWNER_MESSAGE,
-        "This profile already belongs to owner@example.com, but the mint is for "
-        "other@example.com. Minting here would overwrite owner@example.com's session and "
-        "master token. Pass force=True to overwrite this profile intentionally.",
-    ],
-)
-def test_adapter_translates_only_private_refusal_outside_handler_without_context(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    message: str,
-) -> None:
-    class RefusingStore:
-        def __init__(self, path: Path) -> None:
-            pass
-
-        def replace_minted_session(self, request: MintedSessionWriteRequest) -> None:
-            raise _MintedSessionOwnershipRefused(message)
-
-    monkeypatch.setattr(storage, "ProfileStore", RefusingStore)
-    with pytest.raises(master_token.MasterTokenError) as raised:
-        storage.persist_minted_jar(tmp_path / "A.json", httpx.Cookies(), email="other@example.com")
-    assert type(raised.value) is master_token.MasterTokenError
-    assert str(raised.value) == message
-    assert raised.value.__cause__ is None
-    assert raised.value.__context__ is None
-
-
-def test_adapter_preserves_non_owner_exception_identity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    marker = OSError("commit failed")
-
-    class FailingStore:
-        def __init__(self, path: Path) -> None:
-            pass
-
-        def replace_minted_session(self, request: MintedSessionWriteRequest) -> None:
-            raise marker
-
-    monkeypatch.setattr(storage, "ProfileStore", FailingStore)
-    with pytest.raises(OSError) as raised:
-        storage.persist_minted_jar(tmp_path / "A.json", httpx.Cookies(), email=None)
-    assert raised.value is marker
+    if mode == "snapshot":
+        live = LiveJar()
+        assert storage.persist_minted_jar(path, live, email=snapshot_email) is None  # type: ignore[arg-type]
+        assert live.iterations == 1
+        assert constructed == [path]
+        assert len(captured) == 1
+        target, request = captured[0]
+        assert target == path
+        assert request.email == "owner@example.com"
+        assert request.email.notes == ["before"]  # type: ignore[union-attr]
+        assert request.cookies.to_storage_rows() == [
+            {
+                "name": "SID",
+                "value": "secret-value",
+                "domain": ".google.com",
+                "path": "/",
+                "expires": -1,
+                "httpOnly": True,
+                "secure": False,
+                "sameSite": "None",
+            }
+        ]
+    elif mode == "copy_failure":
+        with (
+            caplog.at_level(logging.DEBUG, logger="notebooklm.auth"),
+            pytest.raises(RuntimeError) as raised,
+        ):
+            storage.persist_minted_jar(
+                path,
+                httpx.Cookies(),
+                email=FailsCopy(),  # type: ignore[arg-type]
+            )
+        assert raised.value is copy_marker
+        assert constructed == []
+        assert not path.parent.exists()
+        assert caplog.records == []
+    elif mode == "owner_refusal":
+        with pytest.raises(master_token.MasterTokenError) as raised:
+            storage.persist_minted_jar(path, httpx.Cookies(), email="other@example.com")
+        assert type(raised.value) is master_token.MasterTokenError
+        assert str(raised.value) == message
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None
+    else:
+        with pytest.raises(OSError) as raised:
+            storage.persist_minted_jar(path, httpx.Cookies(), email=None)
+        assert raised.value is marker

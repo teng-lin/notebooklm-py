@@ -106,7 +106,14 @@ jobs:
       # checker is the only thing standing between a typo and a maintainer's
       # release run. `--ignore-missing-imports` keeps this green on the lean
       # install this job uses (no `mcp`/`server` extras).
-      run: uv run mypy src/notebooklm scripts/_live_auth_scenarios --ignore-missing-imports
+      run: >-
+        uv run mypy src/notebooklm scripts/_live_auth_scenarios
+        scripts/audit_auth_patch_sites.py
+        scripts/audit_auth_shared_mutations.py
+        scripts/check_auth_behavior_scenario_policy.py
+        scripts/check_auth_coverage_delta.py
+        scripts/check_auth_lifecycle_cleanup_policy.py
+        --ignore-missing-imports
 
     - name: Assert workflow permissions are scoped
       run: uv run python scripts/check_workflow_permissions.py

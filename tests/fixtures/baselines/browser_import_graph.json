@@ -113,7 +113,7 @@
       "path": "src/notebooklm/_browser/browser_launch_errors.py"
     },
     {
-      "lines": 906,
+      "lines": 1086,
       "name": "headless_reauth",
       "path": "src/notebooklm/_browser/headless_reauth.py"
     },
@@ -136,7 +136,7 @@
     "function_local_edges": 1,
     "module_edges": 18,
     "modules": 6,
-    "total_lines": 2773,
+    "total_lines": 2953,
     "unique_edges": 19
   },
   "version": 1

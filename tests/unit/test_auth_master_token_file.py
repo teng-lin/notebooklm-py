@@ -8,12 +8,13 @@ import inspect
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
-from notebooklm._auth import master_token, master_token_file, profile_store, storage
+from notebooklm._auth import master_token, master_token_file, storage
 from notebooklm._auth.master_token_file import MasterTokenFile, _MasterTokenRead
 from notebooklm._auth.master_token_types import MasterToken, _MasterTokenRecordError
 from notebooklm._auth.profile_store import ProfileStore
@@ -23,24 +24,32 @@ from notebooklm.exceptions import LockUnavailableError
 _MALFORMED = "master_token.json is malformed or an unsupported version."
 
 
-class RecordingLocks:
+class RecordingLocks(StorageLockManager):
     def __init__(
         self,
         state: LockState = LockState.HELD,
         *,
         events: list[str] | None = None,
+        on_enter: Callable[[LockRequest], None] | None = None,
+        on_exit: Callable[[], None] | None = None,
     ) -> None:
         self.state = state
         self.requests: list[LockRequest] = []
         self.events = events if events is not None else []
+        self.on_enter = on_enter
+        self.on_exit = on_exit
 
     @contextlib.contextmanager
     def acquire(self, request: LockRequest):
         self.requests.append(request)
         self.events.append("lock-enter")
+        if self.on_enter is not None:
+            self.on_enter(request)
         try:
             yield self.state
         finally:
+            if self.on_exit is not None:
+                self.on_exit()
             self.events.append("lock-exit")
 
 
@@ -79,7 +88,7 @@ def test_value_file_and_private_pair_shapes_are_exact(tmp_path: Path) -> None:
     )
 
     locks = RecordingLocks()
-    token_file = MasterTokenFile(tmp_path / "token.json", locks=cast(StorageLockManager, locks))
+    token_file = MasterTokenFile(tmp_path / "token.json", locks=locks)
     assert vars(token_file) == {"_path": tmp_path / "token.json", "_locks": locks}
     pair = _MasterTokenRead(_token(), _record())
     assert "secret" not in repr(pair)
@@ -115,12 +124,12 @@ def test_private_read_probes_reads_parses_and_decodes_once_in_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "master_token.json"
-    path.write_text("captured bytes", encoding="utf-8")
-    events: list[str] = []
     raw = _record(unknown={"nested": True})
-    token = _token()
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    events: list[str] = []
     real_exists = Path.exists
     real_read_text = Path.read_text
+    real_loads = json.loads
 
     def exists(candidate: Path) -> bool:
         if candidate == path:
@@ -132,26 +141,20 @@ def test_private_read_probes_reads_parses_and_decodes_once_in_order(
             events.append(f"read:{kwargs.get('encoding')}")
         return real_read_text(candidate, *args, **kwargs)
 
-    def loads(content: str) -> dict[str, object]:
-        events.append(f"parse:{content}")
-        return raw
-
-    def decode(candidate: object) -> MasterToken:
-        events.append("decode")
-        assert candidate is raw
-        return token
+    def loads(content: str) -> object:
+        events.append("parse")
+        return real_loads(content)
 
     monkeypatch.setattr(Path, "exists", exists)
     monkeypatch.setattr(Path, "read_text", read_text)
     monkeypatch.setattr(master_token_file.json, "loads", loads)
-    monkeypatch.setattr(master_token_file, "_master_token_from_legacy_record", decode)
 
     result = MasterTokenFile(path)._read_with_raw()  # noqa: SLF001
 
     assert result is not None
-    assert result.token is token
-    assert result.raw is raw
-    assert events == ["exists", "read:utf-8", "parse:captured bytes", "decode"]
+    assert result.token == _token()
+    assert result.raw == raw
+    assert events == ["exists", "read:utf-8", "parse"]
 
 
 def test_present_only_private_read_never_probes(
@@ -182,7 +185,6 @@ def test_absent_private_and_typed_reads_do_nothing_else(
 
     monkeypatch.setattr(Path, "read_text", forbidden)
     monkeypatch.setattr(master_token_file.json, "loads", forbidden)
-    monkeypatch.setattr(master_token_file, "_master_token_from_legacy_record", forbidden)
     token_file = MasterTokenFile(path)
 
     assert token_file._read_with_raw() is None  # noqa: SLF001
@@ -221,11 +223,7 @@ def test_public_probe_error_escapes_same_object_without_constructing(
         assert candidate == path
         raise error
 
-    def forbidden_constructor(*_args: object, **_kwargs: object) -> Any:
-        pytest.fail("a failed legacy probe must not construct MasterTokenFile")
-
     monkeypatch.setattr(Path, "exists", fail_probe)
-    monkeypatch.setattr(master_token, "MasterTokenFile", forbidden_constructor)
 
     with pytest.raises(OSError) as captured:
         master_token.read_master_token(path)
@@ -235,78 +233,49 @@ def test_public_probe_error_escapes_same_object_without_constructing(
     assert captured.value.__context__ is None
 
 
-def test_public_constructor_error_after_present_probe_escapes_same_object(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_public_present_malformed_record_projects_master_token_error(
+    tmp_path: Path,
 ) -> None:
     path = tmp_path / "token.json"
-    error = OSError("constructor failed")
-    probes = 0
+    path.write_text(json.dumps({"version": 999}), encoding="utf-8")
 
-    def present(candidate: Path) -> bool:
-        nonlocal probes
-        assert candidate == path
-        probes += 1
-        return True
-
-    def fail_constructor(*_args: object, **_kwargs: object) -> Any:
-        raise error
-
-    monkeypatch.setattr(Path, "exists", present)
-    monkeypatch.setattr(master_token, "MasterTokenFile", fail_constructor)
-
-    with pytest.raises(OSError) as captured:
+    with pytest.raises(master_token.MasterTokenError) as captured:
         master_token.read_master_token(path)
 
-    assert probes == 1
-    assert captured.value is error
-    assert captured.value.__cause__ is None
-    assert captured.value.__context__ is None
+    assert str(captured.value) == _MALFORMED
 
 
 def test_public_present_read_probes_constructs_reads_parses_and_decodes_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "token.json"
-    path.write_text("captured bytes", encoding="utf-8")
     raw = _record(extra={"kept": True})
-    token = _token()
+    path.write_text(json.dumps(raw), encoding="utf-8")
     events: list[str] = []
     real_exists = Path.exists
     real_read_text = Path.read_text
+    real_loads = json.loads
 
     def exists(candidate: Path) -> bool:
         if candidate == path:
             events.append("probe")
         return real_exists(candidate)
 
-    def construct(candidate: Path) -> MasterTokenFile:
-        assert candidate == path
-        events.append("construct")
-        return MasterTokenFile(candidate, locks=cast(StorageLockManager, RecordingLocks()))
-
     def read_text(candidate: Path, *args: object, **kwargs: object) -> str:
         assert candidate == path
         events.append(f"read:{kwargs.get('encoding')}")
         return real_read_text(candidate, *args, **kwargs)
 
-    def loads(content: str) -> dict[str, object]:
-        assert content == "captured bytes"
+    def loads(content: str) -> object:
         events.append("parse")
-        return raw
-
-    def decode(candidate: object) -> MasterToken:
-        assert candidate is raw
-        events.append("decode")
-        return token
+        return real_loads(content)
 
     monkeypatch.setattr(Path, "exists", exists)
     monkeypatch.setattr(Path, "read_text", read_text)
-    monkeypatch.setattr(master_token, "MasterTokenFile", construct)
     monkeypatch.setattr(master_token_file.json, "loads", loads)
-    monkeypatch.setattr(master_token_file, "_master_token_from_legacy_record", decode)
 
     assert master_token.read_master_token(path) == raw
-    assert events == ["probe", "construct", "read:utf-8", "parse", "decode"]
+    assert events == ["probe", "read:utf-8", "parse"]
 
 
 def test_typed_read_projects_only_token_from_one_private_call(
@@ -503,42 +472,28 @@ def test_actual_raw_adapter_retains_unknowns_types_and_duplicate_last_wins(tmp_p
     }
 
 
-def test_write_order_request_payload_and_release_are_exact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_write_order_request_payload_and_release_are_exact(tmp_path: Path) -> None:
     path = tmp_path / "credential.json"
     lock_path = tmp_path / ".credential.json.lock"
     events: list[str] = []
-    locks = RecordingLocks(events=events)
-    real_encode = master_token_file._master_token_to_legacy_record
 
-    def encode(token: MasterToken) -> dict[str, Any]:
-        events.append("encode")
-        return real_encode(token)
+    def observe_enter(request: LockRequest) -> None:
+        assert request.path == lock_path
+        assert path.parent.is_dir()
+        assert not path.exists()
 
-    def secure(candidate: Path) -> None:
-        events.append("secure")
-        assert candidate is path
+    def observe_exit() -> None:
+        assert json.loads(path.read_text(encoding="utf-8")) == _record()
 
-    def derive(candidate: Path) -> Path:
-        events.append("derive")
-        assert candidate is path
-        return lock_path
+    locks = RecordingLocks(events=events, on_enter=observe_enter, on_exit=observe_exit)
 
-    def commit(candidate: Path, payload: dict[str, Any]) -> None:
-        events.append("commit")
-        assert candidate is path
-        assert list(payload) == ["version", "email", "android_id", "master_token"]
-        assert payload == _record()
+    MasterTokenFile(path, locks=locks).write(_token())
 
-    monkeypatch.setattr(master_token_file, "_master_token_to_legacy_record", encode)
-    monkeypatch.setattr(master_token_file, "_ensure_secure_parent_dir", secure)
-    monkeypatch.setattr(master_token_file, "_storage_state_lock_path", derive)
-    monkeypatch.setattr(master_token_file, "_commit_master_token_json", commit)
-
-    MasterTokenFile(path, locks=cast(StorageLockManager, locks)).write(_token())
-
-    assert events == ["encode", "secure", "derive", "lock-enter", "commit", "lock-exit"]
+    assert events == ["lock-enter", "lock-exit"]
+    assert path.read_bytes() == (
+        b'{\n  "version": 1,\n  "email": "person@example.com",\n'
+        b'  "android_id": "android-1",\n  "master_token": "secret"\n}'
+    )
     assert locks.requests == [
         LockRequest(
             path=lock_path,
@@ -552,26 +507,17 @@ def test_write_order_request_payload_and_release_are_exact(
 @pytest.mark.parametrize("state", [LockState.CONTENDED, LockState.UNAVAILABLE])
 def test_write_fails_closed_for_both_nonheld_states(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     state: LockState,
 ) -> None:
     path = tmp_path / "master_token.json"
     locks = RecordingLocks(state)
-    commits = 0
-
-    def commit(_path: Path, _payload: dict[str, Any]) -> None:
-        nonlocal commits
-        commits += 1
-
-    monkeypatch.setattr(master_token_file, "_commit_master_token_json", commit)
-
     with pytest.raises(LockUnavailableError) as captured:
-        MasterTokenFile(path, locks=cast(StorageLockManager, locks)).write(_token())
+        MasterTokenFile(path, locks=locks).write(_token())
 
     assert str(captured.value) == (
         f"write_master_token: storage lock unavailable at {tmp_path / '.master_token.json.lock'}"
     )
-    assert commits == 0
+    assert not path.exists()
     assert locks.events == ["lock-enter", "lock-exit"]
 
 
@@ -589,31 +535,21 @@ def test_commit_failure_escapes_and_releases_lock(
     monkeypatch.setattr(master_token_file, "_commit_master_token_json", commit)
 
     with pytest.raises(RuntimeError) as captured:
-        MasterTokenFile(
-            tmp_path / "master_token.json",
-            locks=cast(StorageLockManager, locks),
-        ).write(_token())
+        MasterTokenFile(tmp_path / "master_token.json", locks=locks).write(_token())
 
     assert captured.value is error
     assert events == ["lock-enter", "commit", "lock-exit"]
 
 
-def test_non_token_rejection_precedes_parent_lock_and_commit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_non_token_rejection_precedes_parent_lock_and_commit(tmp_path: Path) -> None:
     path = tmp_path / "missing" / "master_token.json"
-
-    def forbidden(*_args: object, **_kwargs: object) -> Any:
-        pytest.fail("invalid value reached a persistence side effect")
-
-    monkeypatch.setattr(master_token_file, "_ensure_secure_parent_dir", forbidden)
-    monkeypatch.setattr(master_token_file, "_storage_state_lock_path", forbidden)
-    monkeypatch.setattr(master_token_file, "_commit_master_token_json", forbidden)
+    locks = RecordingLocks()
 
     with pytest.raises(TypeError) as captured:
-        MasterTokenFile(path).write(cast(MasterToken, object()))
+        MasterTokenFile(path, locks=locks).write(object())  # type: ignore[arg-type]
 
     assert captured.value.args == ("token must be an exact MasterToken instance",)
+    assert locks.requests == []
     assert not path.parent.exists()
 
 
@@ -661,64 +597,33 @@ def test_missing_parent_chain_is_created_securely(tmp_path: Path) -> None:
 
 
 def test_arbitrary_relative_path_is_never_canonicalized(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    path = Path("relative") / ".." / "custom-token.json"
+    (tmp_path / "relative").mkdir()
+    path = tmp_path / "relative" / ".." / "custom-token.json"
     locks = RecordingLocks()
-    committed: list[Path] = []
 
-    monkeypatch.setattr(master_token_file, "_ensure_secure_parent_dir", lambda _path: None)
-    monkeypatch.setattr(
-        master_token_file,
-        "_commit_master_token_json",
-        lambda candidate, _payload: committed.append(candidate),
-    )
+    MasterTokenFile(path, locks=locks).write(_token())
 
-    MasterTokenFile(path, locks=cast(StorageLockManager, locks)).write(_token())
-
-    assert committed == [path]
-    assert locks.requests[0].path == Path("relative") / ".." / ".custom-token.json.lock"
+    assert json.loads(path.read_text(encoding="utf-8")) == _record()
+    assert locks.requests[0].path == tmp_path / "relative" / ".." / ".custom-token.json.lock"
     assert ".." in locks.requests[0].path.parts
 
 
 def test_profile_store_derives_lazily_uses_same_locks_and_retains_no_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     storage_path = tmp_path / "storage_state.json"
-    paths = [tmp_path / "first-token.json", tmp_path / "second-token.json"]
+    token_path = tmp_path / "master_token.json"
     locks = RecordingLocks()
-    instances: list[FakeTokenFile] = []
-    derived: list[Path] = []
+    store = ProfileStore(storage_path, locks=locks)
 
-    class FakeTokenFile:
-        def __init__(self, path: Path, *, locks: object) -> None:
-            self.path = path
-            self.locks = locks
-            self.writes: list[MasterToken] = []
-            instances.append(self)
-
-        def read(self) -> MasterToken:
-            return _token()
-
-        def write(self, token: MasterToken) -> None:
-            self.writes.append(token)
-
-    def derive(path: Path) -> Path:
-        assert path is storage_path
-        result = paths[len(derived)]
-        derived.append(result)
-        return result
-
-    monkeypatch.setattr(profile_store._notebooklm_paths, "master_token_path_for", derive)
-    monkeypatch.setattr(profile_store, "MasterTokenFile", FakeTokenFile)
-    store = ProfileStore(storage_path, locks=cast(StorageLockManager, locks))
-
-    assert store.read_master_token() == _token()
+    assert store.read_master_token() is None
     store.write_master_token(_token())
+    assert store.read_master_token() == _token()
 
-    assert [item.path for item in instances] == paths
-    assert all(item.locks is locks for item in instances)
-    assert instances[1].writes == [_token()]
+    assert json.loads(token_path.read_text(encoding="utf-8")) == _record()
+    assert [request.path for request in locks.requests] == [tmp_path / ".master_token.json.lock"]
     assert vars(store) == {"_path": storage_path, "_locks": locks}
 
 

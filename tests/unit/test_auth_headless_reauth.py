@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 
@@ -25,6 +25,7 @@ from notebooklm._browser import headless_reauth as hr
 from notebooklm._browser.browser_capture import _CaptureAbortKind, _HeadlessCaptureAbort
 from notebooklm._browser.headless_reauth import (
     HeadlessReauthResult,
+    HeadlessReauthState,
     HeadlessReauthStatus,
     attempt_headless_reauth,
     headless_reauth_env_enabled,
@@ -38,6 +39,60 @@ def _make_profile(tmp_path: Path) -> Path:
     profile.mkdir(exist_ok=True)
     (profile / "Default").mkdir(exist_ok=True)  # a populated profile dir
     return profile
+
+
+def _unexpected_profile_capture(*_args: object, **_kwargs: object) -> NoReturn:
+    raise AssertionError("the dedicated-profile capture gateway must not run")
+
+
+def _unexpected_cdp_capture(*_args: object, **_kwargs: object) -> NoReturn:
+    raise AssertionError("the CDP capture gateway must not run")
+
+
+def _attempt(
+    *,
+    storage_path: Path,
+    allow_headless: bool,
+    browser_profile: Path | None,
+    env: dict[str, str],
+    playwright_installed: bool,
+    profile_capture,
+    cdp_capture,
+    state: HeadlessReauthState,
+    cdp_url: str | None = None,
+) -> HeadlessReauthResult:
+    """Drive the operation through explicit gateways and fresh owner state."""
+    return hr._attempt_headless_reauth(
+        storage_path=storage_path,
+        allow_headless=allow_headless,
+        browser_profile=browser_profile,
+        profile=None,
+        browser="chromium",
+        include_domains=None,
+        cdp_url=cdp_url,
+        env=env,
+        deps=hr._HeadlessReauthDeps(
+            playwright_installed=lambda: playwright_installed,
+            resolve_profile=hr._resolve_reusable_profile,
+            resolve_cdp=hr.resolve_cdp_url,
+            run_profile_capture=profile_capture,
+            run_cdp_capture=cdp_capture,
+            state=state,
+        ),
+    )
+
+
+def _readiness(
+    *,
+    browser_profile: Path,
+    playwright_installed: bool,
+) -> hr.HeadlessReauthReadiness:
+    return hr._headless_reauth_readiness(
+        browser_profile=browser_profile,
+        profile=None,
+        resolve_profile=hr._resolve_reusable_profile,
+        playwright_installed=lambda: playwright_installed,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -57,36 +112,38 @@ def test_env_enabled_only_for_exact_one() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_optin_off_is_unavailable_and_never_launches(tmp_path: Path, monkeypatch) -> None:
+def test_optin_off_is_unavailable_and_never_launches(tmp_path: Path) -> None:
     """No opt-in + no env → UNAVAILABLE; the capture core is never reached.
 
     This pins the locked design decision: L3 NEVER fires by default.
     """
     profile = _make_profile(tmp_path)
 
-    def _boom(*_a, **_k):  # pragma: no cover - must not be called
-        raise AssertionError("run_browser_capture must not be called when opt-in is off")
-
-    monkeypatch.setattr(hr, "run_browser_capture", _boom)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=False,
         browser_profile=profile,
         env={},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
     assert result.succeeded is False
     assert "not enabled" in result.reason
 
 
-def test_optin_off_even_with_profile_is_unavailable(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(hr, "run_browser_capture", lambda *a, **k: None)
-    result = attempt_headless_reauth(
+def test_optin_off_even_with_profile_is_unavailable(tmp_path: Path) -> None:
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=False,
         browser_profile=_make_profile(tmp_path),
         env={"NOTEBOOKLM_HEADLESS_REAUTH": "0"},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
 
@@ -96,28 +153,34 @@ def test_optin_off_even_with_profile_is_unavailable(tmp_path: Path, monkeypatch)
 # ---------------------------------------------------------------------------
 
 
-def test_optin_on_no_profile_dir_is_unavailable(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(hr, "run_browser_capture", lambda *a, **k: None)
-    result = attempt_headless_reauth(
+def test_optin_on_no_profile_dir_is_unavailable(tmp_path: Path) -> None:
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
         browser_profile=tmp_path / "does_not_exist",
         env={},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
     assert "no reusable browser profile" in result.reason
 
 
-def test_optin_on_empty_profile_dir_is_unavailable(tmp_path: Path, monkeypatch) -> None:
+def test_optin_on_empty_profile_dir_is_unavailable(tmp_path: Path) -> None:
     """A freshly-mkdir'd but empty profile holds no Google session → decline."""
-    monkeypatch.setattr(hr, "run_browser_capture", lambda *a, **k: None)
     empty = tmp_path / "browser_profile"
     empty.mkdir()
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
         browser_profile=empty,
         env={},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
 
@@ -138,7 +201,7 @@ def test_ownership_marker_only_profile_is_not_reusable(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_success_when_capture_succeeds(tmp_path: Path, monkeypatch) -> None:
+def test_success_when_capture_succeeds(tmp_path: Path) -> None:
     """Capture returns normally → SUCCESS, storage_path carried out."""
     storage = tmp_path / "storage_state.json"
     captured: dict[str, object] = {}
@@ -150,16 +213,15 @@ def test_success_when_capture_succeeds(tmp_path: Path, monkeypatch) -> None:
         return None
 
     profile = _make_profile(tmp_path)
-    monkeypatch.setattr(hr, "run_browser_capture", _fake_capture)
-    # Ensure the playwright-import probe passes by faking it present.
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=storage,
         allow_headless=True,
         browser_profile=profile,
         env={},
+        playwright_installed=True,
+        profile_capture=_fake_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.SUCCESS
     assert result.succeeded is True
@@ -172,21 +234,21 @@ def test_success_when_capture_succeeds(tmp_path: Path, monkeypatch) -> None:
     }
 
 
-def test_failed_when_profile_session_also_dead(tmp_path: Path, monkeypatch) -> None:
+def test_failed_when_profile_session_also_dead(tmp_path: Path) -> None:
     """Headless landed on the Google login page → FAILED, NEVER success."""
 
     def _redirected(plan, io, *, headless, interactive):
         raise HeadlessLoginRequiredError("redirected to login")
 
-    monkeypatch.setattr(hr, "run_browser_capture", _redirected)
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
         browser_profile=_make_profile(tmp_path),
         env={},
+        playwright_installed=True,
+        profile_capture=_redirected,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.FAILED
     assert result.succeeded is False
@@ -194,21 +256,21 @@ def test_failed_when_profile_session_also_dead(tmp_path: Path, monkeypatch) -> N
     assert "expired" in result.reason
 
 
-def test_failed_on_unexpected_capture_error(tmp_path: Path, monkeypatch) -> None:
+def test_failed_on_unexpected_capture_error(tmp_path: Path) -> None:
     """An unexpected capture exception → FAILED (best-effort recovery)."""
 
     def _boom(plan, io, *, headless, interactive):
         raise RuntimeError("launch blew up")
 
-    monkeypatch.setattr(hr, "run_browser_capture", _boom)
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
         browser_profile=_make_profile(tmp_path),
         env={},
+        playwright_installed=True,
+        profile_capture=_boom,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.FAILED
     # Error TYPE only — never a cookie value.
@@ -223,22 +285,22 @@ def test_failed_on_unexpected_capture_error(tmp_path: Path, monkeypatch) -> None
     ],
 )
 def test_typed_capture_abort_maps_to_safe_infrastructure_reason(
-    tmp_path: Path, monkeypatch, kind: _CaptureAbortKind, expected: str
+    tmp_path: Path, kind: _CaptureAbortKind, expected: str
 ) -> None:
     """Typed capture aborts stay FAILED without masquerading as expired sessions."""
 
     def _abort(*_args, **_kwargs):
         raise _HeadlessCaptureAbort(kind)
 
-    monkeypatch.setattr(hr, "run_browser_capture", _abort)
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
         browser_profile=_make_profile(tmp_path),
         env={},
+        playwright_installed=True,
+        profile_capture=_abort,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
 
     assert result.status is HeadlessReauthStatus.FAILED
@@ -248,20 +310,22 @@ def test_typed_capture_abort_maps_to_safe_infrastructure_reason(
     assert "cookie" not in result.reason
 
 
-def test_typed_capture_abort_from_cdp_uses_same_safe_mapping(tmp_path: Path, monkeypatch) -> None:
+def test_typed_capture_abort_from_cdp_uses_same_safe_mapping(tmp_path: Path) -> None:
     """The CDP arm shares the profile arm's infrastructure classification."""
 
     def _abort(*_args, **_kwargs):
         raise _HeadlessCaptureAbort(_CaptureAbortKind.BROWSER_CLOSED)
 
-    monkeypatch.setattr(hr, "run_cdp_capture", _abort)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
+        browser_profile=None,
         cdp_url="http://127.0.0.1:9222",
         env={},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_abort,
+        state=HeadlessReauthState(),
     )
 
     assert result.status is HeadlessReauthStatus.FAILED
@@ -271,46 +335,35 @@ def test_typed_capture_abort_from_cdp_uses_same_safe_mapping(tmp_path: Path, mon
     )
 
 
-def test_env_optin_drives_browser_without_explicit_flag(tmp_path: Path, monkeypatch) -> None:
+def test_env_optin_drives_browser_without_explicit_flag(tmp_path: Path) -> None:
     """``NOTEBOOKLM_HEADLESS_REAUTH=1`` enables L3 even with allow_headless=False."""
-    monkeypatch.setattr(hr, "run_browser_capture", lambda *a, **k: None)
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=False,
         browser_profile=_make_profile(tmp_path),
         env={"NOTEBOOKLM_HEADLESS_REAUTH": "1"},
+        playwright_installed=True,
+        profile_capture=lambda *_args, **_kwargs: None,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.SUCCESS
 
 
-def test_unavailable_when_playwright_missing(tmp_path: Path, monkeypatch) -> None:
+def test_unavailable_when_playwright_missing(tmp_path: Path) -> None:
     """Opt-in + profile, but the ``browser`` extra is absent → UNAVAILABLE.
 
     Distinct from FAILED: there is nothing to drive, not a dead session.
     """
-    import builtins
-
-    real_import = builtins.__import__
-
-    def _no_playwright(name, *args, **kwargs):
-        if name == "playwright.sync_api" or name == "playwright":
-            raise ImportError("No module named 'playwright'")
-        return real_import(name, *args, **kwargs)
-
-    def _must_not_run(*_a, **_k):  # pragma: no cover
-        raise AssertionError("capture must not run when playwright is missing")
-
-    monkeypatch.setattr(hr, "run_browser_capture", _must_not_run)
-    monkeypatch.setattr(builtins, "__import__", _no_playwright)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
         browser_profile=_make_profile(tmp_path),
         env={},
+        playwright_installed=False,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
     assert "playwright" in result.reason
@@ -332,7 +385,7 @@ def test_result_succeeded_property() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_concurrent_explicit_attempts_coalesce_to_one_browser(tmp_path: Path, monkeypatch) -> None:
+def test_concurrent_explicit_attempts_coalesce_to_one_browser(tmp_path: Path) -> None:
     """N concurrent ``attempt_headless_reauth`` calls drive ONE browser.
 
     The explicit ``refresh_auth(allow_headless=True)`` entry bypasses the
@@ -357,17 +410,22 @@ def test_concurrent_explicit_attempts_coalesce_to_one_browser(tmp_path: Path, mo
         # Simulate the real capture writing fresh storage (advances mtime).
         plan.storage_path.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
 
-    monkeypatch.setattr(hr, "run_browser_capture", _slow_capture)
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
+    state = HeadlessReauthState()
 
     results: list[HeadlessReauthResult] = []
     results_lock = threading.Lock()
 
     def _worker() -> None:
         barrier.wait()
-        res = attempt_headless_reauth(
-            storage_path=storage, allow_headless=True, browser_profile=profile, env={}
+        res = _attempt(
+            storage_path=storage,
+            allow_headless=True,
+            browser_profile=profile,
+            env={},
+            playwright_installed=True,
+            profile_capture=_slow_capture,
+            cdp_capture=_unexpected_cdp_capture,
+            state=state,
         )
         with results_lock:
             results.append(res)
@@ -422,9 +480,7 @@ class _ContentionSignalLock:
         return False
 
 
-def test_follower_does_not_report_false_success_when_leader_failed(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_follower_does_not_report_false_success_when_leader_failed(tmp_path: Path) -> None:
     """Leader re-mint FAILS + an unrelated write advances the file → follower FAILED.
 
     This is the [capture-3] regression. The old coalescing keyed on the storage
@@ -450,13 +506,15 @@ def test_follower_does_not_report_false_success_when_leader_failed(
 
     # Inject a shared drive record whose lock signals contention, so both the
     # leader and the follower coalesce through the same sequence + outcome.
-    record = hr._DriveRecord(
-        drive_lock=_ContentionSignalLock(),  # type: ignore[arg-type]
-        _state_lock=threading.Lock(),
+    signal_lock = _ContentionSignalLock()
+    state = HeadlessReauthState(
+        _record_factory=lambda: hr._DriveRecord(
+            drive_lock=signal_lock,  # type: ignore[arg-type]
+            _state_lock=threading.Lock(),
+        )
     )
-    monkeypatch.setattr(hr, "_get_drive_record", lambda _p, *, source: record)
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
+    record = state.drive_record(storage, source="profile")
+    assert record.drive_lock is signal_lock
 
     leader_in_capture = threading.Event()
     leader_may_finish = threading.Event()
@@ -467,13 +525,18 @@ def test_follower_does_not_report_false_success_when_leader_failed(
         # The leader's re-mint FAILS: the profile's Google session is dead.
         raise HeadlessLoginRequiredError("profile session is dead")
 
-    monkeypatch.setattr(hr, "run_browser_capture", _leader_capture)
-
     results: dict[str, HeadlessReauthResult] = {}
 
     def _run(tag: str) -> None:
-        results[tag] = attempt_headless_reauth(
-            storage_path=storage, allow_headless=True, browser_profile=profile, env={}
+        results[tag] = _attempt(
+            storage_path=storage,
+            allow_headless=True,
+            browser_profile=profile,
+            env={},
+            playwright_installed=True,
+            profile_capture=_leader_capture,
+            cdp_capture=_unexpected_cdp_capture,
+            state=state,
         )
 
     leader = threading.Thread(target=_run, args=("leader",))
@@ -501,7 +564,7 @@ def test_follower_does_not_report_false_success_when_leader_failed(
     assert results["follower"].succeeded is False
 
 
-def test_stale_outcome_from_previous_cycle_is_not_coalesced(tmp_path: Path, monkeypatch) -> None:
+def test_stale_outcome_from_previous_cycle_is_not_coalesced(tmp_path: Path) -> None:
     """A solo follower after a past drive treats the old outcome as 'no outcome'.
 
     A caller that arrives when NO drive is active during its wait must not
@@ -511,27 +574,37 @@ def test_stale_outcome_from_previous_cycle_is_not_coalesced(tmp_path: Path, monk
     """
     storage = tmp_path / "storage_state.json"
     profile = _make_profile(tmp_path)
-    monkeypatch.setitem(__import__("sys").modules, "playwright", _DummyModule())
-    monkeypatch.setitem(__import__("sys").modules, "playwright.sync_api", _DummyModule())
-
     drives = {"count": 0}
+    state = HeadlessReauthState()
 
     def _capture(plan, io, *, headless, interactive):
         drives["count"] += 1
         plan.storage_path.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
 
-    monkeypatch.setattr(hr, "run_browser_capture", _capture)
-
     # First (completed) drive cycle publishes a SUCCESS outcome at sequence 1.
-    first = attempt_headless_reauth(
-        storage_path=storage, allow_headless=True, browser_profile=profile, env={}
+    first = _attempt(
+        storage_path=storage,
+        allow_headless=True,
+        browser_profile=profile,
+        env={},
+        playwright_installed=True,
+        profile_capture=_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=state,
     )
     assert first.status is HeadlessReauthStatus.SUCCESS
     assert drives["count"] == 1
 
     # A later, solo caller must NOT coalesce onto that stale outcome; it drives.
-    second = attempt_headless_reauth(
-        storage_path=storage, allow_headless=True, browser_profile=profile, env={}
+    second = _attempt(
+        storage_path=storage,
+        allow_headless=True,
+        browser_profile=profile,
+        env={},
+        playwright_installed=True,
+        profile_capture=_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=state,
     )
     assert second.status is HeadlessReauthStatus.SUCCESS
     assert drives["count"] == 2  # drove its own browser, did not coalesce
@@ -563,6 +636,8 @@ def test_single_flight_is_unreachable_from_the_sync_drive_entry() -> None:
     from notebooklm._auth import recovery
     from notebooklm._auth import single_flight as sf
 
+    single_flight = sf.SingleFlight()
+
     # The entry point and its coalescer are synchronous; the async caller that
     # reaches them hands them to a worker thread.
     assert not inspect.iscoroutinefunction(attempt_headless_reauth)
@@ -577,7 +652,7 @@ def test_single_flight_is_unreachable_from_the_sync_drive_entry() -> None:
     async def _drive_in_worker_thread() -> str:
         def _claim_from_worker() -> str:
             try:
-                sf.claim(("path", "profile"), _never_runs)
+                single_flight.claim(("path", "profile"), _never_runs)
             except RuntimeError as exc:
                 return str(exc)
             return "claimed"  # pragma: no cover - would mean a loop was present
@@ -599,13 +674,14 @@ def test_drive_record_keying_is_resolved_inside_the_sync_entry(tmp_path: Path) -
     """
     storage = tmp_path / "storage_state.json"
 
-    profile_record = hr._get_drive_record(storage, source="profile")
-    cdp_record = hr._get_drive_record(storage, source="cdp")
+    state = HeadlessReauthState()
+    profile_record = state.drive_record(storage, source="profile")
+    cdp_record = state.drive_record(storage, source="cdp")
 
     # Same storage file, different credential source → different records, so a
     # dead profile's FAILED can never be handed to a live CDP attach.
     assert profile_record is not cdp_record
-    assert hr._get_drive_record(storage, source="profile") is profile_record
+    assert state.drive_record(storage, source="profile") is profile_record
 
     # The source is only knowable after ``resolve_cdp_url`` runs, and that call
     # is the loopback gate: a remote endpoint resolves to ``None`` (→ the
@@ -614,13 +690,83 @@ def test_drive_record_keying_is_resolved_inside_the_sync_entry(tmp_path: Path) -
     assert hr.resolve_cdp_url("http://remote-host:9222", {}) is None
 
 
-class _DummyModule:
-    """Stand-in for the ``playwright`` / ``playwright.sync_api`` modules.
+def test_headless_reauth_state_isolated_and_quiescent_reset(tmp_path: Path) -> None:
+    """Fresh owners do not share records and only clear settled state."""
+    storage = tmp_path / "storage_state.json"
+    first = HeadlessReauthState()
+    second = HeadlessReauthState()
 
-    Only used to satisfy the function-local ``import playwright.sync_api``
-    availability probe in :func:`attempt_headless_reauth` without installing
-    the real extra; the actual capture is faked via ``run_browser_capture``.
-    """
+    first_record = first.drive_record(storage, source="profile")
+    assert second.drive_record(storage, source="profile") is not first_record
+
+    first_record.drive_lock.acquire()
+    try:
+        with pytest.raises(RuntimeError, match="while a drive is active"):
+            first.reset_if_quiescent()
+        assert first.drive_record(storage, source="profile") is first_record
+    finally:
+        first_record.drive_lock.release()
+
+    first.reset_if_quiescent()
+    assert first.drive_record(storage, source="profile") is not first_record
+
+
+def test_headless_reauth_state_rejects_reset_during_pre_lock_reservation(
+    tmp_path: Path,
+) -> None:
+    """Reset cannot clear a record between lookup and drive-lock acquisition."""
+    state = HeadlessReauthState()
+    storage = tmp_path / "storage_state.json"
+    reserved = threading.Event()
+    release = threading.Event()
+
+    def reserve_without_locking() -> None:
+        with state._reserve_drive_record(storage, source="profile") as record:
+            assert not record.drive_lock.locked()
+            reserved.set()
+            assert release.wait(timeout=5)
+
+    worker = threading.Thread(target=reserve_without_locking)
+    worker.start()
+    assert reserved.wait(timeout=5)
+    try:
+        with pytest.raises(RuntimeError, match="while a drive is active"):
+            state.reset_if_quiescent()
+    finally:
+        release.set()
+        worker.join(timeout=5)
+
+    assert not worker.is_alive()
+    state.reset_if_quiescent()
+
+
+def test_operation_dependencies_carry_no_credential_values() -> None:
+    """The operation seam contains gateways and state, never captured secrets."""
+    deps = hr._HeadlessReauthDeps(
+        playwright_installed=lambda: True,
+        resolve_profile=hr._resolve_reusable_profile,
+        resolve_cdp=hr.resolve_cdp_url,
+        run_profile_capture=_unexpected_profile_capture,
+        run_cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
+    )
+
+    assert set(vars(deps)) == {
+        "playwright_installed",
+        "resolve_profile",
+        "resolve_cdp",
+        "run_profile_capture",
+        "run_cdp_capture",
+        "state",
+    }
+
+
+def test_production_composition_reuses_the_process_default_state() -> None:
+    """Every public attempt composes the same process-lifetime coalescer."""
+    process_default = HeadlessReauthState.process_default()
+
+    assert hr._production_deps().state is process_default
+    assert hr._production_deps().state is process_default
 
 
 # ---------------------------------------------------------------------------
@@ -628,12 +774,10 @@ class _DummyModule:
 # ---------------------------------------------------------------------------
 
 
-def test_readiness_ready_when_profile_present_and_playwright(tmp_path: Path, monkeypatch) -> None:
+def test_readiness_ready_when_profile_present_and_playwright(tmp_path: Path) -> None:
     """Profile present + playwright importable → available, ready detail."""
     profile = _make_profile(tmp_path)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    readiness = hr.headless_reauth_readiness(browser_profile=profile)
+    readiness = _readiness(browser_profile=profile, playwright_installed=True)
 
     assert readiness.profile_present is True
     assert readiness.playwright_installed is True
@@ -642,21 +786,20 @@ def test_readiness_ready_when_profile_present_and_playwright(tmp_path: Path, mon
     assert "NOTEBOOKLM_HEADLESS_REAUTH" in readiness.detail
 
 
-def test_readiness_unavailable_without_profile(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    readiness = hr.headless_reauth_readiness(browser_profile=tmp_path / "nope")
+def test_readiness_unavailable_without_profile(tmp_path: Path) -> None:
+    readiness = _readiness(
+        browser_profile=tmp_path / "nope",
+        playwright_installed=True,
+    )
 
     assert readiness.profile_present is False
     assert readiness.available is False
     assert "no reusable browser profile" in readiness.detail
 
 
-def test_readiness_unavailable_without_playwright(tmp_path: Path, monkeypatch) -> None:
+def test_readiness_unavailable_without_playwright(tmp_path: Path) -> None:
     profile = _make_profile(tmp_path)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
-
-    readiness = hr.headless_reauth_readiness(browser_profile=profile)
+    readiness = _readiness(browser_profile=profile, playwright_installed=False)
 
     assert readiness.profile_present is True
     assert readiness.playwright_installed is False
@@ -664,26 +807,24 @@ def test_readiness_unavailable_without_playwright(tmp_path: Path, monkeypatch) -
     assert "playwright not installed" in readiness.detail
 
 
-def test_readiness_reports_both_missing(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
-
-    readiness = hr.headless_reauth_readiness(browser_profile=tmp_path / "nope")
+def test_readiness_reports_both_missing(tmp_path: Path) -> None:
+    readiness = _readiness(
+        browser_profile=tmp_path / "nope",
+        playwright_installed=False,
+    )
 
     assert readiness.available is False
     assert "no reusable browser profile" in readiness.detail
     assert "playwright not installed" in readiness.detail
 
 
-def test_readiness_never_drives_a_browser(tmp_path: Path, monkeypatch) -> None:
+def test_readiness_never_drives_a_browser(tmp_path: Path) -> None:
     """The readiness probe must never launch the capture core."""
 
-    def _boom(*_a, **_k):  # pragma: no cover - must not be called
-        raise AssertionError("headless_reauth_readiness must not drive a browser")
-
-    monkeypatch.setattr(hr, "run_browser_capture", _boom)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    readiness = hr.headless_reauth_readiness(browser_profile=_make_profile(tmp_path))
+    readiness = _readiness(
+        browser_profile=_make_profile(tmp_path),
+        playwright_installed=True,
+    )
     assert readiness.available is True
 
 
@@ -761,7 +902,7 @@ def test_resolve_cdp_url_rejects_non_loopback(url: str, caplog) -> None:
     assert url not in caplog.text
 
 
-def test_cdp_path_skips_profile_gate_and_drives_cdp(tmp_path: Path, monkeypatch) -> None:
+def test_cdp_path_skips_profile_gate_and_drives_cdp(tmp_path: Path) -> None:
     """A resolved CDP URL routes to run_cdp_capture WITHOUT requiring a profile.
 
     The dedicated profile is intentionally NOT created here: the CDP arm must
@@ -775,25 +916,23 @@ def test_cdp_path_skips_profile_gate_and_drives_cdp(tmp_path: Path, monkeypatch)
         storage.write_text("{}", encoding="utf-8")
         return None
 
-    def _no_launch(*_a, **_k):  # pragma: no cover - must not be called
-        raise AssertionError("the CDP arm must not launch the dedicated profile")
-
-    monkeypatch.setattr(hr, "run_cdp_capture", _fake_cdp)
-    monkeypatch.setattr(hr, "run_browser_capture", _no_launch)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=storage,
         allow_headless=True,
+        browser_profile=None,
         cdp_url="http://127.0.0.1:9222",
         env={},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_fake_cdp,
+        state=HeadlessReauthState(),
     )
 
     assert result.status is HeadlessReauthStatus.SUCCESS
     assert calls["cdp_url"] == "http://127.0.0.1:9222"
 
 
-def test_cdp_url_from_env_routes_to_cdp(tmp_path: Path, monkeypatch) -> None:
+def test_cdp_url_from_env_routes_to_cdp(tmp_path: Path) -> None:
     storage = tmp_path / "storage_state.json"
     used: dict[str, Any] = {}
 
@@ -801,34 +940,38 @@ def test_cdp_url_from_env_routes_to_cdp(tmp_path: Path, monkeypatch) -> None:
         used["cdp_url"] = cdp_url
         storage.write_text("{}", encoding="utf-8")
 
-    monkeypatch.setattr(hr, "run_cdp_capture", _fake_cdp)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=storage,
         allow_headless=True,
+        browser_profile=None,
         env={"NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL": "http://127.0.0.1:9333"},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_fake_cdp,
+        state=HeadlessReauthState(),
     )
 
     assert result.status is HeadlessReauthStatus.SUCCESS
     assert used["cdp_url"] == "http://127.0.0.1:9333"
 
 
-def test_cdp_off_host_maps_to_failed(tmp_path: Path, monkeypatch) -> None:
+def test_cdp_off_host_maps_to_failed(tmp_path: Path) -> None:
     """A HeadlessLoginRequiredError from the CDP arm → honest FAILED."""
     storage = tmp_path / "storage_state.json"
 
     def _fake_cdp(plan, io, *, cdp_url):
         raise HeadlessLoginRequiredError("attached browser cannot reach NotebookLM")
 
-    monkeypatch.setattr(hr, "run_cdp_capture", _fake_cdp)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=storage,
         allow_headless=True,
+        browser_profile=None,
         cdp_url="http://127.0.0.1:9222",
         env={},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_fake_cdp,
+        state=HeadlessReauthState(),
     )
 
     assert result.status is HeadlessReauthStatus.FAILED
@@ -836,27 +979,26 @@ def test_cdp_off_host_maps_to_failed(tmp_path: Path, monkeypatch) -> None:
     assert not storage.exists()
 
 
-def test_cdp_opt_in_still_required(tmp_path: Path, monkeypatch) -> None:
+def test_cdp_opt_in_still_required(tmp_path: Path) -> None:
     """Even with a CDP URL, opt-in is required — never fires by default."""
 
-    def _boom(*_a, **_k):  # pragma: no cover - must not be called
-        raise AssertionError("CDP arm must not run without opt-in")
-
-    monkeypatch.setattr(hr, "run_cdp_capture", _boom)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=False,
+        browser_profile=None,
         cdp_url="http://127.0.0.1:9222",
         env={},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
 
     assert result.status is HeadlessReauthStatus.UNAVAILABLE
     assert "not enabled" in result.reason
 
 
-def test_remote_cdp_url_does_not_route_to_cdp(tmp_path: Path, monkeypatch) -> None:
+def test_remote_cdp_url_does_not_route_to_cdp(tmp_path: Path) -> None:
     """A remote CDP endpoint must NOT drive the CDP arm (local-only boundary).
 
     With a remote URL and no reusable profile, the attempt declines as
@@ -864,18 +1006,15 @@ def test_remote_cdp_url_does_not_route_to_cdp(tmp_path: Path, monkeypatch) -> No
     profile arm found no profile) — and ``run_cdp_capture`` is never called.
     """
 
-    def _boom(*_a, **_k):  # pragma: no cover - must not be called
-        raise AssertionError("a remote CDP endpoint must never reach run_cdp_capture")
-
-    monkeypatch.setattr(hr, "run_cdp_capture", _boom)
-    monkeypatch.setattr(hr, "run_browser_capture", lambda *a, **k: None)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: True)
-
-    result = attempt_headless_reauth(
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
         browser_profile=tmp_path / "no_profile",
         env={"NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL": "http://remote-host:9222"},
+        playwright_installed=True,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
 
     # Fell through to the profile arm, which declined (no profile) → UNAVAILABLE.
@@ -883,18 +1022,17 @@ def test_remote_cdp_url_does_not_route_to_cdp(tmp_path: Path, monkeypatch) -> No
     assert "no reusable browser profile" in result.reason
 
 
-def test_cdp_playwright_missing_is_unavailable(tmp_path: Path, monkeypatch) -> None:
-    def _boom(*_a, **_k):  # pragma: no cover - must not be called
-        raise AssertionError("CDP arm must not run without playwright")
-
-    monkeypatch.setattr(hr, "run_cdp_capture", _boom)
-    monkeypatch.setattr(hr, "_playwright_installed", lambda: False)
-
-    result = attempt_headless_reauth(
+def test_cdp_playwright_missing_is_unavailable(tmp_path: Path) -> None:
+    result = _attempt(
         storage_path=tmp_path / "storage_state.json",
         allow_headless=True,
+        browser_profile=None,
         cdp_url="http://127.0.0.1:9222",
         env={},
+        playwright_installed=False,
+        profile_capture=_unexpected_profile_capture,
+        cdp_capture=_unexpected_cdp_capture,
+        state=HeadlessReauthState(),
     )
 
     assert result.status is HeadlessReauthStatus.UNAVAILABLE

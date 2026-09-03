@@ -57,7 +57,11 @@ it one clean regen command.
    - `storage_transaction_policy` → direct AST-derived callers of the three
      lock-unavailable policies.
    - `auth_import_graph` / `auth_patch_sites` and the sibling
-     `browser_import_graph` / `browser_patch_sites` → their audit projections.
+     `browser_import_graph` / `browser_patch_sites` → their audit projections;
+     auth/browser patch projections use schema-v2 full joint rows, while
+     `auth_facade_patch_sites`, `auth_family_patch_scorecard`, and
+     `auth_shared_mutations` make facade/package relocation and shared-owner
+     displacement visible. All five mutation artifacts are shrink-only.
    - `guardrail_inline_literals` → the grandfathered inventory of large
      module-level container literals under `tests/_guardrails/`.
 
@@ -66,6 +70,12 @@ it one clean regen command.
    pre-existing path `tests/fixtures/cli_contract_baseline.json`, registered as
    its `Baseline.path`. Ordered lists serialize in order (lists are never
    sorted; only dict *keys* are affected by `sort_keys`).
+
+   Auth behavior scenarios, coverage-loss allowances, lifecycle cleanup, and
+   the final survivor ledger are authored policies under
+   `tests/fixtures/policies/`, not regenerable baselines. Their validators reject
+   missing, extra, stale, wildcard, or expired rows; `--allow-growth` cannot
+   write or authorize them.
 
 3. **One freeze test.** `test_baseline_matches_committed_file`
    (parametrized over `BASELINES`) loads the committed file and asserts it equals

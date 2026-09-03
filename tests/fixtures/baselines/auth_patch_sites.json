@@ -1,11 +1,1406 @@
 {
-  "sites": [
+  "files": [
     {
-      "attribute": "_probe_authuser",
+      "count": 2,
+      "path": "tests/_guardrails/test_auth_storage_compatibility.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/_guardrails/test_auth_stored_auth_boundary.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/integration/concurrency/test_upload_timeout_config.py"
+    },
+    {
+      "count": 6,
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "count": 5,
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "count": 2,
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "count": 3,
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_auth_cookie_save_race.py"
+    },
+    {
+      "count": 3,
+      "path": "tests/unit/test_auth_credential_io.py"
+    },
+    {
+      "count": 2,
+      "path": "tests/unit/test_auth_issue_2061.py"
+    },
+    {
+      "count": 3,
+      "path": "tests/unit/test_auth_load_composition.py"
+    },
+    {
+      "count": 6,
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "count": 5,
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "count": 7,
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_auth_profile_store.py"
+    },
+    {
+      "count": 2,
+      "path": "tests/unit/test_auth_profile_store_account.py"
+    },
+    {
+      "count": 3,
+      "path": "tests/unit/test_auth_profile_store_login.py"
+    },
+    {
+      "count": 2,
+      "path": "tests/unit/test_auth_profile_store_minted.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_auth_profile_store_remint.py"
+    },
+    {
+      "count": 2,
+      "path": "tests/unit/test_auth_psidts_recovery.py"
+    },
+    {
+      "count": 4,
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_auth_refresh_coverage.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_auth_refresh_profile_store.py"
+    },
+    {
+      "count": 3,
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "count": 2,
+      "path": "tests/unit/test_auth_validate_heal_split.py"
+    },
+    {
+      "count": 3,
+      "path": "tests/unit/test_backend_selection.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_client.py"
+    },
+    {
+      "count": 4,
+      "path": "tests/unit/test_public_shims.py"
+    },
+    {
+      "count": 4,
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_runtime_lifecycle.py"
+    },
+    {
+      "count": 2,
+      "path": "tests/unit/test_storage_writer.py"
+    },
+    {
+      "count": 1,
+      "path": "tests/unit/test_windows_lock.py"
+    }
+  ],
+  "joint_sites": [
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "account",
+      "owner_kind": "test",
+      "owner_qualname": "TestRepairAccountMetadataPokeSession.test_poke_session_is_injected",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "account",
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_auth_refresh_repairs_malformed_playwright_account_metadata",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "account",
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_auth_refresh_repairs_missing_playwright_account_metadata",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "account",
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_clears_metadata_when_account_ambiguous",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "account",
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_uses_recovered_page_email_for_metadata",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "account",
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_writes_account_matched_by_page_email",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "attribute": "enumerate_accounts",
+      "count": 1,
+      "idiom": "patch.object",
+      "module": "account",
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_writes_single_account_metadata",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "attribute": "MINIMUM_REQUIRED_COOKIES",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy",
+      "owner_kind": "test",
+      "owner_qualname": "test_required_rejection_uses_late_policy_attributes_and_precedes_destination_access",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_login.py"
+    },
+    {
+      "attribute": "MINIMUM_REQUIRED_COOKIES",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy",
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_validation_extraction_hint_lives_on_cookie_policy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_public_shims.py"
+    },
+    {
+      "attribute": "MINIMUM_REQUIRED_COOKIES",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy",
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_validation_uses_cookie_policy_rebindings_directly",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_public_shims.py"
+    },
+    {
+      "attribute": "_EXTRACTION_HINT",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy",
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_validation_extraction_hint_lives_on_cookie_policy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_public_shims.py"
+    },
+    {
+      "attribute": "_has_valid_secondary_binding",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy",
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_validation_uses_cookie_policy_rebindings_directly",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_public_shims.py"
+    },
+    {
+      "attribute": "cookie_names_from_storage",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_policy",
+      "owner_kind": "test",
+      "owner_qualname": "test_required_rejection_uses_late_policy_attributes_and_precedes_destination_access",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_login.py"
+    },
+    {
+      "attribute": "sanitize_cookie_entry",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookie_semantics",
+      "owner_kind": "test",
+      "owner_qualname": "test_paired_cookie_projection_sanitizes_and_converts_each_row_once",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "attribute": "_build_httpx_cookies_from_storage_strict",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookies",
+      "owner_kind": "test",
+      "owner_qualname": "test_strict_loader_bridge_observes_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "_cookie_from_normalized_entry",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "cookies",
+      "owner_kind": "test",
+      "owner_qualname": "test_paired_cookie_projection_sanitizes_and_converts_each_row_once",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "attribute": "_atomic_write_json_unchecked",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "credential_io",
+      "owner_kind": "test",
+      "owner_qualname": "test_commit_signatures_and_none_returns_are_exact",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_credential_io.py"
+    },
+    {
+      "attribute": "_atomic_write_json_unchecked",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "credential_io",
+      "owner_kind": "test",
+      "owner_qualname": "test_spine_preserves_exception_identity_and_does_not_create_parent",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_credential_io.py"
+    },
+    {
+      "attribute": "_commit_json_unchecked",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "credential_io",
+      "owner_kind": "test",
+      "owner_qualname": "test_typed_wrappers_forward_exact_objects_once",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_credential_io.py"
+    },
+    {
+      "attribute": "_LOCK_ACQUIRE_DEADLINE_SECONDS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive",
+      "owner_kind": "test",
+      "owner_qualname": "TestFlockLoserWaitsThenReloads.test_wait_for_refresh_holder_times_out_best_effort",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "attribute": "_STORAGE_LOCKS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive",
+      "owner_kind": "test",
+      "owner_qualname": "test_lock_wrapper_shapes_ownership_and_projections_are_exact",
+      "package": "notebooklm._auth",
+      "path": "tests/_guardrails/test_auth_storage_compatibility.py"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive",
+      "owner_kind": "test",
+      "owner_qualname": "TestFlockLoserWaitsThenReloads.test_leader_body_loser_waits_no_subprocess_no_bump",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive",
+      "owner_kind": "test",
+      "owner_qualname": "TestFlockLoserWaitsThenReloads.test_wait_for_refresh_holder_polls_until_released",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive",
+      "owner_kind": "test",
+      "owner_qualname": "TestFlockLoserWaitsThenReloads.test_wait_for_refresh_holder_times_out_best_effort",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "attribute": "_rotate_cookies",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "keepalive",
+      "owner_kind": "test",
+      "owner_qualname": "test_default_cookie_rotator_late_binds_to_canonical_seam",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_runtime_lifecycle.py"
+    },
+    {
+      "attribute": "MasterTokenFile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_absent_probes_once_without_constructing_file_owner",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "_bootstrapper",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_coarse_cancellation_drops_active_caller",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "_bootstrapper",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_force_fast_path_precedes_path_derivation_and_composition",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "_verify_by_listing_notebooks",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "generate_android_id",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "_commit_master_token_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token_file",
+      "owner_kind": "test",
+      "owner_qualname": "test_commit_failure_escapes_and_releases_lock",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "_master_token_to_legacy_record",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "master_token_file",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_raw_adapter_returns_fresh_captured_dict_without_reencoding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "FileLock",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration",
+      "owner_kind": "test",
+      "owner_qualname": "TestLegacyAccountContextScrub.test_oserror_from_lock_is_swallowed",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "FileLock",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration",
+      "owner_kind": "test",
+      "owner_qualname": "test_context_scrub_rewrites_or_unlinks_under_exact_sibling_lock",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "FileLock",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration",
+      "owner_kind": "test",
+      "owner_qualname": "test_scrub_lock_is_actually_wired_to_the_pinned_constant",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "FileLock",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration",
+      "owner_kind": "test",
+      "owner_qualname": "test_scrub_reports_a_lock_timeout_instead_of_swallowing_it",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "FileLock",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration",
+      "owner_kind": "test",
+      "owner_qualname": "test_scrub_reports_an_ordinary_os_failure_too",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "_CONTEXT_SCRUB_LOCK_TIMEOUT_SECONDS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_migration",
+      "owner_kind": "test",
+      "owner_qualname": "test_scrub_lock_is_actually_wired_to_the_pinned_constant",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "atomic_write_json",
       "count": 2,
       "idiom": "monkeypatch.setattr",
-      "module": "account"
+      "module": "profile_migration",
+      "owner_kind": "test",
+      "owner_qualname": "test_context_scrub_rewrites_or_unlinks_under_exact_sibling_lock",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
     },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store",
+      "owner_kind": "test",
+      "owner_qualname": "test_cookie_read_and_commit_failures_have_distinct_committed_projection",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store.py"
+    },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store",
+      "owner_kind": "test",
+      "owner_qualname": "test_clear_missing_lock_miss_and_commit_failure",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_account.py"
+    },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store",
+      "owner_kind": "test",
+      "owner_qualname": "test_update_lock_and_commit_failures_escape",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_account.py"
+    },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store",
+      "owner_kind": "test",
+      "owner_qualname": "test_windows_backup_skips_chmod_and_commit_failure_leaves_backup",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_login.py"
+    },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store",
+      "owner_kind": "test",
+      "owner_qualname": "test_non_owner_failures_escape_unchanged_in_exact_order",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_minted.py"
+    },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store",
+      "owner_kind": "test",
+      "owner_qualname": "test_failures_escape_only_after_lock_release",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_remint.py"
+    },
+    {
+      "attribute": "_commit_profile_json",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "profile_store",
+      "owner_kind": "test",
+      "owner_qualname": "test_missing_read_and_failed_commit_are_non_raising_and_preserve_bytes",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh_profile_store.py"
+    },
+    {
+      "attribute": "_check_routable",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestWrapperComposition.test_post_heal_recheck_is_presence_only",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_validate_heal_split.py"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "test_contended_recovery_requires_routed_disk_state",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_issue_2061.py"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestEdgeCases.test_cross_process_flock_held_skips_post",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_psidts_recovery.py"
+    },
+    {
+      "attribute": "_file_lock_try_exclusive",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestEdgeCases.test_flock_held_returns_true_when_file_already_healed",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_psidts_recovery.py"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_flat_pure_loader_raises_psidts_unroutable_without_network",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_jar_pure_loader_raises_psidts_unroutable_without_network",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_name_only_pure_loader_accepts_unroutable_without_network",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_pure_loader_raises_missing_cookie_without_network",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "test_from_storage_load_recovery_does_not_block_event_loop",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "test_validation_only_malformed_required_row_is_typed_and_redacted",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_issue_2061.py"
+    },
+    {
+      "attribute": "_recover_psidts_inline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensPassive.test_passive_does_not_trigger_psidts_recovery",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "attribute": "load_with_recovery",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestBothWrappersUseTheOneComposition.test_flat_wrapper_delegates",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_load_composition.py"
+    },
+    {
+      "attribute": "load_with_recovery",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestBothWrappersUseTheOneComposition.test_jar_wrapper_delegates",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_load_composition.py"
+    },
+    {
+      "attribute": "load_with_recovery",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestBothWrappersUseTheOneComposition.test_passive_jar_loader_selects_name_only",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_load_composition.py"
+    },
+    {
+      "attribute": "load_with_recovery",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "test_android_from_storage_uses_name_only_psidts_policy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_backend_selection.py"
+    },
+    {
+      "attribute": "recover_psidts_in_memory",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "psidts_recovery",
+      "owner_kind": "test",
+      "owner_qualname": "TestWrapperComposition.test_heal_that_supplies_nothing_useful_still_reports_invalid",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_validate_heal_split.py"
+    },
+    {
+      "attribute": "_try_headless_reauth_result",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "recovery",
+      "owner_kind": "test",
+      "owner_qualname": "test_cold_and_live_l4_recovery_share_one_master_token_mint",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "_try_headless_reauth_result",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "recovery",
+      "owner_kind": "test",
+      "owner_qualname": "test_shared_adapter_exception_fans_out_and_later_call_retries",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "_try_master_token_reauth_result",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "recovery",
+      "owner_kind": "test",
+      "owner_qualname": "test_shared_adapter_exception_fans_out_and_later_call_retries",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "_fetch_tokens_with_exact_baseline",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh",
+      "owner_kind": "test",
+      "owner_qualname": "test_android_from_storage_uses_name_only_psidts_policy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_backend_selection.py"
+    },
+    {
+      "attribute": "_fetch_tokens_with_jar",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh",
+      "owner_kind": "test",
+      "owner_qualname": "TestRefreshCmdBaselineCapturedBeforeRetryFetch.test_retry_fetch_rotations_persist_to_disk",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cookie_save_race.py"
+    },
+    {
+      "attribute": "_fetch_tokens_with_jar",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh",
+      "owner_kind": "test",
+      "owner_qualname": "TestPostRefreshRetryRouteKwargs.test_retry_forwards_account_email_and_force_authuser",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh_coverage.py"
+    },
+    {
+      "attribute": "_poke_session",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh",
+      "owner_kind": "test",
+      "owner_qualname": "test_android_from_storage_uses_name_only_psidts_policy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_backend_selection.py"
+    },
+    {
+      "attribute": "get_storage_path",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh",
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensAutoRefresh.test_refresh_does_not_loop",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "attribute": "get_storage_path",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh",
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensAutoRefresh.test_refresh_retries_once_and_succeeds",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "attribute": "get_storage_path",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "refresh",
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensPassive.test_passive_does_not_run_refresh_cmd",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "attribute": "MasterTokenFile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage",
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_writer_adapter_constructs_exact_value_and_delegates",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "ProfileStore",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage",
+      "owner_kind": "test",
+      "owner_qualname": "test_adapter_composition_contract",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_store_minted.py"
+    },
+    {
+      "attribute": "ProfileStore",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage",
+      "owner_kind": "test",
+      "owner_qualname": "test_replace_from_remint_is_one_typed_store_delegation_and_exact_legacy_result",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_storage_writer.py"
+    },
+    {
+      "attribute": "_STORAGE_LOCKS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage",
+      "owner_kind": "test",
+      "owner_qualname": "test_lock_wrapper_shapes_ownership_and_projections_are_exact",
+      "package": "notebooklm._auth",
+      "path": "tests/_guardrails/test_auth_storage_compatibility.py"
+    },
+    {
+      "attribute": "get_account_email_for_storage",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "replace_profile_from_login",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage",
+      "owner_kind": "test",
+      "owner_qualname": "test_replace_from_login_is_one_typed_delegation_and_exhaustive_projection",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_storage_writer.py"
+    },
+    {
+      "attribute": "write_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_writer_preserves_call_time_storage_module_seam",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "_LOCK_ACQUIRE_DEADLINE_SECONDS",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "storage_lock",
+      "owner_kind": "test",
+      "owner_qualname": "test_win32_blocking_contention_expires_bounded",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_windows_lock.py"
+    },
+    {
+      "attribute": "_load_stored_auth",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens",
+      "owner_kind": "test",
+      "owner_qualname": "test_client_loader_patch_installed_after_import_bites",
+      "package": "notebooklm._auth",
+      "path": "tests/_guardrails/test_auth_stored_auth_boundary.py"
+    },
+    {
+      "attribute": "_load_stored_auth",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens",
+      "owner_kind": "test",
+      "owner_qualname": "test_from_storage_accepts_upload_timeout",
+      "package": "notebooklm._auth",
+      "path": "tests/integration/concurrency/test_upload_timeout_config.py"
+    },
+    {
+      "attribute": "_load_stored_auth",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens",
+      "owner_kind": "test",
+      "owner_qualname": "test_inherited_from_storage_constructs_runtime_subclass_exactly_once",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "attribute": "_load_stored_auth",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens",
+      "owner_kind": "test",
+      "owner_qualname": "TestFromStorage.test_from_storage_projects_loaded_auth_and_registers_file_baseline",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_client.py"
+    }
+  ],
+  "owners": [
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_lock_wrapper_shapes_ownership_and_projections_are_exact",
+      "path": "tests/_guardrails/test_auth_storage_compatibility.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_client_loader_patch_installed_after_import_bites",
+      "path": "tests/_guardrails/test_auth_stored_auth_boundary.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_from_storage_accepts_upload_timeout",
+      "path": "tests/integration/concurrency/test_upload_timeout_config.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_auth_refresh_repairs_malformed_playwright_account_metadata",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_auth_refresh_repairs_missing_playwright_account_metadata",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_clears_metadata_when_account_ambiguous",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_uses_recovered_page_email_for_metadata",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_writes_account_matched_by_page_email",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestLoginCommand.test_playwright_login_writes_single_account_metadata",
+      "path": "tests/unit/cli/test_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_flat_pure_loader_raises_psidts_unroutable_without_network",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_jar_pure_loader_raises_psidts_unroutable_without_network",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_name_only_pure_loader_accepts_unroutable_without_network",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestPureLoaderPerformsNoNetwork.test_pure_loader_raises_missing_cookie_without_network",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_from_storage_load_recovery_does_not_block_event_loop",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestLegacyAccountContextScrub.test_oserror_from_lock_is_swallowed",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestRepairAccountMetadataPokeSession.test_poke_session_is_injected",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_cold_and_live_l4_recovery_share_one_master_token_mint",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_shared_adapter_exception_fans_out_and_later_call_retries",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestRefreshCmdBaselineCapturedBeforeRetryFetch.test_retry_fetch_rotations_persist_to_disk",
+      "path": "tests/unit/test_auth_cookie_save_race.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_commit_signatures_and_none_returns_are_exact",
+      "path": "tests/unit/test_auth_credential_io.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_spine_preserves_exception_identity_and_does_not_create_parent",
+      "path": "tests/unit/test_auth_credential_io.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_typed_wrappers_forward_exact_objects_once",
+      "path": "tests/unit/test_auth_credential_io.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_contended_recovery_requires_routed_disk_state",
+      "path": "tests/unit/test_auth_issue_2061.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_validation_only_malformed_required_row_is_typed_and_redacted",
+      "path": "tests/unit/test_auth_issue_2061.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestBothWrappersUseTheOneComposition.test_flat_wrapper_delegates",
+      "path": "tests/unit/test_auth_load_composition.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestBothWrappersUseTheOneComposition.test_jar_wrapper_delegates",
+      "path": "tests/unit/test_auth_load_composition.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestBothWrappersUseTheOneComposition.test_passive_jar_loader_selects_name_only",
+      "path": "tests/unit/test_auth_load_composition.py"
+    },
+    {
+      "count": 3,
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_public_coarse_cancellation_drops_active_caller",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_public_force_fast_path_precedes_path_derivation_and_composition",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_strict_loader_bridge_observes_midflight_rebinding",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_commit_failure_escapes_and_releases_lock",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_public_absent_probes_once_without_constructing_file_owner",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_public_raw_adapter_returns_fresh_captured_dict_without_reencoding",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_public_writer_preserves_call_time_storage_module_seam",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_writer_adapter_constructs_exact_value_and_delegates",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "count": 3,
+      "owner_kind": "test",
+      "owner_qualname": "test_context_scrub_rewrites_or_unlinks_under_exact_sibling_lock",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_scrub_lock_is_actually_wired_to_the_pinned_constant",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_scrub_reports_a_lock_timeout_instead_of_swallowing_it",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_scrub_reports_an_ordinary_os_failure_too",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_cookie_read_and_commit_failures_have_distinct_committed_projection",
+      "path": "tests/unit/test_auth_profile_store.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_clear_missing_lock_miss_and_commit_failure",
+      "path": "tests/unit/test_auth_profile_store_account.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_update_lock_and_commit_failures_escape",
+      "path": "tests/unit/test_auth_profile_store_account.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_required_rejection_uses_late_policy_attributes_and_precedes_destination_access",
+      "path": "tests/unit/test_auth_profile_store_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_windows_backup_skips_chmod_and_commit_failure_leaves_backup",
+      "path": "tests/unit/test_auth_profile_store_login.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_adapter_composition_contract",
+      "path": "tests/unit/test_auth_profile_store_minted.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_non_owner_failures_escape_unchanged_in_exact_order",
+      "path": "tests/unit/test_auth_profile_store_minted.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_failures_escape_only_after_lock_release",
+      "path": "tests/unit/test_auth_profile_store_remint.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestEdgeCases.test_cross_process_flock_held_skips_post",
+      "path": "tests/unit/test_auth_psidts_recovery.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestEdgeCases.test_flock_held_returns_true_when_file_already_healed",
+      "path": "tests/unit/test_auth_psidts_recovery.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensAutoRefresh.test_refresh_does_not_loop",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensAutoRefresh.test_refresh_retries_once_and_succeeds",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensPassive.test_passive_does_not_run_refresh_cmd",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestFetchTokensPassive.test_passive_does_not_trigger_psidts_recovery",
+      "path": "tests/unit/test_auth_refresh.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestPostRefreshRetryRouteKwargs.test_retry_forwards_account_email_and_force_authuser",
+      "path": "tests/unit/test_auth_refresh_coverage.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_missing_read_and_failed_commit_are_non_raising_and_preserve_bytes",
+      "path": "tests/unit/test_auth_refresh_profile_store.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_inherited_from_storage_constructs_runtime_subclass_exactly_once",
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_paired_cookie_projection_sanitizes_and_converts_each_row_once",
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestWrapperComposition.test_heal_that_supplies_nothing_useful_still_reports_invalid",
+      "path": "tests/unit/test_auth_validate_heal_split.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestWrapperComposition.test_post_heal_recheck_is_presence_only",
+      "path": "tests/unit/test_auth_validate_heal_split.py"
+    },
+    {
+      "count": 3,
+      "owner_kind": "test",
+      "owner_qualname": "test_android_from_storage_uses_name_only_psidts_policy",
+      "path": "tests/unit/test_backend_selection.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestFromStorage.test_from_storage_projects_loaded_auth_and_registers_file_baseline",
+      "path": "tests/unit/test_client.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_validation_extraction_hint_lives_on_cookie_policy",
+      "path": "tests/unit/test_public_shims.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_validation_uses_cookie_policy_rebindings_directly",
+      "path": "tests/unit/test_public_shims.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestFlockLoserWaitsThenReloads.test_leader_body_loser_waits_no_subprocess_no_bump",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "TestFlockLoserWaitsThenReloads.test_wait_for_refresh_holder_polls_until_released",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "TestFlockLoserWaitsThenReloads.test_wait_for_refresh_holder_times_out_best_effort",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_default_cookie_rotator_late_binds_to_canonical_seam",
+      "path": "tests/unit/test_runtime_lifecycle.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_replace_from_login_is_one_typed_delegation_and_exhaustive_projection",
+      "path": "tests/unit/test_storage_writer.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_replace_from_remint_is_one_typed_store_delegation_and_exact_legacy_result",
+      "path": "tests/unit/test_storage_writer.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_win32_blocking_contention_expires_bounded",
+      "path": "tests/unit/test_windows_lock.py"
+    }
+  ],
+  "package": "notebooklm._auth",
+  "sites": [
     {
       "attribute": "enumerate_accounts",
       "count": 1,
@@ -14,21 +1409,9 @@
     },
     {
       "attribute": "enumerate_accounts",
-      "count": 8,
+      "count": 6,
       "idiom": "patch.object",
       "module": "account"
-    },
-    {
-      "attribute": "extract_email_from_html",
-      "count": 3,
-      "idiom": "patch.object",
-      "module": "account"
-    },
-    {
-      "attribute": "_write_account_metadata_if_document_unchanged",
-      "count": 2,
-      "idiom": "monkeypatch.setattr",
-      "module": "account_email"
     },
     {
       "attribute": "MINIMUM_REQUIRED_COOKIES",
@@ -40,12 +1423,6 @@
       "attribute": "_EXTRACTION_HINT",
       "count": 1,
       "idiom": "monkeypatch.setattr",
-      "module": "cookie_policy"
-    },
-    {
-      "attribute": "_SECONDARY_BINDING_WARNED",
-      "count": 4,
-      "idiom": "assignment",
       "module": "cookie_policy"
     },
     {
@@ -79,24 +1456,6 @@
       "module": "cookies"
     },
     {
-      "attribute": "_load_cookies_pure",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "cookies"
-    },
-    {
-      "attribute": "build_httpx_cookies_from_storage",
-      "count": 3,
-      "idiom": "monkeypatch.setattr",
-      "module": "cookies"
-    },
-    {
-      "attribute": "build_httpx_cookies_from_storage",
-      "count": 4,
-      "idiom": "patch.object",
-      "module": "cookies"
-    },
-    {
       "attribute": "_atomic_write_json_unchecked",
       "count": 2,
       "idiom": "monkeypatch.setattr",
@@ -107,12 +1466,6 @@
       "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "credential_io"
-    },
-    {
-      "attribute": "_KEEPALIVE_RATE_LIMIT_SECONDS",
-      "count": 2,
-      "idiom": "monkeypatch.setattr",
-      "module": "keepalive"
     },
     {
       "attribute": "_LOCK_ACQUIRE_DEADLINE_SECONDS",
@@ -140,7 +1493,7 @@
     },
     {
       "attribute": "MasterTokenFile",
-      "count": 4,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "master_token"
     },
@@ -164,31 +1517,13 @@
     },
     {
       "attribute": "_commit_master_token_json",
-      "count": 5,
-      "idiom": "monkeypatch.setattr",
-      "module": "master_token_file"
-    },
-    {
-      "attribute": "_ensure_secure_parent_dir",
-      "count": 3,
-      "idiom": "monkeypatch.setattr",
-      "module": "master_token_file"
-    },
-    {
-      "attribute": "_master_token_from_legacy_record",
-      "count": 3,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "master_token_file"
     },
     {
       "attribute": "_master_token_to_legacy_record",
-      "count": 2,
-      "idiom": "monkeypatch.setattr",
-      "module": "master_token_file"
-    },
-    {
-      "attribute": "_storage_state_lock_path",
-      "count": 2,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "master_token_file"
     },
@@ -211,37 +1546,7 @@
       "module": "profile_migration"
     },
     {
-      "attribute": "MasterTokenFile",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "profile_store"
-    },
-    {
-      "attribute": "_STORAGE_LOCKS",
-      "count": 2,
-      "idiom": "assignment",
-      "module": "profile_store"
-    },
-    {
-      "attribute": "_STORAGE_LOCKS",
-      "count": 6,
-      "idiom": "monkeypatch.setattr",
-      "module": "profile_store"
-    },
-    {
       "attribute": "_commit_profile_json",
-      "count": 18,
-      "idiom": "monkeypatch.setattr",
-      "module": "profile_store"
-    },
-    {
-      "attribute": "_ensure_secure_parent_dir",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "profile_store"
-    },
-    {
-      "attribute": "filter_storage_state_cookies_by_domain_policy",
       "count": 7,
       "idiom": "monkeypatch.setattr",
       "module": "profile_store"
@@ -260,13 +1565,7 @@
     },
     {
       "attribute": "_recover_psidts_inline",
-      "count": 4,
-      "idiom": "monkeypatch.setattr",
-      "module": "psidts_recovery"
-    },
-    {
-      "attribute": "_try_claim_rotation",
-      "count": 1,
+      "count": 7,
       "idiom": "monkeypatch.setattr",
       "module": "psidts_recovery"
     },
@@ -278,105 +1577,45 @@
     },
     {
       "attribute": "recover_psidts_in_memory",
-      "count": 7,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "psidts_recovery"
     },
     {
       "attribute": "_try_headless_reauth_result",
-      "count": 7,
-      "idiom": "monkeypatch.setattr",
-      "module": "recovery"
-    },
-    {
-      "attribute": "_try_master_token_reauth_result",
-      "count": 6,
-      "idiom": "monkeypatch.setattr",
-      "module": "recovery"
-    },
-    {
-      "attribute": "coalesced_cold_recovery",
       "count": 2,
       "idiom": "monkeypatch.setattr",
       "module": "recovery"
     },
     {
-      "attribute": "_coalesced_run_refresh_cmd",
-      "count": 12,
+      "attribute": "_try_master_token_reauth_result",
+      "count": 1,
       "idiom": "monkeypatch.setattr",
-      "module": "refresh"
+      "module": "recovery"
     },
     {
       "attribute": "_fetch_tokens_with_exact_baseline",
-      "count": 7,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
     },
     {
       "attribute": "_fetch_tokens_with_jar",
-      "count": 17,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_fetch_tokens_with_refresh_core",
-      "count": 1,
+      "count": 2,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
     },
     {
       "attribute": "_poke_session",
-      "count": 3,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_replace_cookie_jar",
       "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_resolve_token_route_kwargs",
-      "count": 3,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "_run_refresh_cmd",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "build_httpx_cookies_from_storage",
-      "count": 11,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
     },
     {
       "attribute": "get_storage_path",
-      "count": 8,
+      "count": 3,
       "idiom": "monkeypatch.setattr",
       "module": "refresh"
-    },
-    {
-      "attribute": "snapshot_cookie_jar",
-      "count": 9,
-      "idiom": "monkeypatch.setattr",
-      "module": "refresh"
-    },
-    {
-      "attribute": "read_success_epoch",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "single_flight"
-    },
-    {
-      "attribute": "LegacyAccountMigrator",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "storage"
     },
     {
       "attribute": "MasterTokenFile",
@@ -386,18 +1625,12 @@
     },
     {
       "attribute": "ProfileStore",
-      "count": 6,
+      "count": 2,
       "idiom": "monkeypatch.setattr",
       "module": "storage"
     },
     {
       "attribute": "_STORAGE_LOCKS",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "storage"
-    },
-    {
-      "attribute": "_cookie_is_http_only",
       "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "storage"
@@ -409,14 +1642,8 @@
       "module": "storage"
     },
     {
-      "attribute": "read_account_metadata",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "storage"
-    },
-    {
       "attribute": "replace_profile_from_login",
-      "count": 2,
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "storage"
     },
@@ -434,37 +1661,26 @@
     },
     {
       "attribute": "_load_stored_auth",
-      "count": 6,
-      "idiom": "monkeypatch.setattr",
-      "module": "tokens"
-    },
-    {
-      "attribute": "resolve_auth_json_env",
-      "count": 1,
+      "count": 4,
       "idiom": "monkeypatch.setattr",
       "module": "tokens"
     }
   ],
   "summary": {
     "TOTAL": {
-      "private": 146,
-      "public": 100,
-      "total": 246
+      "private": 50,
+      "public": 35,
+      "total": 85
     },
     "account": {
-      "private": 2,
-      "public": 12,
-      "total": 14
-    },
-    "account_email": {
-      "private": 2,
-      "public": 0,
-      "total": 2
+      "private": 0,
+      "public": 7,
+      "total": 7
     },
     "cookie_policy": {
-      "private": 6,
+      "private": 2,
       "public": 4,
-      "total": 10
+      "total": 6
     },
     "cookie_semantics": {
       "private": 0,
@@ -472,9 +1688,9 @@
       "total": 1
     },
     "cookies": {
-      "private": 3,
-      "public": 7,
-      "total": 10
+      "private": 2,
+      "public": 0,
+      "total": 2
     },
     "credential_io": {
       "private": 3,
@@ -482,19 +1698,19 @@
       "total": 3
     },
     "keepalive": {
-      "private": 8,
+      "private": 6,
       "public": 0,
-      "total": 8
+      "total": 6
     },
     "master_token": {
       "private": 3,
-      "public": 5,
-      "total": 8
+      "public": 2,
+      "total": 5
     },
     "master_token_file": {
-      "private": 15,
+      "private": 2,
       "public": 0,
-      "total": 15
+      "total": 2
     },
     "profile_migration": {
       "private": 1,
@@ -502,34 +1718,29 @@
       "total": 8
     },
     "profile_store": {
-      "private": 27,
-      "public": 8,
-      "total": 35
+      "private": 7,
+      "public": 0,
+      "total": 7
     },
     "psidts_recovery": {
-      "private": 9,
-      "public": 11,
-      "total": 20
+      "private": 11,
+      "public": 5,
+      "total": 16
     },
     "recovery": {
-      "private": 13,
-      "public": 2,
-      "total": 15
+      "private": 3,
+      "public": 0,
+      "total": 3
     },
     "refresh": {
-      "private": 45,
-      "public": 28,
-      "total": 73
-    },
-    "single_flight": {
-      "private": 0,
-      "public": 1,
-      "total": 1
+      "private": 4,
+      "public": 3,
+      "total": 7
     },
     "storage": {
-      "private": 2,
-      "public": 13,
-      "total": 15
+      "private": 1,
+      "public": 6,
+      "total": 7
     },
     "storage_lock": {
       "private": 1,
@@ -537,10 +1748,10 @@
       "total": 1
     },
     "tokens": {
-      "private": 6,
-      "public": 1,
-      "total": 7
+      "private": 4,
+      "public": 0,
+      "total": 4
     }
   },
-  "version": 1
+  "version": 2
 }

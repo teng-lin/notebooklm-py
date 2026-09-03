@@ -67,16 +67,20 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 from .._auth.recovery_rungs import HeadlessRungOutcome, HeadlessRungStatus
 from ..exceptions import HeadlessLoginRequiredError
 from ..paths import get_browser_profile_dir
 from .browser_capture import (
+    BrowserCaptureIO,
     BrowserCapturePlan,
+    CaptureResult,
     _CaptureAbortKind,
     _HeadlessCaptureAbort,
     run_browser_capture,
@@ -162,7 +166,8 @@ class _DriveRecord:
       real residual is that a rejected non-loopback endpoint resolves to
       ``None``, so the rejection warning would move), or
       collapse the two sources into one key (the exact cross-source false-FAILED
-      bug the per-``(path, source)`` key fixes; see :func:`_get_drive_record`).
+      bug the per-``(path, source)`` key fixes; see
+      :meth:`HeadlessReauthState.drive_record`).
 
     For the record, what ``single_flight`` would NOT have broken: the typed
     closed-enum outcome rides a flight future unchanged; nothing jar-bearing is
@@ -258,7 +263,7 @@ class _DriveRecord:
 # that cannot observe a fresh leader outcome (crashed leader, stale record)
 # also drives its own — a redundant browser is SAFE, a false SUCCESS is NOT.
 #
-# ``_DRIVE_REGISTRY_LOCK`` makes the get-or-create of a per-path drive record
+# :class:`HeadlessReauthState` owns the registry lock that makes get-or-create
 # atomic across the worker threads ``asyncio.to_thread`` may use. This is a
 # best-effort, single-process guard; cross-process coordination (two CLI
 # invocations) is out of scope here — they each own their own browser, the same
@@ -270,8 +275,162 @@ class _DriveRecord:
 # never-pruned-but-profile-bounded shape as ``_REFRESH_GENERATIONS`` /
 # ``_LAST_POKE_ATTEMPT_MONOTONIC`` elsewhere in the auth layer; a long-running
 # process does not accumulate entries from RPC traffic, only from new profiles.
-_DRIVE_REGISTRY_LOCK = threading.Lock()
-_DRIVE_RECORDS_BY_PATH: dict[str, _DriveRecord] = {}
+@dataclass(eq=False)
+class HeadlessReauthState:
+    """Own the synchronous headless-drive registry for one process or test.
+
+    Production uses :meth:`process_default`; tests construct a fresh instance.
+    Keeping the registry and its lock together prevents test isolation from
+    depending on rebinding module globals while preserving the thread-level
+    coalescer used by the synchronous entry point.
+    """
+
+    _record_factory: Callable[[], _DriveRecord] = field(
+        default=lambda: _DriveRecord(
+            drive_lock=threading.Lock(),
+            _state_lock=threading.Lock(),
+        ),
+        repr=False,
+        compare=False,
+    )
+    _registry_lock: threading.Lock = field(
+        default_factory=threading.Lock,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _records_by_key: dict[str, _DriveRecord] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _active_reservations: int = field(default=0, init=False, repr=False, compare=False)
+
+    @classmethod
+    def process_default(cls) -> HeadlessReauthState:
+        """Return the process-lifetime state used by production composition."""
+        return _PROCESS_DEFAULT_STATE
+
+    def drive_record(self, storage_path: Path, *, source: str) -> _DriveRecord:
+        """Return the per-(resolved-storage-path, source) drive record."""
+        key = f"{storage_path.expanduser().resolve()}\x00{source}"
+        with self._registry_lock:
+            return self._drive_record_locked(key)
+
+    def _drive_record_locked(self, key: str) -> _DriveRecord:
+        """Get or create ``key`` while the caller holds ``_registry_lock``."""
+        record = self._records_by_key.get(key)
+        if record is None:
+            record = self._record_factory()
+            self._records_by_key[key] = record
+        return record
+
+    @contextmanager
+    def _reserve_drive_record(
+        self,
+        storage_path: Path,
+        *,
+        source: str,
+    ) -> Iterator[_DriveRecord]:
+        """Keep a caller-visible record live until its drive attempt settles.
+
+        The reservation closes the gap between registry lookup and acquiring
+        ``drive_lock``: lifecycle reset must reject both active drivers and
+        callers that have obtained a record and are about to wait on it.
+        """
+        key = f"{storage_path.expanduser().resolve()}\x00{source}"
+        with self._registry_lock:
+            record = self._drive_record_locked(key)
+            self._active_reservations += 1
+        try:
+            yield record
+        finally:
+            with self._registry_lock:
+                self._active_reservations -= 1
+
+    def reset_if_quiescent(self) -> None:
+        """Clear settled records, refusing to erase an active browser drive.
+
+        A caller reserves its record before waiting on the drive lock, so reset
+        deterministically rejects both active drives and pending followers.
+        """
+        with self._registry_lock:
+            if self._active_reservations or any(
+                record.drive_lock.locked() for record in self._records_by_key.values()
+            ):
+                raise RuntimeError("cannot reset headless re-auth state while a drive is active")
+            self._records_by_key.clear()
+
+
+_PROCESS_DEFAULT_STATE = HeadlessReauthState()
+
+
+class _ReusableProfileResolver(Protocol):
+    def __call__(
+        self,
+        *,
+        browser_profile: Path | None,
+        profile: str | None,
+    ) -> Path | None: ...
+
+
+class _CdpResolver(Protocol):
+    def __call__(
+        self,
+        cdp_url: str | None,
+        env: dict[str, str] | None,
+    ) -> str | None: ...
+
+
+class _ProfileCapture(Protocol):
+    def __call__(
+        self,
+        plan: BrowserCapturePlan,
+        io: BrowserCaptureIO,
+        *,
+        headless: bool,
+        interactive: bool,
+    ) -> CaptureResult: ...
+
+
+class _CdpCapture(Protocol):
+    def __call__(
+        self,
+        plan: BrowserCapturePlan,
+        io: BrowserCaptureIO,
+        *,
+        cdp_url: str,
+    ) -> CaptureResult: ...
+
+
+@dataclass(frozen=True)
+class _HeadlessReauthDeps:
+    """Narrow collaborators for one headless re-auth operation.
+
+    The record contains gateways and owner state only. It never carries cookie,
+    token, captured-state, or endpoint values, so no credential-bearing value
+    can outlive operation settlement through this seam.
+    """
+
+    playwright_installed: Callable[[], bool]
+    resolve_profile: _ReusableProfileResolver
+    resolve_cdp: _CdpResolver
+    run_profile_capture: _ProfileCapture
+    run_cdp_capture: _CdpCapture
+    state: HeadlessReauthState
+
+
+def _production_deps() -> _HeadlessReauthDeps:
+    """Compose the real call-time gateways for one production operation."""
+    return _HeadlessReauthDeps(
+        playwright_installed=_playwright_installed,
+        resolve_profile=_resolve_reusable_profile,
+        resolve_cdp=resolve_cdp_url,
+        run_profile_capture=run_browser_capture,
+        run_cdp_capture=run_cdp_capture,
+        state=HeadlessReauthState.process_default(),
+    )
 
 
 def headless_reauth_env_enabled(env: dict[str, str] | None = None) -> bool:
@@ -594,10 +753,26 @@ def headless_reauth_readiness(
         A :class:`HeadlessReauthReadiness` with the two prerequisite booleans
         and a derived ``available`` / ``detail``.
     """
-    resolved_profile = _resolve_reusable_profile(browser_profile=browser_profile, profile=profile)
+    return _headless_reauth_readiness(
+        browser_profile=browser_profile,
+        profile=profile,
+        resolve_profile=_resolve_reusable_profile,
+        playwright_installed=_playwright_installed,
+    )
+
+
+def _headless_reauth_readiness(
+    *,
+    browser_profile: Path | None,
+    profile: str | None,
+    resolve_profile: _ReusableProfileResolver,
+    playwright_installed: Callable[[], bool],
+) -> HeadlessReauthReadiness:
+    """Evaluate readiness through explicit, read-only prerequisite gateways."""
+    resolved_profile = resolve_profile(browser_profile=browser_profile, profile=profile)
     return HeadlessReauthReadiness(
         profile_present=resolved_profile is not None,
-        playwright_installed=_playwright_installed(),
+        playwright_installed=playwright_installed(),
     )
 
 
@@ -691,6 +866,32 @@ def attempt_headless_reauth(
         A :class:`HeadlessReauthResult` with a distinct status for unavailable
         / failed / success. NEVER ``SUCCESS`` unless cookies were persisted.
     """
+    return _attempt_headless_reauth(
+        storage_path=storage_path,
+        allow_headless=allow_headless,
+        browser_profile=browser_profile,
+        profile=profile,
+        browser=browser,
+        include_domains=include_domains,
+        cdp_url=cdp_url,
+        env=env,
+        deps=_production_deps(),
+    )
+
+
+def _attempt_headless_reauth(
+    *,
+    storage_path: Path,
+    allow_headless: bool,
+    browser_profile: Path | None,
+    profile: str | None,
+    browser: str,
+    include_domains: set[str] | None,
+    cdp_url: str | None,
+    env: dict[str, str] | None,
+    deps: _HeadlessReauthDeps,
+) -> HeadlessReauthResult:
+    """Run one attempt through explicit operation collaborators and owner state."""
     if not (allow_headless or headless_reauth_env_enabled(env)):
         return HeadlessReauthResult(
             HeadlessReauthStatus.UNAVAILABLE,
@@ -703,13 +904,13 @@ def attempt_headless_reauth(
     # FAILED. Checked up front so the two are never conflated, and before the
     # profile/CDP resolution so a missing extra is reported the same way on
     # both arms.
-    if not _playwright_installed():
+    if not deps.playwright_installed():
         return HeadlessReauthResult(
             HeadlessReauthStatus.UNAVAILABLE,
             "playwright is not installed (install the 'browser' extra to enable headless re-auth)",
         )
 
-    resolved_cdp_url = resolve_cdp_url(cdp_url, env)
+    resolved_cdp_url = deps.resolve_cdp(cdp_url, env)
     if resolved_cdp_url is not None:
         # CDP arm: attach to the operator-pointed running Chrome. The dedicated
         # profile is NOT required here — the live browser is the credential
@@ -722,9 +923,9 @@ def attempt_headless_reauth(
             storage_path=storage_path,
             include_domains=include_domains,
         )
-        return _drive_capture_coalesced(plan, cdp_url=resolved_cdp_url)
+        return _drive_capture_coalesced(plan, deps=deps, cdp_url=resolved_cdp_url)
 
-    resolved_profile = _resolve_reusable_profile(browser_profile=browser_profile, profile=profile)
+    resolved_profile = deps.resolve_profile(browser_profile=browser_profile, profile=profile)
     if resolved_profile is None:
         return HeadlessReauthResult(
             HeadlessReauthStatus.UNAVAILABLE,
@@ -742,43 +943,20 @@ def attempt_headless_reauth(
     # Per-(storage path, source) coalescing: within this process, at most one
     # browser drives a given storage file PER CREDENTIAL SOURCE at a time — a
     # profile drive and a CDP drive against the same storage_state.json each
-    # hold their own record, deliberately (see _get_drive_record). A follower
+    # hold their own record, deliberately (see
+    # HeadlessReauthState.drive_record). A follower
     # coalesces onto the
     # leader's TYPED outcome (only one produced by a drive that completed during
     # its wait) instead of launching a redundant browser. This covers the
     # explicit ``refresh_auth(allow_headless=True)`` entry and multi-client
     # callers, which do NOT pass through the mid-RPC coordinator's single-flight.
-    return _drive_capture_coalesced(plan)
-
-
-def _get_drive_record(storage_path: Path, *, source: str) -> _DriveRecord:
-    """Return the per-(resolved-storage-path, source) drive record.
-
-    Get-or-create is atomic under :data:`_DRIVE_REGISTRY_LOCK` so the worker
-    threads ``asyncio.to_thread`` may use all share one :class:`_DriveRecord`
-    (and therefore one drive lock and one drive-sequence) per storage file.
-
-    The key includes ``source`` (``"profile"`` vs ``"cdp"``) as well as the path
-    (CodeRabbit #4). The two credential sources re-mint into the SAME
-    ``storage_state.json``, but they are DIFFERENT sessions: a follower must not
-    coalesce onto the OTHER source's FAILED outcome (e.g. treat its own live CDP
-    attach as failed because the dedicated profile's session was dead, or vice
-    versa). Sharing the OUTCOME across sources was the bug; a shared lock would
-    merely serialize them, which is not required and not what we do — each source
-    gets its own record, lock, and drive-sequence.
-    """
-    key = f"{storage_path.expanduser().resolve()}\x00{source}"
-    with _DRIVE_REGISTRY_LOCK:
-        record = _DRIVE_RECORDS_BY_PATH.get(key)
-        if record is None:
-            record = _DriveRecord(drive_lock=threading.Lock(), _state_lock=threading.Lock())
-            _DRIVE_RECORDS_BY_PATH[key] = record
-        return record
+    return _drive_capture_coalesced(plan, deps=deps)
 
 
 def _drive_capture_coalesced(
     plan: BrowserCapturePlan,
     *,
+    deps: _HeadlessReauthDeps,
     cdp_url: str | None = None,
 ) -> HeadlessReauthResult:
     """Drive the headless capture under the per-(path, source) drive lock + outcome coalescing.
@@ -802,31 +980,32 @@ def _drive_capture_coalesced(
     profile must not fail a live CDP attach, nor vice versa).
     """
     source = "cdp" if cdp_url is not None else "profile"
-    record = _get_drive_record(plan.storage_path, source=source)
-    # Snapshot BEFORE blocking on the drive lock: we accept an outcome only from
-    # a drive that finishes DURING this wait (strictly-newer sequence).
-    pre_completed = record.snapshot_completed()
-    with record.drive_lock:
-        fresh = record.fresh_outcome_since(pre_completed)
-        if fresh is not None:
-            # A sibling leader's drive completed while we waited; coalesce onto
-            # its TYPED outcome (its status, whether SUCCESS or FAILED), not an
-            # mtime heuristic. Skips a redundant browser without ever inferring
-            # success from an unrelated file write.
-            logger.info(
-                "Layer-3 headless re-auth coalesced onto a concurrent drive's "
-                "outcome (%s); skipping a redundant browser.",
-                fresh.status.value,
-            )
-            return fresh
-        result = _drive_capture(plan, cdp_url=cdp_url)
-        record.publish(result)
-        return result
+    with deps.state._reserve_drive_record(plan.storage_path, source=source) as record:
+        # Snapshot BEFORE blocking on the drive lock: we accept an outcome only from
+        # a drive that finishes DURING this wait (strictly-newer sequence).
+        pre_completed = record.snapshot_completed()
+        with record.drive_lock:
+            fresh = record.fresh_outcome_since(pre_completed)
+            if fresh is not None:
+                # A sibling leader's drive completed while we waited; coalesce onto
+                # its TYPED outcome (its status, whether SUCCESS or FAILED), not an
+                # mtime heuristic. Skips a redundant browser without ever inferring
+                # success from an unrelated file write.
+                logger.info(
+                    "Layer-3 headless re-auth coalesced onto a concurrent drive's "
+                    "outcome (%s); skipping a redundant browser.",
+                    fresh.status.value,
+                )
+                return fresh
+            result = _drive_capture(plan, deps=deps, cdp_url=cdp_url)
+            record.publish(result)
+            return result
 
 
 def _drive_capture(
     plan: BrowserCapturePlan,
     *,
+    deps: _HeadlessReauthDeps,
     cdp_url: str | None = None,
 ) -> HeadlessReauthResult:
     """Run one headless capture (profile-launch or CDP-attach) → typed outcome.
@@ -857,9 +1036,9 @@ def _drive_capture(
 
     try:
         if cdp_url is not None:
-            run_cdp_capture(plan, io, cdp_url=cdp_url)
+            deps.run_cdp_capture(plan, io, cdp_url=cdp_url)
         else:
-            run_browser_capture(plan, io, headless=True, interactive=False)
+            deps.run_profile_capture(plan, io, headless=True, interactive=False)
     except HeadlessLoginRequiredError as exc:
         # The source's Google session cannot reach NotebookLM (redirected) or
         # the core aborted via io.fail. Honest FAILED — never masked as success.
@@ -898,6 +1077,7 @@ __all__ = [
     "NOTEBOOKLM_HEADLESS_REAUTH_ENV",
     "HeadlessReauthReadiness",
     "HeadlessReauthResult",
+    "HeadlessReauthState",
     "HeadlessReauthStatus",
     "attempt_headless_reauth",
     "headless_reauth_env_enabled",

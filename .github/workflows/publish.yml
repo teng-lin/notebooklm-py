@@ -10,8 +10,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  auth-patch-audit:
+    name: Auth patch audit
+    permissions:
+      contents: read
+    uses: ./.github/workflows/auth-patch-audit.yml
+
   build-and-test:
     name: Build wheel and run release smoke
+    needs: auth-patch-audit
     runs-on: ubuntu-latest
     # Smoke install pulls `[browser,dev,markdown]` extras (pytest, playwright,
     # mypy, ruff, markdownify, transitive deps). A compromised dep here is a

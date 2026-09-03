@@ -69,19 +69,14 @@ def _minting_mock(storage):
     return AsyncMock(side_effect=mint)
 
 
-def _patch_remint(effect):
-    """Retarget the retired public seam to the coordinator's call-time owner."""
+def _remint_side_effect(effect):
+    """Adapt a path-based fake to the bootstrapper operation signature."""
 
     async def remint(bootstrapper, *, strict_loader):
         del strict_loader
         return await effect(bootstrapper._store.path)
 
-    return patch.object(
-        MasterTokenBootstrapper,
-        "remint_from_stored_token",
-        autospec=True,
-        side_effect=remint,
-    )
+    return remint
 
 
 @pytest.mark.parametrize(
@@ -100,7 +95,12 @@ def test_missing_storage_bootstraps_once_without_ordinary_recovery(
     ordinary = AsyncMock()
     passive = AsyncMock(return_value=("csrf", "session"))
     with (
-        _patch_remint(mint),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(mint),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -134,7 +134,12 @@ def test_missing_storage_json_verify_reuses_one_passive_probe(tmp_path):
     ordinary = AsyncMock()
     passive = AsyncMock(return_value=("csrf", "session"))
     with (
-        _patch_remint(mint),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(mint),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -260,7 +265,12 @@ async def test_cancelled_bootstrap_settles_persistence_before_unlocking(tmp_path
         await asyncio.to_thread(persist)
 
     mint_mock = AsyncMock(side_effect=mint)
-    with _patch_remint(mint_mock):
+    with patch.object(
+        MasterTokenBootstrapper,
+        "remint_from_stored_token",
+        autospec=True,
+        side_effect=_remint_side_effect(mint_mock),
+    ):
         leader = asyncio.create_task(
             auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
         )
@@ -295,7 +305,12 @@ async def test_cancelled_bootstrap_lock_waiter_does_not_leak_lock(tmp_path):
         await waiter
     holder.release()
 
-    with _patch_remint(_minting_mock(storage)) as mint:
+    with patch.object(
+        MasterTokenBootstrapper,
+        "remint_from_stored_token",
+        autospec=True,
+        side_effect=_remint_side_effect(_minting_mock(storage)),
+    ) as mint:
         assert await auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
     mint.assert_awaited_once()
 
@@ -303,7 +318,12 @@ async def test_cancelled_bootstrap_lock_waiter_does_not_leak_lock(tmp_path):
 def test_missing_storage_quiet_success_is_empty(tmp_path):
     storage, _ = _cold_profile(tmp_path)
     with (
-        _patch_remint(_minting_mock(storage)),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(_minting_mock(storage)),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=AsyncMock()) as ordinary,
         patch.object(
             auth_module,
@@ -335,7 +355,12 @@ async def test_concurrent_missing_storage_bootstrap_mints_once(tmp_path):
         storage.write_text(json.dumps({"cookies": []}), encoding="utf-8")
 
     effect = AsyncMock(side_effect=mint)
-    with _patch_remint(effect) as mint_mock:
+    with patch.object(
+        MasterTokenBootstrapper,
+        "remint_from_stored_token",
+        autospec=True,
+        side_effect=_remint_side_effect(effect),
+    ) as mint_mock:
         first = asyncio.create_task(
             auth_refresh_service.bootstrap_missing_storage_from_master_token(storage)
         )
@@ -362,7 +387,12 @@ def test_missing_storage_mint_failure_is_typed(tmp_path, json_output):
     if json_output:
         args.append("--json")
     with (
-        _patch_remint(mint),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(mint),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -393,7 +423,12 @@ def test_post_mint_passive_failure_does_not_enter_recovery(tmp_path, json_output
     if json_output:
         args.extend(["--quiet", "--json"])
     with (
-        _patch_remint(mint),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(mint),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
         patch.object(auth_module, "fetch_tokens_passive", new=passive),
     ):
@@ -419,7 +454,12 @@ def test_post_mint_passive_failure_does_not_enter_recovery(tmp_path, json_output
 def test_allow_headless_bootstrap_still_skips_ordinary_recovery(tmp_path):
     storage, _ = _cold_profile(tmp_path)
     with (
-        _patch_remint(_minting_mock(storage)),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(_minting_mock(storage)),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=AsyncMock()) as ordinary,
         patch.object(
             auth_module,
@@ -442,7 +482,12 @@ def test_healthy_storage_with_sibling_token_does_not_mint(tmp_path):
     mint = AsyncMock()
     ordinary = AsyncMock(return_value=("csrf", "session"))
     with (
-        _patch_remint(mint),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(mint),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
     ):
         result = CliRunner().invoke(cli, ["--storage", str(storage), "auth", "refresh"])
@@ -458,7 +503,12 @@ def test_missing_storage_without_token_preserves_unexpected_error(tmp_path):
     mint = AsyncMock()
     ordinary = AsyncMock(side_effect=FileNotFoundError("storage_state.json not found"))
     with (
-        _patch_remint(mint),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(mint),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
     ):
         result = CliRunner().invoke(cli, ["--storage", str(storage), "auth", "refresh"])
@@ -475,7 +525,12 @@ def test_malformed_existing_storage_never_bootstraps(tmp_path):
     mint = AsyncMock()
     ordinary = AsyncMock(side_effect=ValueError("malformed storage"))
     with (
-        _patch_remint(mint),
+        patch.object(
+            MasterTokenBootstrapper,
+            "remint_from_stored_token",
+            autospec=True,
+            side_effect=_remint_side_effect(mint),
+        ),
         patch.object(auth_module, "fetch_tokens_with_domains", new=ordinary),
     ):
         result = CliRunner().invoke(cli, ["--storage", str(storage), "auth", "refresh"])

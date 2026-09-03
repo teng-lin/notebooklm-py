@@ -673,7 +673,7 @@
       "path": "src/notebooklm/_auth/cookie_merge.py"
     },
     {
-      "lines": 897,
+      "lines": 909,
       "name": "cookie_policy",
       "path": "src/notebooklm/_auth/cookie_policy.py"
     },
@@ -811,7 +811,7 @@
     "function_local_edges": 12,
     "module_edges": 115,
     "modules": 33,
-    "total_lines": 13959,
+    "total_lines": 13971,
     "unique_edges": 127
   },
   "version": 1

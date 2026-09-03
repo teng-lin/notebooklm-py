@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -290,27 +289,33 @@ async def test_probe_login_redirect_returns_none(httpx_mock: HTTPXMock) -> None:
         await client.close(drain=False)
 
 
-async def test_inline_auth_probe_hit_does_not_persist(httpx_mock: HTTPXMock, monkeypatch) -> None:
+async def test_inline_auth_probe_hit_does_not_persist() -> None:
     """Inline auth (``storage_path=None``): probe hit is returned but never persisted."""
-    httpx_mock.add_response(
-        url=_PROBE_URL, content=_wiz_html_with_email("dave@example.com").encode()
-    )
-    write_spy = MagicMock()
-    monkeypatch.setattr(
-        account_email_module,
-        "_write_account_metadata_if_document_unchanged",
-        write_spy,
-    )
+    auth = _make_auth()
+    thread_calls = 0
 
-    client = NotebookLMClient(_make_auth())  # storage_path is None
-    await _open_probe_client(client)
-    try:
-        assert await client.get_account_email() == "dave@example.com"
-    finally:
-        await client.close(drain=False)
+    async def probe(_client, _authuser):  # type: ignore[no-untyped-def]
+        return "dave@example.com"
+
+    async def to_thread(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal thread_calls
+        thread_calls += 1
+        raise AssertionError("inline auth has no persistence destination")
+
+    email, cached, key = await account_email_module.resolve_account_email(
+        auth=auth,
+        cached_email=None,
+        cached_key=None,
+        live_fallback=True,
+        get_cookies=lambda: auth.cookie_jar,
+        get_http_client=lambda: object(),  # type: ignore[return-value]
+        probe=probe,
+        to_thread=to_thread,
+    )
 
     # No path → nothing to persist to; the write branch must be skipped.
-    write_spy.assert_not_called()
+    assert (email, cached, key) == ("dave@example.com", "dave@example.com", (0, 0, None))
+    assert thread_calls == 0
 
 
 async def test_get_account_authuser_returns_auth_index() -> None:
@@ -597,30 +602,35 @@ async def test_matching_legacy_profile_email_remains_network_free(tmp_path) -> N
 @pytest.mark.parametrize("corruption", [b"\xff", b"[]"])
 async def test_post_probe_storage_corruption_does_not_escape(
     tmp_path,
-    monkeypatch,
-    httpx_mock: HTTPXMock,
     corruption: bytes,
 ) -> None:
     storage = tmp_path / "storage_state.json"
     _write_storage_state(storage)
-    httpx_mock.add_response(
-        url=_PROBE_URL,
-        content=_wiz_html_with_email("live@example.com").encode(),
-    )
-    original = account_email_module._write_account_metadata_if_document_unchanged
+    live = httpx.Cookies()
+    live.set("SID", "x", domain=".google.com", path="/")
+    live.set("__Secure-1PSIDTS", "y", domain=".google.com", path="/")
+    auth = _make_auth(storage_path=storage, cookie_jar=live)
+    thread_calls = 0
 
-    def corrupt_then_write(path, **kwargs):  # type: ignore[no-untyped-def]
-        path.write_bytes(corruption)
-        return original(path, **kwargs)
+    async def probe(_client, _authuser):  # type: ignore[no-untyped-def]
+        return "live@example.com"
 
-    monkeypatch.setattr(
-        account_email_module,
-        "_write_account_metadata_if_document_unchanged",
-        corrupt_then_write,
+    async def corrupt_then_run(function, *args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal thread_calls
+        thread_calls += 1
+        storage.write_bytes(corruption)
+        return function(*args, **kwargs)
+
+    email, cached, key = await account_email_module.resolve_account_email(
+        auth=auth,
+        cached_email=None,
+        cached_key=None,
+        live_fallback=True,
+        get_cookies=lambda: auth.cookie_jar,
+        get_http_client=lambda: object(),  # type: ignore[return-value]
+        probe=probe,
+        to_thread=corrupt_then_run,
     )
-    client = NotebookLMClient(_make_auth(storage_path=storage))
-    await _open_probe_client(client)
-    try:
-        assert await client.get_account_email() == "live@example.com"
-    finally:
-        await client.close(drain=False)
+
+    assert (email, cached, key) == ("live@example.com", "live@example.com", (0, 0, None))
+    assert thread_calls == 1

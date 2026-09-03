@@ -92,22 +92,15 @@ def test_value_shapes_signatures_validation_and_redaction() -> None:
 
 
 @pytest.mark.parametrize("state", [LockState.CONTENDED, LockState.UNAVAILABLE])
-def test_lock_miss_is_typed_and_runs_zero_body(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: LockState
-) -> None:
+def test_lock_miss_is_typed_and_runs_zero_body(tmp_path: Path, state: LockState) -> None:
+    class FilterMustNotRun(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("lock miss must not enter the filter projection")
+
     locks = RecordingLocks(state)
     path = tmp_path / "custom" / "A.json"
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda *args, **kwargs: pytest.fail("filter ran"),
-    )
-    monkeypatch.setattr(
-        profile_store, "_commit_profile_json", lambda *args: pytest.fail("commit ran")
-    )
-    result = ProfileStore(path, locks=locks).replace_from_remint(
-        RemintWriteRequest(_source(_row()), True)
-    )
+    source = FilterMustNotRun.decode({"cookies": [], "origins": []})
+    result = ProfileStore(path, locks=locks).replace_from_remint(RemintWriteRequest(source, True))
     assert result == ReplaceResult(ReplaceStatus.LOCK_UNAVAILABLE)
     assert len(locks.requests) == 1
     request = locks.requests[0]
@@ -202,21 +195,24 @@ def test_carry_read_oserror_is_silent_and_still_commits(
 
 
 def test_unicode_carry_failure_precedes_filter_and_releases_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    class FilterSentinelDocument(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("Unicode carry failure must precede filtering")
+
     path = tmp_path / "A.json"
     path.write_bytes(b"\xff")
     locks = RecordingLocks()
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda *args, **kwargs: pytest.fail("filter ran"),
-    )
-    with pytest.raises(UnicodeDecodeError):
+    with (
+        caplog.at_level(logging.WARNING, logger="notebooklm.auth"),
+        pytest.raises(UnicodeDecodeError),
+    ):
         ProfileStore(path, locks=locks).replace_from_remint(
-            RemintWriteRequest(_source(_row()), True)
+            RemintWriteRequest(FilterSentinelDocument.decode({"cookies": [], "origins": []}), True)
         )
     assert locks.released and path.read_bytes() == b"\xff"
+    assert caplog.records == []
 
 
 def test_truthy_carry_existence_oserror_escapes_before_filter_or_commit(
@@ -242,7 +238,7 @@ def test_truthy_carry_existence_oserror_escapes_before_filter_or_commit(
 
 
 def test_filter_projection_fidelity_optional_and_isolation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     path = tmp_path / "A.json"
     raw = _row(
@@ -262,19 +258,14 @@ def test_filter_projection_fidelity_optional_and_isolation(
         False,
         DomainSelection(include_domains=frozenset({"youtube"}), include_optional=False),
     )
-    committed: list[dict[str, object]] = []
-
-    def _commit(_: Path, payload: dict[str, object]) -> None:
-        committed.append(payload)
-        payload["cookies"] = []
-
-    monkeypatch.setattr(profile_store, "_commit_profile_json", _commit)
     result = ProfileStore(path, locks=RecordingLocks()).replace_from_remint(request)
     assert result.status is ReplaceStatus.APPLIED
     projection = request.source.to_json()
     assert projection["cookies"][0] == raw  # type: ignore[index]
-    assert committed[0]["origins"] == []
-    assert committed[0]["notebooklm"] == {
+    committed = json.loads(path.read_text(encoding="utf-8"))
+    assert committed["cookies"] == [raw, _row("Y", domain=".youtube.com")]
+    assert committed["origins"] == []
+    assert committed["notebooklm"] == {
         "version": 1,
         "account_route_cleared": True,
     }
@@ -318,18 +309,18 @@ def test_direct_filter_warning_duplicate_and_raw_row_fidelity(
     )
 
 
-def test_filter_failure_escapes_after_release(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_filter_failure_escapes_after_release(tmp_path: Path) -> None:
+    """A fresh source owner's filter-input projection failure releases the lock."""
+
+    class BrokenSource(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            raise TypeError("filter input")
+
+    source = BrokenSource.decode({"cookies": [_row()], "origins": []})
     locks = RecordingLocks()
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda *args, **kwargs: (_ for _ in ()).throw(TypeError("filter")),
-    )
-    with pytest.raises(TypeError, match="filter"):
+    with pytest.raises(TypeError, match="filter input"):
         ProfileStore(tmp_path / "A.json", locks=locks).replace_from_remint(
-            RemintWriteRequest(_source(_row()), False)
+            RemintWriteRequest(source, False)
         )
     assert locks.released
 

@@ -11,6 +11,9 @@ import yaml
 pytestmark = pytest.mark.repo_lint
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "test.yml"
+AUTH_PATCH_AUDIT_WORKFLOW = (
+    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "auth-patch-audit.yml"
+)
 NIGHTLY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "nightly.yml"
 VERIFY_PACKAGE_WORKFLOW = (
     Path(__file__).resolve().parents[2] / ".github" / "workflows" / "verify-package.yml"
@@ -87,6 +90,7 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
     jobs = workflow["jobs"]
 
     assert {"quality", "test", "repo-lint"} <= set(jobs)
+    assert "auth-patch-coverage-delta" not in jobs
     assert jobs["quality"]["name"] == "Code Quality"
     assert jobs["test"]["name"] == "Test (${{ matrix.os }}, Python ${{ matrix.python-version }})"
     assert "needs" not in jobs["test"]
@@ -137,8 +141,9 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "--dist loadgroup" in suite_command
     assert "--no-cov" in suite_command
 
-    workflow_text = WORKFLOW.read_text(encoding="utf-8")
-    assert "--cov" not in workflow_text
+    # The ordinary PR workflow stays coverage-free. The release/manual auth
+    # delta runs in its own workflow.
+    assert "--cov" not in str(test_job)
     step_names = {step.get("name") for step in test_job["steps"]}
     assert "Run tests with coverage" not in step_names
     assert "Run compatibility tests without coverage" not in step_names
@@ -193,6 +198,78 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "-m requires_playwright" in smoke_command
     assert "-n 0" in smoke_command
     assert "--no-cov" in smoke_command
+
+
+def test_auth_patch_coverage_delta_is_release_gated_and_manually_dispatchable() -> None:
+    workflow = yaml.safe_load(AUTH_PATCH_AUDIT_WORKFLOW.read_text(encoding="utf-8"))
+    triggers = workflow.get("on", workflow.get(True))
+    assert set(triggers) == {"workflow_call", "workflow_dispatch"}
+    for trigger in triggers.values():
+        assert set(trigger["inputs"]) == {"custom_branch", "base_ref"}
+        assert trigger["inputs"]["custom_branch"]["default"] == ""
+        assert trigger["inputs"]["base_ref"]["default"] == ""
+
+    job = workflow["jobs"]["auth-patch-coverage-delta"]
+    assert job["name"] == "auth-patch-coverage-delta"
+    assert job["runs-on"] == "ubuntu-latest"
+    assert "if" not in job
+    checkout = next(step for step in job["steps"] if "actions/checkout@" in str(step.get("uses")))
+    assert checkout["with"]["ref"] == "${{ inputs.custom_branch || github.ref }}"
+    assert checkout["with"]["fetch-depth"] == 0
+
+    base_resolution = _step(job, "Resolve comparison base")
+    assert base_resolution["id"] == "base"
+    assert base_resolution["env"] == {"REQUESTED_BASE": "${{ inputs.base_ref }}"}
+    base_command = str(base_resolution["run"])
+    assert 'if [ -n "$REQUESTED_BASE" ]' in base_command
+    assert 'elif [ "$GITHUB_REF_TYPE" = "tag" ]' in base_command
+    assert "git tag --sort=-version:refname" in base_command
+    assert "git merge-base HEAD origin/main" in base_command
+    assert 'echo "base=$base"' in base_command
+
+    base = _step(job, "Run base coverage sequence")
+    head = _step(job, "Run head coverage sequence")
+    for step, filename in ((base, "coverage-base.json"), (head, "coverage-head.json")):
+        assert "if" not in step
+        command = str(step["run"])
+        assert "--dist loadgroup" in command
+        assert "not repo_lint and not reality" in command
+        assert "find tests/unit -maxdepth 1" in command
+        assert "find tests/unit/cli -maxdepth 1" in command
+        assert "tests/integration" not in command
+        assert "tests/server" not in command
+        assert "--cov=src/notebooklm" in command
+        assert f"json:$RUNNER_TEMP/{filename}" in command
+        assert "--cov-fail-under=0" in command
+        assert "scripts/check_coverage_thresholds.py" not in command
+        assert "playwright install" not in command
+
+    collection = str(_step(job, "Collect base and head scenario nodes")["run"])
+    assert "collection-base.json" in collection
+    assert "collection-head.json" in collection
+    validation = str(_step(job, "Validate auth behavior and coverage delta")["run"])
+    assert "--base-collection" in validation and "--head-collection" in validation
+    assert "scripts/check_auth_coverage_delta.py" in validation
+    assert "--base-workspace" in validation and "--head-workspace" in validation
+    assert "test_audit_auth_patch_sites.py" in validation
+    assert "test_audit_auth_shared_mutations.py" in validation
+    assert "test_auth_behavior_scenario_policy.py" in validation
+    assert "test_auth_coverage_allowance_policy.py" in validation
+    assert "test_auth_lifecycle_cleanup_policy.py" in validation
+    assert "test_check_auth_coverage_delta.py" in validation
+    assert "--timeout=180" in validation
+    assert "scripts/check_auth_lifecycle_cleanup_policy.py" in validation
+    assert "--head-collection" in validation
+
+    upload = _step(job, "Upload auth patch coverage evidence on failure")
+    assert upload["if"] == "failure()"
+    assert "coverage-base.json" in str(upload["with"]["path"])
+    assert "coverage-head.json" in str(upload["with"]["path"])
+
+    publish = yaml.safe_load(PUBLISH_WORKFLOW.read_text(encoding="utf-8"))
+    release_gate = publish["jobs"]["auth-patch-audit"]
+    assert release_gate["uses"] == "./.github/workflows/auth-patch-audit.yml"
+    assert publish["jobs"]["build-and-test"]["needs"] == "auth-patch-audit"
 
 
 def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:

@@ -256,27 +256,19 @@ def test_request_rejects_alien_values_and_copy_failure_before_store_activity() -
 @pytest.mark.parametrize("lock_state", [LockState.CONTENDED, LockState.UNAVAILABLE])
 def test_unheld_lock_reports_without_entering_transaction_body(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     lock_state: LockState,
 ) -> None:
-    locks = RecordingLocks(lock_state)
-    called: list[str] = []
-    monkeypatch.setattr(
-        profile_store,
-        "filter_storage_state_cookies_by_domain_policy",
-        lambda *args, **kwargs: called.append("filter"),
-    )
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda *args, **kwargs: called.append("commit"),
-    )
+    class FilterMustNotRun(ProfileDocument):
+        def to_json(self) -> dict[str, object]:
+            pytest.fail("lock miss must not enter the filter projection")
 
+    locks = RecordingLocks(lock_state)
     path = tmp_path / "custom" / "A.json"
-    result = ProfileStore(path, locks=locks).replace_from_login(_request())
+    source = FilterMustNotRun.decode({"cookies": [], "origins": []})
+    result = ProfileStore(path, locks=locks).replace_from_login(_request(source=source))
 
     assert result == ReplaceResult(ReplaceStatus.LOCK_UNAVAILABLE)
-    assert called == []
+    assert not path.exists()
     assert locks.events == ["enter", "exit"]
     assert len(locks.requests) == 1
     request = locks.requests[0]
@@ -288,17 +280,10 @@ def test_unheld_lock_reports_without_entering_transaction_body(
 
 def test_raw_filter_fidelity_required_gate_and_keep_namespace_are_one_held_body(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     locks = RecordingLocks()
-    committed: list[dict[str, Any]] = []
-
-    def commit(path: Path, payload: dict[str, Any]) -> None:
-        assert locks.events == ["enter"]
-        committed.append(copy.deepcopy(payload))
-
-    monkeypatch.setattr(profile_store, "_commit_profile_json", commit)
+    path = tmp_path / "A.json"
     first_sid = _row("SID", "first", sameSite="Lax", expires=-1, marker={"n": 1})
     later_sid = _row("SID", "later", sameSite="None", expires=-1.0, marker={"n": 2})
     source = _source(
@@ -313,14 +298,13 @@ def test_raw_filter_fidelity_required_gate_and_keep_namespace_are_one_held_body(
     selection = DomainSelection(frozenset({"youtube"}), True)
 
     with caplog.at_level(logging.DEBUG, logger="notebooklm.auth"):
-        result = ProfileStore(tmp_path / "A.json", locks=locks).replace_from_login(
+        result = ProfileStore(path, locks=locks).replace_from_login(
             _request(source=source, selection=selection)
         )
 
     assert result == ReplaceResult(ReplaceStatus.APPLIED)
     assert locks.events == ["enter", "exit"]
-    assert len(committed) == 1
-    payload = committed[0]
+    payload = json.loads(path.read_text(encoding="utf-8"))
     assert list(payload) == ["cookies", "origins", "notebooklm"]
     assert payload["origins"] == []
     assert "untrusted-root" not in payload
@@ -365,12 +349,6 @@ def test_required_rejection_uses_late_policy_attributes_and_precedes_destination
         "copy2",
         lambda *args: pytest.fail("backup must not run"),
     )
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda *args: pytest.fail("commit must not run"),
-    )
-
     with caplog.at_level(logging.DEBUG, logger="notebooklm.auth"):
         result = ProfileStore(path, locks=locks).replace_from_login(_request(backup=True))
 
@@ -392,12 +370,12 @@ def test_required_rejection_uses_late_policy_attributes_and_precedes_destination
     assert "B" not in policy_projection
 
 
-def test_set_projection_uses_a_second_shared_memo_copy_and_never_aliases_commit(
+def test_set_projection_uses_a_second_shared_memo_copy_and_persists_isolated_json(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    shared: list[object] = []
-    shared.append(shared)
+    """The request copy and both write-time projections preserve shared identity."""
+    shared: list[object] = [{"nested": [1]}]
     real_deepcopy = copy.deepcopy
     calls: list[object] = []
 
@@ -413,15 +391,8 @@ def test_set_projection_uses_a_second_shared_memo_copy_and_never_aliases_commit(
     assert request_shared is request.account.record.email
     shared.append("caller mutation")
 
-    committed: list[dict[str, Any]] = []
-
-    def mutating_commit(path: Path, payload: dict[str, Any]) -> None:
-        committed.append(real_deepcopy(payload))
-        projected = payload["notebooklm"]["account"]["authuser"]  # type: ignore[index]
-        projected.append("commit mutation")
-
-    monkeypatch.setattr(profile_store, "_commit_profile_json", mutating_commit)
-    store = ProfileStore(tmp_path / "A.json", locks=RecordingLocks())
+    path = tmp_path / "A.json"
+    store = ProfileStore(path, locks=RecordingLocks())
     assert store.replace_from_login(request).status is ReplaceStatus.APPLIED
     assert store.replace_from_login(request).status is ReplaceStatus.APPLIED
 
@@ -431,12 +402,9 @@ def test_set_projection_uses_a_second_shared_memo_copy_and_never_aliases_commit(
         assert projected_call[0] is projected_call[1]
     assert isinstance(request_shared, list)
     assert "caller mutation" not in request_shared
-    assert "commit mutation" not in request_shared
-    first = committed[0]["notebooklm"]["account"]  # type: ignore[index]
-    second = committed[1]["notebooklm"]["account"]  # type: ignore[index]
-    assert first["authuser"] is first["email"]
-    assert second["authuser"] is second["email"]
-    assert "commit mutation" not in second["authuser"]
+    committed = json.loads(path.read_text(encoding="utf-8"))["notebooklm"]["account"]
+    assert committed["authuser"] == [{"nested": [1]}]
+    assert committed["email"] == committed["authuser"]
 
 
 def test_held_set_projection_copy_failure_releases_without_backup_or_commit(
@@ -465,15 +433,11 @@ def test_held_set_projection_copy_failure_releases_without_backup_or_commit(
         "copy2",
         lambda *args: pytest.fail("backup must not run"),
     )
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda *args: pytest.fail("commit must not run"),
-    )
-
+    path = tmp_path / "A.json"
     with pytest.raises(RuntimeError, match="bounded projection failure"):
-        ProfileStore(tmp_path / "A.json", locks=locks).replace_from_login(request)
+        ProfileStore(path, locks=locks).replace_from_login(request)
     assert locks.events == ["enter", "exit"]
+    assert not path.exists()
 
 
 @pytest.mark.parametrize(
@@ -496,24 +460,19 @@ def test_held_set_projection_copy_failure_releases_without_backup_or_commit(
 )
 def test_directives_construct_exact_distinct_namespaces(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     account: KeepAccount | SetAccount | ClearAccount,
     namespace: object,
     expected: dict[str, object] | None,
 ) -> None:
-    committed: list[dict[str, Any]] = []
-    monkeypatch.setattr(
-        profile_store,
-        "_commit_profile_json",
-        lambda path, payload: committed.append(copy.deepcopy(payload)),
-    )
+    path = tmp_path / "A.json"
     request = _request(source=_source(namespace=namespace), account=account)
-    result = ProfileStore(tmp_path / "A.json", locks=RecordingLocks()).replace_from_login(request)
+    result = ProfileStore(path, locks=RecordingLocks()).replace_from_login(request)
     assert result.status is ReplaceStatus.APPLIED
+    committed = json.loads(path.read_text(encoding="utf-8"))
     if expected is None:
-        assert "notebooklm" not in committed[0]
+        assert "notebooklm" not in committed
     else:
-        assert committed[0]["notebooklm"] == expected
+        assert committed["notebooklm"] == expected
 
 
 def test_destination_corruption_and_backup_matrix(tmp_path: Path) -> None:

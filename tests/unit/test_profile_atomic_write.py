@@ -393,55 +393,50 @@ def test_write_preserves_cookies_and_origins(tmp_path: Path) -> None:
     assert payload["origins"] == origins
 
 
-def test_storage_state_mutators_share_one_lock_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_storage_state_mutators_share_one_lock_file(tmp_path: Path) -> None:
     """All ``storage_state.json`` mutators must serialize on the SAME flock file.
 
     Tier-0 data-loss regression: cookie saves and account-metadata writes once
     used DIFFERENT lock files and could lose updates under concurrency. After
     the storage-writer refactor every mutator serializes on the project-internal
     shared ``StorageLockManager`` (cookie saves via ``ProfileStore``'s blocking
-    primitive, account/clear/replacement via its bounded transaction). This test captures
-    the lock request each mutator passes to that ONE owner and asserts they all
-    derive the identical dotted ``.storage_state.json.lock`` sibling. The sibling
+    primitive, account/clear/replacement via its bounded transaction). This test
+    removes the sentinel before each real mutation and asserts every operation
+    recreates the identical dotted ``.storage_state.json.lock`` sibling. The sibling
     ``context.json.lock`` (still ``filelock``, taken by
     ``LegacyAccountContext.scrub``) uses a different mechanism and is not captured
     here.
     """
     import httpx
 
-    from notebooklm._auth import profile_store
     from notebooklm._auth.storage import (
         persist_minted_jar,
         replace_from_remint,
         save_cookies_to_storage,
     )
-    from notebooklm._auth.storage_lock import StorageLockManager
 
     storage_path = tmp_path / "storage_state.json"
     _write_storage_state(storage_path, {"cookies": [], "origins": []})
 
-    seen: list[Path] = []
-    real_locks = StorageLockManager()
-
-    class CapturingLocks:
-        def acquire(self, request):  # type: ignore[no-untyped-def]
-            seen.append(request.path.expanduser().resolve())
-            return real_locks.acquire(request)
-
-    monkeypatch.setattr(profile_store, "_STORAGE_LOCKS", CapturingLocks())
-
     # Canonical name is the dotted, hidden sibling (storage.py contract).
     expected = storage_path.with_name(f".{storage_path.name}.lock").expanduser().resolve()
+    context_lock = storage_path.with_name(".context.json.lock").expanduser().resolve()
 
     def _locks_taken_by(mutator) -> set[Path]:  # type: ignore[no-untyped-def]
-        seen.clear()
+        for candidate in tmp_path.iterdir():
+            if candidate.name.endswith(".lock") and candidate.is_file():
+                candidate.unlink()
         mutator()
-        return set(seen)
+        observed = {
+            candidate.resolve()
+            for candidate in tmp_path.iterdir()
+            if candidate.name.endswith(".lock") and candidate.resolve() != context_lock
+        }
+        assert expected in observed
+        return observed
 
-    # Assert PER MUTATOR that it took the storage lock — so "a mutator takes no
-    # lock" (an empty capture) is caught, not masked by another mutator's lock.
+    # Assert PER MUTATOR that it created the storage lock — so "a mutator takes
+    # no lock" is caught, not masked by another mutator's earlier sentinel.
     account_write_locks = _locks_taken_by(
         lambda: write_account_metadata(storage_path, authuser=1, email="alice@example.com")
     )

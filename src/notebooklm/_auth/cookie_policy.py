@@ -147,6 +147,18 @@ _SECONDARY_BINDING_WARNED = False
 _SECONDARY_BINDING_WARN_LOCK = threading.Lock()
 
 
+def _reset_secondary_binding_warning_for_tests() -> None:
+    """Re-arm the process warning after synchronizing with active claimers.
+
+    Test lifecycle cleanup must use this operation rather than rebinding the
+    module flag.  Taking the same lock as the claim path prevents teardown
+    from racing a worker that is deciding whether to emit the warning.
+    """
+    global _SECONDARY_BINDING_WARNED
+    with _SECONDARY_BINDING_WARN_LOCK:
+        _SECONDARY_BINDING_WARNED = False
+
+
 def _has_valid_secondary_binding(cookie_names: set[str]) -> bool:
     """Tier 2 acceptance check (see ``MINIMUM_REQUIRED_COOKIES``).
 

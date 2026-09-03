@@ -292,6 +292,10 @@ async def test_from_storage_load_recovery_does_not_block_event_loop(
     )
 
 
+def _must_not_recover(_path: object) -> bool:
+    raise AssertionError("pure loader invoked recovery — it must be network-free")
+
+
 class TestPureLoaderPerformsNoNetwork:
     """The inner PURE loaders must NEVER touch the network under any input.
 
@@ -303,21 +307,15 @@ class TestPureLoaderPerformsNoNetwork:
     request) and confirm neither is ever reached.
     """
 
-    @pytest.fixture(autouse=True)
-    def _forbid_recovery(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        def _must_not_run(_path: object) -> bool:
-            raise AssertionError("pure loader invoked recovery — it must be network-free")
-
-        monkeypatch.setattr(_auth_psidts_recovery, "_recover_psidts_inline", _must_not_run)
-
     def _write(self, tmp_path, cookies: list[dict]) -> object:
         storage_file = tmp_path / "storage_state.json"
         storage_file.write_text(json.dumps({"cookies": cookies}))
         return storage_file
 
     def test_jar_pure_loader_raises_psidts_unroutable_without_network(
-        self, tmp_path, httpx_mock: HTTPXMock
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock
     ) -> None:
+        monkeypatch.setattr(_auth_psidts_recovery, "_recover_psidts_inline", _must_not_recover)
         storage_file = self._write(tmp_path, _RECOVERABLE_UNROUTABLE_COOKIES)
 
         with pytest.raises(RequiredCookieValidationError) as excinfo:
@@ -327,8 +325,9 @@ class TestPureLoaderPerformsNoNetwork:
         assert httpx_mock.get_requests() == []
 
     def test_flat_pure_loader_raises_psidts_unroutable_without_network(
-        self, tmp_path, httpx_mock: HTTPXMock
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock
     ) -> None:
+        monkeypatch.setattr(_auth_psidts_recovery, "_recover_psidts_inline", _must_not_recover)
         storage_file = self._write(tmp_path, _RECOVERABLE_UNROUTABLE_COOKIES)
 
         with pytest.raises(RequiredCookieValidationError) as excinfo:
@@ -338,8 +337,9 @@ class TestPureLoaderPerformsNoNetwork:
         assert httpx_mock.get_requests() == []
 
     def test_pure_loader_raises_missing_cookie_without_network(
-        self, tmp_path, httpx_mock: HTTPXMock
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock
     ) -> None:
+        monkeypatch.setattr(_auth_psidts_recovery, "_recover_psidts_inline", _must_not_recover)
         # SID absent: a genuinely broken session no POST can heal.
         cookies = [c for c in _RECOVERABLE_UNROUTABLE_COOKIES if c["name"] != "SID"]
         storage_file = self._write(tmp_path, cookies)
@@ -351,8 +351,9 @@ class TestPureLoaderPerformsNoNetwork:
         assert httpx_mock.get_requests() == []
 
     def test_name_only_pure_loader_accepts_unroutable_without_network(
-        self, tmp_path, httpx_mock: HTTPXMock
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock
     ) -> None:
+        monkeypatch.setattr(_auth_psidts_recovery, "_recover_psidts_inline", _must_not_recover)
         # The name-only pass (require_routable=False) is the wrapper's post-
         # decline retry: it must succeed on a present-but-unroutable PSIDTS and
         # still never touch the network.

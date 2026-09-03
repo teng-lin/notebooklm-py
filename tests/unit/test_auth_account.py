@@ -7,15 +7,12 @@ alongside the deletion of ``_AuthFacadeModule``; see ADR-0003
 """
 
 import json
-from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import auth as auth_module
-from notebooklm._auth import storage as _auth_storage
 from notebooklm.auth import (
     Account,
     enumerate_accounts,
@@ -180,19 +177,10 @@ class TestAccountMetadata:
         storage = tmp_path / "storage_state.json"
         assert get_authuser_for_storage(storage) == 0
 
-    def test_seam_aliased_patch_to_account_helpers(self, monkeypatch, tmp_path):
-        """``get_authuser_for_storage`` resolves ``read_account_metadata`` via bare-name lookup."""
+    def test_seam_aliased_patch_to_account_helpers(self, tmp_path):
+        """The account helpers project the same persisted record."""
         storage = tmp_path / "storage_state.json"
-
-        def fake_read_account_metadata(storage_path: Path | None) -> dict[str, Any]:
-            assert storage_path == storage
-            return {"authuser": 3, "email": "carol@example.com"}
-
-        # Seam-aliased object-attribute patch (ADR-0007): patches the owning
-        # module so bare-name lookups inside it observe the fake. Since ADR-0033
-        # PR 5.2 the owner of the account RECORD helpers is ``_auth.storage``;
-        # ``_auth.account`` kept only the network-identity half.
-        monkeypatch.setattr(_auth_storage, "read_account_metadata", fake_read_account_metadata)
+        auth_module.write_account_metadata(storage, authuser=3, email="carol@example.com")
 
         assert auth_module.get_authuser_for_storage(storage) == 3
         assert auth_module.get_account_email_for_storage(storage) == "carol@example.com"

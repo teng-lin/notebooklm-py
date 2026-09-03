@@ -140,10 +140,10 @@ def _isolate_backend_preference(
 
 @pytest.fixture(autouse=True)
 def _reset_poke_state():
-    """Reset module-level rotation guards between tests.
+    """Reset process-owned auth lifecycle state between tests.
 
-    The ``notebooklm.auth`` rotation throttle keeps two pieces of module-global
-    state that persist across tests and would otherwise leak:
+    The process-default rotation owner keeps two pieces of state that persist
+    across tests and would otherwise leak:
 
     1. ``_LAST_POKE_ATTEMPT_MONOTONIC`` (``dict[Path | None, float]``) — keyed
        per-profile. Without clearing, the first test to poke any profile sets
@@ -165,32 +165,25 @@ def _reset_poke_state():
        test is asserting on (``tmp_path`` uniqueness makes real path collisions
        unlikely, but the drain makes the durable half deterministic).
     """
-    from notebooklm import auth as _auth
     from notebooklm._auth import cookie_policy as _cookie_policy
+    from notebooklm._auth import keepalive as _keepalive
     from notebooklm._auth.profile_migration import LegacyPromotionScheduler
 
     scheduler = LegacyPromotionScheduler.process_default()
 
-    # ``_LAST_POKE_ATTEMPT_MONOTONIC`` and ``_POKE_LOCKS_BY_LOOP`` are shared
-    # by identity across ``notebooklm.auth`` and ``notebooklm._auth.keepalive``
-    # (the auth-module re-export captures the same dict object). ``.clear()``
-    # mutates in place so reaching through either reference is equivalent.
-    #
-    # ``_SECONDARY_BINDING_WARNED`` lives on the cookie_policy seam since D1
-    # PR-2 retired the ``_AuthFacadeModule`` write-through. Reset on the
-    # owner directly; the auth-module re-export captured at import time was
-    # never the canonical store.
-    _auth._LAST_POKE_ATTEMPT_MONOTONIC.clear()
-    _auth._POKE_LOCKS_BY_LOOP.clear()
-    _cookie_policy._SECONDARY_BINDING_WARNED = False
+    # Rotation reset checks that no per-loop poke lock is still held.  The
+    # cookie-warning reset takes the same lock as the production claim path,
+    # so teardown cannot race an in-flight warning decision.
+    _keepalive._reset_poke_state_for_tests()
+    _cookie_policy._reset_secondary_binding_warning_for_tests()
     scheduler._reset_for_tests()
     yield
-    _auth._LAST_POKE_ATTEMPT_MONOTONIC.clear()
-    _auth._POKE_LOCKS_BY_LOOP.clear()
-    _cookie_policy._SECONDARY_BINDING_WARNED = False
-    # Join first, then clear — clearing while a worker is mid-write would let
-    # it land in the next test's world.
+    # Join first, then reset every process owner. Clearing any owner while a
+    # detached promotion is still alive would let that worker enter the next
+    # test's lifecycle after teardown had declared the process quiescent.
     scheduler.drain(30.0)
+    _keepalive._reset_poke_state_for_tests()
+    _cookie_policy._reset_secondary_binding_warning_for_tests()
     scheduler._reset_for_tests()
 
 

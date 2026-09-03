@@ -854,15 +854,13 @@ def test_main_exits_two_on_unhandled_crash(
     assert "***" in err
 
 
-async def _load_auth_raising(monkeypatch: pytest.MonkeyPatch, error: BaseException) -> None:
-    """Run ``load_auth`` with the private storage owner raising ``error``."""
-    from notebooklm._auth import tokens as tokens_module
+def _raising_stored_auth(error: BaseException):
+    """Return an injected stored-auth loader that raises ``error``."""
 
-    async def load(_self: object, **_kwargs: Any) -> Any:
+    async def load(**_kwargs: Any) -> Any:
         raise error
 
-    monkeypatch.setattr(tokens_module.StoredAuthLoader, "load", load)
-    await check_rpc_health.load_auth(None)
+    return load
 
 
 @pytest.mark.asyncio
@@ -912,8 +910,9 @@ async def test_load_auth_uses_private_owner_with_exact_arguments_and_no_warning(
 async def test_load_auth_preserves_unmapped_error_identity(
     monkeypatch: pytest.MonkeyPatch, error: BaseException
 ) -> None:
+    monkeypatch.setattr(check_rpc_health, "_load_stored_auth", _raising_stored_auth(error))
     with pytest.raises(type(error)) as excinfo:
-        await _load_auth_raising(monkeypatch, error)
+        await check_rpc_health.load_auth(None)
     assert excinfo.value is error
 
 
@@ -926,8 +925,10 @@ async def test_load_auth_exits_two_and_names_the_source_on_value_error(
     with no context, so without the source line a corrupt storage_state.json
     prints only ``Expecting value: line 1 column 1 (char 0)``.
     """
+    error = ValueError("Expecting value: line 1 column 1")
+    monkeypatch.setattr(check_rpc_health, "_load_stored_auth", _raising_stored_auth(error))
     with pytest.raises(SystemExit) as excinfo:
-        await _load_auth_raising(monkeypatch, ValueError("Expecting value: line 1 column 1"))
+        await check_rpc_health.load_auth(None)
     assert excinfo.value.code == 2
 
     stderr = capsys.readouterr().err
@@ -948,8 +949,9 @@ async def test_load_auth_exits_two_and_scrubs_secrets_on_http_error(
         "All connection attempts failed for "
         "https://notebooklm.google.com/batchexecute?f.sid=-8891234567890123456"
     )
+    monkeypatch.setattr(check_rpc_health, "_load_stored_auth", _raising_stored_auth(leaky))
     with pytest.raises(SystemExit) as excinfo:
-        await _load_auth_raising(monkeypatch, leaky)
+        await check_rpc_health.load_auth(None)
     assert excinfo.value.code == 2
 
     stderr = capsys.readouterr().err

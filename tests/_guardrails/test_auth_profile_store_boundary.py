@@ -74,7 +74,7 @@ _NATIVE_REPLACE_CALLER_TESTS: dict[NativeReplaceCaller, tuple[str, ...]] = {
         "tests/unit/test_browser_capture_cdp_arm.py::test_cdp_authenticated_landing_persists_and_filters",
     ),
     ("_auth/storage.py", "replace_from_login", "replace_profile_from_login"): (
-        "tests/unit/test_storage_writer.py::test_replace_from_login_is_one_typed_store_delegation_and_exhaustive_projection",
+        "tests/unit/test_storage_writer.py::test_replace_from_login_is_one_typed_delegation_and_exhaustive_projection",
     ),
     ("_auth/storage.py", "replace_from_remint", "replace_from_remint"): (
         "tests/unit/test_storage_writer.py::test_replace_from_remint_is_one_typed_store_delegation_and_exact_legacy_result",

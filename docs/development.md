@@ -1065,6 +1065,9 @@ surface change is a deliberate, diff-visible act. These **regenerable baselines*
 | `auth_patch_sites` | auth test patch-site audit | `tests/fixtures/baselines/auth_patch_sites.json` |
 | `browser_import_graph` | package-aware imports under `notebooklm._browser` | `tests/fixtures/baselines/browser_import_graph.json` |
 | `browser_patch_sites` | browser test patch-site audit | `tests/fixtures/baselines/browser_patch_sites.json` |
+| `auth_facade_patch_sites` | public `notebooklm.auth` no-growth relocation sentinel | `tests/fixtures/baselines/auth_facade_patch_sites.json` |
+| `auth_family_patch_scorecard` | combined full-joint auth/browser/facade scorecard | `tests/fixtures/baselines/auth_family_patch_scorecard.json` |
+| `auth_shared_mutations` | class/singleton/process-default mutation audit | `tests/fixtures/baselines/auth_shared_mutations.json` |
 | `module_size` | live over-budget and ADR-0033 shrink-locked LOC | `tests/fixtures/baselines/module_size.json` |
 | `storage_transaction_policy` | AST-derived lock-policy callers | `tests/fixtures/baselines/storage_transaction_policy.json` |
 | `guardrail_inline_literals` | grandfathered large guardrail literals | `tests/fixtures/baselines/guardrail_inline_literals.json` |
@@ -1087,6 +1090,35 @@ guardrail literal, acknowledge it explicitly:
 ```bash
 python scripts/regen_baselines.py --allow-growth
 ```
+
+Auth mutation projections are schema-v2 shrink-only ratchets. Review full
+package/target/path/lexical-owner rows and total counts alongside the
+private-name column; a non-underscore target is not necessarily public API.
+They intentionally implement a finite repository grammar, not general Python
+dataflow or pytest fixture discovery: use explicit family imports, direct
+mutation idioms, literal finite names/containers without unpacking, the
+suite-used syntactic `list(...)` wrapper, and direct local helpers with statically
+resolvable arguments. If a family-related target is reported as
+unresolved, simplify it until the audit can resolve it. Do not use unsupported
+control flow, dynamic registries, closure capture, or fixture/plugin discovery
+to justify a lower measurement; retain the prior row unless the coupling was
+removed in a supported, reviewable form. Proven-fresh or proven-non-family
+targets remain excluded.
+Authored scenario, lifecycle-cleanup, and coverage-allowance policies live in
+`tests/fixtures/policies/` and are never emitted by baseline regeneration.
+The separate **Auth Patch Audit** workflow runs on manual dispatch and is a
+required reusable gate in `publish.yml`, so it runs once for every release but
+not for ordinary pull requests. Manual runs compare the selected branch with
+its merge-base on `main` (or an explicit `base_ref`); releases compare the tag
+with the previous stable release tag. It uses isolated base/head workspaces, a
+bounded auth/browser unit-test coverage slice (never integration or server
+tests), pytest node/parameter/fixture-closure collection, and exact
+statement/branch preservation.
+The initial schema-v2 scorecard is `_auth` 244 (145 private-name), `_browser`
+66 (17 private-name), public facade 526, and shared-lifetime mutation 188. The
+private-package total is 310; the one-site increase over the legacy projection
+is a formerly invisible, statically resolvable constant-named `_auth` patch,
+not new test behavior.
 
 Run the complete AST/path/contract guard suite locally with:
 

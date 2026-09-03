@@ -69,6 +69,29 @@ DEFAULT_CASSETTE_DIR = _REPO_ROOT / "tests" / "cassettes"
 # directories scanned.
 _SECRETS_ONLY_EXTENSIONS: tuple[str, ...] = (".yaml", ".yml", ".json", ".html", ".txt")
 DEFAULT_ALLOWLIST = _REPO_ROOT / "tests" / "scripts" / "cassette_repair_allowlist.txt"
+
+# These generated audit artifacts deliberately carry exact Python lexical
+# owner identifiers. Long ``test_*`` names can cross the generic entropy
+# threshold, but they are source identifiers rather than credential-bearing
+# fixture values. Suppress only that heuristic on the exact structural field;
+# known token/API-key detectors still inspect the original line.
+_AUTH_AUDIT_BASELINES = frozenset(
+    {
+        "auth_facade_patch_sites.json",
+        "auth_family_patch_scorecard.json",
+        "auth_patch_sites.json",
+        "auth_shared_mutations.json",
+        "browser_patch_sites.json",
+    }
+)
+_AUTH_AUDIT_BASELINE_DIR = (_REPO_ROOT / "tests" / "fixtures" / "baselines").resolve()
+_AUTH_AUDIT_POLICY_FILES = frozenset(
+    {
+        (_REPO_ROOT / "tests/fixtures/policies/auth_behavior_scenarios.json").resolve(),
+        (_REPO_ROOT / "tests/fixtures/policies/auth_patch_survivors.json").resolve(),
+    }
+)
+_OWNER_QUALNAME_LINE = re.compile(r'^\s*(?:\{\s*)?"owner_qualname"\s*:')
 _ANDROID_GRPC_FORMAT = "notebooklm.android.grpc-cassette"
 _ANDROID_SAFE_METADATA_KEYS = frozenset(
     {
@@ -366,6 +389,18 @@ def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
             for line_no, line in enumerate(fh, start=1):
                 if secrets_only:
                     line_leaks = find_credential_leaks(line)
+                    resolved = path.resolve()
+                    structural_auth_identifier = (
+                        resolved.parent == _AUTH_AUDIT_BASELINE_DIR
+                        and path.name in _AUTH_AUDIT_BASELINES
+                        and _OWNER_QUALNAME_LINE.match(line)
+                    ) or (resolved in _AUTH_AUDIT_POLICY_FILES and _OWNER_QUALNAME_LINE.match(line))
+                    if structural_auth_identifier:
+                        line_leaks = [
+                            leak
+                            for leak in line_leaks
+                            if not leak.startswith("Leak (high-entropy token):")
+                        ]
                 else:
                     ok, line_leaks = is_clean(line)
                     if ok:

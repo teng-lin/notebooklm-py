@@ -1,0 +1,237 @@
+{
+  "operations": [
+    {
+      "affected_paths": ["src/notebooklm/_auth/keepalive.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_poke_state",
+      "path": "tests/conftest.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.keepalive.RotationState.process_default()",
+      "replaced_base_mutations": [
+        {
+          "attribute": "clear",
+          "count": 2,
+          "idiom": "mutator",
+          "owner": "notebooklm._auth.keepalive.RotationState.process_default()._last_attempt_monotonic",
+          "owner_kind": "fixture",
+          "owner_qualname": "_reset_poke_state",
+          "package": "notebooklm._auth",
+          "path": "tests/conftest.py"
+        },
+        {
+          "attribute": "clear",
+          "count": 2,
+          "idiom": "mutator",
+          "owner": "notebooklm._auth.keepalive.RotationState.process_default()._locks_by_loop",
+          "owner_kind": "fixture",
+          "owner_qualname": "_reset_poke_state",
+          "package": "notebooklm._auth",
+          "path": "tests/conftest.py"
+        }
+      ],
+      "verification_node_prefixes": [
+        "tests/unit/test_auth_state_owners.py::test_rotation_state_loop_lock_and_safe_reset",
+        "tests/unit/test_auth_state_owners.py::test_rotation_state_boundaries_aliases_isolation_and_atomic_threads"
+      ]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/cookie_policy.py"],
+      "count": 2,
+      "method": "_reset_secondary_binding_warning_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_poke_state",
+      "path": "tests/conftest.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.cookie_policy",
+      "replaced_base_mutations": [
+        {
+          "attribute": "_SECONDARY_BINDING_WARNED",
+          "count": 2,
+          "idiom": "assignment",
+          "module": "cookie_policy",
+          "owner_kind": "fixture",
+          "owner_qualname": "_reset_poke_state",
+          "package": "notebooklm._auth",
+          "path": "tests/conftest.py"
+        }
+      ],
+      "verification_node_prefixes": [
+        "tests/unit/test_warning_dedupe.py::test_secondary_binding_warning_reset_rearms_after_synchronized_cleanup",
+        "tests/unit/test_warning_dedupe.py::test_secondary_binding_warns_exactly_once_under_asyncio_gather"
+      ]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/keepalive.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_auth_process_state",
+      "path": "tests/unit/test_auth_remaining_branches.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.keepalive.RotationState.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_state_owners.py::test_rotation_state_loop_lock_and_safe_reset"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/profile_migration.py"],
+      "count": 1,
+      "method": "drain",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_poke_state",
+      "path": "tests/conftest.py",
+      "phase": "teardown",
+      "production_owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_profile_migration.py::test_drain_returns_true_and_stays_quiet_when_every_worker_finishes"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/profile_migration.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_poke_state",
+      "path": "tests/conftest.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_profile_migration.py::test_reset_reopens_the_scheduler_for_the_next_test"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/profile_migration.py"],
+      "count": 1,
+      "method": "drain",
+      "owner_kind": "helper",
+      "owner_qualname": "_drain_promotions_for_tests",
+      "path": "tests/unit/test_auth_account_promotion.py",
+      "phase": "teardown",
+      "production_owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_profile_migration.py::test_drain_returns_true_and_stays_quiet_when_every_worker_finishes"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/profile_migration.py"],
+      "count": 1,
+      "method": "drain",
+      "owner_kind": "helper",
+      "owner_qualname": "_drain_promotions_for_tests",
+      "path": "tests/unit/test_profile_atomic_write.py",
+      "phase": "teardown",
+      "production_owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_profile_atomic_write.py::test_write_account_metadata_lands_inline_in_storage_state"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/recovery.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_auth_process_state",
+      "path": "tests/unit/test_auth_remaining_branches.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.recovery.ColdRecoveryState.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_remaining_branches.py::test_psidts_inline_fresh_state_declines"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/recovery.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_restore_installed_rung",
+      "path": "tests/unit/test_auth_recovery_rungs.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.recovery.ColdRecoveryState.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_recovery_rungs.py::test_registry_install_returns_previous_rung"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/single_flight.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_clear_single_flight_state",
+      "path": "tests/integration/concurrency/test_refresh_cmd_race.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_state_owners.py::test_single_flight_identity_epoch_stale_skip_and_quiescent_reset"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/single_flight.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_single_flight",
+      "path": "tests/unit/test_auth_refresh_coverage.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_state_owners.py::test_single_flight_identity_epoch_stale_skip_and_quiescent_reset"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/single_flight.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_auth_process_state",
+      "path": "tests/unit/test_auth_remaining_branches.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_state_owners.py::test_single_flight_identity_epoch_stale_skip_and_quiescent_reset"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/single_flight.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_clear_single_flight_state",
+      "path": "tests/unit/test_refresh_lock_registry.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_state_owners.py::test_single_flight_identity_epoch_stale_skip_and_quiescent_reset"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/single_flight.py"],
+      "count": 2,
+      "method": "_reset_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_restore_installed_rung",
+      "path": "tests/unit/test_auth_recovery_rungs.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "replaced_base_mutations": [],
+      "verification_node_prefixes": ["tests/unit/test_auth_recovery_rungs.py::test_registry_install_returns_previous_rung"]
+    },
+    {
+      "affected_paths": ["src/notebooklm/_auth/cookie_policy.py"],
+      "count": 2,
+      "method": "_reset_secondary_binding_warning_for_tests",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_warning_flags",
+      "path": "tests/unit/test_warning_dedupe.py",
+      "phase": "setup_and_teardown",
+      "production_owner": "notebooklm._auth.cookie_policy",
+      "replaced_base_mutations": [
+        {
+          "attribute": "_SECONDARY_BINDING_WARNED",
+          "count": 2,
+          "idiom": "assignment",
+          "module": "cookie_policy",
+          "owner_kind": "fixture",
+          "owner_qualname": "_reset_warning_flags",
+          "package": "notebooklm._auth",
+          "path": "tests/unit/test_warning_dedupe.py"
+        }
+      ],
+      "verification_node_prefixes": [
+        "tests/unit/test_warning_dedupe.py::test_secondary_binding_warning_reset_rearms_after_synchronized_cleanup",
+        "tests/unit/test_warning_dedupe.py::test_secondary_binding_warns_exactly_once_under_asyncio_gather"
+      ]
+    }
+  ],
+  "version": 1
+}

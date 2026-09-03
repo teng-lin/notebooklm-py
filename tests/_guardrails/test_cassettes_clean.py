@@ -172,6 +172,46 @@ def test_guard_detects_novel_high_entropy_token(tmp_path: Path) -> None:
     )
 
 
+def test_auth_audit_owner_entropy_exception_requires_canonical_path(tmp_path: Path) -> None:
+    canonical = FIXTURES_DIR / "baselines" / "auth_patch_sites.json"
+    clean = _run_guard("--secrets-only", str(canonical))
+    assert clean.returncode == 0, clean.stdout
+
+    baseline_dir = tmp_path / "baselines"
+    baseline_dir.mkdir()
+    baseline = baseline_dir / "auth_patch_sites.json"
+    identifier = "test_" + "OwnerQualifierWithManyDistinctCharacters0123456789" * 2
+    baseline.write_text(f'{{"owner_qualname": "{identifier}"}}\n', encoding="utf-8")
+    lookalike = _run_guard("--secrets-only", str(baseline))
+    assert lookalike.returncode == 1
+    assert "high-entropy token" in lookalike.stdout
+
+    known_token = "ya2" + "9." + "C" * 40
+    baseline.write_text(f'{{"owner_qualname": "{known_token}"}}\n', encoding="utf-8")
+    leaked = _run_guard("--secrets-only", str(baseline))
+    assert leaked.returncode == 1
+    assert "Leak (auth token)" in leaked.stdout
+
+
+def test_auth_policy_identifier_entropy_exception_requires_canonical_path(tmp_path: Path) -> None:
+    policies = FIXTURES_DIR / "policies"
+    for name in ("auth_behavior_scenarios.json", "auth_patch_survivors.json"):
+        clean = _run_guard("--secrets-only", str(policies / name))
+        assert clean.returncode == 0, clean.stdout
+
+    lookalike_dir = tmp_path / "policies"
+    lookalike_dir.mkdir()
+    lookalike = lookalike_dir / "auth_behavior_scenarios.json"
+    identifier = "test_flock_unavailable_warns_exactly_once_under_asyncio_gather"
+    lookalike.write_text(
+        f'{{"owner_qualname": "{identifier}"}}\n',
+        encoding="utf-8",
+    )
+    result = _run_guard("--secrets-only", str(lookalike))
+    assert result.returncode == 1
+    assert "high-entropy token" in result.stdout
+
+
 # --- Signed blob-capability URLs (#2120 / #2215) ---------------------------
 # These must be caught in BOTH scan modes. ``--secrets-only`` reaches the
 # detector via ``_CREDENTIAL_DETECTORS``; the full cassette scan routes through

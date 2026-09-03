@@ -1,0 +1,182 @@
+name: Auth Patch Audit
+
+on:
+  workflow_call:
+    inputs:
+      custom_branch:
+        description: "Branch/ref to audit; defaults to the release tag."
+        required: false
+        type: string
+        default: ""
+      base_ref:
+        description: "Comparison ref; defaults to previous release tag or merge-base with main."
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+    inputs:
+      custom_branch:
+        description: "Branch/ref to audit; defaults to the selected dispatch ref."
+        required: false
+        type: string
+        default: ""
+      base_ref:
+        description: "Comparison ref; defaults to merge-base with main."
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.custom_branch || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  auth-patch-coverage-delta:
+    name: auth-patch-coverage-delta
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.custom_branch || github.ref }}
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Resolve comparison base
+      id: base
+      shell: bash
+      env:
+        REQUESTED_BASE: ${{ inputs.base_ref }}
+      run: |
+        set -euo pipefail
+        if [ -n "$REQUESTED_BASE" ]; then
+          base=$(git rev-parse "$REQUESTED_BASE^{commit}")
+        elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+          current_sha=$(git rev-parse HEAD)
+          previous_tag=""
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+              [ "$(git rev-list -n 1 "$tag")" != "$current_sha" ]; then
+              previous_tag="$tag"
+              break
+            fi
+          done < <(git tag --sort=-version:refname --merged "$current_sha")
+          if [ -z "$previous_tag" ]; then
+            echo "No previous stable release tag found before $GITHUB_REF_NAME." >&2
+            exit 1
+          fi
+          base=$(git rev-parse "$previous_tag^{commit}")
+        else
+          base=$(git merge-base HEAD origin/main)
+        fi
+        git cat-file -e "$base^{commit}"
+        echo "base=$base" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+        cache: "pip"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+      with:
+        enable-cache: true
+
+    - name: Create isolated base and head workspaces
+      shell: bash
+      run: |
+        git worktree add --detach "$RUNNER_TEMP/auth-patch-base" "${{ steps.base.outputs.base }}"
+        git worktree add --detach "$RUNNER_TEMP/auth-patch-head" HEAD
+
+    - name: Run base coverage sequence
+      shell: bash
+      run: |
+        workspace="$RUNNER_TEMP/auth-patch-base"
+        cd "$workspace"
+        uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra cookies
+        auth_tests=$(
+          {
+            find tests/unit -maxdepth 1 -type f \( \
+              -name '*auth*.py' -o -name '*browser*.py' -o -name '*refresh*.py' -o \
+              -name '*storage*.py' -o -name '*profile*.py' -o -name 'test_client*.py' -o \
+              -name 'test_warning_dedupe.py' -o -name 'test_json_error_exit.py' -o \
+              -name 'test_check_rpc_health.py' \
+            \)
+            find tests/unit/cli -maxdepth 1 -type f \( \
+              -name '*auth*.py' -o -name '*playwright_login*.py' -o \
+              -name 'test_session_edge_cases.py' \
+            \)
+            find tests/unit/app tests/unit/concurrency -maxdepth 1 -type f \( \
+              -name '*auth*.py' -o -name '*browser*.py' -o -name '*refresh*.py' -o \
+              -name '*profile*.py' -o -name '*session*.py' -o \
+              -name 'test_app_doctor.py' \
+            \)
+          } | sort -u
+        )
+        test -n "$auth_tests"
+        uv run pytest $auth_tests -n auto --dist loadgroup -m "not repo_lint and not reality and not requires_playwright and not requires_chromium" --cov=src/notebooklm --cov-report=term-missing --cov-report="json:$RUNNER_TEMP/coverage-base.json" --cov-fail-under=0
+
+    - name: Run head coverage sequence
+      shell: bash
+      run: |
+        workspace="$RUNNER_TEMP/auth-patch-head"
+        cd "$workspace"
+        uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra cookies
+        auth_tests=$(
+          {
+            find tests/unit -maxdepth 1 -type f \( \
+              -name '*auth*.py' -o -name '*browser*.py' -o -name '*refresh*.py' -o \
+              -name '*storage*.py' -o -name '*profile*.py' -o -name 'test_client*.py' -o \
+              -name 'test_warning_dedupe.py' -o -name 'test_json_error_exit.py' -o \
+              -name 'test_check_rpc_health.py' \
+            \)
+            find tests/unit/cli -maxdepth 1 -type f \( \
+              -name '*auth*.py' -o -name '*playwright_login*.py' -o \
+              -name 'test_session_edge_cases.py' \
+            \)
+            find tests/unit/app tests/unit/concurrency -maxdepth 1 -type f \( \
+              -name '*auth*.py' -o -name '*browser*.py' -o -name '*refresh*.py' -o \
+              -name '*profile*.py' -o -name '*session*.py' -o \
+              -name 'test_app_doctor.py' \
+            \)
+          } | sort -u
+        )
+        test -n "$auth_tests"
+        uv run pytest $auth_tests -n auto --dist loadgroup -m "not repo_lint and not reality and not requires_playwright and not requires_chromium" --cov=src/notebooklm --cov-report=term-missing --cov-report="json:$RUNNER_TEMP/coverage-head.json" --cov-fail-under=0
+
+    - name: Collect base and head scenario nodes
+      shell: bash
+      run: |
+        uv --project "$RUNNER_TEMP/auth-patch-base" run python "$GITHUB_WORKSPACE/scripts/check_auth_behavior_scenario_policy.py" collect --workspace "$RUNNER_TEMP/auth-patch-base" --output "$RUNNER_TEMP/collection-base.json"
+        uv --project "$RUNNER_TEMP/auth-patch-head" run python "$GITHUB_WORKSPACE/scripts/check_auth_behavior_scenario_policy.py" collect --workspace "$RUNNER_TEMP/auth-patch-head" --output "$RUNNER_TEMP/collection-head.json"
+
+    - name: Validate auth behavior and coverage delta
+      shell: bash
+      run: |
+        uv --project "$RUNNER_TEMP/auth-patch-head" run pytest -q \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_audit_auth_patch_sites.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_audit_auth_shared_mutations.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_behavior_scenario_policy.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_coverage_allowance_policy.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_auth_lifecycle_cleanup_policy.py" \
+          "$RUNNER_TEMP/auth-patch-head/tests/unit/test_check_auth_coverage_delta.py" \
+          --timeout=180 \
+          --no-cov
+        uv --project "$RUNNER_TEMP/auth-patch-head" run python "$RUNNER_TEMP/auth-patch-head/scripts/check_auth_lifecycle_cleanup_policy.py" --policy "$RUNNER_TEMP/auth-patch-head/tests/fixtures/policies/auth_lifecycle_cleanup.json" --tests-dir "$RUNNER_TEMP/auth-patch-head/tests" --head-collection "$RUNNER_TEMP/collection-head.json"
+        uv run python scripts/check_auth_behavior_scenario_policy.py validate --base-collection "$RUNNER_TEMP/collection-base.json" --head-collection "$RUNNER_TEMP/collection-head.json" --base-revision "${{ steps.base.outputs.base }}"
+        uv run python scripts/check_auth_coverage_delta.py --base-json "$RUNNER_TEMP/coverage-base.json" --head-json "$RUNNER_TEMP/coverage-head.json" --changed-since "${{ steps.base.outputs.base }}" --base-workspace "$RUNNER_TEMP/auth-patch-base" --head-workspace "$RUNNER_TEMP/auth-patch-head" --scenario-policy tests/fixtures/policies/auth_behavior_scenarios.json --allowance-policy tests/fixtures/policies/auth_coverage_allowances.json --report "$RUNNER_TEMP/auth-patch-coverage-delta.json"
+
+    - name: Upload auth patch coverage evidence on failure
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: auth-patch-coverage-delta
+        path: |
+          ${{ runner.temp }}/coverage-base.json
+          ${{ runner.temp }}/coverage-head.json
+          ${{ runner.temp }}/collection-base.json
+          ${{ runner.temp }}/collection-head.json
+          ${{ runner.temp }}/auth-patch-coverage-delta.json

@@ -23,6 +23,7 @@ from notebooklm._auth.recovery_rungs import (
 from notebooklm._auth.single_flight import SingleFlight
 from notebooklm._browser import headless_reauth
 from notebooklm._browser.headless_reauth import HeadlessReauthResult, HeadlessReauthStatus
+from notebooklm.paths import get_browser_profile_dir
 
 
 @pytest.fixture(autouse=True)
@@ -163,16 +164,13 @@ def test_browser_adapter_maps_status_and_uses_explicit_storage_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     storage = tmp_path / "explicit" / "storage_state.json"
-    browser_profile = tmp_path / "explicit" / "browser_profile"
-    resolver = Mock(return_value=browser_profile)
+    browser_profile = get_browser_profile_dir(storage_path=storage)
     attempt = Mock(return_value=HeadlessReauthResult(browser_status, "mapped reason"))
-    monkeypatch.setattr(headless_reauth, "get_browser_profile_dir", resolver)
     monkeypatch.setattr(headless_reauth, "attempt_headless_reauth", attempt)
 
     outcome = headless_reauth.headless_rung(storage_path=storage, allow_headless=True)
 
     assert outcome == HeadlessRungOutcome(rung_status, "mapped reason")
-    resolver.assert_called_once_with(storage_path=storage)
     attempt.assert_called_once_with(
         storage_path=storage,
         allow_headless=True,

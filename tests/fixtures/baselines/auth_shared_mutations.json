@@ -1,0 +1,1661 @@
+{
+  "mutations": [
+    {
+      "attribute": "items",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.cookie_policy.OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+      "owner_kind": "test",
+      "owner_qualname": "TestRookiepyDomainsCoverage.test_every_optional_label_has_domains",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cookie_policy.py"
+    },
+    {
+      "attribute": "values",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.cookie_policy.OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_cookie_domain_constants_are_facade_exports",
+      "package": "notebooklm._auth",
+      "path": "tests/_guardrails/test_public_surface_manifest.py"
+    },
+    {
+      "attribute": "values",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.cookie_policy.OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+      "owner_kind": "test",
+      "owner_qualname": "TestAllowedCookieDomains.test_optional_cookie_domains_label_partition",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cookie_policy.py"
+    },
+    {
+      "attribute": "values",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.cookie_policy.OPTIONAL_COOKIE_DOMAINS_BY_LABEL",
+      "owner_kind": "test",
+      "owner_qualname": "TestBuildGoogleCookieDomains.test_include_domains_all_shortcut",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_cookie_domain_split.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.keepalive.RotationState.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_poke_state",
+      "package": "notebooklm._auth",
+      "path": "tests/conftest.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.keepalive.RotationState.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_auth_process_state",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "try_claim",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.keepalive.RotationState.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestRecoveryPreconditions.test_throttle_claim_failure_skips_post",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_psidts_recovery.py"
+    },
+    {
+      "attribute": "assert_account_writable",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_master_token_adapters_replace_active_context_with_explicit_cause",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "bootstrap_from_oauth_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_master_token_adapters_replace_active_context_with_explicit_cause",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "bootstrap_storage",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_master_token_adapters_replace_active_context_with_explicit_cause",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "bootstrap_storage",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_master_token_bootstrap_translates_kernel_failure",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_master_token_adapters_replace_active_context_with_explicit_cause",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_recovery_baseline_and_post_remint_load_failures_are_nonfatal",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_allow_headless_bootstrap_still_skips_ordinary_recovery",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_cancelled_bootstrap_lock_waiter_does_not_leak_lock",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_cancelled_bootstrap_settles_persistence_before_unlocking",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_concurrent_missing_storage_bootstrap_mints_once",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_healthy_storage_with_sibling_token_does_not_mint",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_malformed_existing_storage_never_bootstraps",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_missing_storage_bootstraps_once_without_ordinary_recovery",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_missing_storage_json_verify_reuses_one_passive_probe",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_missing_storage_mint_failure_is_typed",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_missing_storage_quiet_success_is_empty",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_missing_storage_without_token_preserves_unexpected_error",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_post_mint_passive_failure_does_not_enter_recovery",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/cli/test_auth_refresh_cold_start.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_bootstrap_storage_from_master_token_returns_minted",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token.py"
+    },
+    {
+      "attribute": "remint_from_stored_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.master_token_bootstrap.MasterTokenBootstrapper",
+      "owner_kind": "test",
+      "owner_qualname": "test_bootstrap_storage_from_master_token_returns_present_after_wait",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token.py"
+    },
+    {
+      "attribute": "_read_present_with_raw",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_file.MasterTokenFile",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_raw_adapter_returns_fresh_captured_dict_without_reencoding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "_read_present_with_raw",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_file.MasterTokenFile",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_unicode_decode_error_escapes_unchanged",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "_read_present_with_raw",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_file.MasterTokenFile",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_unreadable_projection_preserves_exact_cause",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "_read_with_raw",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.master_token_file.MasterTokenFile",
+      "owner_kind": "test",
+      "owner_qualname": "test_typed_read_projects_only_token_from_one_private_call",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "exchange",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "exchange",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_private_mint_errors_never_escape_public_chain",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "exchange",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_oauth_exchange_base_exception_traceback_does_not_retain_oauth_token",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "exchange",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_oauth_mint_cancellation_traceback_does_not_retain_oauth_token",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_private_mint_errors_never_escape_public_chain",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_oauth_mint_cancellation_traceback_does_not_retain_oauth_token",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_strict_loader_bridge_observes_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_tokens_cold_start_remints_from_sibling_master_token",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_cancelled_direct_l4_waiter_does_not_cancel_shared_mint",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_cancelled_waiter_does_not_cancel_shared_master_token_mint",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_client_factory_reaches_cold_master_token_recovery",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_cold_and_live_l4_recovery_share_one_master_token_mint",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_concurrent_cold_start_coalesces_one_master_token_mint",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_headless_retry_that_still_redirects_falls_through_to_l4",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_mixed_headless_permissions_serialize_and_reuse_l4_success",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_same_path_callers_keep_their_explicit_account_routes",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_shared_l4_failure_fans_out_and_later_call_retries",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cold_start_recovery.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_reauth_returns_false_on_revoked_token",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_session_master_token.py"
+    },
+    {
+      "attribute": "mint",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_reauth_success_remints_and_reloads",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_session_master_token.py"
+    },
+    {
+      "attribute": "read",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_concurrent_fresh_write_during_promotion_is_not_clobbered",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "read",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "TestInBandAlwaysWins.test_a_login_landing_during_the_sibling_read_still_wins",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "read",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromotionRacingTheReader.test_promotion_committing_between_the_two_samples_keeps_the_binding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "read",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "test_account_email_rechecks_cookie_and_route_state_after_legacy_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "read",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "test_profile_pair_does_not_apply_legacy_route_to_changed_default_profile",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_session.py"
+    },
+    {
+      "attribute": "read",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "test_profile_pair_rechecks_primary_after_legacy_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_session.py"
+    },
+    {
+      "attribute": "scrub",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_strip_failure_after_successful_embed_still_returns_true",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "scrub",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyAccountContext",
+      "owner_kind": "test",
+      "owner_qualname": "TestRetryableSingleFlight.test_a_failed_post_write_scrub_is_retried_from_the_in_band_state",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "_process_default_scheduler",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadTakesNoLocks.test_empty_profile_fast_path_takes_no_lock",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "_process_default_scheduler",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadTakesNoLocks.test_in_band_fast_path_takes_no_lock_and_schedules_nothing",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "process_default",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler",
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_reader_schedules_stale_copy_cleanup_after_in_band_write",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "process_default",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler",
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_reader_uses_one_core_call_and_schedules_only_legacy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_poke_state",
+      "package": "notebooklm._auth",
+      "path": "tests/conftest.py"
+    },
+    {
+      "attribute": "drain",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_exit_drain_hook_uses_the_resolved_budget",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "drain",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_poke_state",
+      "package": "notebooklm._auth",
+      "path": "tests/conftest.py"
+    },
+    {
+      "attribute": "drain",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_read_account_metadata_derives_legacy_when_promotion_fails",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "drain",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "helper",
+      "owner_qualname": "_drain_promotions_for_tests",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "drain",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "helper",
+      "owner_qualname": "_drain_promotions_for_tests",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_profile_atomic_write.py"
+    },
+    {
+      "attribute": "drain",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_exit_drain_hook_uses_the_resolved_budget",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_missing_storage_file_is_a_noop_never_creates_it",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_read_account_metadata_derives_legacy_when_promotion_fails",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_strip_failure_after_successful_embed_still_returns_true",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadInBandAccount.test_malformed_json_returns_empty",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadInBandAccount.test_missing_file_returns_empty",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestAllThreeEntryPathsReachReconciliation.test_env_auth_read_needs_no_promotion_at_all",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestDerivedRecordEqualsPromotedRecord.test_derived_record_is_never_a_raw_legacy_passthrough",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestDerivedRecordEqualsPromotedRecord.test_every_field_matches_before_and_after_the_durable_write",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestInBandAlwaysWins.test_a_login_landing_during_the_sibling_read_still_wins",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestInBandAlwaysWins.test_empty_placeholder_is_promoted_then_scrubbed_end_to_end",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestInBandAlwaysWins.test_in_band_beats_a_stale_legacy_sibling_and_schedules_its_scrub",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromotionCannotAffectTheRead.test_a_permanently_failing_promotion_never_breaks_the_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromotionCannotAffectTheRead.test_a_slow_promotion_does_not_delay_the_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromotionRacingTheReader.test_a_genuinely_empty_profile_still_reads_empty",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromotionRacingTheReader.test_promotion_committing_between_the_two_samples_keeps_the_binding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadTakesNoLocks.test_empty_profile_fast_path_takes_no_lock",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadTakesNoLocks.test_in_band_fast_path_takes_no_lock_and_schedules_nothing",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadTakesNoLocks.test_legacy_read_never_enters_the_storage_writer_on_the_readers_thread",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestRetryableSingleFlight.test_a_failed_post_write_scrub_is_retried_from_the_in_band_state",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestRetryableSingleFlight.test_a_failed_promotion_is_retried_by_a_later_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestRetryableSingleFlight.test_distinct_profiles_each_get_their_own_flight",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_reader_schedules_stale_copy_cleanup_after_in_band_write",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_reader_uses_one_core_call_and_schedules_only_legacy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_profile_migration.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_clear_account_metadata_clears_in_band",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_profile_atomic_write.py"
+    },
+    {
+      "attribute": "schedule",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.profile_migration.LegacyPromotionScheduler.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_legacy_two_file_fixture_reads_cleanly",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_profile_atomic_write.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_fetch_tokens_with_domains_save_does_not_block_event_loop",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_from_storage_save_does_not_block_event_loop",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/concurrency/test_auth_load_blocks_loop.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestBaselineNotAdvancedOnSaveFailure.test_auth_tokens_from_storage_carries_failed_save_baseline",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cookie_save_race.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestRefreshCmdReplacementBaseline.test_fetch_tokens_with_domains_uses_exact_replacement_baseline",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cookie_save_race.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_cancellation_propagates_before_worker_release_and_observation_is_immutable",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh_profile_store.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_inline_env_logs_exact_skip_and_performs_no_merge",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh_profile_store.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_psidts_persistence_exception_is_nonfatal",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_file_loader_selects_merge_next_baseline_or_hard_failure_fallback",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_inline_loader_never_constructs_or_calls_a_store",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "attribute": "merge_cookie_observation",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_android_from_storage_uses_name_only_psidts_policy",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_backend_selection.py"
+    },
+    {
+      "attribute": "read_document",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_account_email_rechecks_cookie_and_route_state_after_legacy_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "read_document",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_psidts_inline_declines_incomplete_binding_after_lock",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "read_document",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_psidts_inline_fresh_state_declines",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_private_mint_errors_never_escape_public_chain",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_advisory_unlisted_exception_drops_active_caller",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_oauth_exchange_base_exception_traceback_does_not_retain_oauth_token",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_oauth_mint_cancellation_traceback_does_not_retain_oauth_token",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_strict_loader_bridge_observes_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_selection_construction_reads_no_files_tokens_or_network",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_backend_selection.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_malformed_projection_preserves_ordinary_context",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_token_read_io_projection_with_outer_exception",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_public_token_read_io_projection_without_outer_exception",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "read_master_token",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_unlisted_token_read_exception_escapes_unchanged",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "replace_minted_session",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "replace_minted_session",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_private_mint_errors_never_escape_public_chain",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "replace_minted_session",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_strict_loader_bridge_observes_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "replace_minted_session",
+      "count": 1,
+      "idiom": "patch.object",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_reauth_success_remints_and_reloads",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_session_master_token.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_promotion_failure_leaves_legacy_record_intact",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_promotion_failure_warns_every_time_no_throttle",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_promotion_write_takes_the_standard_full_rmw_lock_deadline",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromoteLegacyAccount.test_read_account_metadata_derives_legacy_when_promotion_fails",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_coverage.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromotionCannotAffectTheRead.test_a_permanently_failing_promotion_never_breaks_the_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestPromotionCannotAffectTheRead.test_a_slow_promotion_does_not_delay_the_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadTakesNoLocks.test_in_band_fast_path_takes_no_lock_and_schedules_nothing",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestReadTakesNoLocks.test_legacy_read_never_enters_the_storage_writer_on_the_readers_thread",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestRetryableSingleFlight.test_a_failed_promotion_is_retried_by_a_later_read",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "update_account",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "TestRetryableSingleFlight.test_concurrent_reads_of_one_profile_promote_exactly_once",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_account_promotion.py"
+    },
+    {
+      "attribute": "write_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_oauth_call_time_bridges_observe_midflight_rebinding",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "write_master_token",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.profile_store.ProfileStore",
+      "owner_kind": "test",
+      "owner_qualname": "test_private_mint_errors_never_escape_public_chain",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_bootstrap.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.recovery.ColdRecoveryState.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_restore_installed_rung",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_recovery_rungs.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.recovery.ColdRecoveryState.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_auth_process_state",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "reset",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.refresh._REFRESH_ATTEMPTED_CONTEXT",
+      "owner_kind": "test",
+      "owner_qualname": "TestShouldTryRefresh.test_false_when_context_flag_set",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh_coverage.py"
+    },
+    {
+      "attribute": "set",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.refresh._REFRESH_ATTEMPTED_CONTEXT",
+      "owner_kind": "test",
+      "owner_qualname": "TestShouldTryRefresh.test_false_when_context_flag_set",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh_coverage.py"
+    },
+    {
+      "attribute": "await_flight",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.single_flight.SingleFlight",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_coalescer_accepts_a_concurrent_success_epoch",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "await_flight",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.single_flight.SingleFlight",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_coalescer_covers_epoch_skip_and_follower_retry_cap",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "claim_if_epoch_current",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.single_flight.SingleFlight",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_coalescer_accepts_a_concurrent_success_epoch",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "claim_if_epoch_current",
+      "count": 2,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.single_flight.SingleFlight",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_coalescer_covers_epoch_skip_and_follower_retry_cap",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "read_success_epoch",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.single_flight.SingleFlight",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_coalescer_accepts_a_concurrent_success_epoch",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "read_success_epoch",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.single_flight.SingleFlight",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_coalescer_covers_epoch_skip_and_follower_retry_cap",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_clear_single_flight_state",
+      "package": "notebooklm._auth",
+      "path": "tests/integration/concurrency/test_refresh_cmd_race.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestRefreshCmdBaselineCapturedBeforeRetryFetch.test_retry_fetch_rotations_persist_to_disk",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_cookie_save_race.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_single_flight",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_refresh_coverage.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_reset_auth_process_state",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_leader_runs_without_a_derived_lock_path",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_refresh_mid_session_propagates_cancel_and_declines_runtime_failure",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_process_single_flight_adapters_are_late_identity_views",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_state_owners.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_clear_single_flight_state",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 2,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "fixture",
+      "owner_qualname": "_restore_installed_rung",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_recovery_rungs.py"
+    },
+    {
+      "attribute": "_reset_for_tests",
+      "count": 1,
+      "idiom": "method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_process_single_flight_adapters_are_late_identity_views",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_state_owners.py"
+    },
+    {
+      "attribute": "note_success",
+      "count": 1,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "test_process_single_flight_adapters_are_late_identity_views",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_state_owners.py"
+    },
+    {
+      "attribute": "note_success",
+      "count": 2,
+      "idiom": "gateway-method-or-unknown",
+      "owner": "notebooklm._auth.single_flight.SingleFlight.process_default()",
+      "owner_kind": "test",
+      "owner_qualname": "TestSuccessEpoch.test_note_success_bumps_per_path_key",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_refresh_lock_registry.py"
+    },
+    {
+      "attribute": "_claim_cookie_warning",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.storage_lock.StorageLockManager",
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_lock_snapshot_and_merge_fallbacks",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "acquire",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.storage_lock.StorageLockManager",
+      "owner_kind": "test",
+      "owner_qualname": "test_storage_lock_snapshot_and_merge_fallbacks",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_remaining_branches.py"
+    },
+    {
+      "attribute": "process_default",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.storage_lock.StorageLockManager",
+      "owner_kind": "test",
+      "owner_qualname": "test_default_lock_manager_is_selected_at_construction",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_master_token_file.py"
+    },
+    {
+      "attribute": "process_default",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.storage_lock.StorageLockManager",
+      "owner_kind": "test",
+      "owner_qualname": "test_write_master_token_fails_closed_on_lock_unavailable",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_storage_writer.py"
+    },
+    {
+      "attribute": "load",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.tokens.SessionSeedLoader",
+      "owner_kind": "test",
+      "owner_qualname": "test_auth_tokens_from_storage_keeps_env_auth_under_a_profile",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_env_precedence_2083.py"
+    },
+    {
+      "attribute": "load",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.tokens.StoredAuthLoader",
+      "owner_kind": "test",
+      "owner_qualname": "TestAuthTokensFromStorage.test_warning_is_attributed_to_await_site_and_precedes_loader",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_storage.py"
+    },
+    {
+      "attribute": "load",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.tokens.StoredAuthLoader",
+      "owner_kind": "test",
+      "owner_qualname": "TestAuthTokensFromStorage.test_warning_preserves_loader_error_identity",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_auth_storage.py"
+    },
+    {
+      "attribute": "load",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.tokens.StoredAuthLoader",
+      "owner_kind": "test",
+      "owner_qualname": "test_load_auth_uses_private_owner_with_exact_arguments_and_no_warning",
+      "package": "notebooklm._auth",
+      "path": "tests/unit/test_check_rpc_health.py"
+    }
+  ],
+  "summary": {
+    "assignments": 0,
+    "helper_or_fixture": 23,
+    "private": 34,
+    "total": 189
+  },
+  "version": 1
+}

@@ -26,7 +26,6 @@ from pathlib import Path
 import httpx
 import pytest
 
-from notebooklm import auth as auth_mod
 from notebooklm._auth import keepalive as _keepalive
 from notebooklm._auth import refresh as _auth_refresh
 from notebooklm._auth import single_flight as _single_flight
@@ -51,6 +50,8 @@ class TestFlightClaimIdentity:
     """
 
     def test_second_claim_same_key_follows_leader(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             gate = asyncio.Event()
 
@@ -58,39 +59,43 @@ class TestFlightClaimIdentity:
                 await gate.wait()
                 return "done"
 
-            is_leader_1, flight_1 = _single_flight.claim(("k", "p"), _leader_body)
-            is_leader_2, flight_2 = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader_1, flight_1 = single_flight.claim(("k", "p"), _leader_body)
+            is_leader_2, flight_2 = single_flight.claim(("k", "p"), _leader_body)
             # First claim leads; the second (while in flight) follows the SAME
             # flight rather than spawning a second leader.
             assert is_leader_1 is True
             assert is_leader_2 is False
             assert flight_2 is flight_1
             gate.set()
-            await _single_flight.await_flight(flight_1)
+            await single_flight.await_flight(flight_1)
 
         asyncio.run(_run())
 
     def test_distinct_keys_get_distinct_flights(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             gate = asyncio.Event()
 
             async def _leader_body():
                 await gate.wait()
 
-            is_leader_a, flight_a = _single_flight.claim(("path-a", "p"), _leader_body)
-            is_leader_b, flight_b = _single_flight.claim(("path-b", "p"), _leader_body)
+            is_leader_a, flight_a = single_flight.claim(("path-a", "p"), _leader_body)
+            is_leader_b, flight_b = single_flight.claim(("path-b", "p"), _leader_body)
             assert is_leader_a is True
             assert is_leader_b is True
             assert flight_a is not flight_b
             gate.set()
             await asyncio.gather(
-                _single_flight.await_flight(flight_a),
-                _single_flight.await_flight(flight_b),
+                single_flight.await_flight(flight_a),
+                single_flight.await_flight(flight_b),
             )
 
         asyncio.run(_run())
 
     def test_settled_flight_is_overwritable_by_next_leader(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             calls = 0
 
@@ -98,15 +103,15 @@ class TestFlightClaimIdentity:
                 nonlocal calls
                 calls += 1
 
-            is_leader_1, flight_1 = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader_1, flight_1 = single_flight.claim(("k", "p"), _leader_body)
             assert is_leader_1 is True
-            await _single_flight.await_flight(flight_1)
+            await single_flight.await_flight(flight_1)
             # Once settled, a fresh claim becomes a NEW leader (the prior cycle's
             # flight does not pin the slot forever).
-            is_leader_2, flight_2 = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader_2, flight_2 = single_flight.claim(("k", "p"), _leader_body)
             assert is_leader_2 is True
             assert flight_2 is not flight_1
-            await _single_flight.await_flight(flight_2)
+            await single_flight.await_flight(flight_2)
             assert calls == 2
 
         asyncio.run(_run())
@@ -129,6 +134,8 @@ class TestClaimIfEpochCurrent:
     """Compare-under-exclusion: the epoch compare + the claim are one lock hold."""
 
     def test_skips_when_epoch_already_advanced(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             ran = False
 
@@ -138,19 +145,21 @@ class TestClaimIfEpochCurrent:
 
             # A sibling already succeeded (epoch 1) before this caller (which
             # captured epoch_before=0) reaches the claim.
-            _single_flight.note_success("path")
-            claimed = _single_flight.claim_if_epoch_current(
+            single_flight.note_success("path")
+            claimed = single_flight.claim_if_epoch_current(
                 ("path", "pol"), _body, path_key="path", epoch_before=0
             )
             assert claimed is None, "stale epoch_before must produce a skip signal"
             # No leader task was created, so the factory never runs.
             await asyncio.sleep(0)
             assert ran is False
-            assert _single_flight.SingleFlight.process_default()._flights == {}
+            assert single_flight._flights == {}
 
         asyncio.run(_run())
 
     def test_claims_when_epoch_unchanged(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             ran = False
 
@@ -158,13 +167,13 @@ class TestClaimIfEpochCurrent:
                 nonlocal ran
                 ran = True
 
-            claimed = _single_flight.claim_if_epoch_current(
+            claimed = single_flight.claim_if_epoch_current(
                 ("path", "pol"), _body, path_key="path", epoch_before=0
             )
             assert claimed is not None
             is_leader, flight = claimed
             assert is_leader is True
-            await _single_flight.await_flight(flight)
+            await single_flight.await_flight(flight)
             assert ran is True
 
         asyncio.run(_run())
@@ -182,6 +191,8 @@ class TestDoubleCancelDoesNotDetonateBridge:
     """
 
     def test_second_cancel_while_pending_preserves_bridge_and_siblings(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             leader_gate = asyncio.Event()
 
@@ -190,20 +201,20 @@ class TestDoubleCancelDoesNotDetonateBridge:
                 return "leader-result"
 
             # Leader claim creates the driving task; a follower shares it.
-            is_leader, flight = _single_flight.claim(("k", "p"), _leader_body)
+            is_leader, flight = single_flight.claim(("k", "p"), _leader_body)
             assert is_leader is True
 
             follower_result: list[str] = []
 
             async def _follower():
-                is_l2, f2 = _single_flight.claim(("k", "p"), _leader_body)
+                is_l2, f2 = single_flight.claim(("k", "p"), _leader_body)
                 assert is_l2 is False and f2 is flight
-                follower_result.append(await _single_flight.await_flight(f2))
+                follower_result.append(await single_flight.await_flight(f2))
 
             follower_task = asyncio.ensure_future(_follower())
 
             async def _awaiter():
-                await _single_flight.await_flight(flight)
+                await single_flight.await_flight(flight)
 
             awaiter_task = asyncio.ensure_future(_awaiter())
             await asyncio.sleep(0)  # let both start awaiting the pending bridge
@@ -244,7 +255,8 @@ class TestResolvedPathEquivalence:
     relative vs absolute) flow to the SAME key.
     """
 
-    def test_symlink_and_real_path_share_refresh_key(self, monkeypatch, tmp_path):
+    @pytest.mark.asyncio
+    async def test_symlink_and_real_path_share_refresh_key(self, monkeypatch, tmp_path):
         real_dir = tmp_path / "real"
         real_dir.mkdir()
         real_path = real_dir / "storage_state.json"
@@ -257,46 +269,44 @@ class TestResolvedPathEquivalence:
         assert symlinked_path != real_path
         assert symlinked_path.resolve() == real_path.resolve()
 
-        captured_keys: list[str] = []
+        observed_paths: list[Path] = []
 
-        async def spy_coalesced(refresh_key, resolved_storage_path, profile, *, deps=None):
-            captured_keys.append(refresh_key)
-            return None
+        async def run_refresh_cmd(path: Path, _profile: str | None) -> None:
+            observed_paths.append(path)
 
-        monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy")
-        monkeypatch.setattr(_auth_refresh, "_coalesced_run_refresh_cmd", spy_coalesced)
+        async def resolve_route(_path: Path | None) -> dict[str, object]:
+            return {}
 
-        call_phase = {"first": True}
+        async def stop_after_coalescer(_path: Path):
+            raise ValueError("stop after canonical coalescer")
 
-        async def fake_fetch_tokens_with_jar(jar, path, **kwargs):
-            if call_phase["first"]:
-                call_phase["first"] = False
-                raise ValueError("Authentication expired. Run 'notebooklm login'.")
-            return "csrf-token", "session-id"
-
-        def fake_build(_p):
-            return httpx.Cookies()
-
-        def fake_snapshot(_j):
-            return None
-
-        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-        monkeypatch.setattr(_auth_refresh, "build_httpx_cookies_from_storage", fake_build)
-        monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
-
-        async def drive(path: Path):
-            jar = httpx.Cookies()
-            return await auth_mod._fetch_tokens_with_refresh(jar, storage_path=path)
-
-        asyncio.run(drive(symlinked_path))
-        call_phase["first"] = True
-        asyncio.run(drive(real_path))
-
-        assert len(captured_keys) == 2
-        assert captured_keys[0] == captured_keys[1], (
-            f"Symlinked and direct paths produced distinct keys: {captured_keys!r}"
+        deps = _auth_refresh.RefreshCmdDeps(
+            run_refresh_cmd=run_refresh_cmd,
+            derive_refresh_lock_path=lambda _path: None,
         )
-        assert captured_keys[0] == str(real_path.resolve())
+        monkeypatch.setenv(_auth_refresh.NOTEBOOKLM_REFRESH_CMD_ENV, "injected-refresh")
+
+        try:
+            raise ValueError("Authentication expired. Redirected to login.")
+        except ValueError as active_error:
+            with pytest.raises(ValueError, match="stop after canonical coalescer"):
+                await _auth_refresh._cold_fallbacks(
+                    active_error,
+                    httpx.Cookies(),
+                    symlinked_path,
+                    None,
+                    env_auth=False,
+                    allow_headless=False,
+                    resolve_route=resolve_route,
+                    load_replacement=stop_after_coalescer,
+                    baseline=None,
+                    deps=deps,
+                )
+
+        canonical_key = str(real_path.resolve())
+        assert observed_paths == [real_path.resolve()]
+        assert _single_flight.read_success_epoch(canonical_key) == 1
+        assert _single_flight.read_success_epoch(str(symlinked_path)) == 0
 
 
 class TestPromptPopRetention:
@@ -308,17 +318,19 @@ class TestPromptPopRetention:
     """
 
     def test_registry_does_not_accumulate_across_cycles(self):
+        single_flight = _single_flight.SingleFlight()
+
         async def _run():
             async def _leader_body():
                 return None
 
             for _ in range(5):
-                _is_leader, flight = _single_flight.claim(("k", "p"), _leader_body)
-                await _single_flight.await_flight(flight)
+                _is_leader, flight = single_flight.claim(("k", "p"), _leader_body)
+                await single_flight.await_flight(flight)
                 # Yield so the task done-callbacks (mirror + pop) run.
                 await asyncio.sleep(0)
 
-            assert _single_flight.SingleFlight.process_default()._flights == {}, (
+            assert single_flight._flights == {}, (
                 "Settled flights must be popped from the process-global registry"
             )
 
@@ -326,7 +338,7 @@ class TestPromptPopRetention:
 
 
 class TestCrossLoopCoalescing:
-    def test_two_loops_share_exactly_one_subprocess(self, monkeypatch, tmp_path):
+    def test_two_loops_share_exactly_one_subprocess(self, tmp_path):
         """Two event loops racing the same refresh coalesce onto ONE subprocess.
 
         The deleted contract allowed 1–2 subprocess runs because cross-loop
@@ -340,8 +352,6 @@ class TestCrossLoopCoalescing:
         storage = tmp_path / "storage_state.json"
         storage.write_text('{"cookies": [], "origins": []}')
 
-        monkeypatch.setenv(auth_mod.NOTEBOOKLM_REFRESH_CMD_ENV, "dummy")
-
         run_count = 0
         run_count_lock = threading.Lock()
         # Align both threads at the refresh-branch so neither wins the leadership
@@ -354,40 +364,22 @@ class TestCrossLoopCoalescing:
                 run_count += 1
             await asyncio.sleep(0.1)
 
-        async def fake_fetch_tokens_with_jar(cookie_jar, storage_path, **kwargs):
-            if not getattr(cookie_jar, "_refresh_done", False):
-                cookie_jar._refresh_done = True
-                try:
-                    fail_barrier.wait()
-                except threading.BrokenBarrierError:
-                    pass
-                raise ValueError("Authentication expired. Run 'notebooklm login'.")
-            return "csrf-token", "session-id"
-
-        def fake_build_httpx_cookies(path):
-            return httpx.Cookies()
-
-        def fake_snapshot(jar):
-            return None
-
-        # The subprocess runner is INJECTED via ``RefreshCmdDeps`` (plan §7 deps
-        # record). Both threads pass the SAME record, which is what the module
-        # attribute used to give them implicitly.
-        deps = _auth_refresh.RefreshCmdDeps(run_refresh_cmd=fake_run_refresh_cmd)
-        monkeypatch.setattr(_auth_refresh, "_fetch_tokens_with_jar", fake_fetch_tokens_with_jar)
-        monkeypatch.setattr(
-            _auth_refresh, "build_httpx_cookies_from_storage", fake_build_httpx_cookies
+        deps = _auth_refresh.RefreshCmdDeps(
+            run_refresh_cmd=fake_run_refresh_cmd,
+            derive_refresh_lock_path=lambda _path: None,
         )
-        monkeypatch.setattr(_auth_refresh, "snapshot_cookie_jar", fake_snapshot)
 
-        results: list[BaseException | tuple] = []
+        results: list[BaseException | None] = []
         results_lock = threading.Lock()
 
         def run_in_own_loop():
             async def _work():
-                jar = httpx.Cookies()
-                return await auth_mod._fetch_tokens_with_refresh(
-                    jar, storage_path=storage, deps=deps
+                try:
+                    fail_barrier.wait()
+                except threading.BrokenBarrierError:
+                    pass
+                return await _auth_refresh._coalesced_run_refresh_cmd(
+                    str(storage.resolve()), storage.resolve(), None, deps=deps
                 )
 
             try:

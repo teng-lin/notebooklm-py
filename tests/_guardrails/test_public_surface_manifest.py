@@ -1311,7 +1311,10 @@ def test_baseline_registry_is_non_trivial() -> None:
     names = {baseline.name for baseline in BASELINES}
     assert {
         "auth_import_graph",
+        "auth_facade_patch_sites",
+        "auth_family_patch_scorecard",
         "auth_patch_sites",
+        "auth_shared_mutations",
         "browser_import_graph",
         "browser_patch_sites",
         "guardrail_inline_literals",
@@ -1325,7 +1328,23 @@ def test_baseline_registry_is_non_trivial() -> None:
     assert len(names) == len(BASELINES)
 
 
-@pytest.mark.parametrize("baseline", BASELINES, ids=lambda b: b.name)
+@pytest.mark.parametrize(
+    "baseline",
+    [
+        pytest.param(
+            baseline,
+            marks=(
+                pytest.mark.timeout(360)
+                if baseline.name == "auth_family_patch_scorecard"
+                else pytest.mark.timeout(180)
+                if baseline.name == "auth_shared_mutations"
+                else ()
+            ),
+        )
+        for baseline in BASELINES
+    ],
+    ids=lambda b: b.name,
+)
 def test_baseline_matches_committed_file(
     baseline: Baseline,
     update_baselines: bool,
