@@ -27,6 +27,7 @@ import notebooklm._web.sources.drive_import as drive_import_mod
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.source_batch import batch_item_is_fatal
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
+from notebooklm._sources import SourcesAPI
 from notebooklm._types.enums import SourceStatus
 from notebooklm._web.sources.upload import (
     SourceUploadPipeline,
@@ -490,7 +491,11 @@ async def test_add_file_asserts_bound_loop_before_work(tmp_path) -> None:
         side_effect=RuntimeError("wrong loop")
     )
     with pytest.raises(RuntimeError, match="wrong loop"):
-        await pipeline.add_file("nb_1", str(tmp_path / "missing.pdf"))
+        await pipeline.add_file(
+            "nb_1",
+            str(tmp_path / "missing.pdf"),
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
+        )
     supervisor.assert_bound_loop.assert_called_once()
 
 
@@ -1300,7 +1305,11 @@ async def test_add_file_rejects_a_directory_that_passes_the_pure_mime_gate(tmp_p
     pipeline = _make_pipeline()
 
     with pytest.raises(ValidationError, match="Not a regular file"):
-        await pipeline.add_file("nb_1", directory)
+        await pipeline.add_file(
+            "nb_1",
+            directory,
+            finalize_uploaded=SourcesAPI._finalize_uploaded_file,
+        )
 
 
 @pytest.mark.asyncio
@@ -1327,7 +1336,11 @@ async def test_add_file_closes_the_descriptor_when_the_size_probe_fails(
     monkeypatch.setattr(os, "fstat", _failing_fstat)
     try:
         with pytest.raises(OSError, match="simulated fstat failure"):
-            await pipeline.add_file("nb_1", source_file)
+            await pipeline.add_file(
+                "nb_1",
+                source_file,
+                finalize_uploaded=SourcesAPI._finalize_uploaded_file,
+            )
     finally:
         monkeypatch.setattr(os, "fstat", real_fstat)
 
