@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # are intentionally absent; after the transport/middleware extraction they
 # should not read or write request context directly.
 PRODUCTION_CONTEXT_FILES = [
-    *sorted((ROOT / "src/notebooklm/_middleware").glob("*.py")),
+    *sorted((ROOT / "src/notebooklm/_web/transport/middleware").glob("*.py")),
     ROOT / "src/notebooklm/_web/transport/runtime.py",
 ]
 
