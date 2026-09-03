@@ -229,6 +229,12 @@ def test_collect_manifest_captures_return_annotation(script):
     assert "return_annotation" in delete
     assert delete["return_annotation"] == "None"
 
+    # ``append_text`` is inherited from a postponed-annotations base while
+    # ``delete`` is defined by a non-postponed Web facade. Both spell the same
+    # public contract and must remain identical in the compatibility manifest.
+    append_text = members["sources.append_text"]["signature"]
+    assert append_text["return_annotation"] == "None"
+
 
 def test_collect_manifest_canonicalizes_pep563_return_annotation(script):
     # ``_mind_maps_api`` uses ``from __future__ import annotations`` (PEP 563),
