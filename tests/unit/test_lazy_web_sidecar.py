@@ -61,6 +61,29 @@ def _runtime(*, result: object = None) -> SimpleNamespace:
     )
 
 
+def _blocking_partial_open_runtime() -> tuple[
+    SimpleNamespace, asyncio.Event, asyncio.Event, asyncio.Event
+]:
+    runtime = _runtime()
+    open_started = asyncio.Event()
+    close_started = asyncio.Event()
+    release_close = asyncio.Event()
+
+    async def partial_open(_loop: asyncio.AbstractEventLoop, epoch: int) -> None:
+        runtime.web_transport.opened.append(epoch)
+        open_started.set()
+        await asyncio.Event().wait()
+
+    async def blocking_close() -> None:
+        close_started.set()
+        await release_close.wait()
+        runtime.web_transport.closed += 1
+
+    runtime.web_transport.open = partial_open
+    runtime.web_transport.close_resources = blocking_close
+    return runtime, open_started, close_started, release_close
+
+
 async def test_sidecar_is_inert_then_builds_once_and_reopens() -> None:
     built: list[SimpleNamespace] = []
 
@@ -159,6 +182,83 @@ async def test_sidecar_retires_a_candidate_that_fails_to_open() -> None:
     assert runtime.source_uploader.prepared == 1
     assert runtime.web_transport.closed == 1
     assert runtime.source_uploader.closed == 1
+
+
+async def test_sidecar_first_open_cancellation_waits_for_candidate_retirement() -> None:
+    runtime, open_started, close_started, release_close = _blocking_partial_open_runtime()
+    sidecar = LazyWebSidecar(lambda: runtime)  # type: ignore[arg-type]
+    loop = asyncio.get_running_loop()
+    await sidecar.open(loop, 1)
+
+    materialize = asyncio.create_task(sidecar.materialize(1))
+    await open_started.wait()
+    materialize.cancel("first cancellation")
+    await close_started.wait()
+    await asyncio.sleep(0)
+
+    assert not materialize.done()
+    assert sidecar._candidate_retirement is not None
+    release_close.set()
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await materialize
+
+    assert str(raised.value) == "first cancellation"
+    assert sidecar._candidate_retirement is None
+    assert sidecar.runtime is None
+    assert runtime.web_transport.closed == 1
+    assert runtime.source_uploader.closed == 1
+
+
+async def test_sidecar_recancellation_detaches_but_root_close_joins_retirement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, open_started, close_started, release_close = _blocking_partial_open_runtime()
+    monkeypatch.setattr(assembly, "build_web_runtime", MagicMock(return_value=runtime))
+    monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
+    client = NotebookLMClient(
+        AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session"),
+        backend="android",
+    )
+    assert client._android_runtime is not None
+    client._android_runtime.bearer_provider._profile_store.read_master_token = MagicMock(
+        return_value=MasterToken(email="test@example.com", android_id="1234", secret="secret")
+    )
+    client._android_runtime.session._grpc_loader = lambda: object()
+    client._android_runtime.session._protobuf_loader = lambda: object()
+
+    await client.__aenter__()
+    try:
+        with pytest.warns(DeprecationWarning, match="crosses from Android"):
+            materialize = asyncio.create_task(client.rpc_call(RPCMethod.LIST_NOTEBOOKS, []))
+            await open_started.wait()
+            materialize.cancel("first cancellation")
+            await close_started.wait()
+            materialize.cancel("second cancellation")
+            with pytest.raises(asyncio.CancelledError) as raised:
+                await materialize
+
+        assert str(raised.value) == "first cancellation"
+        sidecar = client._web_sidecar
+        assert sidecar is not None
+        retirement = sidecar._candidate_retirement
+        assert retirement is not None
+        assert not retirement.done()
+        assert sidecar.runtime is None
+
+        root_close = asyncio.create_task(client.close(drain=False))
+        await asyncio.sleep(0)
+        assert not root_close.done()
+        release_close.set()
+        await root_close
+
+        assert retirement.done()
+        assert sidecar._candidate_retirement is None
+        assert runtime.web_transport.closed == 1
+        assert runtime.source_uploader.closed == 1
+    finally:
+        release_close.set()
+        if client.is_connected:
+            await client.close(drain=False)
 
 
 async def test_sidecar_propagates_a_close_phase_failure() -> None:

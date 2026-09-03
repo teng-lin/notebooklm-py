@@ -219,8 +219,8 @@ def _assemble_android_backend(
         keepalive_min_interval=DEFAULT_KEEPALIVE_MIN_INTERVAL,
         keepalive_storage_path=None,
         auth_storage_path=auth.storage_path,
-        # HTTP pool tuning is a Web-only option.  The public cross-check against
-        # max_concurrent_rpcs has already run before this helper is entered.
+        # HTTP pool tuning is a Web-only option. Android's neutral RPC cap is
+        # deliberately independent of the absent Web connection pool.
         limits=None,
         max_concurrent_uploads=max_concurrent_uploads,
         max_concurrent_rpcs=max_concurrent_rpcs,
@@ -488,17 +488,18 @@ def _assemble_client(
             derived_keepalive_path = Path(derived_keepalive_path).expanduser().resolve()
         keepalive_storage_path = derived_keepalive_path
 
-    # Cross-validate the RPC throttle against the underlying httpx pool
-    # before the collaborator builder swallows the ``limits=None``
-    # sentinel into its own ``ConnectionLimits()`` synthesis.
-    # Performed here so the constraint is enforced uniformly regardless
-    # of whether the caller passed an explicit ``ConnectionLimits``
-    # instance or relied on the default — scalar config validation
-    # can't see the caller's intent once the default has been substituted.
+    # Cross-validate the RPC throttle against the underlying httpx pool for
+    # Web selection only, before the collaborator builder swallows the
+    # ``limits=None`` sentinel into its own ``ConnectionLimits()`` synthesis.
+    # Android has no shared httpx RPC pool, and ``limits`` is a documented
+    # ignored compatibility kwarg there, so neither an explicit tiny pool nor
+    # the synthesized Web default may constrain its neutral RPC admission cap.
+    # On Web the constraint is enforced regardless of whether the caller passed
+    # an explicit ``ConnectionLimits`` instance or relied on the default.
     # Skip when either side opts out (``max_concurrent_rpcs is None``
     # means "no gate"; we deliberately don't second-guess the caller's
     # external-throttle setup).
-    if max_concurrent_rpcs is not None:
+    if client._backend_preference.preferred == "web" and max_concurrent_rpcs is not None:
         from .types import ConnectionLimits
 
         effective_limits = limits if limits is not None else ConnectionLimits()

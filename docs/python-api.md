@@ -1057,7 +1057,10 @@ class NotebookLMClient:
 
 `client.raw` is the supported low-level entry point. On a Web-selected client,
 `await client.raw.call(method, params, ...)` accepts `RPCMethod` from
-`notebooklm.rpc` and returns `typing.Any`. On an Android-selected client,
+`notebooklm.rpc` and returns `typing.Any`. Its keyword-only controls are
+`allow_null`, `disable_internal_retries`, `read_timeout`, and
+`raise_on_null_status`, matching the deprecated root wrapper so migrations do
+not narrow per-call retry or null-status behavior. On an Android-selected client,
 construct `GrpcUnaryMethod` or `GrpcUnaryStreamMethod` from `notebooklm.raw`
 and pass a caller-owned protobuf-compatible value (or explicit codecs) to
 `raw.unary(...)` / `raw.unary_stream(...)`. Android raw descriptors default to

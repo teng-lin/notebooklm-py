@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from typing import NoReturn
 
 from .init import WebRuntime
 
@@ -24,6 +25,7 @@ class LazyWebSidecar:
     def __init__(self, build: Callable[[], WebRuntime]) -> None:
         self._build = build
         self._runtime: WebRuntime | None = None
+        self._candidate_retirement: asyncio.Task[BaseException | None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._active_epoch: int | None = None
         self._prepared_epoch: int | None = None
@@ -56,6 +58,7 @@ class LazyWebSidecar:
             self._lock = asyncio.Lock()
         lock = self._lock
         async with lock:
+            await self._join_candidate_retirement()
             self._loop = loop
             self._active_epoch = epoch
             self._prepared_epoch = None
@@ -84,6 +87,7 @@ class LazyWebSidecar:
                 or self._loop is not loop
             ):
                 raise RuntimeError(_NOT_OPEN)
+            await self._join_candidate_retirement()
             runtime = self._runtime
             if runtime is not None:
                 return runtime
@@ -92,16 +96,14 @@ class LazyWebSidecar:
             self._bind_runtime(candidate, loop)
             try:
                 await self._open_runtime(candidate, loop, expected_epoch)
-            except BaseException:
-                await self._retire_candidate(candidate)
-                raise
+            except BaseException as error:
+                await self._retire_failed_candidate(candidate, error)
 
             # ``prepare_close`` shares this lock, so this branch is defensive
             # against a future lifecycle implementation that can retire an
             # epoch without first joining the proxy's phase.
             if self._active_epoch != expected_epoch or self._prepared_epoch == expected_epoch:
-                await self._retire_candidate(candidate)
-                raise RuntimeError(_NOT_OPEN)
+                await self._retire_failed_candidate(candidate, RuntimeError(_NOT_OPEN))
             self._runtime = candidate
             return candidate
 
@@ -116,6 +118,7 @@ class LazyWebSidecar:
             epoch = self._active_epoch
             self._prepared_epoch = epoch
             self._active_epoch = None
+            await self._join_candidate_retirement()
             runtime = self._runtime
             if runtime is not None:
                 await self._run_phase(runtime, "prepare_close")
@@ -129,6 +132,7 @@ class LazyWebSidecar:
             return
         async with lock:
             self._active_epoch = None
+            await self._join_candidate_retirement()
             runtime = self._runtime
             if runtime is not None:
                 await self._run_phase(runtime, "close_resources")
@@ -154,6 +158,79 @@ class LazyWebSidecar:
             await cls._run_phase(runtime, "prepare_close")
         finally:
             await cls._run_phase(runtime, "close_resources")
+
+    async def _retire_failed_candidate(
+        self,
+        runtime: WebRuntime,
+        failure: BaseException,
+    ) -> NoReturn:
+        """Retire an unpublished candidate without letting cancellation orphan it."""
+
+        if self._candidate_retirement is not None:  # pragma: no cover - lock invariant
+            raise AssertionError("a Web sidecar candidate retirement is already active")
+        task = asyncio.create_task(self._capture_candidate_retirement(runtime))
+        self._candidate_retirement = task
+        cancellation = failure if isinstance(failure, asyncio.CancelledError) else None
+        while True:
+            try:
+                cleanup_error = await asyncio.shield(task)
+                break
+            except asyncio.CancelledError as error:
+                # The cancellation that interrupted candidate open is the first
+                # one. A subsequent cancellation may detach its caller, while
+                # the strongly retained task remains joinable by root close.
+                if cancellation is not None:
+                    if isinstance(failure, (KeyboardInterrupt, SystemExit)):
+                        raise failure from None
+                    raise cancellation from None
+                cancellation = error
+
+        if self._candidate_retirement is task:
+            self._candidate_retirement = None
+        if isinstance(failure, (KeyboardInterrupt, SystemExit)):
+            raise failure
+        if isinstance(cleanup_error, (KeyboardInterrupt, SystemExit)):
+            raise cleanup_error from failure
+        if cancellation is not None:
+            raise cancellation from None
+        if cleanup_error is not None:
+            raise failure from cleanup_error
+        raise failure
+
+    async def _join_candidate_retirement(self) -> None:
+        """Join cleanup detached by re-cancellation before another lifecycle step."""
+
+        task = self._candidate_retirement
+        if task is None:
+            return
+        cancellation: asyncio.CancelledError | None = None
+        while True:
+            try:
+                cleanup_error = await asyncio.shield(task)
+                break
+            except asyncio.CancelledError as error:
+                if cancellation is not None:
+                    raise cancellation from None
+                cancellation = error
+
+        if self._candidate_retirement is task:
+            self._candidate_retirement = None
+        if isinstance(cleanup_error, (KeyboardInterrupt, SystemExit)):
+            raise cleanup_error from cancellation
+        if cancellation is not None:
+            raise cancellation from None
+        if cleanup_error is not None:
+            raise cleanup_error
+
+    @classmethod
+    async def _capture_candidate_retirement(cls, runtime: WebRuntime) -> BaseException | None:
+        """Return cleanup failures so a detached task never warns unobserved."""
+
+        try:
+            await cls._retire_candidate(runtime)
+        except BaseException as error:
+            return error
+        return None
 
     @staticmethod
     async def _run_phase(runtime: WebRuntime, method: str) -> None:

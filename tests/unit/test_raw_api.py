@@ -98,7 +98,9 @@ async def test_web_raw_call_is_a_thin_executor_delegate() -> None:
         RPCMethod.GET_NOTEBOOK,
         ["notebook-id"],
         allow_null=True,
+        disable_internal_retries=True,
         read_timeout=12.5,
+        raise_on_null_status=True,
     )
 
     assert result == {"wire": "unchanged"}
@@ -107,7 +109,9 @@ async def test_web_raw_call_is_a_thin_executor_delegate() -> None:
             "method": RPCMethod.GET_NOTEBOOK,
             "params": ["notebook-id"],
             "allow_null": True,
+            "disable_internal_retries": True,
             "read_timeout": 12.5,
+            "raise_on_null_status": True,
         }
     ]
 

@@ -39,6 +39,7 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import ConfigurationError, MissingDependencyError
 from notebooklm.raw import AndroidRawAPI, WebRawAPI
+from notebooklm.types import ConnectionLimits
 
 
 def _auth() -> AuthTokens:
@@ -480,6 +481,37 @@ def test_android_preference_has_no_unqualified_namespace_log(caplog) -> None:  #
 
     records = [record for record in caplog.records if record.name == "notebooklm.backend"]
     assert records == []
+
+
+@pytest.mark.parametrize(
+    ("limits", "max_concurrent_rpcs"),
+    [
+        (ConnectionLimits(max_connections=1, max_keepalive_connections=1), 16),
+        (None, 101),
+    ],
+)
+def test_android_rpc_cap_ignores_absent_web_pool_width(
+    limits: ConnectionLimits | None,
+    max_concurrent_rpcs: int,
+) -> None:
+    client = NotebookLMClient(
+        _auth(),
+        backend="android",
+        limits=limits,
+        max_concurrent_rpcs=max_concurrent_rpcs,
+    )
+
+    assert client._collaborators.call_supervisor._max_concurrent_rpcs == max_concurrent_rpcs
+
+
+def test_web_rpc_cap_remains_bounded_by_the_http_pool() -> None:
+    with pytest.raises(ValueError, match="max_concurrent_rpcs must be <="):
+        NotebookLMClient(
+            _auth(),
+            backend="web",
+            limits=ConnectionLimits(max_connections=1, max_keepalive_connections=1),
+            max_concurrent_rpcs=16,
+        )
 
 
 def test_backends_mapping_is_read_only() -> None:
