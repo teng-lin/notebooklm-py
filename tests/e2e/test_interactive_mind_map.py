@@ -12,9 +12,13 @@ Run: ``uv run pytest tests/e2e/test_interactive_mind_map.py -m e2e``
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from notebooklm.types import MindMapKind
+
+from .conftest import _RATE_LIMIT_METHOD_ATTR, _TYPED_RATE_LIMIT_ATTR
 
 # Live CREATE_ARTIFACT coverage — monitored by the nightly generation coverage
 # floor so a fully-throttled run (every generation skipped) reds the nightly
@@ -55,30 +59,45 @@ async def swept_interactive_mind_maps(client, generation_notebook_id):
         for art in await client.artifacts.list(generation_notebook_id)
         if art.is_interactive_mind_map or art.is_unclassified_type4
     }
-    state = {"baseline": baseline, "operation": None, "quota": False}
+    state = {
+        "baseline": baseline,
+        "operation": None,
+        "typed_quota": False,
+        "pre_accept_rejected": False,
+        "accepted": False,
+    }
     yield state
     operation = state["operation"]
-    current = [
-        art
-        for art in await client.artifacts.list(generation_notebook_id)
-        if art.is_interactive_mind_map or art.is_unclassified_type4
-    ]
+    attempts = 5 if state["typed_quota"] and not state["pre_accept_rejected"] else 1
+    current = []
+    for attempt in range(attempts):
+        current = [
+            art
+            for art in await client.artifacts.list(generation_notebook_id)
+            if art.is_interactive_mind_map or art.is_unclassified_type4
+        ]
+        if any(art.id not in baseline for art in current) or attempt == attempts - 1:
+            break
+        await asyncio.sleep(2)
     created = [art for art in current if art.id not in baseline]
-    if operation is not None and state["quota"] and not created:
+    if operation is not None and state["typed_quota"] and not created:
         operation.quota_no_commit_observed()
-    if operation is not None and len(created) > 1:
-        pytest.fail("interactive mind-map reconciliation found multiple new rows")
+    multiple = operation is not None and len(created) > 1
     for art in created:
-        if operation is not None and state["quota"]:
+        if operation is not None and state["typed_quota"] and not multiple:
             operation.discovered_accepted(art.id, reason="post_create_quota")
         await client.artifacts.delete(generation_notebook_id, art.id)
         remaining = {row.id for row in await client.artifacts.list(generation_notebook_id)}
         assert art.id not in remaining
-        if operation is not None:
+        if operation is not None and not multiple and (state["typed_quota"] or state["accepted"]):
             operation.delete_confirmed(
                 art.id,
-                reason="post_create_quota" if state["quota"] else "test_teardown",
+                reason="post_create_quota" if state["typed_quota"] else "test_teardown",
             )
+    if multiple:
+        pytest.fail("interactive mind-map reconciliation found multiple new rows")
+    if state["pre_accept_rejected"] and created:
+        pytest.fail("pre-acceptance quota rejection unexpectedly created an artifact")
 
 
 @pytest.mark.e2e
@@ -111,12 +130,19 @@ async def test_interactive_mind_map_full_lifecycle(
             nb_id, source_ids, kind=MindMapKind.INTERACTIVE, wait=True
         )
     except BaseException as exc:
-        swept_interactive_mind_maps["quota"] = any(
-            phrase in str(exc).lower()
-            for phrase in ("rate limit", "rate limited", "rate-limited", "429", "quota")
+        typed_quota = bool(getattr(exc, _TYPED_RATE_LIMIT_ATTR, False))
+        method_id = getattr(exc, _RATE_LIMIT_METHOD_ATTR, None)
+        pre_accept_rejected = typed_quota and (
+            method_id == "R7cb6c"
+            or (isinstance(method_id, str) and method_id.endswith("/CreateArtifact"))
         )
+        swept_interactive_mind_maps["typed_quota"] = typed_quota and not pre_accept_rejected
+        swept_interactive_mind_maps["pre_accept_rejected"] = pre_accept_rejected
+        if pre_accept_rejected:
+            operation.rate_limited_rejected()
         raise
     operation.accepted(mind_map.id)
+    swept_interactive_mind_maps["accepted"] = True
     try:
         assert mind_map.kind == MindMapKind.INTERACTIVE
         assert mind_map.id, "generate() must return a non-empty interactive artifact id"

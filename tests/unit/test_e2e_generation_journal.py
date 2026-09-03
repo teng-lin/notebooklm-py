@@ -49,6 +49,10 @@ def test_required_journal_appends_versioned_transitions_without_printing_ids(
     assert all(row["version"] == 1 for row in rows)
     assert len({row["operation_id"] for row in rows}) == 1
     assert "artifact-secret-id" not in capsys.readouterr().out
+    lock = path.with_name(f".{path.name}.lock")
+    assert lock.is_file()
+    if os.name != "nt":
+        assert lock.stat().st_mode & 0o777 == 0o600
 
 
 def test_primary_and_retry_processes_append_without_truncation(tmp_path) -> None:
@@ -105,6 +109,19 @@ def test_retry_cleanup_resumes_prior_operation_uuid(tmp_path) -> None:
     assert rows[-1]["event"] == "delete_confirmed"
     assert rows[-1]["node_id"] == "primary"
 
+    already_closed = retry.recovery_operation(
+        resource_id="note-id",
+        notebook_id="generation-role",
+        family="mind_map",
+        surface="client",
+        id_kind="note_mind_map",
+        reason="retry_preclean",
+    )
+    before = path.read_text()
+    with pytest.raises(ValueError, match="transition"):
+        already_closed.delete_confirmed("note-id", reason="retry_preclean")
+    assert path.read_text() == before
+
 
 def test_note_and_interactive_backings_have_explicit_lifecycles(tmp_path) -> None:
     path = _journal_file(tmp_path)
@@ -152,6 +169,35 @@ def test_target_mismatch_is_rejected_before_append(tmp_path) -> None:
             lifecycle="settle",
         )
     assert path.read_text() == ""
+
+
+def test_writer_rejects_invalid_backing_and_transition_before_append(tmp_path) -> None:
+    path = _journal_file(tmp_path)
+    journal = journal_from_environment(env=_required_env(tmp_path, path), node_id="node")
+    with pytest.raises(ValueError, match="mind_map family"):
+        journal.operation(
+            notebook_id="generation-role",
+            family="audio",
+            surface="client",
+            id_kind="note_mind_map",
+            lifecycle="settle",
+        )
+    assert path.read_text() == ""
+
+    operation = journal.operation(
+        notebook_id="generation-role",
+        family="audio",
+        surface="client",
+        id_kind="studio_task",
+        lifecycle="settle",
+    )
+    operation.accepted("artifact-id")
+    before = path.read_text()
+    with pytest.raises(ValueError, match="transition"):
+        operation.accepted("artifact-id")
+    with pytest.raises(ValueError, match="retry pre-clean"):
+        operation.delete_confirmed("artifact-id", reason="test_teardown")
+    assert path.read_text() == before
 
 
 @pytest.mark.parametrize(

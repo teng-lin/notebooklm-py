@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import stat
 import subprocess
 import sys
@@ -42,6 +43,20 @@ def test_atomic_private_write_and_child_environment(tmp_path, capsys) -> None:
         assert stat.S_IMODE(profile.stat().st_mode) == 0o700
         assert stat.S_IMODE((profile / "master_token.json").stat().st_mode) == 0o600
     assert "opaque-token" not in capsys.readouterr().out
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory durability contract")
+def test_atomic_write_fsyncs_file_and_parent_directory(tmp_path, monkeypatch) -> None:
+    observed: list[bool] = []
+    real_fsync = auth.os.fsync
+
+    def fsync(fd: int) -> None:
+        observed.append(stat.S_ISDIR(os.fstat(fd).st_mode))
+        real_fsync(fd)
+
+    monkeypatch.setattr(auth.os, "fsync", fsync)
+    auth.atomic_private_write(tmp_path / "profile" / "master_token.json", "opaque")
+    assert observed == [False, True]
 
 
 def test_three_attempt_backoff_and_early_success(tmp_path) -> None:
@@ -108,6 +123,36 @@ def test_subprocess_crash_is_infrastructure_error(tmp_path) -> None:
         auth.materialize(
             account_slot="A", profile="ci-A-verify-package", env=_env(tmp_path), run=run
         )
+
+
+def test_non_os_subprocess_crash_is_infrastructure_error(tmp_path) -> None:
+    def run(command, **kwargs):
+        raise RuntimeError("subprocess adapter crashed")
+
+    with pytest.raises(auth.InfrastructureError, match="launch"):
+        auth.materialize(
+            account_slot="A", profile="ci-A-verify-package", env=_env(tmp_path), run=run
+        )
+
+
+def test_child_environment_drops_every_inline_auth_source(tmp_path) -> None:
+    captured = {}
+
+    def run(command, **kwargs):
+        captured.update(kwargs["env"])
+        storage = tmp_path / "profiles" / "ci-A-verify-package" / "storage_state.json"
+        storage.write_text("{}")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    env = {
+        **_env(tmp_path),
+        "NOTEBOOKLM_AUTH_JSON": "legacy-cookie-secret",
+        "NOTEBOOKLM_MASTER_TOKEN_JSON_B": "another-pool-secret",
+    }
+    auth.materialize(account_slot="A", profile="ci-A-verify-package", env=env, run=run)
+    assert "NOTEBOOKLM_MASTER_TOKEN_JSON" not in captured
+    assert "NOTEBOOKLM_MASTER_TOKEN_JSON_B" not in captured
+    assert "NOTEBOOKLM_AUTH_JSON" not in captured
 
 
 @pytest.mark.parametrize(

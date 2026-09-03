@@ -196,7 +196,29 @@ class JournalOperation:
         return {event for event, _, _ in self.events}
 
 
-def _validate_transition(operation: JournalOperation, event: str, resource: str | None) -> None:
+@dataclass(frozen=True)
+class DiscoveredTarget:
+    family: str
+    id_kind: str
+
+
+def _public_id_kind(artifact: Any) -> str:
+    """Classify a merged public-inventory row by its persisted backing."""
+    if (
+        _family(artifact) == "mind_map"
+        and not bool(getattr(artifact, "is_interactive_mind_map", False))
+        and not bool(getattr(artifact, "is_unclassified_type4", False))
+    ):
+        return "note_mind_map"
+    return "studio_task"
+
+
+def _validate_transition(
+    operation: JournalOperation,
+    event: str,
+    resource: str | None,
+    reason: str | None,
+) -> None:
     previous = operation.event_names
     prior = operation.events[-1][0] if operation.events else None
     allowed_after = {
@@ -233,15 +255,29 @@ def _validate_transition(operation: JournalOperation, event: str, resource: str 
         raise JournalError("completed precedes acceptance/persistence")
     if event == "discovered_accepted" and "started" not in previous:
         raise JournalError("discovered acceptance has no started event")
+    if event == "discovered_accepted" and operation.lifecycle != "test_owned":
+        raise JournalError("discovered acceptance is not test-owned")
     if event == "delete_confirmed" and not (
         previous & {"accepted", "persisted", "discovered_accepted", "completed"}
     ):
         raise JournalError("delete confirmation has no ID-bearing predecessor")
+    if (
+        event == "delete_confirmed"
+        and operation.lifecycle == "settle"
+        and reason != "retry_preclean"
+    ):
+        raise JournalError("settling resource has an unauthorized deletion reason")
+    if event == "delete_confirmed" and prior == "discovered_accepted":
+        previous_reason = operation.events[-1][2]
+        if previous_reason != reason:
+            raise JournalError("recovery deletion reason changed")
 
 
 def parse_journal(path: Path, *, notebook_id: str) -> dict[str, JournalOperation]:
     if path.is_symlink() or not path.is_file():
         raise JournalError("journal is missing or is not a regular file")
+    if os.name == "nt" and path.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+        raise JournalError("journal is a reparse point")
     if os.name != "nt" and stat.S_IMODE(path.stat().st_mode) != 0o600:
         raise JournalError("journal mode is not 0600")
     operations: dict[str, JournalOperation] = {}
@@ -266,6 +302,8 @@ def parse_journal(path: Path, *, notebook_id: str) -> dict[str, JournalOperation
             raise JournalError("journal contains an unknown family/surface")
         if row["id_kind"] not in ID_KINDS or row["lifecycle"] not in LIFECYCLES:
             raise JournalError("journal contains an unknown ID kind/lifecycle")
+        if row["id_kind"] == "note_mind_map" and row["family"] != "mind_map":
+            raise JournalError("note-backed operation does not use the mind_map family")
         if not isinstance(row["node_id"], str) or not row["node_id"]:
             raise JournalError("journal contains an empty pytest node ID")
         try:
@@ -304,11 +342,7 @@ def parse_journal(path: Path, *, notebook_id: str) -> dict[str, JournalOperation
         )
         if operation.immutable != immutable:
             raise JournalError("immutable operation fields changed")
-        _validate_transition(operation, row["event"], resource)
-        if row["event"] == "delete_confirmed" and operation.events:
-            previous_event, _, previous_reason = operation.events[-1]
-            if previous_event == "discovered_accepted" and previous_reason != reason:
-                raise JournalError("recovery deletion reason changed")
+        _validate_transition(operation, row["event"], resource, reason)
         operation.events.append((row["event"], resource, reason))
     resource_owners: dict[str, str] = {}
     for operation_id, operation in operations.items():
@@ -326,6 +360,10 @@ def generation_id_from_manifest(path: Path, role: str) -> str:
         raise ConfigurationError("journal verifier role must be generation")
     if path.is_symlink() or not path.is_file():
         raise ConfigurationError("managed-copy manifest is not a regular file")
+    if os.name == "nt" and path.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+        raise ConfigurationError("managed-copy manifest is a reparse point")
+    if os.name != "nt" and stat.S_IMODE(path.stat().st_mode) != 0o600:
+        raise ConfigurationError("managed-copy manifest mode is not 0600")
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -336,7 +374,11 @@ def generation_id_from_manifest(path: Path, role: str) -> str:
     if not isinstance(copies, list):
         raise ConfigurationError("managed-copy manifest has no copy list")
     matching = [copy for copy in copies if isinstance(copy, dict) and copy.get("role") == role]
-    if len(matching) != 1 or not isinstance(matching[0].get("notebook_id"), str):
+    if (
+        len(matching) != 1
+        or not isinstance(matching[0].get("notebook_id"), str)
+        or not matching[0]["notebook_id"]
+    ):
         raise ConfigurationError("managed-copy manifest has no unique confirmed generation role")
     if matching[0].get("status") not in {"confirmed", "reconciled"}:
         raise ConfigurationError("managed generation role is not confirmed")
@@ -444,7 +486,15 @@ async def verify_journal(
                 raise JournalError("journaled artifact family does not match inventory")
 
     # Adopt crash-before-append rows from the clean notebook inventory.
-    unjournaled_ids = set(by_id) - set(tracked)
+    unjournaled = {
+        resource_id: DiscoveredTarget(
+            family=_family(artifact),
+            id_kind=_public_id_kind(artifact),
+        )
+        for resource_id, artifact in by_id.items()
+        if resource_id not in tracked
+    }
+    unjournaled_ids = set(unjournaled)
     unmatched_started = [
         operation for operation in operations.values() if operation.event_names == {"started"}
     ]
@@ -454,7 +504,8 @@ async def verify_journal(
         candidates = {
             resource_id
             for resource_id in unmatched_candidates
-            if _family(by_id[resource_id]) == expected
+            if unjournaled[resource_id].family == expected
+            and unjournaled[resource_id].id_kind == operation.id_kind
         }
         if len(candidates) != 1:
             raise JournalError("unmatched started operation could not be uniquely reconciled")
@@ -471,7 +522,10 @@ async def verify_journal(
         statuses.clear()
         for resource_id in monitored_ids:
             operation = tracked.get(resource_id)
-            if operation is not None and operation.id_kind == "studio_task":
+            id_kind = (
+                operation.id_kind if operation is not None else unjournaled[resource_id].id_kind
+            )
+            if id_kind == "studio_task":
                 polled = await client.artifacts.poll_status(notebook_id, resource_id)
                 status = str(getattr(polled.status, "value", polled.status))
                 if status == "not_found":
@@ -618,12 +672,14 @@ def _validate_args(args: argparse.Namespace) -> None:
         if not configured or Path(configured).resolve() != args.journal.resolve():
             raise ConfigurationError("journal argument does not match the required journal binding")
         runner_temp = os.environ.get("RUNNER_TEMP")
-        try:
-            args.journal.resolve().relative_to(Path(runner_temp or "").resolve())
-        except ValueError as exc:
-            raise ConfigurationError("required journal is outside RUNNER_TEMP") from exc
         if not runner_temp:
             raise ConfigurationError("journal verification requires RUNNER_TEMP")
+        runner_directory = Path(runner_temp).resolve()
+        for label, path in (("journal", args.journal), ("manifest", args.manifest)):
+            try:
+                path.resolve().relative_to(runner_directory)
+            except ValueError as exc:
+                raise ConfigurationError(f"required {label} is outside RUNNER_TEMP") from exc
 
 
 def main(argv: list[str] | None = None) -> int:

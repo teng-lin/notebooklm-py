@@ -89,6 +89,15 @@ def atomic_private_write(path: Path, value: str) -> None:
             raise InfrastructureError("credential path is a reparse point")
         if os.name != "nt" and stat.S_IMODE(path.stat().st_mode) != 0o600:
             raise InfrastructureError("credential file permissions are not private")
+        if os.name != "nt":
+            # Persist the directory entry as well as the temporary file contents.
+            # Without this fsync, a power loss can lose an otherwise successful
+            # replace even though the file itself was flushed.
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     finally:
         try:
             tmp.unlink()
@@ -124,6 +133,9 @@ def materialize(
 
     child_env = source_env.copy()
     child_env.pop("NOTEBOOKLM_MASTER_TOKEN_JSON", None)
+    for name in tuple(child_env):
+        if name == "NOTEBOOKLM_AUTH_JSON" or name.startswith("NOTEBOOKLM_MASTER_TOKEN_JSON_"):
+            child_env.pop(name, None)
     child_env["NOTEBOOKLM_PROFILE"] = profile
     command = [sys.executable, "-m", "notebooklm", "login", "--master-token-refresh"]
 
@@ -137,7 +149,7 @@ def materialize(
                 text=True,
                 check=False,
             )
-        except OSError as exc:
+        except Exception as exc:
             raise InfrastructureError("could not launch the auth mint subprocess") from exc
 
         for output in (last_result.stdout, last_result.stderr):
@@ -157,6 +169,8 @@ def materialize(
                 raise InfrastructureError("auth storage path is a reparse point")
             if os.name != "nt":
                 storage_path.chmod(0o600)
+                if stat.S_IMODE(storage_path.stat().st_mode) != 0o600:
+                    raise InfrastructureError("auth storage permissions are not private")
             print(
                 f"Auth profile {profile} materialized for slot {account_slot} "
                 f"after {attempt} attempt(s)"

@@ -97,6 +97,32 @@ _GENERATION_SKIP_TARGETS = {
     # and research already tolerates throttling via @pytest.mark.xfail. Don't lump
     # them in on theory; add here (with evidence) only if one actually hard-fails CI.
 }
+_TYPED_RATE_LIMIT_ATTR = "_notebooklm_typed_rate_limit"
+_RATE_LIMIT_METHOD_ATTR = "_notebooklm_rate_limit_method_id"
+
+
+def _typed_rate_limit_cause(error: BaseException) -> RateLimitError | None:
+    """Find typed quota evidence through explicit exception chaining only."""
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, RateLimitError):
+            return current
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+    return None
+
+
+def _raise_typed_rate_limit_skip(rate_limit: RateLimitError) -> None:
+    """Raise pytest's skip signal while retaining machine-readable quota metadata."""
+    skipped = pytest.skip.Exception(f"Rate limit: {rate_limit}")
+    setattr(skipped, _TYPED_RATE_LIMIT_ATTR, True)
+    setattr(skipped, _RATE_LIMIT_METHOD_ATTR, rate_limit.method_id)
+    raise skipped
 
 
 def _install_chat_rate_limit_skip(client: NotebookLMClient) -> None:
@@ -147,40 +173,18 @@ def _install_generation_rate_limit_skip(client: NotebookLMClient) -> None:
     interactive mind map, #1819) skip on quota exhaustion instead of hard-failing.
     """
 
-    def _rate_limit_cause(error: BaseException) -> RateLimitError | None:
-        """Find a typed quota cause through explicit unconfirmed-write wrappers.
-
-        Only ``raise wrapper from quota`` establishes that the wrapper means
-        the generation write itself was quota-rejected. Python's implicit
-        ``__context__`` merely records whatever exception happened to be under
-        handling; following it can turn a later unrelated decoder/cleanup bug
-        into a false quota skip.
-        """
-        pending: list[BaseException] = [error]
-        seen: set[int] = set()
-        while pending:
-            current = pending.pop()
-            if id(current) in seen:
-                continue
-            seen.add(id(current))
-            if isinstance(current, RateLimitError):
-                return current
-            if current.__cause__ is not None:
-                pending.append(current.__cause__)
-        return None
-
     def _wrap(original):
         async def _with_skip(*args, **kwargs):
             try:
                 return await original(*args, **kwargs)
             except Exception as error:
-                rate_limit = _rate_limit_cause(error)
+                rate_limit = _typed_rate_limit_cause(error)
                 if rate_limit is None:
                     raise
                 # The "Rate limit:" prefix guarantees a _RATE_LIMIT_PHRASES
                 # match regardless of the exception message wording, so the
                 # skip always lands in pytest_terminal_summary's section.
-                pytest.skip(f"Rate limit: {rate_limit}")
+                _raise_typed_rate_limit_skip(rate_limit)
 
         return _with_skip
 
@@ -234,11 +238,13 @@ def _install_generation_journal(client: NotebookLMClient, journal) -> None:
             try:
                 result = await __original(*args, **kwargs)
             except BaseException as exc:
-                if any(phrase in str(exc).lower() for phrase in _RATE_LIMIT_PHRASES):
+                if _typed_rate_limit_cause(exc) is not None:
                     operation.rate_limited_rejected()
                 raise
             if result is not None and getattr(result, "task_id", None):
                 operation.accepted(result.task_id)
+            elif result is not None and bool(getattr(result, "is_rate_limited", False)):
+                operation.rate_limited_rejected()
             return result
 
         setattr(client.artifacts, method_name, _journaled)
@@ -366,6 +372,11 @@ def _managed_bindings() -> dict[str, str] | None:
     """Validate and return workflow-owned full-mode notebook bindings."""
     activation = os.environ.get(_MANAGED_FLAG_ENV)
     if activation is None:
+        if any(
+            os.environ.get(name) is not None
+            for name in (_MANAGED_MODE_ENV, _MANAGED_REFERENCE_READY_ENV)
+        ):
+            raise ValueError("managed controls are present without the activation flag")
         return None
     if activation != "1":
         raise ValueError(f"{_MANAGED_FLAG_ENV} must be exactly 1 when present")
@@ -417,11 +428,11 @@ def assert_generation_started(result, artifact_type: str = "Artifact") -> None:
 def journal_generation_started(result, operation, artifact_type: str = "Artifact") -> None:
     """Validate a Studio generation response and persist its accepted ID first."""
     assert result is not None, f"{artifact_type} generation returned None"
-    if result.is_rate_limited:
-        operation.rate_limited_rejected()
-        pytest.skip("Rate limited by API")
     if result.task_id:
         operation.accepted(result.task_id)
+    elif result.is_rate_limited:
+        operation.rate_limited_rejected()
+        pytest.skip("Rate limited by API")
     assert_generation_started(result, artifact_type)
 
 
@@ -447,7 +458,7 @@ async def journal_studio_generation(
         # Direct Studio generate methods only raise the typed quota skip before
         # returning an accepted ID. Interactive generation, which has post-
         # create reads, owns a stronger reconciliation fixture separately.
-        if any(phrase in str(exc).lower() for phrase in _RATE_LIMIT_PHRASES):
+        if _typed_rate_limit_cause(exc) is not None:
             operation.rate_limited_rejected()
         raise
     journal_generation_started(result, operation)
@@ -902,8 +913,8 @@ def auth_tokens() -> AuthTokens:
 async def client(auth_tokens, generation_journal) -> AsyncGenerator[NotebookLMClient, None]:
     async with NotebookLMClient(auth_tokens, storage_path=auth_tokens.storage_path) as c:
         _install_chat_rate_limit_skip(c)
-        _install_generation_rate_limit_skip(c)
         _install_generation_journal(c, generation_journal)
+        _install_generation_rate_limit_skip(c)
         yield c
 
 
@@ -918,10 +929,11 @@ def generation_journal(request):
 
 @pytest.fixture
 def read_only_notebook_id():
-    """Get notebook ID from NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID env var.
+    """Return the disposable reference copy or the legacy local binding.
 
-    This env var is REQUIRED for E2E tests. You must create your own
-    read-only test notebook with sources and artifacts.
+    Managed CI uses the workflow-owned ``reference`` copy and never exposes
+    the immutable canonical template to pytest. Without managed activation,
+    the historical environment-variable behavior is unchanged.
 
     This fixture provides a notebook ID for READ-ONLY tests - tests that
     list, get, or query but do NOT modify the notebook. Do not use this
@@ -1157,9 +1169,11 @@ async def _verify_notebook_exists(client, notebook_id: str) -> bool:
 
 @pytest.fixture
 async def generation_notebook_id(client):
-    """Get or create a notebook for generation tests.
+    """Return the disposable generation copy or use the legacy local lifecycle.
 
-    This fixture uses a hybrid approach:
+    Managed CI yields the workflow-owned prepared copy without cache access,
+    first-use cleanup, creation, or teardown deletion. Unmanaged local runs
+    preserve the hybrid fallback:
     1. Check NOTEBOOKLM_GENERATION_NOTEBOOK_ID env var
     2. If not set, check for a stored ID in the active profile cache
        (~/.notebooklm/profiles/<name>/generation_notebook_id)
@@ -1369,9 +1383,11 @@ async def _cleanup_multi_source_notebook(client: NotebookLMClient, notebook_id: 
 
 @pytest.fixture
 async def multi_source_notebook_id(client):
-    """Get or create a notebook with multiple sources for source selection tests.
+    """Return the disposable multi-source copy or use the legacy local lifecycle.
 
-    This fixture uses a hybrid approach similar to generation_notebook_id:
+    Managed CI yields the workflow-owned prepared copy without cache access,
+    first-use cleanup, creation, or teardown deletion. Unmanaged local runs
+    preserve the hybrid fallback:
     1. Check NOTEBOOKLM_MULTI_SOURCE_NOTEBOOK_ID env var
     2. If not set, check for a stored ID in the active profile cache
        (~/.notebooklm/profiles/<name>/multi_source_notebook_id)

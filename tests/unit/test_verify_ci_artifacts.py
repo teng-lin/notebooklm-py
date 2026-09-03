@@ -24,6 +24,8 @@ class Artifact:
     id: str
     kind: str
     status_str: str = "completed"
+    interactive: bool = False
+    unclassified: bool = False
 
     @property
     def is_completed(self) -> bool:
@@ -37,12 +39,22 @@ class Artifact:
     def is_failed(self) -> bool:
         return self.status_str == "failed"
 
+    @property
+    def is_interactive_mind_map(self) -> bool:
+        return self.interactive
+
+    @property
+    def is_unclassified_type4(self) -> bool:
+        return self.unclassified
+
 
 class Artifacts:
     def __init__(self, inventories, statuses=None):
         self.inventories = [list(value) for value in inventories]
         self.statuses = list(statuses or [])
         self.list_calls = 0
+        self.poll_ids = []
+        self.get_ids = []
 
     async def list(self, notebook_id):
         index = min(self.list_calls, len(self.inventories) - 1)
@@ -50,10 +62,12 @@ class Artifacts:
         return list(self.inventories[index])
 
     async def poll_status(self, notebook_id, resource_id):
+        self.poll_ids.append(resource_id)
         status = self.statuses.pop(0) if self.statuses else "completed"
         return SimpleNamespace(status=status)
 
     async def get_or_none(self, notebook_id, resource_id):
+        self.get_ids.append(resource_id)
         latest = self.inventories[min(self.list_calls - 1, len(self.inventories) - 1)]
         return next((artifact for artifact in latest if artifact.id == resource_id), None)
 
@@ -230,6 +244,26 @@ def test_journal_parser_accepts_backing_specific_and_recovery_edges(tmp_path) ->
     assert len(parsed) == 2
 
 
+def test_journal_parser_rejects_unauthorized_settling_deletion(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [
+            row(operation_id, "started"),
+            row(operation_id, "accepted", resource_id="artifact"),
+            row(
+                operation_id,
+                "delete_confirmed",
+                resource_id="artifact",
+                reason="test_teardown",
+            ),
+        ],
+    )
+    with pytest.raises(verify.JournalError, match="unauthorized deletion"):
+        verify.parse_journal(journal, notebook_id="generation-role")
+
+
 @pytest.mark.asyncio
 async def test_journal_verifies_completed_task_and_warns_on_missing_families(
     tmp_path, capsys
@@ -307,6 +341,91 @@ async def test_transient_not_found_recovers_before_grace(tmp_path) -> None:
         poll_interval=0,
     )
     assert result["completed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_note_backed_resource_uses_public_persistent_lookup(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [
+            row(operation_id, "started", family="mind_map", id_kind="note_mind_map"),
+            row(
+                operation_id,
+                "persisted",
+                resource_id="note-map",
+                family="mind_map",
+                id_kind="note_mind_map",
+            ),
+            row(
+                operation_id,
+                "completed",
+                resource_id="note-map",
+                family="mind_map",
+                id_kind="note_mind_map",
+            ),
+        ],
+    )
+    artifact = Artifact("note-map", "mind_map")
+    client = Client([[artifact]] * 8)
+    result = await verify.verify_journal(
+        client,
+        notebook_id="generation-role",
+        journal_path=journal,
+        timeout=240,
+        minimum_discovery_window=0,
+        quiet_polls=1,
+        poll_interval=0,
+    )
+    assert result["completed"] == 1
+    assert client.artifacts.get_ids == ["note-map"]
+    assert client.artifacts.poll_ids == []
+
+
+@pytest.mark.asyncio
+async def test_unjournaled_interactive_row_is_settled_as_studio_backing(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [row(operation_id, "started", family="mind_map", id_kind="studio_task")],
+    )
+    artifact = Artifact("interactive", "mind_map", interactive=True)
+    client = Client([[artifact]] * 8, statuses=["completed"])
+    result = await verify.verify_journal(
+        client,
+        notebook_id="generation-role",
+        journal_path=journal,
+        timeout=240,
+        minimum_discovery_window=0,
+        quiet_polls=1,
+        poll_interval=0,
+    )
+    assert result["completed"] == 1
+    assert client.artifacts.poll_ids == ["interactive"]
+    assert client.artifacts.get_ids == []
+
+
+@pytest.mark.asyncio
+async def test_unmatched_started_requires_matching_public_backing(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [row(operation_id, "started", family="mind_map", id_kind="studio_task")],
+    )
+    note_backed = Artifact("note-map", "mind_map")
+    with pytest.raises(verify.JournalError, match="uniquely reconciled"):
+        await verify.verify_journal(
+            Client([[note_backed]] * 4),
+            notebook_id="generation-role",
+            journal_path=journal,
+            timeout=240,
+            minimum_discovery_window=0,
+            quiet_polls=1,
+            poll_interval=0,
+        )
 
 
 @pytest.mark.asyncio
@@ -437,9 +556,19 @@ def test_manifest_requires_unique_confirmed_generation_role(tmp_path) -> None:
             }
         )
     )
+    if os.name != "nt":
+        manifest.chmod(0o600)
     assert verify.generation_id_from_manifest(manifest, "generation") == "managed-generation"
     with pytest.raises(verify.ConfigurationError):
         verify.generation_id_from_manifest(manifest, "reference")
+
+    document = json.loads(manifest.read_text())
+    document["copies"][0]["notebook_id"] = ""
+    manifest.write_text(json.dumps(document))
+    if os.name != "nt":
+        manifest.chmod(0o600)
+    with pytest.raises(verify.ConfigurationError):
+        verify.generation_id_from_manifest(manifest, "generation")
 
 
 def test_scheduled_workflow_uses_inventory_compat_script() -> None:

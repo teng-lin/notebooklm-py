@@ -143,20 +143,30 @@ _COMMENT_RE = re.compile(r"^\s*#")
 #   * ``github.event.sender.login == '<actor>'`` /
 #     ``github.actor == '<actor>'`` — actor pin (claude.yml's
 #     load-bearing security check).
+_IS_STANDARD_GUARD_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])needs\.[A-Za-z_][A-Za-z0-9_-]*\.outputs\."
+    r"is_standard\s*==\s*['\"]true['\"]",
+    re.IGNORECASE,
+)
+_REPOSITORY_GUARD_RE = re.compile(
+    r"(?<![A-Za-z0-9_.])github\.repository\s*==\s*['\"]"
+    r"teng-lin/notebooklm-py['\"]",
+    re.IGNORECASE,
+)
+
 _TRUSTED_GUARD_PATTERNS = (
     # is_standard == 'true' / "true"  (quoting may be single or double)
+    _IS_STANDARD_GUARD_RE,
+    # github.event.sender.login == '<name>'
     re.compile(
-        r"is_standard\s*==\s*['\"]true['\"]",
-        re.IGNORECASE,
-    ),
-    # sender.login == '<name>' / github.event.sender.login == '<name>'
-    re.compile(
-        r"sender\.login\s*==\s*['\"][A-Za-z0-9_.\-\[\]]+['\"]",
+        r"(?<![A-Za-z0-9_.])github\.event\.sender\.login\s*==\s*"
+        r"['\"][A-Za-z0-9_.\-\[\]]+['\"]",
         re.IGNORECASE,
     ),
     # github.actor == '<name>'
     re.compile(
-        r"github\.actor\s*==\s*['\"][A-Za-z0-9_.\-\[\]]+['\"]",
+        r"(?<![A-Za-z0-9_.])github\.actor\s*==\s*['\"]"
+        r"[A-Za-z0-9_.\-\[\]]+['\"]",
         re.IGNORECASE,
     ),
 )
@@ -188,9 +198,14 @@ def _environment_value_is_approved(value: str) -> bool:
         approved name, so the check below rejects them as a side-effect
         of the literal-only match.
     """
-    if not value or value in ("''", '""'):
+    candidate = value.strip()
+    if not candidate or candidate in ("''", '""'):
         return False
-    return value.strip().strip("'\"") in _APPROVED_ENVIRONMENTS
+    if candidate in _APPROVED_ENVIRONMENTS:
+        return True
+    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in "'\"":
+        return candidate[1:-1] in _APPROVED_ENVIRONMENTS
+    return False
 
 
 def main() -> int:
@@ -490,31 +505,82 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
         r"secrets\s*(?:\.NOTEBOOKLM_MASTER_TOKEN_JSON_[ABC]"
         r"|\[[^\]]*master_token_secret_name[^\]]*\])"
     )
+    any_master_secret = re.compile(
+        r"secrets\s*(?:\.NOTEBOOKLM_MASTER_TOKEN_JSON(?:_[ABC])?"
+        r"|\[[^\]]*master_token_secret_name[^\]]*\])"
+    )
     for job, line_number, body in chunks:
         text = "\n".join(body)
         if "NOTEBOOKLM_ACCOUNTS_JSON" in text:
             violations.append(
                 f"{path}:{line_number}: job '{job}' uses forbidden bundled account secret"
             )
-        matches = pooled_secret.findall(text)
-        if not matches:
+        selected_secret_lines: list[tuple[str, bool]] = []
+        master_secret_lines: list[tuple[str, bool]] = []
+        sanitized_lines: list[str] = []
+        job_if = ""
+        collecting_job_if = False
+        in_step = False
+        for line in body:
+            indent = len(line) - len(line.lstrip(" "))
+            if _STEP_HEADER_RE.match(line):
+                in_step = True
+            elif line.strip() and indent <= 4:
+                in_step = False
+            searchable = "" if _COMMENT_RE.match(line) else _strip_yaml_trailing_comment(line)
+            sanitized_lines.append(searchable)
+            job_if_match = _JOB_IF_RE.match(line)
+            if job_if_match and not in_step:
+                value = job_if_match.group(1)
+                collecting_job_if = value in ("|", ">", "|-", ">-", "|+", ">+")
+                job_if = "" if collecting_job_if else _strip_yaml_trailing_comment(value)
+            elif collecting_job_if:
+                if line.strip() and indent <= 4:
+                    collecting_job_if = False
+                else:
+                    job_if += " " + searchable.strip()
+            if pooled_secret.search(searchable):
+                selected_secret_lines.append((searchable, in_step))
+            if any_master_secret.search(searchable):
+                master_secret_lines.append((searchable, in_step))
+        selected_matches = [
+            match
+            for line, _in_step in selected_secret_lines
+            for match in pooled_secret.findall(line)
+        ]
+        if not selected_matches:
             continue
+        master_matches = [
+            match
+            for line, _in_step in master_secret_lines
+            for match in any_master_secret.findall(line)
+        ]
+        sanitized_text = "\n".join(sanitized_lines)
         prefix = f"{path}:{line_number}: pooled secret job '{job}'"
-        if len(matches) != 1:
+        if len(master_matches) != 1:
             violations.append(f"{prefix} must inject exactly one selected master-token secret")
-        if "github.repository == 'teng-lin/notebooklm-py'" not in text:
+        if any(not in_step for _line, in_step in master_secret_lines):
+            violations.append(f"{prefix} must inject the selected token in one step only")
+        if not _REPOSITORY_GUARD_RE.search(job_if):
             violations.append(f"{prefix} lacks the standard-repository job gate")
-        if "is_standard == 'true'" not in text:
+        if not _IS_STANDARD_GUARD_RE.search(job_if):
             violations.append(f"{prefix} lacks the exact-SHA is_standard job gate")
-        if "environment: protected-readonly" not in text:
+        if not any(
+            (match := _JOB_ENVIRONMENT_RE.match(line))
+            and _environment_value_is_approved(match.group(1))
+            for line in body
+        ):
             violations.append(f"{prefix} lacks the literal protected-readonly Environment")
-        if "group: notebooklm-account-${{" not in text or "account_slot" not in text:
+        if (
+            "group: notebooklm-account-${{" not in sanitized_text
+            or "account_slot" not in sanitized_text
+        ):
             violations.append(f"{prefix} lacks account-wide concurrency")
-        if "queue: max" not in text:
+        if "queue: max" not in sanitized_text:
             violations.append(f"{prefix} lacks queue: max")
-        if "cancel-in-progress: false" not in text:
+        if "cancel-in-progress: false" not in sanitized_text:
             violations.append(f"{prefix} must disable concurrency cancellation")
-        if "cancel-in-progress: true" in text:
+        if "cancel-in-progress: true" in sanitized_text:
             violations.append(f"{prefix} enables forbidden concurrency cancellation")
     return violations
 

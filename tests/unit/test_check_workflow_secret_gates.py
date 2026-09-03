@@ -869,3 +869,45 @@ jobs:
 """.replace(old, new)
     )
     assert any(message in error for error in script._scan_pooled_account_jobs(workflow))
+
+
+def test_trusted_guard_requires_exact_github_identifiers(script) -> None:
+    assert not script._expression_is_trusted_guard("evil_is_standard == 'true'")
+    assert not script._expression_is_trusted_guard("event.sender.login == 'teng-lin'")
+    assert not script._expression_is_trusted_guard("other.github.actor == 'teng-lin'")
+    assert script._expression_is_trusted_guard("needs.target.outputs.is_standard == 'true'")
+
+
+def test_mismatched_environment_quotes_are_not_approved(script) -> None:
+    assert not script._environment_value_is_approved("'protected-readonly\"")
+
+
+def test_pooled_token_must_be_single_and_step_scoped(tmp_path, script) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      cancel-in-progress: false
+      queue: max
+    env:
+      NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+    steps:
+    - run: echo ready
+"""
+    )
+    violations = script._scan_pooled_account_jobs(workflow)
+    assert any("one step only" in violation for violation in violations)
+
+    source = workflow.read_text().replace(
+        "    steps:\n",
+        "    steps:\n    - env:\n        OLD: ${{ secrets.NOTEBOOKLM_MASTER_TOKEN_JSON }}\n      run: echo old\n",
+    )
+    workflow.write_text(source)
+    violations = script._scan_pooled_account_jobs(workflow)
+    assert any("exactly one" in violation for violation in violations)

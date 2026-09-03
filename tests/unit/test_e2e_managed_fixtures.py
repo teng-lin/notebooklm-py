@@ -73,6 +73,19 @@ def test_unmanaged_configuration_preserves_legacy_path(monkeypatch) -> None:
     assert e2e._managed_bindings() is None
 
 
+def test_managed_controls_without_activation_fail_closed(monkeypatch) -> None:
+    for name in MANAGED:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_E2E_MANAGED_MODE", "full")
+    with pytest.raises(ValueError, match="without the activation"):
+        e2e._managed_bindings()
+
+    monkeypatch.delenv("NOTEBOOKLM_E2E_MANAGED_MODE")
+    monkeypatch.setenv("NOTEBOOKLM_E2E_REFERENCE_PREPARED", "1")
+    with pytest.raises(ValueError, match="without the activation"):
+        e2e._managed_bindings()
+
+
 def test_unconfigure_resets_first_use_cleanup_state() -> None:
     e2e._generation_cleanup_done = True
     e2e._multi_source_cleanup_done = True

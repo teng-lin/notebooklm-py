@@ -120,6 +120,21 @@ def test_verify_package_telemetry_is_advisory(state: str) -> None:
     assert aggregate_module.aggregate(lane="verify-package", mode="full", states=states) == []
 
 
+def test_verify_package_telemetry_cannot_run_after_blocked_setup() -> None:
+    states = successful("verify-package")
+    states.update(
+        provision="failure",
+        preflight="not_applicable",
+        journal_policy="not_applicable",
+        primary="not_applicable",
+        lastfailed="not_applicable",
+        retry="not_applicable",
+        telemetry="success",
+    )
+    failures = aggregate_module.aggregate(lane="verify-package", mode="full", states=states)
+    assert "dependency_violation:telemetry" in failures
+
+
 def test_cli_diagnostics_never_contain_resource_values(capsys) -> None:
     states = successful("rpc-health-android")
     states["health"] = "failure"

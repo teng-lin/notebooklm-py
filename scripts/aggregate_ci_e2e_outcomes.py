@@ -201,7 +201,15 @@ def aggregate(*, lane: str, mode: str, states: dict[str, str], producer: bool = 
                 errors.append("dependency_violation:verifier")
             continue
         if phase == "telemetry":
-            # Verify Package inventory is explicitly best-effort/non-gating.
+            # Verify Package inventory is best-effort/non-gating once its
+            # producer path was actually reached. It must still be skipped when
+            # setup blocked primary, otherwise outcome capture could conceal a
+            # workflow dependency bug.
+            allowed = all(
+                _dependency_allows(phase, dependency, states) for dependency in dependencies
+            )
+            if not allowed and states[phase] != "not_applicable":
+                errors.append("dependency_violation:telemetry")
             continue
         allowed = all(_dependency_allows(phase, dependency, states) for dependency in dependencies)
         if allowed and states[phase] == "not_applicable":
