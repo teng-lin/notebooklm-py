@@ -1,7 +1,7 @@
 {
   "allowlisted_ceilings": {
     "_android/proto/google/internal/labs/tailwind/orchestration/v1/orchestration_service_pb2_grpc.py": 2546,
-    "_android/sources.py": 1664,
+    "_android/sources.py": 1651,
     "exceptions.py": 1610
   },
   "budget": 1500,

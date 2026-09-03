@@ -43,6 +43,7 @@ from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_d
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
 from .codecs.sources import decode_source, decode_sources, select_document_guide
 from .drive_staging import _DRIVE_STAGED_UPLOAD_EXTENSIONS
+from .errors import sanitize_async_boundary
 from .phenotype import PhenotypeTokenProvider
 from .play_books import (
     build_expert_intelligence_content,
@@ -1083,43 +1084,8 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             wait_timeout=wait_timeout,
         )
 
+    @sanitize_async_boundary
     async def add_file(
-        self,
-        notebook_id: str,
-        file_path: str | Path,
-        mime_type: str | None = None,
-        *,
-        wait: bool = False,
-        wait_timeout: float = 120.0,
-        title: str | None = None,
-        on_progress: Callable[[int, int], object] | None = None,
-    ) -> Source:
-        """Add a file without retaining this bearer-linked public adapter."""
-
-        adapter = self
-        result: Source | None = None
-        failure: BaseException | None = None
-        try:
-            result = await adapter._add_file_impl(
-                notebook_id,
-                file_path,
-                mime_type,
-                wait=wait,
-                wait_timeout=wait_timeout,
-                title=title,
-                on_progress=on_progress,
-            )
-        except BaseException as error:
-            from .errors import sanitize_escaping_exception
-
-            failure = sanitize_escaping_exception(error)
-        finally:
-            del self, adapter
-        if failure is not None:
-            raise failure
-        return cast(Source, result)
-
-    async def _add_file_impl(
         self,
         notebook_id: str,
         file_path: str | Path,
@@ -1133,8 +1099,6 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         # Choose the upload path from the same canonical target whose filename
         # drives MIME inference in either uploader, so a misleading symlink
         # suffix cannot route a file into the transaction that will reject it.
-        # Both uploaders still resolve/check the supplied canonical path inside
-        # their own admitted operation before opening it.
         canonical_path = await asyncio.to_thread(Path(file_path).resolve)
         if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
             if self._add_file_compat is not None:
