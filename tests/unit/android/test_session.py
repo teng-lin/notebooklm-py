@@ -105,7 +105,7 @@ class _Bearer:
         self.closed = 0
         self.wait: asyncio.Event | None = None
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         self.activations.append(epoch)
 
     async def get(self, expected_epoch: int) -> BearerCredential:

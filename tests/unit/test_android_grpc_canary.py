@@ -70,7 +70,7 @@ class _Bearer:
         self.invalidated: list[int] = []
         self._cached: BearerCredential | None = None
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         self.epoch = epoch
 
     async def get(self, expected_epoch: int) -> BearerCredential:
@@ -664,7 +664,7 @@ async def test_forced_refresh_advances_generation_on_real_provider() -> None:
     minter = _Minter()
     provider = BearerProvider(_Reader(), minter)
     provider.set_bound_loop(asyncio.get_running_loop())
-    await provider.activate(1)
+    await provider.activate_for_epoch(1)
     client = SimpleNamespace(
         _android_runtime=SimpleNamespace(
             session=SimpleNamespace(active_epoch=1),
@@ -748,7 +748,7 @@ async def test_refresh_mint_retry_backs_off_exactly_once() -> None:
         slept.append(seconds)
 
     bearer = _ThrottledBearer(failures=1)
-    await bearer.activate(1)
+    await bearer.activate_for_epoch(1)
     client = SimpleNamespace(
         _android_runtime=SimpleNamespace(
             session=SimpleNamespace(active_epoch=1),
@@ -764,7 +764,7 @@ async def test_refresh_mint_retry_backs_off_exactly_once() -> None:
             raise AuthError("cold mint refused")
 
     cold = _ColdThrottle()
-    await cold.activate(1)
+    await cold.activate_for_epoch(1)
     client = SimpleNamespace(
         _android_runtime=SimpleNamespace(
             session=SimpleNamespace(active_epoch=1),

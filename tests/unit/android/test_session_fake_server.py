@@ -58,7 +58,7 @@ class _Bearer:
     def token(self) -> str:
         return f"fake-token-{self.generation}"
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         self.epoch = epoch
         self.activations.append(epoch)
 

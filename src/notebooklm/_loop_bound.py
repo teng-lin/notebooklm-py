@@ -75,8 +75,10 @@ class EpochFenced(LoopBoundPrimitive):
 
     ``activate`` publishes one resource epoch, ``fence`` retires it before
     asynchronous teardown begins, and ``assert_epoch`` rejects work holding a
-    stale lease.  Owners provide only their diagnostic prefix (and, for the
-    Android upload boundary, its historical ``RuntimeError`` subclass).
+    stale lease. Owners provide their diagnostic text and may preserve either
+    the standard epoch-detail suffix or a fixed historical message. The
+    Android upload boundary also supplies its historical ``RuntimeError``
+    subclass.
     """
 
     def __init__(
@@ -86,10 +88,12 @@ class EpochFenced(LoopBoundPrimitive):
         error_type: type[RuntimeError] = RuntimeError,
         initially_closing: bool = False,
         assert_loop: bool = False,
+        include_epoch_details: bool = True,
     ) -> None:
         self._epoch_retired_message = retired_message
         self._epoch_error_type = error_type
         self._epoch_assert_loop = assert_loop
+        self._epoch_include_details = include_epoch_details
         self._active_epoch: int | None = None
         self._closing = initially_closing
 
@@ -110,10 +114,10 @@ class EpochFenced(LoopBoundPrimitive):
 
             assert_bound_loop(self._bound_loop)
         if self._closing or self._active_epoch != expected_epoch:
-            raise self._epoch_error_type(
-                f"{self._epoch_retired_message} "
-                f"(expected={expected_epoch}, active={self._active_epoch!r})."
-            )
+            message = self._epoch_retired_message
+            if self._epoch_include_details:
+                message = f"{message} (expected={expected_epoch}, active={self._active_epoch!r})."
+            raise self._epoch_error_type(message)
 
 
 __all__ = ["EpochFenced", "LoopBoundPrimitive"]

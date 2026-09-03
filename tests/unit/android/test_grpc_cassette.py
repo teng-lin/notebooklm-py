@@ -202,7 +202,7 @@ KNOWN_CASSETTE_PAYLOAD_TYPES = {
 class _LeaseBearer:
     gets: list[int]
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         del epoch
 
     async def get(self, expected_epoch: int) -> BearerCredential:

@@ -67,12 +67,12 @@ async def test_auth_refresh_waiter_cannot_publish_into_reopened_generation() -> 
 
     coordinator = AuthRefreshCoordinator(refresh_callback=refresh)
     coordinator.set_bound_loop(asyncio.get_running_loop())
-    coordinator.activate(1)
+    coordinator.activate_epoch(1)
     waiter = asyncio.create_task(coordinator.await_refresh(1))
     await asyncio.sleep(0)
 
-    coordinator.fence()
-    coordinator.activate(2)
+    coordinator.fence_epoch(1)
+    coordinator.activate_epoch(2)
     gate.set()
 
     with pytest.raises(RuntimeError, match="expected=1, active=2"):

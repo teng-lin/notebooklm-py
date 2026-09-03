@@ -139,3 +139,16 @@ def test_epoch_fence_uses_the_owner_error_type_and_message() -> None:
         owner.assert_epoch(4)
 
     assert str(raised.value) == "custom owner retired (expected=4, active=3)."
+
+
+def test_epoch_fence_can_preserve_an_exact_fixed_owner_message() -> None:
+    owner = EpochFenced(
+        "fixed inactive message",
+        include_epoch_details=False,
+    )
+    owner.activate(3)
+
+    with pytest.raises(RuntimeError) as raised:
+        owner.assert_epoch(4)
+
+    assert str(raised.value) == "fixed inactive message"

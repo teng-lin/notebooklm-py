@@ -30,7 +30,7 @@ class _Bearer:
     def __init__(self) -> None:
         self.invalidated: list[int] = []
 
-    async def activate(self, epoch: int) -> None:
+    async def activate_for_epoch(self, epoch: int) -> None:
         self.epoch = epoch
 
     async def get(self, expected_epoch: int) -> BearerCredential:

@@ -92,7 +92,7 @@ class WebTransportLifecycle:
             return
         self._active_epoch = epoch
         self._kernel.activate(epoch)
-        self._auth_coord.activate(epoch)
+        self._auth_coord.activate_epoch(epoch)
         await self._cookie_persistence._prepare_open_baseline(
             self._cookie_persistence_path,
             to_thread=asyncio.to_thread,
@@ -113,9 +113,10 @@ class WebTransportLifecycle:
 
     async def prepare_close(self) -> None:
         """Fence Kernel/Auth synchronously, then settle web background work."""
+        epoch = self._active_epoch
         self._active_epoch = None
         self._kernel.fence()
-        self._auth_coord.fence()
+        self._auth_coord.fence_epoch(epoch)
         task = self._keepalive_task
         self._keepalive_task = None
         keepalive_error: BaseException | None = None

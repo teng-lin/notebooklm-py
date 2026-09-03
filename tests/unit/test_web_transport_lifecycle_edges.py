@@ -160,7 +160,7 @@ async def test_prepare_close_raises_an_auth_cancellation_failure() -> None:
         await fixture.lifecycle.prepare_close()
 
     assert raised.value is failure
-    fixture.auth_coord.fence.assert_called_once_with()
+    fixture.auth_coord.fence_epoch.assert_called_once_with(2)
     assert fixture.lifecycle._active_epoch is None
     await fixture.lifecycle.close_resources()
 

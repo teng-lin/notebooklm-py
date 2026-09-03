@@ -62,7 +62,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from ..._loop_affinity import assert_bound_loop
-from ..._loop_bound import EpochFenced
+from ..._loop_bound import LoopBoundPrimitive
 from ..._runtime.config import CORE_LOGGER_NAME
 from ...auth import AuthTokens
 from .request_types import AuthSnapshot
@@ -99,7 +99,7 @@ async def _run_refresh_after_gate(
         return _RefreshResult(error=exc)
 
 
-class AuthRefreshCoordinator(EpochFenced):
+class AuthRefreshCoordinator(LoopBoundPrimitive):
     """Owns refresh single-flight, snapshot serialization, and auth-header sync.
 
     Field names (``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``,
@@ -113,7 +113,6 @@ class AuthRefreshCoordinator(EpochFenced):
         refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None = None,
         metrics: ClientMetrics | None = None,
     ) -> None:
-        super().__init__("NotebookLMClient auth generation is retired")
         # Lazily-created — ``asyncio.Lock()`` needs a running loop in some
         # Python versions, and this object can be constructed outside one.
         self._refresh_lock: asyncio.Lock | None = None
@@ -129,6 +128,10 @@ class AuthRefreshCoordinator(EpochFenced):
         self._metrics: ClientMetrics | None = metrics
         # Distinct from ``_refresh_lock`` — see module docstring.
         self._auth_snapshot_lock: asyncio.Lock | None = None
+        # Activated/fenced in lockstep with Kernel by WebTransportLifecycle.
+        # This scalar is intentionally synchronous so prepare_close can fence
+        # refresh publication before its first await.
+        self._active_epoch: int | None = None
         # ``_bound_loop`` (the loop-affinity guard consulted by
         # :meth:`await_refresh` before touching the lazy ``_refresh_lock``)
         # and ``set_bound_loop`` are provided by the
@@ -150,6 +153,22 @@ class AuthRefreshCoordinator(EpochFenced):
         ``_refresh_callback`` attribute from outside the coordinator.
         """
         return self._refresh_callback is not None
+
+    def activate_epoch(self, epoch: int) -> None:
+        """Activate the web resource generation for snapshots/refreshes."""
+        self._active_epoch = epoch
+
+    def fence_epoch(self, epoch: int | None) -> None:
+        """Retire ``epoch`` synchronously before refresh-task settlement."""
+        if epoch is None or self._active_epoch == epoch:
+            self._active_epoch = None
+
+    def assert_epoch(self, expected_epoch: int) -> None:
+        if self._active_epoch != expected_epoch:
+            raise RuntimeError(
+                "NotebookLMClient auth generation is retired "
+                f"(expected={expected_epoch}, active={self._active_epoch!r})."
+            )
 
     def _on_loop_rebind(
         self,

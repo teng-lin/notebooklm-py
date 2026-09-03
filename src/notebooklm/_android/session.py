@@ -287,7 +287,7 @@ class AndroidSession(EpochFenced):
         self._grpc_loader()
         self._protobuf_loader()
         self.activate(epoch)
-        await self._bearer_provider.activate(epoch)
+        await self._bearer_provider.activate_for_epoch(epoch)
 
     async def prepare_close(self) -> None:
         """Fence new channel/token publication before the first await."""

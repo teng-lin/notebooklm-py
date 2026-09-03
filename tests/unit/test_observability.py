@@ -61,7 +61,7 @@ async def test_rpc_metrics_event_and_correlation_scope(auth_tokens: AuthTokens) 
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
-    core._web_runtime.auth_coord.activate(1)
+    core._web_runtime.auth_coord.activate_epoch(1)
     seen_request_ids: list[str | None] = []
 
     # Mock the chain LEAF (innermost wrapper around
@@ -135,7 +135,7 @@ async def test_rpc_decode_error_bumps_drift_counter(auth_tokens: AuthTokens) -> 
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
-    core._web_runtime.auth_coord.activate(1)
+    core._web_runtime.auth_coord.activate_epoch(1)
 
     from notebooklm._web.transport.middleware.core import RpcResponse, build_chain
 

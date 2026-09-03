@@ -1553,7 +1553,7 @@ def test_direct_production_store_callers_are_exact_and_function_granular() -> No
         ("_android/auth.py", "_make_bearer_provider", "ProfileStore"),
         (
             "_android/auth.py",
-            "BearerProvider.activate",
+            "BearerProvider.activate_for_epoch",
             "<store-method-capability-escape:read_master_token>",
         ),
         ("_web/transport/cookie_persistence.py", "CookiePersistence.__init__", "ProfileStore"),
