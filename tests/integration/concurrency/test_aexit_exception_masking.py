@@ -40,16 +40,16 @@ async def test_body_raises_and_close_raises_body_wins(
     client = build_client_shell_for_tests(auth_tokens)
 
     # Capture the http client reference BEFORE entering the cm — successful
-    # close sets `client._collaborators.kernel.http_client = None`, so we need our own ref.
+    # close sets `client._web_runtime.kernel.http_client = None`, so we need our own ref.
     await client.__aenter__()
     try:
-        http_client_ref = client._collaborators.kernel.get_http_client()
+        http_client_ref = client._web_runtime.kernel.get_http_client()
         epoch = client._collaborators.lifecycle._epoch
         generation = client._collaborators.call_supervisor._current
         assert generation is not None and generation.epoch == epoch
-        assert client._collaborators.web_transport._active_epoch == epoch
-        assert client._collaborators.kernel._active_epoch == epoch
-        assert client._collaborators.auth_coord._active_epoch == epoch
+        assert client._web_runtime.web_transport._active_epoch == epoch
+        assert client._web_runtime.kernel._active_epoch == epoch
+        assert client._web_runtime.auth_coord._active_epoch == epoch
 
         # Patch client.close to raise after closing the transport, so we
         # exercise the exception-arbitration path. Forward to the original
@@ -67,7 +67,7 @@ async def test_body_raises_and_close_raises_body_wins(
         ):
             async with client:
                 # Sanity: client is open here.
-                assert client._collaborators.kernel.http_client is not None
+                assert client._web_runtime.kernel.http_client is not None
                 raise ValueError("user error")
     finally:
         await client.close()
@@ -139,7 +139,7 @@ async def test_cancel_mid_close_does_not_leak_transport(
     """
     client = build_client_shell_for_tests(auth_tokens)
     await client.__aenter__()
-    http_client_ref = client._collaborators.kernel.get_http_client()
+    http_client_ref = client._web_runtime.kernel.get_http_client()
     try:
         # Wrap close() in a task so we can cancel it.
         close_task = asyncio.create_task(client.close())

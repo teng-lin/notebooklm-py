@@ -518,7 +518,7 @@ async def test_cookie_header_for_filters_by_domain():
 
 
 async def test_env_seam_selects_curl_cffi_factory(monkeypatch):
-    from notebooklm._runtime.init import _resolve_async_client_factory
+    from notebooklm._web.transport.init import _resolve_async_client_factory
 
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
     factory = _resolve_async_client_factory(None)

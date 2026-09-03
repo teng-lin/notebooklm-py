@@ -301,10 +301,10 @@ async def test_old_url_workflow_is_rejected_before_epoch_two_kernel_or_auth_acce
 
     await client.close(drain=False)
     await client.__aenter__()
-    kernel_access = MagicMock(wraps=client._collaborators.kernel.assert_epoch)
-    auth_access = AsyncMock(wraps=client._collaborators.auth_coord.snapshot)
-    client._collaborators.kernel.assert_epoch = kernel_access  # type: ignore[method-assign]
-    client._collaborators.auth_coord.snapshot = auth_access  # type: ignore[method-assign]
+    kernel_access = MagicMock(wraps=client._web_runtime.kernel.assert_epoch)
+    auth_access = AsyncMock(wraps=client._web_runtime.auth_coord.snapshot)
+    client._web_runtime.kernel.assert_epoch = kernel_access  # type: ignore[method-assign]
+    client._web_runtime.auth_coord.snapshot = auth_access  # type: ignore[method-assign]
     continue_baseline.set()
 
     try:

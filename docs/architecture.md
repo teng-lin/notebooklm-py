@@ -160,7 +160,7 @@ On the default Web backend, public methods (`client.notebooks.list()`, `client.s
 
 Production wires `RpcExecutor` directly into each feature as its
 `RpcCaller` per ADR-0014 Rule 1; `NotebookLMClient.rpc_call` dispatches
-through the same `RpcExecutor` stored as `NotebookLMClient._rpc_executor`
+through the same `RpcExecutor` stored in `NotebookLMClient._web_runtime`
 for the public raw-RPC escape hatch.
 
 `NotebookLMClient.rpc_call(method, params)` is the public raw-RPC escape hatch.
@@ -509,9 +509,8 @@ the executor on direct collaborator dependencies.
                            runtime callables           artifacts/chat/...
         |
         v
-  _collaborators: RuntimeCollaborators
-  metrics | drain_tracker | call_supervisor | reqid | auth_coord | kernel
-  | cookie_persistence | web_transport | root lifecycle
+  _collaborators: SharedRuntime
+  metrics | call_supervisor | root lifecycle
         |
         v
   ClientLifecycle orchestrates immutable transport/loop-participant tuples
@@ -520,14 +519,14 @@ the executor on direct collaborator dependencies.
       `-- when Android is selected: AndroidSession, Android asset/upload/
           Phenotype transports, and Android loop participants
 
-        +--------------------------+
-        | _composed: ClientComposed|
-        +--------------------------+
-        | transport: RuntimeTransport
-        | executor: RpcExecutor
-        | chain_host: MiddlewareChainHost
-        | chain_builder + middlewares
-        +--------------------------+
+        +----------------------------------+
+        | _web_runtime: WebRuntime | None  |
+        +----------------------------------+
+        | reqid | auth_coord | kernel      |
+        | cookie persistence | lifecycle   |
+        | executor | source uploader       |
+        | composed: ClientComposed         |
+        +----------------------------------+
              |
              v
   RpcExecutor.rpc_call → CallSupervisor → RuntimeTransport.perform_authed_post
@@ -540,13 +539,15 @@ the executor on direct collaborator dependencies.
 
 | Collaborator | Module | Responsibility |
 |--------------|--------|----------------|
-| `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface and composition root. Owns `_auth`, `_seams`, `_composed`, `_collaborators`, `_rpc_executor`, backend preference/reporting, and the eleven feature API attributes (`notebooks`, `sources`, `artifacts`, `chat`, `notes`, `mind_maps`, `research`, `settings`, `sharing`, `labels`, `collections`). `__aenter__`, `close`, `drain`, `is_connected`, `metrics_snapshot`, and `rpc_call` route directly to the owning collaborator. Keep non-trivial additions in focused assembly/runtime/feature seams rather than accreting the composition root; the module-size ratchet in `tests/_guardrails/test_module_size_ratchet.py` is the enforceable ceiling, not a line count copied into this document. |
+| `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface and composition root. Owns `_auth`, `_seams`, the neutral `_collaborators`, optional `_web_runtime`, backend preference/reporting, and the eleven feature API attributes (`notebooks`, `sources`, `artifacts`, `chat`, `notes`, `mind_maps`, `research`, `settings`, `sharing`, `labels`, `collections`). `__aenter__`, `close`, `drain`, `is_connected`, `metrics_snapshot`, and `rpc_call` route directly to the owning bundle. Keep non-trivial additions in focused assembly/runtime/feature seams rather than accreting the composition root; the module-size ratchet in `tests/_guardrails/test_module_size_ratchet.py` is the enforceable ceiling, not a line count copied into this document. |
 | `ClientSeams` | [`_web/transport/seams.py`](../src/notebooklm/_web/transport/seams.py) | Mutable holder for runtime callables that closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
-| `ClientComposed` | [`_client_composed.py`](../src/notebooklm/_client_composed.py) | Write-once holder for the Web/raw-RPC composition (`transport`, `executor`, `chain_host`, `chain_builder`, and `middlewares`) plus the shared `runtime_collaborators`. RPC admission/semaphore policy lives on `CallSupervisor`. Pre-binding access raises a clear `RuntimeError`; the holder deliberately does not expose a broad `.collaborators` alias. |
+| `SharedRuntime` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Backend-neutral bundle containing metrics, the shared call supervisor, and the root lifecycle after assembly. `RuntimeCollaborators` remains a private compatibility alias. |
+| `WebRuntime` | [`_web/transport/init.py`](../src/notebooklm/_web/transport/init.py) | Web-only bundle containing request IDs, auth coordination, Kernel, cookie persistence, web lifecycle, composition holder, executor, and upload pipeline. |
+| `ClientComposed` | [`_web/transport/composed.py`](../src/notebooklm/_web/transport/composed.py) | Write-once holder for the Web/raw-RPC composition (`transport`, `executor`, `chain_host`, `chain_builder`, and `middlewares`) plus the shared `runtime_collaborators`. RPC admission/semaphore policy lives on `CallSupervisor`. Pre-binding access raises a clear `RuntimeError`; the holder deliberately does not expose a broad `.collaborators` alias. |
 | `CallSupervisor` | [`_runtime/call_supervisor.py`](../src/notebooklm/_runtime/call_supervisor.py) | Protocol-neutral `Drain -> Metrics -> Semaphore` policy, generation-bearing call/operation leases, cancellation-safe retained settlement, race-free admitted child spawning, and lifecycle admission transitions. |
 | `RpcExecutor` | [`_web/transport/executor.py`](../src/notebooklm/_web/transport/executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `RuntimeTransport`, `AuthRefreshCoordinator`, `ClientMetrics`, and `CallSupervisor` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
 | `RuntimeTransport` | [`_web/transport/runtime.py`](../src/notebooklm/_web/transport/runtime.py) | Authed POST collaborator. Holds an admission-only `CallSupervisor` operation lease before loop checking, auth snapshot, and request materialization; after preparation it enters the supervisor's terminal `Drain -> Metrics -> Semaphore` call scope and dispatches the four-middleware web chain. Owns `refresh_request_for_current_auth()` and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `_web.transport.chat.chat_aware_authed_post`; the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-0014 Rule 4. |
-| `MiddlewareChainHost` | [`_web/transport/middleware/chain_host.py`](../src/notebooklm/_web/transport/middleware/chain_host.py) | Owns the wired middleware chain (`_authed_post_chain`), the chain leaf (`_authed_post_chain_terminal`), the three retry-budget tunables (`_rate_limit_max_retries`, `_server_error_max_retries`, `_refresh_retry_delay`), and the dynamic `await_refresh` delegate that the auth-refresh middleware captures. The chain's provider lambdas and the transport's `chain_provider` closure read the host's attributes live, so post-construction mutation (e.g. tests setting `client._composed.chain_host._rate_limit_max_retries = 0`) still steers the live chain. |
+| `MiddlewareChainHost` | [`_web/transport/middleware/chain_host.py`](../src/notebooklm/_web/transport/middleware/chain_host.py) | Owns the wired middleware chain (`_authed_post_chain`), the chain leaf (`_authed_post_chain_terminal`), the three retry-budget tunables (`_rate_limit_max_retries`, `_server_error_max_retries`, `_refresh_retry_delay`), and the dynamic `await_refresh` delegate that the auth-refresh middleware captures. The chain's provider lambdas and the transport's `chain_provider` closure read the host's attributes live, so post-construction mutation (e.g. tests setting `client._web_runtime.composed.chain_host._rate_limit_max_retries = 0`) still steers the live chain. |
 | `AuthRefreshCoordinator` | [`_web/transport/auth.py`](../src/notebooklm/_web/transport/auth.py) | Owns the auth-snapshot lock and refresh task. Canonical implementation for `AuthRefreshCoordinator.snapshot(auth=...)`, `update_auth_tokens(auth=..., csrf=..., session_id=...)`, and `update_auth_headers(auth=..., kernel=...)`; callers pass explicit collaborators rather than a host object. |
 | `ClientLifecycle` | [`_runtime/lifecycle.py`](../src/notebooklm/_runtime/lifecycle.py) | Protocol-neutral root lifecycle. Owns resource state, generation allocation, transactional/coalesced open and close waves, pre-hook timeout validation, loop binding, phased transport ordering, rollback, and deterministic teardown failure precedence. It owns no HTTP client, auth state, keepalive task, cookie persistence, or RPC semaphore. |
 | `WebTransportLifecycle` | [`_web/transport/lifecycle.py`](../src/notebooklm/_web/transport/lifecycle.py) | Web resource participant installed in the root lifecycle. Activates/fences the Kernel and auth coordinator for one epoch, owns the web keepalive task and cookie-save routing, opens/closes the Kernel, and mirrors accepted cookie state into the client-owned `AuthTokens`. |
@@ -560,8 +561,9 @@ the executor on direct collaborator dependencies.
 | `_web/transport/request_types.py` | [`_web/transport/request_types.py`](../src/notebooklm/_web/transport/request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
 | `_web/transport/errors.py` | [`_web/transport/errors.py`](../src/notebooklm/_web/transport/errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
 | `_web/transport/streaming_post.py` | [`_web/transport/streaming_post.py`](../src/notebooklm/_web/transport/streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |
-| `Kernel` | [`_web/transport/kernel.py`](../src/notebooklm/_web/transport/kernel.py) | Pure web transport core. Owns the epoch-fenced `httpx.AsyncClient` and cookie jar; exposes `post()`, cookie accessors, and `aclose()`. `WebTransportLifecycle`, not the root lifecycle, opens and closes it. Concrete class behind the `Kernel` Protocol in `_web/contracts.py`; constructed by `build_collaborators(...)` and called from the middleware leaf via `RuntimeTransport.terminal → Kernel.post`. |
-| `_runtime/init` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Construction-time helpers for `NotebookLMClient`: validation, collaborator construction (including the shared `CallSupervisor`), web transport/chain wiring, and composition binding. |
+| `Kernel` | [`_web/transport/kernel.py`](../src/notebooklm/_web/transport/kernel.py) | Pure web transport core. Owns the epoch-fenced `httpx.AsyncClient` and cookie jar; exposes `post()`, cookie accessors, and `aclose()`. `WebTransportLifecycle`, not the root lifecycle, opens and closes it. Concrete class behind the `Kernel` Protocol in `_web/contracts.py`; constructed by the web runtime initializer and called from the middleware leaf via `RuntimeTransport.terminal → Kernel.post`. |
+| `_runtime/init` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Transport-neutral constructor validation and shared metrics/supervisor construction. This module imports no backend implementation. |
+| `_web/transport/init` | [`_web/transport/init.py`](../src/notebooklm/_web/transport/init.py) | Web transport, persistence, middleware, executor, and uploader composition; returns the complete `WebRuntime`. |
 | `_loop_affinity` | [`_loop_affinity.py`](../src/notebooklm/_loop_affinity.py) | Tiny free-function `assert_bound_loop(bound_loop)` shared by the protocol-neutral helpers that directly capture a loop reference at `open()` time (`TransportDrainTracker`, `ReqidCounter`, `AuthRefreshCoordinator`, `CallSupervisor`, `ChatAPI`). `ArtifactPollingService` delegates loop checks through its shared `CallSupervisor`. Enforces ADR-0004 without coupling those helpers to the public client. |
 
 ### Shipped runtime invariants
@@ -930,7 +932,7 @@ Concretely, the client-owned runtime retains:
    `close`, `drain`, and `is_connected` call the root `ClientLifecycle`.
 
 `NotebookLMClient.rpc_call(method, params)` dispatches directly through
-`self._rpc_executor.rpc_call(...)` — the `RpcExecutor` captured during
+`self._require_web_runtime().executor.rpc_call(...)` — the `RpcExecutor` captured during
 the shared `_client_assembly.py::_assemble_client(...)` construction path
 from `compose_client_internals(...)`. This method remains the Web batchexecute
 escape hatch even when the typed namespace graph is Android-selected.
@@ -1051,7 +1053,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
 | `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
-| `_client_composed.py` | Client-owned composition holder for transport, executor, chain host, middleware metadata, and runtime collaborator bundle. |
+| `_web/transport/composed.py` | Web composition holder for transport, executor, chain host, middleware metadata, and the shared runtime bundle. |
 | `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
 | `_android/` | Android backend package. Its package marker and selected adapter imports are dependency-free; generated protobuf modules remain lazy. Explicit Android preference installs Android adapters for all eleven public namespaces. The installed namespace graph has no Web operation collaborators; native gRPC/Scotty/asset paths and local composition cover the public contract. |
 | `_android/auth.py` | Generation-fenced `BearerProvider`: off-loop typed profile reads, shared mint waves, bounded expiry caching, compare-and-clear invalidation, and secret-safe teardown. |
@@ -1135,7 +1137,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/proto/notebooklm/internal/android/wire/v1/source_content_pb2.py` | Repository-local `LoadSource` response overlay admitting the live exact `TailwindDoc #4` branch without a Google-package import cycle. |
 | `_android/proto/notebooklm/internal/android/wire/v1/source_content_pb2_grpc.py` | Deterministic service-free companion for the local source-content wire overlay. |
 | `_android/proto_src/` | Minimal compile-ready cumulative Android `.proto` closure. The evidence ledger is `docs/android/proto-evidence-ledger.md`; flattened `docs/android/schema.proto` is never a compile input. |
-| `_runtime/init.py` | Constructor helpers that validate client runtime kwargs, build collaborators (returning a `RuntimeCollaborators` bundle), wire middleware, and bind `ClientComposed`. |
+| `_runtime/init.py` | Backend-neutral constructor validation and `SharedRuntime` construction. |
+| `_web/transport/init.py` | Web runtime construction, middleware wiring, and `WebRuntime` assembly. |
 | `_web/transport/kernel.py` | Concrete `Kernel` transport core (owns `httpx.AsyncClient` + cookie jar) |
 | `_runtime/config.py` | `DEFAULT_*` knobs and module-level constants. `CORE_LOGGER_NAME = "notebooklm._core"` is intentionally preserved as a compatibility logging contract even though the `_core` module was deleted; renaming it silently breaks downstream `caplog`/logger filters. |
 | `_runtime/call_supervisor.py` | `CallSupervisor`, `CallLease`, and `OperationLease` — shared logical-call policy and generation-isolated admission. |
@@ -1315,7 +1318,6 @@ src/notebooklm/
 ├── _backoff.py                  # Shared retry backoff calculation
 ├── _callbacks.py                # Sync/async callback invocation helper
 ├── _client_assembly.py          # Shared client-assembly seam (constructor + test factory)
-├── _client_composed.py          # Client-owned composition holder
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth-storage specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers
@@ -1503,9 +1505,11 @@ src/notebooklm/
 │       ├── auth.py              # AuthRefreshCoordinator
 │       ├── auth_refresh_retry.py # One-release compatibility re-export
 │       ├── chat.py              # Chat-specific error mapping
+│       ├── composed.py          # ClientComposed web composition holder
 │       ├── cookie_persistence.py # Cookie-jar persistence + __Secure-1PSIDTS rotation
 │       ├── error_injection.py   # Synthetic-error env-var resolver + startup guard
 │       ├── errors.py            # Transport exceptions and raw POST error mapping
+│       ├── init.py              # WebRuntime construction + middleware wiring
 │       ├── executor.py          # Batchexecute RPC dispatcher
 │       ├── kernel.py            # Concrete Kernel transport core
 │       ├── lifecycle.py         # Web resource open/prepare-close/close phases

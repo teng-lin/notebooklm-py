@@ -1,27 +1,14 @@
-"""Construction-time helpers for the NotebookLM client composition root.
+"""Transport-neutral construction helpers for the client runtime.
 
-Splits the client-runtime constructor into three concerns:
-:func:`validate_constructor_args` (kwarg validation + normalization),
-:func:`build_collaborators` (the runtime collaborators in dependency order),
-and :func:`wire_middleware_chain` (the four-middleware ADR-0009 web chain).
-Dependency-ordering and seam-resolution comments live inside the helpers so
-future readers see *why* the order matters.
-
-Builds on the constructor-DI work in #1027 (``36dcc634`` —
-"refactor(session): constructor DI for late-bound test seams; drop
-http_client.setter"), which eliminated the late-binding wrappers and
-the ``Kernel.http_client.setter`` and made ``decode_response`` /
-``sleep`` / ``is_auth_error`` / ``async_client_factory`` the canonical
-injection seams.
-
-``None``-default resolution for ``sleep`` is owned by
-:mod:`notebooklm._web.transport.seams`; ``async_client_factory`` resolves directly to
-``httpx.AsyncClient`` here.
+This module validates constructor arguments and builds only the collaborators
+shared by every backend.  Web transport composition lives in
+:mod:`notebooklm._web.transport.init`; keeping that boundary explicit lets an
+Android-only client avoid importing or allocating the web stack once assembly
+becomes backend-conditional.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,37 +16,10 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from .._auth.profile_store import ProfileStore
-from .._client_composed import ClientComposed
 from .._client_metrics import ClientMetrics
 from .._transport_drain import TransportDrainTracker
-from .._web.transport.auth import AuthRefreshCoordinator
-from .._web.transport.cookie_persistence import CookiePersistence
-from .._web.transport.error_injection import _refuse_synthetic_error_outside_test_context
-from .._web.transport.executor import RpcExecutor
-from .._web.transport.kernel import Kernel
-from .._web.transport.lifecycle import (
-    CookieRotator,
-    CookieSaver,
-    WebTransportLifecycle,
-    _default_cookie_rotator,
-)
-from .._web.transport.middleware.chain import MiddlewareChainBuilder
-from .._web.transport.middleware.chain_host import MiddlewareChainHost
-from .._web.transport.middleware.core import Middleware, NextCall, build_chain
-from .._web.transport.reqid_counter import ReqidCounter
-from .._web.transport.runtime import RuntimeTransport
-from .._web.transport.seams import ClientSeams, resolve_client_seams
-from ..auth import AuthTokens
 from .call_supervisor import CallSupervisor
-from .config import (
-    DEFAULT_CONNECT_TIMEOUT,
-    DEFAULT_KEEPALIVE_MIN_INTERVAL,
-    DEFAULT_MAX_CONCURRENT_RPCS,
-    DEFAULT_MAX_CONCURRENT_UPLOADS,
-    DEFAULT_TIMEOUT,
-    normalize_max_concurrent_uploads,
-)
+from .config import normalize_max_concurrent_uploads
 from .helpers import _resolve_keepalive_interval
 from .lifecycle import ClientLifecycle
 
@@ -69,10 +29,6 @@ if TYPE_CHECKING:
     # defensive guard against the historical ``types.py`` -> runtime
     # construction cycle (see the inline comment in the function body).
     from ..types import ConnectionLimits, RpcTelemetryEvent
-
-# Preserve the historical logger namespace while avoiding a raw deleted-module
-# string that the no-session lint guard should reject elsewhere.
-SESSION_LOGGER = logging.getLogger("notebooklm" + "." + "_session")
 
 
 @dataclass(frozen=True)
@@ -104,9 +60,8 @@ class ValidatedSessionConfig:
 
 
 @dataclass(frozen=True)
-class RuntimeCollaborators:
-    """Constructed-collaborator bundle produced by
-    :func:`build_collaborators`.
+class SharedRuntime:
+    """Backend-neutral collaborators produced by :func:`build_collaborators`.
 
     The construction order inside ``build_collaborators`` is dependency-driven
     (see the inline comments there for the rationale); this container exists
@@ -116,11 +71,6 @@ class RuntimeCollaborators:
 
     metrics: ClientMetrics
     call_supervisor: CallSupervisor
-    reqid: ReqidCounter
-    auth_coord: AuthRefreshCoordinator
-    kernel: Kernel
-    cookie_persistence: CookiePersistence
-    web_transport: WebTransportLifecycle
     _lifecycle: ClientLifecycle | None
 
     @property
@@ -131,34 +81,9 @@ class RuntimeCollaborators:
         return self._lifecycle
 
 
-@dataclass(frozen=True)
-class WiredMiddleware:
-    """Wired middleware chain produced by :func:`wire_middleware_chain`."""
-
-    chain_builder: MiddlewareChainBuilder
-    middlewares: list[Middleware]
-    authed_post_chain: NextCall
-
-
-@dataclass(frozen=True)
-class ClientInternals:
-    """Result of :func:`compose_client_internals`."""
-
-    collaborators: RuntimeCollaborators
-    executor: RpcExecutor
-
-
-def _resolve_async_client_factory(
-    async_client_factory: Callable[..., httpx.AsyncClient] | None,
-) -> Callable[..., httpx.AsyncClient]:
-    """Resolve the construction-only async-client seam."""
-    if async_client_factory is not None:
-        return async_client_factory
-    # PoC opt-in: browser TLS/JA3 impersonation transport (curl_cffi), shared
-    # across every authenticated-Google client.
-    from .._curl_cffi_transport import resolve_transport_factory
-
-    return resolve_transport_factory()
+# One-release compatibility name for private importers.  The concrete type is
+# intentionally the neutral bundle; web-only collaborators live on WebRuntime.
+RuntimeCollaborators = SharedRuntime
 
 
 def validate_constructor_args(
@@ -266,25 +191,16 @@ def validate_constructor_args(
 def build_collaborators(
     config: ValidatedSessionConfig,
     *,
-    auth: AuthTokens,
-    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None,
     on_rpc_event: Callable[[RpcTelemetryEvent], object] | None,
-    cookie_saver: CookieSaver | None,
-    cookie_rotator: CookieRotator | None,
-) -> RuntimeCollaborators:
+) -> SharedRuntime:
     """Construct the extracted runtime collaborators in dependency order.
 
     The order is dependency-driven so the load-bearing inter-collaborator
     wiring stays obvious to future readers: metrics is built first because
     it absorbs the optional ``on_rpc_event`` callback AND because the
-    lock-wait metric callback captured by ``ReqidCounter`` is its bound
-    method (so ``metrics`` MUST exist before ``ReqidCounter`` is
-    constructed — otherwise the counter would close over an attribute
-    that has not yet been set); the drain tracker /
-    reqid counter / auth coordinator follow because they are leaf
-    collaborators with no inter-helper dependencies; ``Kernel`` is
-    built next because ``WebTransportLifecycle`` and the request paths
-    hold it; ``CookiePersistence`` closes out the bundle.
+    callback. The drain tracker and call supervisor follow; web request ids,
+    auth coordination, kernels, and cookie persistence are constructed by the
+    web composition module.
     """
     # Observability counters + telemetry callback. ``metrics_snapshot``
     # remains the lock-safe read path; helper-level tests that need
@@ -300,322 +216,17 @@ def build_collaborators(
         drain_tracker=drain_tracker,
         max_concurrent_rpcs=config.max_concurrent_rpcs,
     )
-    # Request ID counter for chat API (must be unique per request).
-    # The :class:`ReqidCounter` helper owns the monotonic ``_value`` and
-    # the lazily-allocated ``asyncio.Lock`` that serialises mutation.
-    # Access ``self._reqid.value`` / ``self._reqid._lock`` directly.
-    # The ``on_lock_wait`` hook keeps the cumulative
-    # ``lock_wait_seconds_*`` metrics ticking inside ``metrics`` — we
-    # pass the bound method of the metrics object we just built so the
-    # counter cannot capture an unbound seam (which is what would happen
-    # if we forwarded a broad host-level thin wrapper before
-    # ``self._metrics_obj`` was assigned in the outer ``__init__``).
-    reqid = ReqidCounter(on_lock_wait=metrics.record_lock_wait)
-    # Auth refresh coordination — single-flight refresh task, snapshot
-    # serialization, and cookie-jar sync. The coordinator owns
-    # ``_refresh_lock``, ``_refresh_task``, ``_refresh_callback``, and
-    # ``_auth_snapshot_lock``. Tests and internal callers that need
-    # implementation state read the coordinator directly. The live auth
-    # snapshot lock is reachable via
-    # :meth:`AuthRefreshCoordinator.get_auth_snapshot_lock` (the
-    # legacy ``_get_auth_snapshot_lock`` thin wrapper was inlined in
-    # PR #4b — callers now address the coordinator directly
-    # through ``self._auth_coord``).
-    # The auth snapshot lock is intentionally distinct from
-    # ``_refresh_lock`` — mixing them would re-introduce the
-    # reentrancy ambiguity that snapshot-side serialization was added
-    # to avoid. The attribute name ``_auth_coord`` is part of the
-    # inter-helper contract; do not rename.
-    # Supply ``metrics`` so ``await_refresh`` records lock-wait latency
-    # without needing a host parameter. The remaining coordinator methods
-    # (``snapshot``, ``update_auth_tokens``, ``update_auth_headers``) take
-    # their explicit ``auth`` / ``kernel`` collaborators per call.
-    auth_coord = AuthRefreshCoordinator(
-        refresh_callback=refresh_callback,
-        metrics=metrics,
-    )
-    # Seed the kernel-owned jar at composition time. This is the bootstrap
-    # hand-off defined by ADR-0032: after this call, post-open and closed-state
-    # first-party readers use ``kernel.cookies`` and never AuthTokens' public
-    # compatibility shadows.
-    kernel = Kernel(auth=auth, async_client_factory=config.async_client_factory)
-    # Owns the in-process save lock and typed per-profile baselines. Preserve
-    # only the load-time snapshot, not the AuthTokens capability: re-reading a
-    # newer file at open would make the older live jar overwrite a sibling
-    # writer's intervening cookie update during the eventual three-way merge.
-    cookie_persistence = CookiePersistence._from_store(
-        ProfileStore(auth.storage_path) if auth.storage_path is not None else None,
-        initial_snapshot=auth.cookie_snapshot,
-    )
-    web_transport = WebTransportLifecycle(
-        auth=auth,
-        auth_coord=auth_coord,
-        cookie_persistence=cookie_persistence,
-        kernel=kernel,
-        timeout=config.timeout,
-        connect_timeout=config.connect_timeout,
-        limits=config.limits,
-        keepalive_interval=config.keepalive_interval,
-        keepalive_storage_path=config.keepalive_storage_path,
-        cookie_persistence_path=config.keepalive_storage_path,
-        cookie_saver=cookie_saver,
-        cookie_rotator=cookie_rotator or _default_cookie_rotator,
-    )
-
-    return RuntimeCollaborators(
+    return SharedRuntime(
         metrics=metrics,
         call_supervisor=call_supervisor,
-        reqid=reqid,
-        auth_coord=auth_coord,
-        kernel=kernel,
-        cookie_persistence=cookie_persistence,
-        web_transport=web_transport,
         _lifecycle=None,
     )
 
 
-def build_runtime_transport(
-    collaborators: RuntimeCollaborators,
-    *,
-    auth: AuthTokens,
-    chain_host: MiddlewareChainHost,
-    logger: logging.Logger,
-) -> RuntimeTransport:
-    """Construct the :class:`RuntimeTransport` collaborator.
-
-    Built **after** :func:`build_collaborators` and **before**
-    :func:`wire_middleware_chain`, because the wired chain is built
-    around ``transport.terminal``. The transport reaches the chain
-    through a live-binding ``chain_provider`` closure that reads
-    ``chain_host._authed_post_chain`` on every authed POST; that
-    attribute is assigned by :func:`compose_client_internals`
-    immediately after :func:`wire_middleware_chain` returns. Using a
-    provider closure (rather than a frozen reference) lets tests reassign
-    ``core._composed.chain_host._authed_post_chain = fake_chain`` to
-    install a fake chain and expect the next call to honor it.
-
-    The ``snapshot_provider`` closure passes the client-owned
-    :class:`AuthTokens` collaborator directly to
-    :meth:`AuthRefreshCoordinator.snapshot`; the coordinator routes
-    its lock-wait metric through ``self._metrics`` (supplied at
-    construction). The ``bound_loop_check`` callback delegates to the
-    protocol-neutral ``CallSupervisor``, which owns the request-admission
-    loop binding without making the web transport depend on the root
-    lifecycle orchestrator.
-
-    The ``chain_host`` parameter lets the chain-slot lookup go through
-    the host directly, with no extra indirection on the hot
-    path.
-
-    The ``logger`` is forwarded as-is so transport-error log lines keep
-    appearing under the historical session logger namespace rather than
-    acquiring a new transport logger namespace that callers' log filters
-    / ``caplog`` selectors would not yet recognise.
-    """
-    return RuntimeTransport(
-        kernel=collaborators.kernel,
-        snapshot_provider=lambda expected_epoch: collaborators.auth_coord.snapshot(
-            auth=auth,
-            expected_epoch=expected_epoch,
-        ),
-        chain_provider=lambda: chain_host._authed_post_chain,
-        call_supervisor=collaborators.call_supervisor,
-        bound_loop_check=collaborators.call_supervisor.assert_bound_loop,
-        logger=logger,
-    )
-
-
-def wire_middleware_chain(
-    collaborators: RuntimeCollaborators,
-    *,
-    chain_host: MiddlewareChainHost,
-    auth: AuthTokens,
-    authed_post_chain_terminal: Callable[..., Awaitable[Any]],
-    is_auth_error: Callable[[Exception], bool],
-    timeout: float,
-) -> WiredMiddleware:
-    """Construct the :class:`MiddlewareChainBuilder`, build the four-middleware
-    list, and wire the final chain via :func:`build_chain`.
-
-    Two narrow host parameters:
-
-    * ``chain_host`` — the :class:`MiddlewareChainHost` owns the three
-      retry-budget tunables (``_rate_limit_max_retries`` /
-      ``_server_error_max_retries`` / ``_refresh_retry_delay``) plus the
-      dynamic-delegate refresh entry point (:meth:`await_refresh`). The
-      tunable provider lambdas and the ``refresh_callable`` reference
-      capture this host directly.
-    * ``auth`` — the live :class:`AuthTokens` collaborator passed
-      explicitly to :meth:`AuthRefreshCoordinator.snapshot` on every
-      call. The provider lambda captures this object by reference; the
-      capture is safe because production never reassigns the
-      client-owned ``AuthTokens`` object after construction (the only
-      mutation path is in-place scalar updates via
-      :meth:`AuthRefreshCoordinator.update_auth_tokens`, which mutate
-      the captured instance directly). This replaced the previous
-      ``auth_snapshot_host: _AuthRefreshHost`` host-shaped parameter
-      when the ``_AuthRefreshHost`` Protocol was deleted in favor of
-      per-method explicit collaborators; the coordinator routes its
-      lock-wait metric through its own ``self._metrics`` (supplied at
-      construction), so it no longer needs a host-shaped collaborator
-      for the metric either.
-
-    Post-construction mutation on ``chain_host._<attr>`` still takes
-    effect through the middleware live-binding contract documented in
-    :class:`MiddlewareChainBuilder`. ``is_auth_error`` is passed as a
-    live-binding callable so rebinding ``ClientSeams.is_auth_error`` after
-    construction still steers the chain.
-    """
-    # ADR-0009 chain construction. PR history, leaf exception shape,
-    # and ``RpcRequest.context`` contract live in
-    # ``_web/transport/middleware/chain.py`` module docstring.
-    chain_builder = MiddlewareChainBuilder(
-        metrics=collaborators.metrics,
-        rate_limit_max_retries_provider=lambda: chain_host._rate_limit_max_retries,
-        server_error_max_retries_provider=lambda: chain_host._server_error_max_retries,
-        retry_timeout_provider=lambda: timeout,
-        refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
-        refresh_callable=chain_host.await_refresh,
-        auth_snapshot_provider=lambda expected_epoch: collaborators.auth_coord.snapshot(
-            auth=auth,
-            expected_epoch=expected_epoch,
-        ),
-        is_auth_error=is_auth_error,
-        refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
-    )
-    middlewares: list[Middleware] = chain_builder.build()
-    authed_post_chain: NextCall = build_chain(
-        middlewares,
-        authed_post_chain_terminal,
-    )
-    return WiredMiddleware(
-        chain_builder=chain_builder,
-        middlewares=middlewares,
-        authed_post_chain=authed_post_chain,
-    )
-
-
-def compose_client_internals(
-    *,
-    auth: AuthTokens,
-    timeout: float = DEFAULT_TIMEOUT,
-    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
-    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None = None,
-    refresh_retry_delay: float = 0.2,
-    keepalive: float | None = None,
-    keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
-    keepalive_storage_path: Path | None = None,
-    rate_limit_max_retries: int = 3,
-    server_error_max_retries: int = 3,
-    limits: ConnectionLimits | None = None,
-    max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
-    max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
-    on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-    cookie_saver: CookieSaver | None = None,
-    cookie_rotator: CookieRotator | None = None,
-    decode_response: Callable[..., Any] | None = None,
-    sleep: Callable[[float], Awaitable[Any]] | None = None,
-    is_auth_error: Callable[[Exception], bool] | None = None,
-    async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
-    seams: ClientSeams | None = None,
-    composed: ClientComposed | None = None,
-) -> ClientInternals:
-    """Single entry point that owns the client composition sequence."""
-    # MUST stay first — preserves the earliest-opportunity refusal that
-    # ``test_synthetic_error_transport_guard`` pins.
-    _refuse_synthetic_error_outside_test_context()
-
-    seams = seams or resolve_client_seams(
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-        decode_response=decode_response,
-    )
-    if composed is None:
-        composed = ClientComposed()
-    async_client_factory = _resolve_async_client_factory(async_client_factory)
-
-    config = validate_constructor_args(
-        timeout=timeout,
-        connect_timeout=connect_timeout,
-        refresh_retry_delay=refresh_retry_delay,
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
-        keepalive=keepalive,
-        keepalive_min_interval=keepalive_min_interval,
-        keepalive_storage_path=keepalive_storage_path,
-        auth_storage_path=auth.storage_path,
-        limits=limits,
-        max_concurrent_uploads=max_concurrent_uploads,
-        max_concurrent_rpcs=max_concurrent_rpcs,
-        decode_response=seams.decode_response,
-        sleep=seams.sleep,
-        is_auth_error=seams.is_auth_error,
-        async_client_factory=async_client_factory,
-    )
-    collaborators = build_collaborators(
-        config,
-        auth=auth,
-        refresh_callback=refresh_callback,
-        on_rpc_event=on_rpc_event,
-        cookie_saver=cookie_saver,
-        cookie_rotator=cookie_rotator,
-    )
-    chain_host = MiddlewareChainHost(
-        _auth_refresh=collaborators.auth_coord,
-        _rate_limit_max_retries=config.rate_limit_max_retries,
-        _server_error_max_retries=config.server_error_max_retries,
-        _refresh_retry_delay=config.refresh_retry_delay,
-    )
-    composed.bind_chain_host(chain_host)
-
-    transport = build_runtime_transport(
-        collaborators,
-        auth=auth,
-        chain_host=chain_host,
-        logger=SESSION_LOGGER,
-    )
-    composed.bind_transport(transport)
-    chain_host._bind_transport(transport)
-
-    wired = wire_middleware_chain(
-        collaborators,
-        chain_host=chain_host,
-        auth=auth,
-        authed_post_chain_terminal=chain_host._authed_post_chain_terminal,
-        is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
-        timeout=config.timeout,
-    )
-    chain_host._authed_post_chain = wired.authed_post_chain
-    composed.bind_chain_metadata(wired)
-
-    executor = RpcExecutor(
-        transport=transport,
-        auth_refresh=collaborators.auth_coord,
-        metrics=collaborators.metrics,
-        call_supervisor=collaborators.call_supervisor,
-        decode_response=lambda *a, **kw: seams.decode_response(*a, **kw),
-        is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
-        sleep=lambda *a, **kw: seams.sleep(*a, **kw),
-        timeout_provider=lambda: config.timeout,
-        refresh_callback_enabled_provider=lambda: collaborators.auth_coord.has_refresh_callback,
-        refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
-    )
-    composed.bind_executor(executor)
-
-    return ClientInternals(
-        collaborators=collaborators,
-        executor=executor,
-    )
-
-
 __all__ = [
-    "ClientInternals",
     "RuntimeCollaborators",
+    "SharedRuntime",
     "ValidatedSessionConfig",
-    "WiredMiddleware",
     "build_collaborators",
-    "build_runtime_transport",
-    "compose_client_internals",
     "validate_constructor_args",
-    "wire_middleware_chain",
 ]

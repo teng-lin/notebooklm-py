@@ -107,7 +107,7 @@ class RetryMiddleware:
     ``Sequence[Middleware]``.
 
     Constructor inputs (all wired by
-    :func:`notebooklm._runtime.init.wire_middleware_chain`, driven from
+    :func:`notebooklm._web.transport.init.wire_middleware_chain`, driven from
     ``NotebookLMClient.__init__``):
 
     - ``rate_limit_max_retries`` / ``server_error_max_retries``: the same

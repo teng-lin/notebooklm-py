@@ -27,7 +27,7 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        callback = client._collaborators.auth_coord._refresh_callback
+        callback = client._web_runtime.auth_coord._refresh_callback
         assert callback is not None
 
         observed_epochs: list[int] = []
@@ -39,7 +39,7 @@ class TestAutoRefreshIntegration:
         monkeypatch.setattr(client, "_refresh_web_auth_for_epoch", fake_refresh_auth)
 
         async with client:
-            expected_epoch = client._collaborators.auth_coord._active_epoch
+            expected_epoch = client._web_runtime.auth_coord._active_epoch
             assert expected_epoch is not None
             result = await callback(expected_epoch)
 
@@ -49,7 +49,7 @@ class TestAutoRefreshIntegration:
         # At construction time it is ``None`` so the client can be
         # instantiated outside a running loop; the helper allocates the
         # lock on demand inside the async refresh path.
-        assert client._collaborators.auth_coord._refresh_lock is None
+        assert client._web_runtime.auth_coord._refresh_lock is None
 
     @pytest.mark.asyncio
     async def test_full_refresh_flow_http_error(self):
@@ -62,27 +62,27 @@ class TestAutoRefreshIntegration:
 
         client = NotebookLMClient(auth)
         # Override retry delay for faster tests
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
         # Track refresh calls
         refresh_calls = []
 
         async def tracking_refresh(expected_epoch: int):
             refresh_calls.append(True)
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             # Simulate successful refresh
             client._auth.csrf_token = "new_csrf"
             # Wave 3 of plan ``host-protocol-removal`` deleted the
             # Session-level ``update_auth_headers`` forward; call the
             # canonical coordinator method directly with explicit kwargs.
-            client._collaborators.auth_coord.update_auth_headers(
+            client._web_runtime.auth_coord.update_auth_headers(
                 auth=client._auth,
-                kernel=client._collaborators.kernel,
+                kernel=client._web_runtime.kernel,
                 expected_epoch=expected_epoch,
             )
             return client._auth
 
-        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+        client._web_runtime.auth_coord._refresh_callback = tracking_refresh
 
         # Mock HTTP responses
         call_count = [0]
@@ -104,7 +104,7 @@ class TestAutoRefreshIntegration:
         client._seams.decode_response = lambda *a, **kw: [[["nb1"], ["Notebook 1"]]]
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
             await client.notebooks.list()
 
         assert len(refresh_calls) == 1, "Should have refreshed once"
@@ -120,25 +120,25 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
         refresh_calls = []
 
         async def tracking_refresh(expected_epoch: int):
             refresh_calls.append(True)
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             client._auth.csrf_token = "new_csrf"
             # Wave 3 of plan ``host-protocol-removal`` deleted the
             # Session-level ``update_auth_headers`` forward; call the
             # canonical coordinator method directly with explicit kwargs.
-            client._collaborators.auth_coord.update_auth_headers(
+            client._web_runtime.auth_coord.update_auth_headers(
                 auth=client._auth,
-                kernel=client._collaborators.kernel,
+                kernel=client._web_runtime.kernel,
                 expected_epoch=expected_epoch,
             )
             return client._auth
 
-        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+        client._web_runtime.auth_coord._refresh_callback = tracking_refresh
 
         # Mock HTTP to succeed, but decode_response to fail with auth error first
         async def mock_post(*args, **kwargs):
@@ -159,7 +159,7 @@ class TestAutoRefreshIntegration:
         client._seams.decode_response = mock_decode
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
             await client.notebooks.list()
 
         assert len(refresh_calls) == 1, "Should have refreshed once"
@@ -187,22 +187,22 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
         refresh_calls = []
 
         async def tracking_refresh(expected_epoch: int):
             refresh_calls.append(True)
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             client._auth.csrf_token = "new_csrf"
-            client._collaborators.auth_coord.update_auth_headers(
+            client._web_runtime.auth_coord.update_auth_headers(
                 auth=client._auth,
-                kernel=client._collaborators.kernel,
+                kernel=client._web_runtime.kernel,
                 expected_epoch=expected_epoch,
             )
             return client._auth
 
-        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+        client._web_runtime.auth_coord._refresh_callback = tracking_refresh
 
         call_count = [0]
 
@@ -229,7 +229,7 @@ class TestAutoRefreshIntegration:
         client._seams.decode_response = mock_decode
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
 
             # The decoded auth error surfaces — the shared budget was already
             # spent by the HTTP-status refresh, so the decoded layer does NOT
@@ -258,19 +258,19 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
         async def tracking_refresh(expected_epoch: int):
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             client._auth.csrf_token = "new_csrf"
-            client._collaborators.auth_coord.update_auth_headers(
+            client._web_runtime.auth_coord.update_auth_headers(
                 auth=client._auth,
-                kernel=client._collaborators.kernel,
+                kernel=client._web_runtime.kernel,
                 expected_epoch=expected_epoch,
             )
             return client._auth
 
-        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+        client._web_runtime.auth_coord._refresh_callback = tracking_refresh
 
         async def mock_post(*args, **kwargs):
             response = MagicMock()
@@ -289,7 +289,7 @@ class TestAutoRefreshIntegration:
         client._seams.decode_response = mock_decode
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
             await client.notebooks.list()
 
         assert client._collaborators.metrics.snapshot().rpc_auth_retries == 1
@@ -304,13 +304,13 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._composed.chain_host._refresh_retry_delay = 0.1  # 100ms delay
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0.1  # 100ms delay
 
         async def mock_refresh(expected_epoch: int):
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             return auth
 
-        client._collaborators.auth_coord._refresh_callback = mock_refresh
+        client._web_runtime.auth_coord._refresh_callback = mock_refresh
 
         call_count = [0]
 
@@ -329,7 +329,7 @@ class TestAutoRefreshIntegration:
         client._seams.decode_response = lambda *a, **kw: []
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
 
             start_time = asyncio.get_event_loop().time()
             await client.notebooks.list()
@@ -348,14 +348,14 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
         async def failing_refresh(expected_epoch: int):
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             # Simulates refresh_auth detecting redirect to login
             raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
 
-        client._collaborators.auth_coord._refresh_callback = failing_refresh
+        client._web_runtime.auth_coord._refresh_callback = failing_refresh
 
         async def mock_post(*args, **kwargs):
             request = httpx.Request("POST", args[0])
@@ -363,7 +363,7 @@ class TestAutoRefreshIntegration:
             raise httpx.HTTPStatusError("Unauthorized", request=request, response=response)
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
 
             # Should raise the original HTTP error with refresh failure as cause
             with pytest.raises(httpx.HTTPStatusError) as exc_info:
@@ -392,16 +392,16 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
         refresh_calls = []
 
         async def tracking_refresh(expected_epoch: int):
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             refresh_calls.append(True)
             return client._auth
 
-        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+        client._web_runtime.auth_coord._refresh_callback = tracking_refresh
 
         create_post_count = [0]
 
@@ -425,7 +425,7 @@ class TestAutoRefreshIntegration:
         client._seams.decode_response = lambda *a, **kw: []
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
 
             with pytest.raises(RPCError):
                 await client.notebooks.create("My Notebook")
@@ -450,16 +450,16 @@ class TestAutoRefreshIntegration:
         )
 
         client = NotebookLMClient(auth)
-        client._composed.chain_host._refresh_retry_delay = 0
+        client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
         refresh_calls = []
 
         async def tracking_refresh(expected_epoch: int):
-            client._collaborators.auth_coord.assert_epoch(expected_epoch)
+            client._web_runtime.auth_coord.assert_epoch(expected_epoch)
             refresh_calls.append(True)
             return client._auth
 
-        client._collaborators.auth_coord._refresh_callback = tracking_refresh
+        client._web_runtime.auth_coord._refresh_callback = tracking_refresh
 
         create_post_count = [0]
 
@@ -485,7 +485,7 @@ class TestAutoRefreshIntegration:
         client._seams.decode_response = mock_decode
 
         async with client:
-            install_post_as_stream(None, client._collaborators.kernel.get_http_client(), mock_post)
+            install_post_as_stream(None, client._web_runtime.kernel.get_http_client(), mock_post)
 
             with pytest.raises(RPCError):
                 await client.notebooks.create("My Notebook")

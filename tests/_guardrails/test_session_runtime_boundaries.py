@@ -72,7 +72,7 @@ all slip past a regex but not past an :mod:`ast` walk.
      coordinator-shaped — either a bare name in
      :data:`AUTH_COORD_RECEIVER_NAMES` (``auth_coord``) OR an attribute
      chain whose terminal segment contains ``coord``/``coordinator``
-     (``self._auth_coord.update_*``, ``client._collaborators.auth_coordinator.update_*``).
+     (``self._auth_coord.update_*``, ``client._web_runtime.auth_coordinator.update_*``).
      The live caller invokes ``auth_coord.update_auth_*(...)`` on the
      explicit kwarg; calling either method on ``core``, ``session``,
      ``host``, ``self``, or the deleted client-side session attribute restores the
@@ -291,7 +291,7 @@ def _is_coordinator_receiver(receiver: ast.expr) -> bool:
     2. :class:`ast.Attribute` whose terminal ``attr`` contains
        ``coord`` or ``coordinator`` — covers both the private slot
        (``self._auth_coord``) and any future fully-spelled accessor
-       (``self._collaborators.auth_coordinator``). The match is on the
+       (``self._web_runtime.auth_coordinator``). The match is on the
        terminal attribute name only, not the upstream chain, so the
        intent is clear: "the call lands on the coordinator collaborator".
 
@@ -534,7 +534,7 @@ def test_auth_session_module_has_no_host_protocol_residue() -> None:
     #      (the canonical live shape — ``auth_coord.update_auth_tokens(...)``
     #      in ``refresh_auth_session``).
     #   2. ``Attribute`` chain whose terminal ``attr`` is coordinator-shaped
-    #      (``self._auth_coord.update_*``, ``client._collaborators.auth_coord.update_*``).
+    #      (``self._auth_coord.update_*``, ``client._web_runtime.auth_coord.update_*``).
     #      "Coordinator-shaped" means the terminal segment contains
     #      either ``coord`` or ``coordinator`` — covering both the
     #      private slot name (``_auth_coord``) and a hypothetical
@@ -736,7 +736,7 @@ def test_imports_session_class_catches_both_shapes() -> None:
         # The terminal segment is the one immediately before the called method,
         # so ``self._auth_coord.update_*`` has terminal ``_auth_coord``.
         ("self._auth_coord.x", True),
-        ("self._collaborators.auth_coordinator.x", True),
+        ("self._web_runtime.auth_coordinator.x", True),
         # Attribute-chain receivers whose terminal segment is NOT coordinator-shaped.
         # Calls through the deleted session attribute were historically the host
         # shape; the previous version of this guard silently passed it.

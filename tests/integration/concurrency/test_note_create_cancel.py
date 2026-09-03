@@ -70,9 +70,9 @@ async def _open_client_with_transport(
     assert generation is not None
     epoch = client._collaborators.lifecycle._epoch
     assert generation.epoch == epoch
-    assert client._collaborators.web_transport._active_epoch == epoch
-    assert client._collaborators.kernel._active_epoch == epoch
-    assert client._collaborators.auth_coord._active_epoch == epoch
+    assert client._web_runtime.web_transport._active_epoch == epoch
+    assert client._web_runtime.kernel._active_epoch == epoch
+    assert client._web_runtime.auth_coord._active_epoch == epoch
     return client
 
 

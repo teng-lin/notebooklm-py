@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -160,7 +161,7 @@ def _executor(
 
 @pytest.mark.asyncio
 async def test_rpc_executor_attribute_is_dispatched_through(monkeypatch) -> None:
-    """``core._rpc_executor`` is the canonical RPC dispatch seam."""
+    """``core._web_runtime.executor`` is the canonical RPC dispatch seam."""
     core = build_client_shell_for_tests(_auth_tokens())
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
 
@@ -171,14 +172,16 @@ async def test_rpc_executor_attribute_is_dispatched_through(monkeypatch) -> None
 
     executor = FakeExecutor()
     # Stage B1 PR 2 deleted ``Session._get_rpc_executor`` (the lazy
-    # factory) — the executor now lives directly on ``core._rpc_executor``
+    # factory) — the executor now lives directly on ``core._web_runtime.executor``
     # post-composition. Override the attribute so every caller that
-    # dispatches through ``core._rpc_executor.rpc_call(...)`` sees the
+    # dispatches through ``core._web_runtime.executor.rpc_call(...)`` sees the
     # fake.
-    monkeypatch.setattr(core, "_rpc_executor", executor)
+    monkeypatch.setattr(
+        core, "_web_runtime", dataclasses.replace(core._web_runtime, executor=executor)
+    )
 
     assert (
-        await core._rpc_executor.rpc_call(
+        await core._web_runtime.executor.rpc_call(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/",
@@ -267,7 +270,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         return {"decoded": rpc_id}
 
     core = build_client_shell_for_tests(_auth_tokens(), decode_response=fake_decode)
-    executor = core._rpc_executor
+    executor = core._web_runtime.executor
 
     async def fake_perform_authed_post(
         *,
@@ -289,7 +292,9 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
     # ``self._transport.perform_authed_post(...)`` directly instead of
     # routing through the retired ``Session._perform_authed_post`` forward. Patch the
     # collaborator the executor actually reaches.
-    monkeypatch.setattr(core._composed.transport, "perform_authed_post", fake_perform_authed_post)
+    monkeypatch.setattr(
+        core._web_runtime.composed.transport, "perform_authed_post", fake_perform_authed_post
+    )
 
     result = await executor._execute_once(
         RPCMethod.LIST_NOTEBOOKS,
@@ -299,7 +304,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         False,
     )
 
-    assert core._rpc_executor is executor
+    assert core._web_runtime.executor is executor
     assert result == {"decoded": RPCMethod.LIST_NOTEBOOKS.value}
     assert decode_calls == [
         {
@@ -873,7 +878,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         refresh_retry_delay=0.5,
         sleep=fake_sleep,
     )
-    executor = core._rpc_executor
+    executor = core._web_runtime.executor
     refresh_calls = 0
 
     async def fake_await_refresh(expected_epoch: int) -> None:
@@ -914,7 +919,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
 
     # ADR-0014 Rule 5 (Wave 4): executor calls ``self._auth_refresh.await_refresh()``
     # directly. Patch the collaborator the executor actually reaches.
-    monkeypatch.setattr(core._collaborators.auth_coord, "await_refresh", fake_await_refresh)
+    monkeypatch.setattr(core._web_runtime.auth_coord, "await_refresh", fake_await_refresh)
     monkeypatch.setattr(executor, "rpc_call", fake_rpc_call)
 
     from notebooklm._web.transport.auth_refresh_retry import RefreshBudget
@@ -932,7 +937,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         _resource_epoch=1,
     )
 
-    assert core._rpc_executor is executor
+    assert core._web_runtime.executor is executor
     assert result == {"ok": True}
     assert refresh_calls == 1
     assert sleep_calls == [0.5]

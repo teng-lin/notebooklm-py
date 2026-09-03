@@ -8,7 +8,7 @@ when two concurrent ``ChatAPI.ask`` calls happen on the same client.
 
 The ``NotebookLMClient.next_reqid`` compatibility forward was deleted in Wave 11c
 of session-decoupling; tests now reach the canonical counter directly via
-``core._collaborators.reqid.next_reqid(...)``.
+``core._web_runtime.reqid.next_reqid(...)``.
 """
 
 import asyncio
@@ -34,10 +34,10 @@ async def test_next_reqid_concurrent_unique_and_monotonic() -> None:
     """100 concurrent ``next_reqid()`` calls produce 100 distinct values."""
     core = _make_core()
     step = 100000
-    baseline = core._collaborators.reqid.value  # 100000
+    baseline = core._web_runtime.reqid.value  # 100000
 
     results = await asyncio.gather(
-        *[core._collaborators.reqid.next_reqid(step=step) for _ in range(100)]
+        *[core._web_runtime.reqid.next_reqid(step=step) for _ in range(100)]
     )
 
     # Uniqueness: no two callers got the same value.
@@ -55,7 +55,7 @@ async def test_next_reqid_concurrent_unique_and_monotonic() -> None:
     )
 
     # The counter ends exactly where the largest call landed.
-    assert core._collaborators.reqid.value == expected[-1]
+    assert core._web_runtime.reqid.value == expected[-1]
 
 
 @pytest.mark.asyncio
@@ -63,10 +63,10 @@ async def test_next_reqid_concurrent_custom_step() -> None:
     """The custom-``step`` path is also race-free under contention."""
     core = _make_core()
     step = 7  # small step exercises the increment math under heavy contention
-    baseline = core._collaborators.reqid.value
+    baseline = core._web_runtime.reqid.value
 
     results = await asyncio.gather(
-        *[core._collaborators.reqid.next_reqid(step=step) for _ in range(50)]
+        *[core._web_runtime.reqid.next_reqid(step=step) for _ in range(50)]
     )
 
     assert len(set(results)) == 50

@@ -117,7 +117,7 @@ async def test_stale_csrf_triggers_refresh_and_retry(
 
     client = await _build_client_for_test()
     # Eliminate the post-refresh retry delay so the test runs fast.
-    client._composed.chain_host._refresh_retry_delay = 0
+    client._web_runtime.composed.chain_host._refresh_retry_delay = 0
 
     # Track whether refresh_auth ran. We wrap the bound method so the
     # mutation is observable from outside the test. Using ``list[object]``
@@ -127,12 +127,12 @@ async def test_stale_csrf_triggers_refresh_and_retry(
 
     async def tracking_refresh(expected_epoch: int) -> AuthTokens:
         refresh_calls.append(None)
-        client._collaborators.auth_coord.assert_epoch(expected_epoch)
+        client._web_runtime.auth_coord.assert_epoch(expected_epoch)
         return await original_refresh(expected_epoch=expected_epoch)
 
     # The refresh callback is reached through the auth coordinator; patch it on
     # the coordinator so the wrapper is what the retry loop sees.
-    client._collaborators.auth_coord._refresh_callback = tracking_refresh
+    client._web_runtime.auth_coord._refresh_callback = tracking_refresh
 
     with notebooklm_vcr.use_cassette(CASSETTE_NAME) as cassette:
         async with client:
@@ -145,9 +145,9 @@ async def test_stale_csrf_triggers_refresh_and_retry(
             # the Session-level ``update_auth_headers`` forward; call the
             # canonical coordinator method directly with explicit kwargs.
             client._auth.csrf_token = "INVALID_CSRF_FOR_TEST"
-            client._collaborators.auth_coord.update_auth_headers(
+            client._web_runtime.auth_coord.update_auth_headers(
                 auth=client._auth,
-                kernel=client._collaborators.kernel,
+                kernel=client._web_runtime.kernel,
             )
 
             # This call's first attempt MUST 400; the rpc_call layer

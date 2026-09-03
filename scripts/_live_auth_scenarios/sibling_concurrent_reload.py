@@ -79,7 +79,7 @@ async def scenario() -> ScenarioResult:
             "sibling re-mint did not replace profile state",
         )
         (profile_dir / "master_token.json").unlink()
-        live = client._collaborators.kernel.get_http_client().cookies
+        live = client._require_web_runtime().kernel.get_http_client().cookies
         live.clear()
         recovered = await asyncio.gather(*(client.notebooks.list() for _ in range(4)))
         counts = [len(items) for items in recovered]

@@ -408,9 +408,9 @@ class TestChatRefreshRetry:
                     content=_make_answer_response_body(),
                 )
 
-            assert core._collaborators.kernel.http_client is not None
+            assert core._web_runtime.kernel.http_client is not None
             install_post_as_stream(
-                monkeypatch, core._collaborators.kernel.get_http_client(), fake_post
+                monkeypatch, core._web_runtime.kernel.get_http_client(), fake_post
             )
 
             # Wave 8 of session-decoupling (ADR-0014 Rule 2 Corollary):
@@ -422,9 +422,9 @@ class TestChatRefreshRetry:
             # (``Session.session_transport`` / ``Session.collaborators``);
             # read the private slots directly instead.
             api = WebChatAPI(
-                rpc=core._rpc_executor,
-                transport=core._composed.transport,
-                reqid=core._collaborators.reqid,
+                rpc=core._web_runtime.executor,
+                transport=core._web_runtime.composed.transport,
+                reqid=core._web_runtime.reqid,
                 loop_guard=core._collaborators.lifecycle,
                 notebooks=SimpleNamespace(get_source_ids=AsyncMock(return_value=[])),
             )

@@ -1,9 +1,9 @@
 """Tests for client-owned composition primitives.
 
-Covers the client-owned composition helpers in :mod:`notebooklm._runtime.init`:
+Covers the client-owned composition helpers in :mod:`notebooklm._web.transport.init`:
 
-- :class:`notebooklm._runtime.init.ClientInternals` dataclass
-- :func:`notebooklm._runtime.init.compose_client_internals`
+- :class:`notebooklm._web.transport.init.ClientInternals` dataclass
+- :func:`notebooklm._web.transport.init.compose_client_internals`
 - ``ClientComposed.bind_*`` write-once setters
 - ``ClientComposed`` required-property guards
 
@@ -21,13 +21,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import fields
 from typing import Any
 
 import pytest
 
-from notebooklm._client_composed import ClientComposed
-from notebooklm._runtime.init import (
+from notebooklm._runtime.init import RuntimeCollaborators, SharedRuntime
+from notebooklm._web.transport.composed import ClientComposed
+from notebooklm._web.transport.init import (
     ClientInternals,
+    WebRuntime,
     compose_client_internals,
 )
 from notebooklm._web.transport.seams import ClientSeams
@@ -55,17 +58,36 @@ def _make_auth() -> AuthTokens:
 # ---------------------------------------------------------------------------
 
 
+def test_runtime_bundles_follow_backend_ownership_boundary() -> None:
+    assert RuntimeCollaborators is SharedRuntime
+    assert tuple(field.name for field in fields(SharedRuntime)) == (
+        "metrics",
+        "call_supervisor",
+        "_lifecycle",
+    )
+    assert tuple(field.name for field in fields(WebRuntime)) == (
+        "reqid",
+        "auth_coord",
+        "kernel",
+        "cookie_persistence",
+        "web_transport",
+        "composed",
+        "executor",
+        "source_uploader",
+    )
+
+
 def test_compose_client_internals_returns_client_internals() -> None:
     """The helper returns collaborators + executor while binding ``ClientComposed``."""
     holder = ClientComposed()
     internals = compose_client_internals(auth=_make_auth(), composed=holder)
 
     assert isinstance(internals, ClientInternals)
-    assert holder.executor is internals.executor
+    assert holder.executor is internals.web_runtime.executor
     with pytest.raises(RuntimeError, match="_runtime_collaborators is None"):
         _ = holder.runtime_collaborators
     assert internals.collaborators._lifecycle is None
-    assert holder.transport is internals.executor._transport
+    assert holder.transport is internals.web_runtime.executor._transport
     assert holder.chain_host._transport is holder.transport
     assert holder.chain_builder is not None
     assert len(holder.middlewares) == 4
@@ -76,10 +98,10 @@ def test_shell_helpers_carry_client_holders() -> None:
     client = build_client_shell_for_tests(auth=_make_auth(), max_concurrent_rpcs=3)
 
     assert isinstance(client._seams, ClientSeams)
-    assert isinstance(client._composed, ClientComposed)
+    assert isinstance(client._web_runtime.composed, ClientComposed)
     assert client._collaborators.call_supervisor._max_concurrent_rpcs == 3
-    assert client._composed.runtime_collaborators is client._collaborators
-    assert client._composed.executor is client._rpc_executor
+    assert client._web_runtime.composed.runtime_collaborators is client._collaborators
+    assert client._web_runtime.composed.executor is client._web_runtime.executor
 
 
 def test_notebooklm_client_initializes_client_holders() -> None:
@@ -87,11 +109,12 @@ def test_notebooklm_client_initializes_client_holders() -> None:
     client = NotebookLMClient(_make_auth(), max_concurrent_rpcs=2)
 
     assert isinstance(client._seams, ClientSeams)
-    assert isinstance(client._composed, ClientComposed)
-    assert client._composed.runtime_collaborators is client._collaborators
+    assert isinstance(client._web_runtime.composed, ClientComposed)
+    assert client._web_runtime.composed.runtime_collaborators is client._collaborators
     assert client._collaborators.call_supervisor._max_concurrent_rpcs == 2
-    assert client._composed.executor is client._rpc_executor
-    assert client._composed.transport is client._rpc_executor._transport
+    assert client._web_runtime.composed.executor is client._web_runtime.executor
+    assert client._web_runtime.composed.transport is client._web_runtime.executor._transport
+    assert not {"_composed", "_rpc_executor", "_source_uploader"} & vars(client).keys()
 
 
 def test_invalid_max_concurrent_rpcs_rejected_before_zero_cap_semaphore() -> None:
@@ -185,7 +208,9 @@ def test_compose_client_internals_preserves_late_binding_for_decode_response() -
 
     # The executor closure should dispatch through the live attribute,
     # not the value frozen at construction time.
-    result = internals.executor._decode_response("payload", "method-id", allow_null=False)
+    result = internals.web_runtime.executor._decode_response(
+        "payload", "method-id", allow_null=False
+    )
     assert result == "rebound-result"
     assert sentinel and sentinel[-1][0] == "decoded"
 
@@ -209,8 +234,8 @@ def test_compose_client_internals_preserves_late_binding_for_is_auth_error() -> 
 
     seams.is_auth_error = rebound
 
-    assert internals.executor._is_auth_error(KeyError("auth")) is True
-    assert internals.executor._is_auth_error(RuntimeError("nope")) is False
+    assert internals.web_runtime.executor._is_auth_error(KeyError("auth")) is True
+    assert internals.web_runtime.executor._is_auth_error(RuntimeError("nope")) is False
 
 
 def test_compose_client_internals_preserves_late_binding_for_sleep() -> None:
@@ -232,7 +257,7 @@ def test_compose_client_internals_preserves_late_binding_for_sleep() -> None:
 
     seams.sleep = rebound
 
-    asyncio.run(internals.executor._sleep(0.25))
+    asyncio.run(internals.web_runtime.executor._sleep(0.25))
     assert calls == [0.25]
 
 
@@ -242,7 +267,7 @@ def test_compose_client_internals_preserves_late_binding_for_refresh_retry_delay
     call.
 
     The integration-test contract is that
-    ``client._composed.chain_host._refresh_retry_delay = 0`` continues
+    ``client._web_runtime.composed.chain_host._refresh_retry_delay = 0`` continues
     to steer the live chain after construction. The lambda
     ``refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay``
     re-reads the attribute on every invocation, so this is a live binding,
@@ -255,17 +280,17 @@ def test_compose_client_internals_preserves_late_binding_for_refresh_retry_delay
     # The provider lambda must dereference the *current* attribute on
     # each call — not the value captured at construction time.
     initial = chain_host._refresh_retry_delay
-    assert internals.executor._refresh_retry_delay_provider() == initial
+    assert internals.web_runtime.executor._refresh_retry_delay_provider() == initial
 
     chain_host._refresh_retry_delay = 0.99
-    assert internals.executor._refresh_retry_delay_provider() == 0.99
+    assert internals.web_runtime.executor._refresh_retry_delay_provider() == 0.99
 
 
 def test_compose_client_internals_executor_timeout_provider_reads_config() -> None:
     """The executor captures validated timeout without depending on root lifecycle."""
     internals = compose_client_internals(auth=_make_auth(), timeout=99.0)
 
-    assert internals.executor._timeout_provider() == 99.0
+    assert internals.web_runtime.executor._timeout_provider() == 99.0
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +320,7 @@ def test_client_composed_chain_metadata_binder_raises_on_double_bind() -> None:
 
     # Build a sentinel ``WiredMiddleware`` carrying the existing values so
     # the rejection comes from the write-once guard, not a missing field.
-    from notebooklm._runtime.init import WiredMiddleware
+    from notebooklm._web.transport.init import WiredMiddleware
 
     wired = WiredMiddleware(
         chain_builder=holder.chain_builder,
@@ -352,11 +377,13 @@ def test_client_composed_properties_raise_before_binding(attr_name: str, message
 def test_client_shell_reads_composition_from_client_composed() -> None:
     client = build_client_shell_for_tests(_make_auth())
 
-    assert client._rpc_executor is client._composed.executor
-    assert client._rpc_executor._transport is client._composed.transport
-    assert client._composed.chain_host._transport is client._composed.transport
+    assert client._web_runtime.executor is client._web_runtime.composed.executor
+    assert client._web_runtime.executor._transport is client._web_runtime.composed.transport
+    assert (
+        client._web_runtime.composed.chain_host._transport is client._web_runtime.composed.transport
+    )
     assert not hasattr(client._collaborators, "drain_tracker")
     assert not hasattr(client._collaborators.call_supervisor, "drain_tracker")
     assert not hasattr(client._collaborators.call_supervisor, "max_concurrent_rpcs")
     assert not hasattr(client._collaborators.call_supervisor, "drain")
-    assert client._composed.middlewares[0]._metrics is client._collaborators.metrics
+    assert client._web_runtime.composed.middlewares[0]._metrics is client._collaborators.metrics

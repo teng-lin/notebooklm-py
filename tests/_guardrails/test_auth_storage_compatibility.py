@@ -1110,9 +1110,9 @@ EXPECTED_DIRECT_CALLERS = {
     "AuthTokens": [
         "src/notebooklm/__init__.py",
         "src/notebooklm/_client_assembly.py",
-        "src/notebooklm/_runtime/init.py",
         "src/notebooklm/_web/transport/auth.py",
         "src/notebooklm/_web/transport/cookie_persistence.py",
+        "src/notebooklm/_web/transport/init.py",
         "src/notebooklm/_web/transport/kernel.py",
         "src/notebooklm/_web/transport/lifecycle.py",
         "src/notebooklm/cli/auth_runtime.py",

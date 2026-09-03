@@ -81,9 +81,11 @@ def _assert_open_generation(core: NotebookLMClient) -> int:
     epoch = lifecycle._epoch
     assert epoch > 0
     assert generation.epoch == epoch
-    assert collaborators.web_transport._active_epoch == epoch
-    assert collaborators.kernel._active_epoch == epoch
-    assert collaborators.auth_coord._active_epoch == epoch
+    web = core._web_runtime
+    assert web is not None
+    assert web.web_transport._active_epoch == epoch
+    assert web.kernel._active_epoch == epoch
+    assert web.auth_coord._active_epoch == epoch
     return epoch
 
 
@@ -145,7 +147,7 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         # guaranteed to time out.
         async def cancelled_waiter():
             await asyncio.wait_for(
-                core._composed.chain_host.await_refresh(expected_epoch),
+                core._web_runtime.composed.chain_host.await_refresh(expected_epoch),
                 timeout=0.01,
             )
 
@@ -153,7 +155,7 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         # that should observe a successful shared refresh regardless of
         # what happens to caller #1.
         async def surviving_waiter():
-            return await core._composed.chain_host.await_refresh(expected_epoch)
+            return await core._web_runtime.composed.chain_host.await_refresh(expected_epoch)
 
         task1 = asyncio.create_task(cancelled_waiter())
         task2 = asyncio.create_task(surviving_waiter())
@@ -176,16 +178,16 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         # The shared task must still be alive — caller #1's cancellation
         # should not have cancelled it. This is the load-bearing
         # invariant the shield protects.
-        assert core._collaborators.auth_coord._refresh_task is not None, (
+        assert core._web_runtime.auth_coord._refresh_task is not None, (
             "shared refresh task vanished"
         )
-        shared_task = core._collaborators.auth_coord._refresh_task
+        shared_task = core._web_runtime.auth_coord._refresh_task
         assert not shared_task.done(), (
             "Shared refresh task completed/cancelled before release — "
             "Shield regression: waiter cancellation propagated into the "
             "shared task."
         )
-        assert core._collaborators.auth_coord._refresh_task_epoch == expected_epoch
+        assert core._web_runtime.auth_coord._refresh_task_epoch == expected_epoch
         assert callback_epochs == [expected_epoch]
 
         # Release the gate. The shared task should complete successfully
@@ -199,7 +201,7 @@ async def test_waiter_cancellation_does_not_kill_shared_refresh():
         captured = shared_task.result()
         assert captured.error is None
         assert captured.value is refreshed_tokens
-        assert core._collaborators.auth_coord._refresh_task_epoch == expected_epoch
+        assert core._web_runtime.auth_coord._refresh_task_epoch == expected_epoch
         # The callback fired exactly once — confirms the surviving
         # waiter joined the shared task rather than spawning a new one
         # after caller #1's cancellation cleared the slot.
@@ -253,7 +255,7 @@ async def test_refresh_task_slot_not_cleared_on_waiter_cancellation():
 
         async def cancelled_waiter():
             await asyncio.wait_for(
-                core._composed.chain_host.await_refresh(expected_epoch),
+                core._web_runtime.composed.chain_host.await_refresh(expected_epoch),
                 timeout=0.01,
             )
 
@@ -261,16 +263,16 @@ async def test_refresh_task_slot_not_cleared_on_waiter_cancellation():
         await asyncio.wait_for(callback_entered.wait(), EVENT_TIMEOUT_S)
 
         # Snapshot the task identity before the cancellation lands.
-        in_flight = core._collaborators.auth_coord._refresh_task
+        in_flight = core._web_runtime.auth_coord._refresh_task
         assert in_flight is not None
-        assert core._collaborators.auth_coord._refresh_task_epoch == expected_epoch
+        assert core._web_runtime.auth_coord._refresh_task_epoch == expected_epoch
         assert callback_epochs == [expected_epoch]
 
         with pytest.raises((TimeoutError, asyncio.TimeoutError)):
             await task
 
         # Slot still points at the same task — not cleared, not replaced.
-        assert core._collaborators.auth_coord._refresh_task is in_flight, (
+        assert core._web_runtime.auth_coord._refresh_task is in_flight, (
             "Refresh slot mutated by waiter cancellation — invariant "
             "broken: the slot must persist until the task completes."
         )
@@ -284,5 +286,5 @@ async def test_refresh_task_slot_not_cleared_on_waiter_cancellation():
         captured = await asyncio.wait_for(in_flight, EVENT_TIMEOUT_S)
         assert captured.error is None
         assert captured.value is refreshed_tokens
-        assert core._collaborators.auth_coord._refresh_task_epoch == expected_epoch
+        assert core._web_runtime.auth_coord._refresh_task_epoch == expected_epoch
         assert callback_epochs == [expected_epoch]

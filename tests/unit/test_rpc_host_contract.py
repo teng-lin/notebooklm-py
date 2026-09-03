@@ -111,7 +111,7 @@ def _status_error(
 
 def _executor() -> Any:
     tokens = AuthTokens(cookies={"SID": "sid"}, csrf_token="CSRF", session_id="SID")
-    return build_client_shell_for_tests(tokens)._rpc_executor
+    return build_client_shell_for_tests(tokens)._web_runtime.executor
 
 
 @pytest.mark.parametrize(
@@ -199,10 +199,10 @@ async def test_retry_exhausted_429_names_the_host(monkeypatch) -> None:
             original=original,
         )
 
-    monkeypatch.setattr(core._composed.transport, "perform_authed_post", _rate_limited)
+    monkeypatch.setattr(core._web_runtime.composed.transport, "perform_authed_post", _rate_limited)
 
     with pytest.raises(RateLimitError) as raised:
-        await core._rpc_executor._execute_once(
+        await core._web_runtime.executor._execute_once(
             RPCMethod.LIST_NOTEBOOKS,
             [],
             "/notebook/abc",

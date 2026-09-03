@@ -100,8 +100,6 @@ ALLOWED_WEB_IMPORTERS = frozenset(
     {
         "notebooklm.client",
         "notebooklm._client_assembly",
-        "notebooklm._runtime.lifecycle",
-        "notebooklm._runtime.init",
         "notebooklm.rpc",
         "notebooklm.rpc.types",
         "notebooklm._artifact",

@@ -4,7 +4,7 @@ Identity resolution has three sources, the first two network-free: the in-memory
 :class:`AuthTokens`, the persisted profile metadata, and (opt-in) a single live
 ``WIZ_global_data`` probe of the active ``authuser`` page. The probe is exercised
 through pytest-httpx by installing a real ``httpx.AsyncClient`` on the kernel (the
-seam ``client._collaborators.kernel.get_http_client()`` reads) so mocked page GETs
+seam ``client._web_runtime.kernel.get_http_client()`` reads) so mocked page GETs
 are intercepted without opening a live session. The WIZ HTML shape mirrors
 ``tests/unit/test_auth_account.py``.
 """
@@ -59,14 +59,14 @@ def _install_probe_client(client: NotebookLMClient) -> httpx.AsyncClient:
     (a followed 302 lands on a 200 signin page), not just the ``status != 200`` guard.
     """
     http_client = httpx.AsyncClient(cookies=client.auth.cookie_jar, follow_redirects=True)
-    install_http_client_for_test(client._collaborators.kernel, http_client)
+    install_http_client_for_test(client._web_runtime.kernel, http_client)
     return http_client
 
 
 async def _open_probe_client(client: NotebookLMClient) -> httpx.AsyncClient:
     """Open through the root lifecycle, then install the pytest-httpx client."""
     await client.__aenter__()
-    kernel = client._collaborators.kernel
+    kernel = client._web_runtime.kernel
     original = kernel.get_http_client()
     await original.aclose()
     return _install_probe_client(client)
@@ -144,7 +144,7 @@ async def test_post_close_persisted_email_uses_retained_kernel_jar(
     write_account_metadata(storage, authuser=0, email="closed@example.com")
     client = NotebookLMClient(_make_auth(storage_path=storage))
     http_client = _install_probe_client(client)
-    await client._collaborators.kernel.aclose()
+    await client._web_runtime.kernel.aclose()
     assert http_client.is_closed
 
     divergent_shadow = httpx.Cookies()
@@ -237,7 +237,7 @@ async def test_old_live_probe_cannot_publish_after_forced_close_reopen(monkeypat
 
     await client.close(drain=False)
     await client.__aenter__()
-    new_http_client = client._collaborators.kernel.get_http_client()
+    new_http_client = client._web_runtime.kernel.get_http_client()
     release_probe.set()
     try:
         with pytest.raises(RuntimeError, match="resource generation is retired"):

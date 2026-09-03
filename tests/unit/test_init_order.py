@@ -63,7 +63,7 @@ def test_compose_client_internals_exposes_constructor_di_seams() -> None:
 
     Stage B1 PR 2 of the post-refactoring plan moved the composition
     root out of ``NotebookLMClient.__init__`` into
-    ``notebooklm._runtime.init.compose_client_internals``. The seams live
+    ``notebooklm._web.transport.init.compose_client_internals``. The seams live
     on the helper (and on the canonical test builder
     ``build_client_shell_for_tests``), NOT on ``NotebookLMClient.__init__``
     (which preserves the production surface).
@@ -77,7 +77,7 @@ def test_compose_client_internals_exposes_constructor_di_seams() -> None:
     """
     import inspect
 
-    from notebooklm._runtime.init import compose_client_internals
+    from notebooklm._web.transport.init import compose_client_internals
 
     sig = inspect.signature(compose_client_internals)
     for name in ("decode_response", "sleep", "is_auth_error", "async_client_factory"):
@@ -100,7 +100,7 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     The ``RpcExecutor`` resolves ``decode_response`` / ``is_auth_error`` /
     ``sleep`` through closures over ``ClientSeams`` etc., so that
     tests which rebind ``client._seams.decode_response = stub`` after
-    ``NotebookLMClient.__init__`` (which binds ``client._rpc_executor`` through
+    ``NotebookLMClient.__init__`` (which binds ``client._web_runtime.executor`` through
     ``compose_client_internals`` during assembly) still take effect. This test
     pins both halves: constructor-injected callables
     reach the executor, AND post-construction rebinds also take effect.
@@ -133,7 +133,7 @@ def test_session_wires_seam_attributes_for_executor_and_chain() -> None:
     assert core._seams.sleep is custom_sleep
     assert core._seams.is_auth_error is custom_is_auth_error
 
-    executor = core._rpc_executor
+    executor = core._web_runtime.executor
     # Constructor-injected callables propagate through the closure.
     assert executor._decode_response() == ["custom"]
     assert executor._is_auth_error(object()) is True

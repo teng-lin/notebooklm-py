@@ -190,7 +190,7 @@ class AuthRefreshCoordinator(LoopBoundPrimitive):
         loop only on the *contended* acquire path, so a stale lock cannot
         actually trip the cross-loop ``RuntimeError`` today. The discard brings
         the coordinator in line with its clear-on-rebind siblings
-        (:class:`~notebooklm._client_composed.ClientComposed`,
+        (:class:`~notebooklm._web.transport.composed.ClientComposed`,
         ``SourceUploadPipeline``, ``ChatAPI``) so any future ``await`` under
         one of these locks cannot activate the trap.
 

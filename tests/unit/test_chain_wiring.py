@@ -93,7 +93,7 @@ class FakeKernelPost:
 
 
 def _swap_kernel_post(core: NotebookLMClient, fake: FakeKernelPost) -> None:
-    core._collaborators.kernel.post = fake.post  # type: ignore[method-assign]
+    core._web_runtime.kernel.post = fake.post  # type: ignore[method-assign]
 
 
 def _activate_supervisor(core: NotebookLMClient) -> None:
@@ -103,8 +103,8 @@ def _activate_supervisor(core: NotebookLMClient) -> None:
     supervisor.reset_after_open()
     supervisor.prepare_generation(1)
     supervisor.start_accepting(1)
-    core._collaborators.kernel.activate_epoch(1)
-    core._collaborators.auth_coord.activate_epoch(1)
+    core._web_runtime.kernel.activate_epoch(1)
+    core._web_runtime.auth_coord.activate_epoch(1)
 
 
 @pytest.mark.asyncio
@@ -113,7 +113,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
 
     Covers direct callers of ``RuntimeTransport.perform_authed_post``: the chat
     path in :func:`notebooklm._web.transport.chat.chat_aware_authed_post` and any
-    first-party caller via ``client._composed.transport.perform_authed_post``.
+    first-party caller via ``client._web_runtime.composed.transport.perform_authed_post``.
     """
     expected_response = httpx.Response(status_code=200, content=b"chain-routed")
     fake = FakeKernelPost(response=expected_response)
@@ -124,7 +124,7 @@ async def test_chain_routes_perform_authed_post_to_transport() -> None:
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
         return ("https://fake/url", b"body", None)
 
-    response = await core._composed.transport.perform_authed_post(
+    response = await core._web_runtime.composed.transport.perform_authed_post(
         build_request=build_request,
         log_label="test-log-label",
         disable_internal_retries=False,
@@ -168,7 +168,7 @@ async def test_chain_routes_rpc_executor_path_to_transport() -> None:
     def build_request(snapshot: Any) -> tuple[str, bytes, dict[str, str] | None]:
         return ("https://fake/rpc", b"rpc-body", {"X-Goog-AuthUser": "0"})
 
-    response = await core._composed.transport.perform_authed_post(
+    response = await core._web_runtime.composed.transport.perform_authed_post(
         build_request=build_request,
         log_label="RPC LIST_NOTEBOOKS",
         disable_internal_retries=True,
@@ -209,7 +209,7 @@ async def test_chain_terminal_reads_context_keys() -> None:
         },
     )
 
-    result = await core._composed.chain_host._authed_post_chain_terminal(request)
+    result = await core._web_runtime.composed.chain_host._authed_post_chain_terminal(request)
 
     assert isinstance(result, RpcResponse)
     assert result.response is expected_response
@@ -248,7 +248,7 @@ async def test_chain_terminal_disable_internal_retries_defaults_false() -> None:
         },
     )
 
-    await core._composed.chain_host._authed_post_chain_terminal(request)
+    await core._web_runtime.composed.chain_host._authed_post_chain_terminal(request)
 
     assert fake.call_count == 1
     assert fake.calls[0]["url"] == "https://fake/no-retry-flag"
@@ -272,7 +272,7 @@ async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
         request = httpx.Request("POST", url, headers=dict(headers), content=body)
         raise httpx.RequestError("boom", request=request)
 
-    core._collaborators.kernel.post = raise_network_error  # type: ignore[method-assign]
+    core._web_runtime.kernel.post = raise_network_error  # type: ignore[method-assign]
     request = RpcRequest(
         url="https://fake/no-log-label",
         headers={},
@@ -281,7 +281,7 @@ async def test_chain_terminal_log_label_defaults_for_direct_calls() -> None:
     )
 
     with pytest.raises(TransportServerError, match="<unknown-chain-call> network error"):
-        await core._composed.chain_host._authed_post_chain_terminal(request)
+        await core._web_runtime.composed.chain_host._authed_post_chain_terminal(request)
 
 
 @pytest.mark.asyncio
@@ -299,11 +299,11 @@ async def test_chain_seeded_with_final_adr_009_ordering() -> None:
     from notebooklm._web.transport.middleware.tracing import TracingMiddleware
 
     core = _make_core()
-    assert len(core._composed.middlewares) == 4
-    assert isinstance(core._composed.middlewares[0], RetryMiddleware)
-    assert isinstance(core._composed.middlewares[1], AuthRefreshMiddleware)
-    assert isinstance(core._composed.middlewares[2], ErrorInjectionMiddleware)
-    assert isinstance(core._composed.middlewares[3], TracingMiddleware)
+    assert len(core._web_runtime.composed.middlewares) == 4
+    assert isinstance(core._web_runtime.composed.middlewares[0], RetryMiddleware)
+    assert isinstance(core._web_runtime.composed.middlewares[1], AuthRefreshMiddleware)
+    assert isinstance(core._web_runtime.composed.middlewares[2], ErrorInjectionMiddleware)
+    assert isinstance(core._web_runtime.composed.middlewares[3], TracingMiddleware)
 
 
 @pytest.mark.asyncio
@@ -315,7 +315,7 @@ async def test_chain_with_test_middleware_observes_request_and_response() -> Non
     saw both the inbound request and the outbound response. This is the wire-up
     smoke test for middleware composition.
 
-    Builds the chain locally (rather than mutating ``core._composed.middlewares``
+    Builds the chain locally (rather than mutating ``core._web_runtime.composed.middlewares``
     in-place) because production code does not yet support hot-swapping
     the chain — that's a PR 12.3 concern when ``TracingMiddleware`` lands.
     """
@@ -336,7 +336,9 @@ async def test_chain_with_test_middleware_observes_request_and_response() -> Non
     # terminal. This per-test composition validates the leaf's contract
     # against ``build_chain`` without mutating ``NotebookLMClient.__init__``'s
     # production chain.
-    chain: NextCall = build_chain([observer], core._composed.chain_host._authed_post_chain_terminal)
+    chain: NextCall = build_chain(
+        [observer], core._web_runtime.composed.chain_host._authed_post_chain_terminal
+    )
 
     request = RpcRequest(
         url="https://fake/observe",
@@ -376,7 +378,7 @@ async def test_chain_terminal_forwards_read_timeout_context() -> None:
         },
     )
 
-    result = await core._composed.chain_host._authed_post_chain_terminal(request)
+    result = await core._web_runtime.composed.chain_host._authed_post_chain_terminal(request)
 
     assert result.response is expected_response
     assert fake.calls[0].get("read_timeout") == 123.0
@@ -400,7 +402,7 @@ async def test_chain_terminal_forwards_max_response_bytes_context() -> None:
         },
     )
 
-    result = await core._composed.chain_host._authed_post_chain_terminal(request)
+    result = await core._web_runtime.composed.chain_host._authed_post_chain_terminal(request)
 
     assert result.response is expected_response
     assert fake.calls[0].get("max_response_bytes") == 123

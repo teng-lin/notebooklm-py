@@ -63,7 +63,7 @@ async def mid_session() -> tuple[tuple[str, ...], tuple[str, ...]]:
         async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as http:
             before = await http.get("/v1/notebooks", headers=HEADERS)
             require(before.status_code == 200, before.text[-1000:])
-            holder["client"]._collaborators.kernel.get_http_client().cookies.clear()
+            holder["client"]._require_web_runtime().kernel.get_http_client().cookies.clear()
             after = await http.get("/v1/notebooks", headers=HEADERS)
             require(after.status_code == 200, after.text[-1000:])
             return notebook_ids(before), notebook_ids(after)

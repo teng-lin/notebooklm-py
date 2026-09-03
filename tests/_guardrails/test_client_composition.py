@@ -10,7 +10,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLIENT_PATH = REPO_ROOT / "src" / "notebooklm" / "client.py"
 ASSEMBLY_PATH = REPO_ROOT / "src" / "notebooklm" / "_client_assembly.py"
-COMPOSED_PATH = REPO_ROOT / "src" / "notebooklm" / "_client_composed.py"
+COMPOSED_PATH = REPO_ROOT / "src" / "notebooklm" / "_web" / "transport" / "composed.py"
 
 # Both composition-root files: ``client.py`` (the thin ``__init__``
 # delegate) and ``_client_assembly.py`` (the shared assembly seam the

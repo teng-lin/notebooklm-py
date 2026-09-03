@@ -6,7 +6,7 @@ runtime closures may re-read after construction.
 
 **TEST-ONLY injection points.** The three ``ClientSeams`` callables
 (``decode_response`` / ``sleep`` / ``is_auth_error``) — along with the
-construction-only ``async_client_factory`` resolved in ``_runtime.init`` —
+construction-only ``async_client_factory`` resolved in ``_web.transport.init`` —
 are never varied in production: ``NotebookLMClient.__init__`` hardcodes
 all four to ``None`` (``resolve_client_seams(decode_response=None,
 sleep=None, is_auth_error=None)``), so they always resolve to the

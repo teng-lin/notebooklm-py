@@ -563,14 +563,17 @@ async def test_error_injection_middleware_present_when_env_var_set_in_session(mo
     core = build_client_shell_for_tests(auth)
     try:
         await core.__aenter__()
-        assert core._collaborators.kernel.http_client is not None
+        assert core._web_runtime.kernel.http_client is not None
         # The middleware reads the env var per call; env-var-to-mode
         # resolution is covered by the dedicated middleware tests in
         # ``test_error_injection_middleware.py``.
-        assert any(isinstance(mw, ErrorInjectionMiddleware) for mw in core._composed.middlewares)
+        assert any(
+            isinstance(mw, ErrorInjectionMiddleware)
+            for mw in core._web_runtime.composed.middlewares
+        )
     finally:
-        if core._collaborators.kernel.http_client is not None:
-            await core._collaborators.kernel.get_http_client().aclose()
+        if core._web_runtime.kernel.http_client is not None:
+            await core._web_runtime.kernel.get_http_client().aclose()
 
 
 # --- (5) marker plumbing in tests/conftest.py --------------------------------
