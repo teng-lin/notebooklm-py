@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import traceback
 from collections.abc import Awaitable
+from types import TracebackType
 from typing import Literal
 from unittest.mock import AsyncMock, MagicMock
 
@@ -81,6 +82,7 @@ async def test_unconfirmed_call_drops_capability_callback_before_exact_reraise(
     api = object()
     context = RuntimeError("lower transport context")
     error = NetworkError("response lost", method_id="test-write")
+    retained_inner_tracebacks: list[TracebackType] = []
 
     async def fail(
         capability_owner: object,
@@ -95,9 +97,14 @@ async def test_unconfirmed_call_drops_capability_callback_before_exact_reraise(
         assert capability_pipeline is pipeline
         assert capability_api is api
         try:
-            raise context
-        except RuntimeError:
-            raise error  # noqa: B904 - exercise implicit Web exception context
+            try:
+                raise context
+            except RuntimeError:
+                raise error  # noqa: B904 - exercise implicit Web exception context
+        finally:
+            captured = error.__traceback__
+            assert captured is not None
+            retained_inner_tracebacks.append(captured)
 
     def call() -> Awaitable[None]:
         return fail(owner, session, bearer, pipeline, api)
@@ -138,6 +145,17 @@ async def test_unconfirmed_call_drops_capability_callback_before_exact_reraise(
             assert all(all(candidate is not item for candidate in retained) for item in sensitive)
     assert "call_unconfirmed_on_transport_loss" in inspected
     assert ("fail" in traceback_names) is (chain == "exc")
+
+    assert len(retained_inner_tracebacks) == 1
+    retained_frames = [frame for frame, _line in traceback.walk_tb(retained_inner_tracebacks[0])]
+    assert [frame.f_code.co_name for frame in retained_frames] == ["fail"]
+    if chain is None:
+        assert all(frame.f_locals == {} for frame in retained_frames)
+    else:
+        retained_locals = tuple(
+            value for frame in retained_frames for value in frame.f_locals.values()
+        )
+        assert all(any(value is item for value in retained_locals) for item in sensitive[1:])
 
 
 def test_unresolved_commit_error_does_not_trust_upstream_message_prefix() -> None:
