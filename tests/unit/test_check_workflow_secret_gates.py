@@ -378,6 +378,80 @@ def test_quoted_template_binding_still_requires_strict_ci_gate(
     assert "canonical repository" in err
 
 
+@pytest.mark.parametrize(
+    ("flow_step", "continuation"),
+    [
+        (
+            '- env: {NOTEBOOKLM_MASTER_TOKEN_JSON: "${{ secrets[inputs.secret_name] }}"}',
+            "  run: python auth.py",
+        ),
+        (
+            '- {name: auth, "env": {NOTEBOOKLM_MASTER_TOKEN_JSON: "${{ secrets[inputs.secret_name] }}"}, run: python auth.py}',
+            "",
+        ),
+    ],
+)
+def test_ci_pool_rejects_flow_style_token_binding(
+    flow_step, continuation, tmp_path, monkeypatch, capsys, script
+):
+    _write_workflow(
+        tmp_path,
+        "bad_flow_env.yml",
+        """
+        name: bad-flow-env
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            steps:
+            FLOW_STEP
+            CONTINUATION
+        """.replace("FLOW_STEP", flow_step).replace("CONTINUATION", continuation),
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "block-style `env:` mapping" in err
+    assert "account-wide concurrency" in err
+
+
+def test_ci_pool_rejects_concurrency_from_unrelated_output(tmp_path, monkeypatch, capsys, script):
+    _write_workflow(
+        tmp_path,
+        "bad_concurrency_output.yml",
+        """
+        name: bad-concurrency-output
+        on: workflow_dispatch
+        jobs:
+          live:
+            if: >-
+              github.repository == 'teng-lin/notebooklm-py' &&
+              needs.resolve-target.outputs.is_standard == 'true'
+            runs-on: ubuntu-latest
+            environment: protected-readonly
+            concurrency:
+              group: notebooklm-account-${{ needs.unrelated.outputs.account_slot }}
+              queue: max
+              cancel-in-progress: false
+            steps:
+            - name: auth
+              env:
+                NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[needs.plan-account.outputs.master_token_secret_name] }}
+              run: python auth.py
+        """,
+    )
+
+    rc, _out, err = _run(script, tmp_path, monkeypatch, capsys)
+
+    assert rc == 1
+    assert "does not couple account concurrency to the selected token" in err
+
+
 def test_ci_pool_rejects_multiple_master_tokens_in_one_job(tmp_path, monkeypatch, capsys, script):
     _write_workflow(
         tmp_path,

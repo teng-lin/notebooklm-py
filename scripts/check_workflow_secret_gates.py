@@ -149,6 +149,7 @@ _STEP_IF_RE = re.compile(r"^      if:\s*(.*?)\s*(#.*)?$")
 _COMMENT_RE = re.compile(r"^\s*#")
 
 _ENV_SECRET_BINDING_RE = re.compile(r"^\s*(['\"]?)([A-Z][A-Z0-9_]*)\1:\s*.*\bsecrets(?:\.|\[)")
+_FLOW_STYLE_ENV_RE = re.compile(r"^\s*(?:-\s+)?(?:\{.*)?(?:env|['\"]env['\"])\s*:\s*\{")
 
 # A guard expression is considered "trusted" if it matches one of these
 # POSITIVE-EQUALITY patterns — substring matching is unsafe because
@@ -191,7 +192,7 @@ _POOLED_TOKEN_KEY_PATTERN = (
 _POOLED_TOKEN_BINDING_RE = re.compile(rf"^{_POOLED_TOKEN_KEY_PATTERN}:\s*.*$")
 _APPROVED_POOLED_TOKEN_BINDING_RE = re.compile(
     rf"^{_POOLED_TOKEN_KEY_PATTERN}:\s*\$\{{\{{\s*secrets\[\s*"
-    r"(?:matrix\.master_token_secret_name|"
+    r"(?P<selector>matrix\.master_token_secret_name|"
     r"needs\.plan-account\.outputs\.master_token_secret_name|"
     r"needs\.plan-live-lanes\.outputs\.(?:web|android)_secret_name)"
     r"\s*\]\s*\}\}\s*$"
@@ -202,6 +203,18 @@ _POOLED_SELECTOR_REF_RE = re.compile(
     r"needs\.plan-live-lanes\.outputs\.(?:web|android)_secret_name)\s*\]"
 )
 _MASTER_TOKEN_SECRET_NAMES = _FORBIDDEN_CI_SECRET_NAMES - {"NOTEBOOKLM_ACCOUNTS_JSON"}
+_ACCOUNT_EXPRESSION_BY_TOKEN_SELECTOR = {
+    "matrix.master_token_secret_name": "matrix.account_slot",
+    "needs.plan-account.outputs.master_token_secret_name": (
+        "needs.plan-account.outputs.account_slot"
+    ),
+    "needs.plan-live-lanes.outputs.web_secret_name": (
+        "needs.plan-live-lanes.outputs.web_account_slot"
+    ),
+    "needs.plan-live-lanes.outputs.android_secret_name": (
+        "needs.plan-live-lanes.outputs.android_account_slot"
+    ),
+}
 
 _TRUSTED_GUARD_PATTERNS = (
     # is_standard == 'true' / "true"  (quoting may be single or double)
@@ -223,6 +236,17 @@ _TRUSTED_GUARD_PATTERNS = (
 
 def _expression_is_trusted_guard(expr: str) -> bool:
     return any(p.search(expr) for p in _TRUSTED_GUARD_PATTERNS)
+
+
+def _flow_style_ci_bindings(line: str) -> set[str]:
+    """Return protected CI keys in an inline flow-style ``env`` mapping."""
+    if _FLOW_STYLE_ENV_RE.match(line) is None:
+        return set()
+    return {
+        binding
+        for binding in _CI_SECRET_BINDINGS
+        if re.search(rf"(?<![A-Z0-9_])['\"]?{binding}['\"]?\s*:", line)
+    }
 
 
 def _expression_is_ci_pool_guard(expr: str) -> bool:
@@ -301,6 +325,14 @@ def _job_level_concurrency(body: list[str]) -> dict[str, str] | None:
     if invalid or len(blocks) != 1:
         return None
     return blocks[0]
+
+
+def _concurrency_group_matches_selector(group: str, selector: str) -> bool:
+    account_expression = _ACCOUNT_EXPRESSION_BY_TOKEN_SELECTOR.get(selector)
+    if account_expression is None:
+        return False
+    expected = r"notebooklm-account-\${{\s*" + re.escape(account_expression) + r"\s*}}"
+    return re.fullmatch(expected, group) is not None
 
 
 def _environment_value_is_approved(value: str) -> bool:
@@ -587,6 +619,14 @@ def _scan_workflow(path: Path) -> list[str]:
         # quoted strings (vanishingly rare in workflow YAML).
         searchable = _strip_yaml_trailing_comment(line)
 
+        flow_bindings = _flow_style_ci_bindings(searchable)
+        for binding in sorted(flow_bindings):
+            ci_secret_hits.append((i, binding, current_step_index if in_step else -1))
+            violations.append(
+                f"{path}:{i}: {binding} must use a block-style `env:` mapping so its "
+                "secret gate can be audited."
+            )
+
         binding_match = _ENV_SECRET_BINDING_RE.match(searchable)
         if binding_match and binding_match.group(2) in _CI_SECRET_BINDINGS:
             binding = binding_match.group(2)
@@ -672,6 +712,7 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
         token_binding_lines: list[tuple[str, bool]] = []
         master_secret_lines: list[tuple[str, bool]] = []
         has_pooled_selector = False
+        has_flow_token_binding = False
         job_if = ""
         collecting_job_if = False
         in_step = False
@@ -693,6 +734,10 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
                 else:
                     job_if += " " + searchable.strip()
             is_token_binding = _POOLED_TOKEN_BINDING_RE.fullmatch(searchable) is not None
+            is_flow_token_binding = "NOTEBOOKLM_MASTER_TOKEN_JSON" in _flow_style_ci_bindings(
+                searchable
+            )
+            is_token_binding = is_token_binding or is_flow_token_binding
             has_selector_ref = _POOLED_SELECTOR_REF_RE.search(searchable) is not None
             has_direct_master_ref = any(
                 name in _MASTER_TOKEN_SECRET_NAMES
@@ -705,15 +750,18 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
             if is_token_binding or has_selector_ref or has_direct_master_ref:
                 master_secret_lines.append((searchable, in_step))
             has_pooled_selector = has_pooled_selector or has_selector_ref
+            has_flow_token_binding = has_flow_token_binding or is_flow_token_binding
         if not token_binding_lines and not has_pooled_selector:
             continue
         approved_bindings = [
-            line
+            match
             for line, _in_step in token_binding_lines
-            if _APPROVED_POOLED_TOKEN_BINDING_RE.fullmatch(line)
+            if (match := _APPROVED_POOLED_TOKEN_BINDING_RE.fullmatch(line)) is not None
         ]
         concurrency = _job_level_concurrency(body)
         prefix = f"{path}:{line_number}: pooled secret job '{job}'"
+        if has_flow_token_binding:
+            violations.append(f"{prefix} must use a block-style `env:` mapping")
         if len(master_secret_lines) != 1:
             violations.append(f"{prefix} must inject exactly one selected master-token secret")
         elif len(approved_bindings) != 1:
@@ -737,6 +785,10 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
         group = "" if concurrency is None else concurrency.get("group", "")
         if not _ACCOUNT_CONCURRENCY_GROUP_RE.fullmatch(group):
             violations.append(f"{prefix} lacks account-wide concurrency")
+        elif len(approved_bindings) == 1 and not _concurrency_group_matches_selector(
+            group, approved_bindings[0].group("selector")
+        ):
+            violations.append(f"{prefix} does not couple account concurrency to the selected token")
         if concurrency is None or concurrency.get("queue") != "max":
             violations.append(f"{prefix} lacks queue: max")
         if concurrency is None or concurrency.get("cancel-in-progress") != "false":

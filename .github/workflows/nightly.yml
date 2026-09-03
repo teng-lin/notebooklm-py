@@ -183,7 +183,8 @@ jobs:
     - name: Assert native optional dependencies import
       run: >-
         uv run python -c "import curl_cffi, rookie_cookies;
-        assert callable(rookie_cookies.load)"
+        assert callable(rookie_cookies.load);
+        assert callable(rookie_cookies.any_browser)"
     - name: Run compatibility tests without coverage
       run: >-
         uv run pytest -n auto --dist loadgroup

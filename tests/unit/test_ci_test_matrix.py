@@ -192,6 +192,8 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
 
     import_command = str(_step(job, "Assert native optional dependencies import")["run"])
     assert "import curl_cffi, rookie_cookies" in import_command
+    assert "callable(rookie_cookies.load)" in import_command
+    assert "callable(rookie_cookies.any_browser)" in import_command
 
     suite_command = str(_step(job, "Run compatibility tests without coverage")["run"])
     assert "-n auto" in suite_command
