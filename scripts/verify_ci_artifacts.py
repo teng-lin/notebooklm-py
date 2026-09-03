@@ -31,6 +31,7 @@ EXPECTED_FAMILIES = {
     "slide_deck",
     "data_table",
 }
+MEDIA_FAMILIES = {"audio", "video", "infographic", "slide_deck"}
 FAMILIES = EXPECTED_FAMILIES | {"study_guide"}
 EVENTS = {
     "started",
@@ -391,6 +392,18 @@ def _inventory_signature(artifacts: list[Any]) -> tuple[tuple[str, str, str], ..
     )
 
 
+def _snapshot_status(artifact: Any) -> str:
+    """Derive polling status from one public inventory snapshot."""
+    status = str(artifact.status_str)
+    if (
+        status == "completed"
+        and _family(artifact) in MEDIA_FAMILIES
+        and getattr(artifact, "url", None) is None
+    ):
+        return "in_progress"
+    return status
+
+
 async def _discover_quiet_inventory(
     client: Any,
     notebook_id: str,
@@ -513,47 +526,48 @@ async def verify_journal(
     accepted_count = len(accepted_operations) + len(unjournaled_ids)
     if accepted_count == 0:
         raise EmptyArtifactsError("journal/inventory has no accepted producer operations")
-    initial_inventory_ids = set(by_id)
     ever_visible_ids = set(by_id)
     monitored_ids = (set(tracked) - authorized_deleted) | unjournaled_ids
     statuses: dict[str, str] = {}
     missing_counts: Counter[str] = Counter()
     while True:
+        current_inventory = await client.artifacts.list(notebook_id)
+        current_by_id = {artifact.id: artifact for artifact in current_inventory}
+        current_ids = set(current_by_id)
+        for resource_id, operation in tracked.items():
+            artifact = current_by_id.get(resource_id)
+            if artifact is None or resource_id in authorized_deleted:
+                continue
+            observed_family = _family(artifact)
+            expected = "report" if operation.family == "study_guide" else operation.family
+            if observed_family != expected:
+                raise JournalError("journaled artifact family does not match inventory")
+
         statuses.clear()
         for resource_id in monitored_ids:
-            operation = tracked.get(resource_id)
-            id_kind = (
-                operation.id_kind if operation is not None else unjournaled[resource_id].id_kind
-            )
-            if id_kind == "studio_task":
-                polled = await client.artifacts.poll_status(notebook_id, resource_id)
-                status = str(getattr(polled.status, "value", polled.status))
-                if status == "not_found":
-                    missing_counts[resource_id] += 1
-                    if missing_counts[resource_id] >= not_found_grace:
-                        status = "removed"
-                else:
-                    missing_counts[resource_id] = 0
+            artifact = current_by_id.get(resource_id)
+            if artifact is None:
+                missing_counts[resource_id] += 1
+                status = (
+                    "removed" if missing_counts[resource_id] >= not_found_grace else "not_found"
+                )
             else:
-                current = await client.artifacts.get_or_none(notebook_id, resource_id)
-                status = "removed" if current is None else current.status_str
+                missing_counts[resource_id] = 0
+                status = _snapshot_status(artifact)
             statuses[resource_id] = status
 
-        current_inventory = await client.artifacts.list(notebook_id)
-        current_ids = {artifact.id for artifact in current_inventory}
-        visible_tracked = (set(tracked) - authorized_deleted) & ever_visible_ids
-        if visible_tracked - current_ids:
-            raise RemovedArtifactError("one or more accepted artifacts were delisted")
-        ever_visible_ids.update(current_ids)
-        disappeared_unjournaled = (unjournaled_ids & initial_inventory_ids) - current_ids
-        if disappeared_unjournaled:
-            raise RemovedArtifactError("an unjournaled discovered artifact disappeared")
         removed = sum(status == "removed" for status in statuses.values())
         failed = sum(status == "failed" for status in statuses.values())
         completed = sum(status == "completed" for status in statuses.values())
         pending = len(statuses) - removed - failed - completed
         if removed:
+            removed_ids = {
+                resource_id for resource_id, status in statuses.items() if status == "removed"
+            }
+            if removed_ids & ever_visible_ids:
+                raise RemovedArtifactError("one or more accepted artifacts were delisted")
             raise RemovedArtifactError("one or more accepted artifacts were removed")
+        ever_visible_ids.update(current_ids)
         if pending == 0:
             never_visible = (set(tracked) - authorized_deleted) - ever_visible_ids
             if never_visible:
@@ -590,16 +604,6 @@ async def verify_journal(
                 f"pending={pending})"
             )
         await sleep(poll_interval)
-        refreshed = await client.artifacts.list(notebook_id)
-        by_id = {artifact.id: artifact for artifact in refreshed}
-        for resource_id, operation in tracked.items():
-            artifact = by_id.get(resource_id)
-            if artifact is None or resource_id in authorized_deleted:
-                continue
-            observed_family = _family(artifact)
-            expected = "report" if operation.family == "study_guide" else operation.family
-            if observed_family != expected:
-                raise JournalError("journaled artifact family does not match inventory")
 
 
 async def _run_client(args: argparse.Namespace) -> None:

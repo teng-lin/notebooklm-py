@@ -174,6 +174,11 @@ _REPOSITORY_GUARD_RE = re.compile(
     r"teng-lin/notebooklm-py['\"]",
     re.IGNORECASE,
 )
+_ACCOUNT_CONCURRENCY_GROUP_RE = re.compile(
+    r"notebooklm-account-\${{\s*(?:matrix\.account_slot|needs\."
+    r"[A-Za-z_][A-Za-z0-9_-]*\.outputs\."
+    r"(?:account_slot|[A-Za-z_][A-Za-z0-9_-]*_account_slot))\s*}}"
+)
 
 _TRUSTED_GUARD_PATTERNS = (
     # is_standard == 'true' / "true"  (quoting may be single or double)
@@ -242,6 +247,37 @@ def _expression_is_ci_pool_guard(expr: str) -> bool:
     repository_terms = sum(bool(_REPOSITORY_GUARD_RE.fullmatch(part)) for part in parts)
     standard_terms = sum(bool(_IS_STANDARD_GUARD_RE.fullmatch(part)) for part in parts)
     return repository_terms == 1 and standard_terms == 1
+
+
+def _job_level_concurrency(body: list[str]) -> dict[str, str] | None:
+    """Return one literal job-level concurrency mapping, or ``None`` if invalid."""
+    blocks: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    invalid = False
+    for line in body:
+        searchable = "" if _COMMENT_RE.match(line) else re.sub(r"\s+#.*$", "", line).rstrip()
+        if re.fullmatch(r"    concurrency:\s*", searchable):
+            if current is not None:
+                blocks.append(current)
+            current = {}
+            continue
+        if current is None:
+            continue
+        if searchable.strip() and len(searchable) - len(searchable.lstrip(" ")) <= 4:
+            blocks.append(current)
+            current = None
+            continue
+        match = re.fullmatch(r"      (group|queue|cancel-in-progress):\s*(.*?)\s*", searchable)
+        if match:
+            key, value = match.groups()
+            if key in current:
+                invalid = True
+            current[key] = value
+    if current is not None:
+        blocks.append(current)
+    if invalid or len(blocks) != 1:
+        return None
+    return blocks[0]
 
 
 def _environment_value_is_approved(value: str) -> bool:
@@ -619,7 +655,6 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
             )
         selected_secret_lines: list[tuple[str, bool]] = []
         master_secret_lines: list[tuple[str, bool]] = []
-        sanitized_lines: list[str] = []
         job_if = ""
         collecting_job_if = False
         in_step = False
@@ -630,7 +665,6 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
             elif line.strip() and indent <= 4:
                 in_step = False
             searchable = "" if _COMMENT_RE.match(line) else _strip_yaml_trailing_comment(line)
-            sanitized_lines.append(searchable)
             job_if_match = _JOB_IF_RE.match(line)
             if job_if_match and not in_step:
                 value = job_if_match.group(1)
@@ -657,7 +691,7 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
             for line, _in_step in master_secret_lines
             for match in any_master_secret.findall(line)
         ]
-        sanitized_text = "\n".join(sanitized_lines)
+        concurrency = _job_level_concurrency(body)
         prefix = f"{path}:{line_number}: pooled secret job '{job}'"
         if len(master_matches) != 1:
             violations.append(f"{prefix} must inject exactly one selected master-token secret")
@@ -674,16 +708,14 @@ def _scan_pooled_account_jobs(path: Path) -> list[str]:
             for line in body
         ):
             violations.append(f"{prefix} lacks the literal protected-readonly Environment")
-        if (
-            "group: notebooklm-account-${{" not in sanitized_text
-            or "account_slot" not in sanitized_text
-        ):
+        group = "" if concurrency is None else concurrency.get("group", "")
+        if not _ACCOUNT_CONCURRENCY_GROUP_RE.fullmatch(group):
             violations.append(f"{prefix} lacks account-wide concurrency")
-        if "queue: max" not in sanitized_text:
+        if concurrency is None or concurrency.get("queue") != "max":
             violations.append(f"{prefix} lacks queue: max")
-        if "cancel-in-progress: false" not in sanitized_text:
+        if concurrency is None or concurrency.get("cancel-in-progress") != "false":
             violations.append(f"{prefix} must disable concurrency cancellation")
-        if "cancel-in-progress: true" in sanitized_text:
+        if concurrency is not None and concurrency.get("cancel-in-progress") == "true":
             violations.append(f"{prefix} enables forbidden concurrency cancellation")
     return violations
 

@@ -1003,6 +1003,11 @@ jobs:  # authenticated lanes
         ("github.repository ==", "github.repository !=", "standard-repository"),
         ("is_standard == 'true'", "is_standard != 'true'", "exact-SHA"),
         ("notebooklm-account-${{", "workflow-${{", "account-wide concurrency"),
+        (
+            "matrix.account_slot }}",
+            "matrix.account_slot || 'shared' }}",
+            "account-wide concurrency",
+        ),
     ],
 )
 def test_future_pooled_job_rejects_weakened_envelope(
@@ -1026,6 +1031,31 @@ jobs:
 """.replace(old, new)
     )
     assert any(message in error for error in script._scan_pooled_account_jobs(workflow))
+
+
+def test_pooled_scanner_rejects_concurrency_strings_inside_a_step(tmp_path, script) -> None:
+    workflow = tmp_path / "pool.yml"
+    workflow.write_text(
+        """name: pool
+on: workflow_dispatch
+jobs:
+  live:
+    if: github.repository == 'teng-lin/notebooklm-py' && needs.target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    runs-on: ubuntu-latest
+    steps:
+    - name: misleading strings
+      run: |
+        echo 'group: notebooklm-account-${{ matrix.account_slot }}'
+        echo 'queue: max'
+        echo 'cancel-in-progress: false'
+    - run: echo ${{ secrets[matrix.master_token_secret_name] }}
+"""
+    )
+    violations = script._scan_pooled_account_jobs(workflow)
+    assert any("account-wide concurrency" in violation for violation in violations)
+    assert any("queue: max" in violation for violation in violations)
+    assert any("disable concurrency" in violation for violation in violations)
 
 
 def test_trusted_guard_requires_exact_github_identifiers(script) -> None:

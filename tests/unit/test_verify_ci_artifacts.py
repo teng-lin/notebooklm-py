@@ -26,6 +26,7 @@ class Artifact:
     status_str: str = "completed"
     interactive: bool = False
     unclassified: bool = False
+    url: str | None = "https://example.invalid/artifact"
 
     @property
     def is_completed(self) -> bool:
@@ -157,6 +158,12 @@ def test_malformed_job_marker_fails(marker: str | None) -> None:
         verify.compute_budget(marker, monotonic_ns=100)
     with pytest.raises(verify.ConfigurationError):
         verify.compute_budget("101", monotonic_ns=100)
+
+
+def test_snapshot_status_preserves_media_readiness_semantics() -> None:
+    assert verify._snapshot_status(Artifact("audio", "audio", url=None)) == "in_progress"
+    assert verify._snapshot_status(Artifact("audio", "audio")) == "completed"
+    assert verify._snapshot_status(Artifact("report", "report", url=None)) == "completed"
 
 
 def test_journal_parser_rejects_schema_transition_and_binding_errors(tmp_path) -> None:
@@ -331,8 +338,9 @@ async def test_transient_not_found_recovers_before_grace(tmp_path) -> None:
         [row(operation_id, "started"), row(operation_id, "accepted", resource_id="artifact")],
     )
     artifact = Artifact("artifact", "audio")
+    client = Client([[artifact], [], [], [artifact]])
     result = await verify.verify_journal(
-        Client([[artifact]] * 12, statuses=["not_found", "not_found", "completed"]),
+        client,
         notebook_id="generation-role",
         journal_path=journal,
         timeout=240,
@@ -341,6 +349,7 @@ async def test_transient_not_found_recovers_before_grace(tmp_path) -> None:
         poll_interval=0,
     )
     assert result["completed"] == 1
+    assert client.artifacts.poll_ids == []
 
 
 @pytest.mark.asyncio
@@ -379,8 +388,51 @@ async def test_note_backed_resource_uses_public_persistent_lookup(tmp_path) -> N
         poll_interval=0,
     )
     assert result["completed"] == 1
-    assert client.artifacts.get_ids == ["note-map"]
+    assert client.artifacts.get_ids == []
     assert client.artifacts.poll_ids == []
+
+
+@pytest.mark.asyncio
+async def test_note_backed_resource_requires_repeated_misses_before_removal(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    write_journal(
+        journal,
+        [
+            row(operation_id, "started", family="mind_map", id_kind="note_mind_map"),
+            row(
+                operation_id,
+                "persisted",
+                resource_id="note-map",
+                family="mind_map",
+                id_kind="note_mind_map",
+            ),
+        ],
+    )
+    artifact = Artifact("note-map", "mind_map")
+    client = Client([[artifact], [], [artifact]])
+    result = await verify.verify_journal(
+        client,
+        notebook_id="generation-role",
+        journal_path=journal,
+        timeout=240,
+        minimum_discovery_window=0,
+        quiet_polls=1,
+        poll_interval=0,
+    )
+    assert result["completed"] == 1
+
+    with pytest.raises(verify.RemovedArtifactError, match="delisted"):
+        await verify.verify_journal(
+            Client([[artifact], [], []]),
+            notebook_id="generation-role",
+            journal_path=journal,
+            timeout=240,
+            minimum_discovery_window=0,
+            quiet_polls=1,
+            poll_interval=0,
+            not_found_grace=2,
+        )
 
 
 @pytest.mark.asyncio
@@ -403,7 +455,7 @@ async def test_unjournaled_interactive_row_is_settled_as_studio_backing(tmp_path
         poll_interval=0,
     )
     assert result["completed"] == 1
-    assert client.artifacts.poll_ids == ["interactive"]
+    assert client.artifacts.poll_ids == []
     assert client.artifacts.get_ids == []
 
 
@@ -441,7 +493,7 @@ async def test_accepted_task_that_is_delisted_fails_even_if_poll_reports_complet
     artifact = Artifact("artifact", "audio")
     with pytest.raises(verify.RemovedArtifactError, match="delisted"):
         await verify.verify_journal(
-            Client([[artifact], []], statuses=["completed"]),
+            Client([[artifact], []]),
             notebook_id="generation-role",
             journal_path=journal,
             timeout=240,
@@ -465,11 +517,12 @@ async def test_terminal_failed_majority_uses_only_terminal_denominator(tmp_path)
                 row(operation_id, "accepted", resource_id=resource_id, family=family),
             ]
         )
-        artifacts.append(Artifact(resource_id, family))
+        status = "failed" if index < 2 else "completed"
+        artifacts.append(Artifact(resource_id, family, status))
     write_journal(journal, rows)
     with pytest.raises(verify.FailedMajorityError):
         await verify.verify_journal(
-            Client([artifacts] * 10, statuses=["failed", "failed", "completed"]),
+            Client([artifacts] * 10),
             notebook_id="generation-role",
             journal_path=journal,
             timeout=240,
@@ -477,6 +530,37 @@ async def test_terminal_failed_majority_uses_only_terminal_denominator(tmp_path)
             quiet_polls=1,
             poll_interval=0,
         )
+
+
+@pytest.mark.asyncio
+async def test_settlement_uses_one_inventory_snapshot_for_all_tasks(tmp_path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    rows = []
+    artifacts = []
+    for index, family in enumerate(("audio", "video", "report")):
+        operation_id = str(uuid.uuid4())
+        resource_id = f"artifact-{index}"
+        rows.extend(
+            [
+                row(operation_id, "started", family=family),
+                row(operation_id, "accepted", resource_id=resource_id, family=family),
+            ]
+        )
+        artifacts.append(Artifact(resource_id, family))
+    write_journal(journal, rows)
+    client = Client([artifacts, artifacts])
+    result = await verify.verify_journal(
+        client,
+        notebook_id="generation-role",
+        journal_path=journal,
+        timeout=240,
+        minimum_discovery_window=0,
+        quiet_polls=1,
+        poll_interval=0,
+    )
+    assert result["completed"] == 3
+    assert client.artifacts.list_calls == 2
+    assert client.artifacts.poll_ids == []
 
 
 @pytest.mark.asyncio
