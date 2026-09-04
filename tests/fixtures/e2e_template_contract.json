@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "title_regex": "^notebooklm-py E2E template v1(?:$|[ -].*)",
+  "title_regex": "^Make Your Writing Clear and Persuasive$",
   "reserved_title_prefix": "notebooklm-py-ci/",
   "sources": {
     "minimum_ready": 3,

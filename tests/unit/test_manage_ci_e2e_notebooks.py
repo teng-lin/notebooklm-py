@@ -58,7 +58,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 )
 
 TEMPLATE_ID = "template-id"
-TEMPLATE_TITLE = "notebooklm-py E2E template v1"
+TEMPLATE_TITLE = "Make Your Writing Clear and Persuasive"
 FINGERPRINT = "a" * 64
 
 
@@ -1454,6 +1454,18 @@ async def test_template_validation_rejects_wrong_notebook_lookup(
     manager, client, _store, _clock = _manager(tmp_path, contracts)
     client.notebooks.items[TEMPLATE_ID].id = "different-notebook"
     with pytest.raises(ContractError, match="wrong notebook"):
+        await manager.validate_template()
+
+
+@pytest.mark.asyncio
+async def test_template_validation_rejects_noncanonical_title(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, _clock = _manager(tmp_path, contracts)
+    client.notebooks.items[TEMPLATE_ID].title = "notebooklm-py E2E template v1"
+
+    with pytest.raises(ContractError, match="title version does not match"):
         await manager.validate_template()
 
 

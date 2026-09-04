@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Nightly E2E and RPC health template validation.** The disposable-copy contract now matches
+  the configured canonical template title, allowing provisioning to proceed in the scheduled Web
+  and Android lanes.
 - **MCP server: `CONNECT_TIMEOUT` on connect.** The FastMCP lifespan opened the
   `NotebookLMClient` — cookie rotation, the CSRF fetch, and the cold-recovery
   ladder when those fail — *before* answering the MCP `initialize` handshake.

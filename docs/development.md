@@ -814,6 +814,8 @@ Studio artifacts. Its checked-in shape is `tests/fixtures/e2e_template_contract.
 chat history are deliberately absent from that contract. Provisioning creates and validates those
 on the disposable `reference` copy using
 `tests/fixtures/e2e_prepared_role_contract.json`.
+The configured template's immutable title is `Make Your Writing Clear and Persuasive`; replacing
+the template requires updating the title contract and template-ID secret together.
 
 To qualify a template locally, use a dedicated profile and keep the template ID in the documented
 environment variable so it never appears on the command line:
