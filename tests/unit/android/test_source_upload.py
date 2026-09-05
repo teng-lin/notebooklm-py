@@ -90,6 +90,14 @@ class FakeSession:
         self.scopes.append(label)
         yield _Lease(self.epoch)
 
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct session tests."""
+        return asyncio.create_task(factory(), name=label)
+
     def assert_epoch(self, expected_epoch: int) -> None:
         if expected_epoch != self.epoch:
             raise RuntimeError("retired fake epoch")
@@ -412,7 +420,7 @@ async def test_pdf_synthetic_branch_pins_wire_headers_body_progress_and_fresh_be
     assert result.id == SOURCE_ID
     assert result.title == path.name
     assert result.status is SourceStatus.PROCESSING
-    assert session.scopes == ["Android source upload"]
+    assert session.scopes == ["source.add_file", "Android source upload"]
     assert [call[0] for call in session.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
     registration = session.calls[0][1]
     assert registration.tentative_sources_metadata[0].name == path.name

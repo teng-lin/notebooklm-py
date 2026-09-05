@@ -290,17 +290,18 @@ class AndroidChatAPI(ChatAPI):
         bounded_limit = max(0, limit)
         if bounded_limit == 0:
             return []
-        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
-        if not resolved_id:
-            return []
-        response = await self.get_conversation_turns(
-            notebook_id,
-            resolved_id,
-            # Android exposes separate generated-response and user-query rows,
-            # while the public limit counts completed Q&A pairs.
-            limit=bounded_limit * 2,
-        )
-        return decode_history(response, limit=bounded_limit)
+        async with self._operation_scope("chat.get_history"):
+            resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+            if not resolved_id:
+                return []
+            response = await self.get_conversation_turns(
+                notebook_id,
+                resolved_id,
+                # Android exposes separate generated-response and user-query rows,
+                # while the public limit counts completed Q&A pairs.
+                limit=bounded_limit * 2,
+            )
+            return decode_history(response, limit=bounded_limit)
 
     async def _list_turn_roles(
         self,

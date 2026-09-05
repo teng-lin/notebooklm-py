@@ -106,7 +106,7 @@ def _client_with_real_notebooks(error: BaseException) -> TestClient:
     fake = FakeClient()
     core = make_fake_core(rpc_call=AsyncMock(side_effect=error))
     fake.notebooks = WebNotebooksAPI(  # type: ignore[assignment]
-        core.rpc_executor, sources_api=MagicMock()
+        core.rpc_executor, supervisor=core, sources_api=MagicMock()
     )
 
     @asynccontextmanager

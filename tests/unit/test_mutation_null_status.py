@@ -45,6 +45,7 @@ from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import RPCError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ShareViewLevel
+from tests._fixtures.fake_core import make_fake_core
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 NB, SRC, TITLE = "nb-1", "src-1", "Renamed"
@@ -177,12 +178,13 @@ def _uploader(rpc: _RoutedRpc) -> SourceUploadPipeline:
 
 
 def _notebooks(rpc: _RoutedRpc) -> WebNotebooksAPI:
-    return WebNotebooksAPI(rpc, sources_api=MagicMock())
+    return WebNotebooksAPI(rpc, supervisor=make_fake_core(), sources_api=MagicMock())
 
 
 def _chat(rpc: _RoutedRpc) -> WebChatAPI:
     return WebChatAPI(
         rpc=rpc,
+        supervisor=make_fake_core(),
         transport=MagicMock(),
         reqid=MagicMock(),
         loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
@@ -195,11 +197,19 @@ def _notes(rpc: _RoutedRpc) -> NoteService:
 
 
 def _labels(rpc: _RoutedRpc) -> WebLabelsAPI:
-    return WebLabelsAPI(rpc, list_sources=AsyncMock(return_value=[]))
+    return WebLabelsAPI(
+        rpc,
+        supervisor=make_fake_core(),
+        list_sources=AsyncMock(return_value=[]),
+    )
 
 
 def _collections(rpc: _RoutedRpc) -> WebCollectionsAPI:
-    return WebCollectionsAPI(rpc, list_notebooks=AsyncMock(return_value=[]))
+    return WebCollectionsAPI(
+        rpc,
+        supervisor=make_fake_core(),
+        list_notebooks=AsyncMock(return_value=[]),
+    )
 
 
 def _artifacts(rpc: _RoutedRpc) -> WebArtifactsAPI:
@@ -241,7 +251,9 @@ CASES: list[Case] = [
         "sharing.set_view_level",
         RPCMethod.RENAME_NOTEBOOK,
         {},
-        lambda r: WebSharingAPI(r).set_view_level(NB, ShareViewLevel.CHAT_ONLY),
+        lambda r: WebSharingAPI(r, supervisor=make_fake_core()).set_view_level(
+            NB, ShareViewLevel.CHAT_ONLY
+        ),
     ),
     (
         "notes.update_note",

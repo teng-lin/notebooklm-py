@@ -120,7 +120,11 @@ def assemble_web_backend(
         upload_timeout=upload_timeout,
         max_concurrent_uploads=max_concurrent_uploads,
     )
-    client.notebooks = WebNotebooksAPI(web.executor, sources_api=client.sources)
+    client.notebooks = WebNotebooksAPI(
+        web.executor,
+        sources_api=client.sources,
+        supervisor=shared.call_supervisor,
+    )
     note_service = NoteService(web.executor, supervisor=shared.call_supervisor)
     mind_maps = NoteBackedMindMapService(note_service)
     client.artifacts = WebArtifactsAPI(
@@ -136,28 +140,43 @@ def assemble_web_backend(
         transport=web.composed.transport,
         reqid=web.reqid,
         loop_guard=shared.call_supervisor,
+        supervisor=shared.call_supervisor,
         chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
         chat_response_max_bytes=chat_response_max_bytes,
         notebooks=client.notebooks,
         created_chat_sessions=client.notebooks,
     )
-    client.notes = WebNotesAPI(notes=note_service, mind_maps=mind_maps)
+    client.notes = WebNotesAPI(
+        notes=note_service,
+        mind_maps=mind_maps,
+        supervisor=shared.call_supervisor,
+    )
     client.mind_maps = WebMindMapsAPI(
         rpc=web.executor,
         mind_maps=mind_maps,
         artifacts=client.artifacts,
         notebooks=client.notebooks,
         notes=client.notes,
+        supervisor=shared.call_supervisor,
     )
     client.research = WebResearchAPI(
         web.executor,
+        supervisor=shared.call_supervisor,
         base_timeout=timeout,
         import_research_timeout=import_research_timeout,
     )
-    client.settings = WebSettingsAPI(web.executor)
-    client.sharing = WebSharingAPI(web.executor)
-    client.labels = WebLabelsAPI(web.executor, list_sources=client.sources.list)
-    client.collections = WebCollectionsAPI(web.executor, list_notebooks=client.notebooks.list)
+    client.settings = WebSettingsAPI(web.executor, supervisor=shared.call_supervisor)
+    client.sharing = WebSharingAPI(web.executor, supervisor=shared.call_supervisor)
+    client.labels = WebLabelsAPI(
+        web.executor,
+        list_sources=client.sources.list,
+        supervisor=shared.call_supervisor,
+    )
+    client.collections = WebCollectionsAPI(
+        web.executor,
+        list_notebooks=client.notebooks.list,
+        supervisor=shared.call_supervisor,
+    )
 
     return BackendAssembly(
         backend="web",

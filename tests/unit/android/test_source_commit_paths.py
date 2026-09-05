@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -87,6 +87,14 @@ class FakeTransport:
         assert not kwargs
         self.scopes.append(label)
         yield _Lease()
+
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct transport tests."""
+        return asyncio.create_task(factory(), name=label)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         journal_entry = kwargs.pop("journal_entry", None)

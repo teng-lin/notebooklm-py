@@ -28,12 +28,12 @@ class NotesAPI(ABC):
             await client.notes.delete(notebook_id, note.id)
     """
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     @abstractmethod
     async def list(self, notebook_id: str) -> list[Note]:

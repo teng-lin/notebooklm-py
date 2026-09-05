@@ -42,6 +42,7 @@ from .retry_policy import replay_safe_for
 
 ReqT = TypeVar("ReqT")
 RespT = TypeVar("RespT")
+ChildT = TypeVar("ChildT")
 
 RequestSerializer = Callable[[ReqT], bytes]
 ResponseDeserializer = Callable[[bytes], RespT]
@@ -392,6 +393,14 @@ class AndroidSession(EpochFenced):
             label,
             expected_epoch=self._resolve_expected_epoch(expected_epoch),
         )
+
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[ChildT]],
+    ) -> asyncio.Task[ChildT]:
+        """Reserve same-generation child work through the shared supervisor."""
+        return await self._call_supervisor.spawn_child(label, factory)
 
     async def prepare_metadata(
         self,

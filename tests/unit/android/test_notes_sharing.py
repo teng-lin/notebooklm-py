@@ -400,6 +400,7 @@ def test_backend_contracts_are_split_and_android_adapters_are_concrete() -> None
 
     assert NotesAPI.__abstractmethods__ == frozenset(
         {
+            "_operation_scope",
             "create",
             "delete",
             "delete_mind_map",
@@ -411,7 +412,14 @@ def test_backend_contracts_are_split_and_android_adapters_are_concrete() -> None
         }
     )
     assert SharingAPI.__abstractmethods__ == frozenset(
-        {"get_status", "remove_user", "set_public", "set_users", "set_view_level"}
+        {
+            "_operation_scope",
+            "get_status",
+            "remove_user",
+            "set_public",
+            "set_users",
+            "set_view_level",
+        }
     )
     assert AndroidNotesAPI.__abstractmethods__ == frozenset()
     assert AndroidSharingAPI.__abstractmethods__ == frozenset()
@@ -433,6 +441,7 @@ def test_backend_contracts_are_split_and_android_adapters_are_concrete() -> None
         name: str(inspect.signature(getattr(AndroidNotesAPI, name)))
         for name in NotesAPI.__abstractmethods__
     } == {
+        "_operation_scope": "(self, label: 'str') -> 'AsyncIterator[OperationLease]'",
         "list": "(self, notebook_id: 'str') -> 'builtins.list[Note]'",
         "get": "(self, notebook_id: 'str', note_id: 'str') -> 'Note'",
         "get_or_none": "(self, notebook_id: 'str', note_id: 'str') -> 'Note | None'",

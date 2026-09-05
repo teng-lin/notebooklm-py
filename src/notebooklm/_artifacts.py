@@ -86,12 +86,12 @@ class ArtifactsAPI(ABC):
             await client.artifacts.rename(notebook_id, artifact_id, "New Title")
     """
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(
         self,
@@ -831,7 +831,17 @@ class ArtifactsAPI(ABC):
         artifact_ids: builtins.list[str],
         target_notebook_id: str,
     ) -> builtins.list[CopiedArtifact]:
-        """Copy Studio artifacts into another notebook (``CopyArtifactsAsync``).
+        """Copy artifacts under one admission through final mapping reconciliation."""
+        async with self._operation_scope("artifacts.copy"):
+            return await self._copy_in_scope(notebook_id, artifact_ids, target_notebook_id)
+
+    async def _copy_in_scope(
+        self,
+        notebook_id: str,
+        artifact_ids: builtins.list[str],
+        target_notebook_id: str,
+    ) -> builtins.list[CopiedArtifact]:
+        """Execute :meth:`copy` after its workflow admission has been acquired.
 
         Returns one :class:`~notebooklm.types.CopiedArtifact` per copied
         artifact, pairing the original id with the full new row (verified live

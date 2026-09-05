@@ -324,6 +324,26 @@ class CallSupervisor(LoopBoundPrimitive):
             for generation in generations
         )
 
+    def assert_shutdown_allowed(self, action: str) -> None:
+        """Reject shutdown from a task holding this client's admission.
+
+        Inspect generation-owned task-depth maps rather than task-local
+        context. A copied context in an independent shutdown task is not an
+        admission, while a late task that still owns a retired generation must
+        not drain or close a reopened generation.
+        """
+        task = asyncio.current_task()
+        if task is None:
+            return
+        generations = list(self._retired.values())
+        if self._current is not None:
+            generations.append(self._current)
+        if any(generation.depths.get(task, 0) > 0 for generation in generations):
+            raise RuntimeError(
+                f"Cannot {action} NotebookLMClient from a task that holds client admission; "
+                "schedule shutdown from an independent task."
+            )
+
     async def _admit(
         self,
         label: str,

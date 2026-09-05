@@ -37,6 +37,7 @@ from notebooklm._web.chat import WebChatAPI
 from notebooklm._web.transport.request_types import AuthSnapshot
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import ChatError
+from tests._fixtures.fake_core import make_fake_core
 from tests._helpers.client_factory import build_client_shell_for_tests
 from tests.unit.conftest import install_post_as_stream
 
@@ -125,6 +126,7 @@ class TestChatTimeoutRouting:
         )
         chat = WebChatAPI(
             rpc=SimpleNamespace(rpc_call=AsyncMock(return_value=[[]])),
+            supervisor=make_fake_core(),
             transport=transport,
             reqid=SimpleNamespace(next_reqid=AsyncMock(return_value=100000)),
             loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),
@@ -423,6 +425,7 @@ class TestChatRefreshRetry:
             # read the private slots directly instead.
             api = WebChatAPI(
                 rpc=core._web_runtime.executor,
+                supervisor=core._collaborators.call_supervisor,
                 transport=core._web_runtime.composed.transport,
                 reqid=core._web_runtime.reqid,
                 loop_guard=core._collaborators.lifecycle,
@@ -536,6 +539,7 @@ class TestChatNewConversationLocks:
         loop_guard.assert_bound_loop = MagicMock()
         return WebChatAPI(
             rpc=MagicMock(),
+            supervisor=make_fake_core(),
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=loop_guard,
@@ -588,6 +592,7 @@ class TestChatNewConversationLocks:
 
         chat = HptbtcFailureChatAPI(
             rpc=SimpleNamespace(),
+            supervisor=make_fake_core(),
             transport=SimpleNamespace(
                 perform_authed_post=AsyncMock(side_effect=fake_perform_authed_post)
             ),
@@ -629,6 +634,7 @@ class TestBuildChatRequestFactory:
 
         return WebChatAPI(
             rpc=MagicMock(),
+            supervisor=make_fake_core(),
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=MagicMock(),

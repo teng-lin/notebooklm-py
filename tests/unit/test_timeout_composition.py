@@ -342,6 +342,7 @@ class TestRejectsUnusableWindows:
         with pytest.raises(TypeError, match="AUTO_READ_TIMEOUT"):
             WebChatAPI(
                 rpc=SimpleNamespace(rpc_call=None),
+                supervisor=SimpleNamespace(operation_scope=None),
                 transport=SimpleNamespace(),
                 reqid=SimpleNamespace(),
                 loop_guard=SimpleNamespace(assert_bound_loop=lambda: None),

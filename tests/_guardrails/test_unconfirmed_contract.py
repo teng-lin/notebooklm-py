@@ -299,7 +299,7 @@ def _method_owner(api_type: type[Any], method_name: str) -> type[Any]:
 def _build_web_api(namespace: str, side_effect: Any) -> Any:
     fake = make_fake_core(rpc_call=AsyncMock(side_effect=side_effect))
     if namespace == "notebooks":
-        return WebNotebooksAPI(fake.rpc_executor, fake)
+        return WebNotebooksAPI(fake.rpc_executor, fake, supervisor=fake)
     if namespace == "sources":
         return WebSourcesAPI(
             fake.rpc_executor,
@@ -315,16 +315,24 @@ def _build_web_api(namespace: str, side_effect: Any) -> Any:
             note_service=MagicMock(),
         )
     if namespace == "labels":
-        return WebLabelsAPI(fake.rpc_executor, list_sources=AsyncMock(return_value=[]))
+        return WebLabelsAPI(
+            fake.rpc_executor,
+            supervisor=fake,
+            list_sources=AsyncMock(return_value=[]),
+        )
     if namespace == "collections":
-        return WebCollectionsAPI(fake.rpc_executor, list_notebooks=AsyncMock(return_value=[]))
+        return WebCollectionsAPI(
+            fake.rpc_executor,
+            supervisor=fake,
+            list_notebooks=AsyncMock(return_value=[]),
+        )
     if namespace == "sharing":
-        return WebSharingAPI(fake.rpc_executor)
+        return WebSharingAPI(fake.rpc_executor, supervisor=fake)
     if namespace == "research":
-        return WebResearchAPI(fake.rpc_executor, source_lister=fake)
+        return WebResearchAPI(fake.rpc_executor, supervisor=fake, source_lister=fake)
     if namespace == "notes":
         service = NoteService(fake.rpc_executor, supervisor=fake)
-        return WebNotesAPI(notes=service, mind_maps=MagicMock())
+        return WebNotesAPI(supervisor=fake, notes=service, mind_maps=MagicMock())
     raise AssertionError(f"unknown manifest namespace: {namespace}")
 
 

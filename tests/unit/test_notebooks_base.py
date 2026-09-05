@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import contextlib
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -20,6 +22,7 @@ from notebooklm.exceptions import (
     ValidationError,
 )
 from notebooklm.types import Notebook, NotebookDescription, PromptSuggestion
+from tests._fixtures.fake_core import declared_spawn_child
 
 
 class _EmptySourceLister:
@@ -34,6 +37,12 @@ class _FakeNotebooksAPI(NotebooksAPI):
     _copy_method_id = "fake.CopyNotebook"
     _copy_failure_chain = "explicit"
 
+    @contextlib.asynccontextmanager
+    async def _operation_scope(self, label: str) -> AsyncIterator[None]:
+        """Declare that this transport-free fake intentionally skips admission."""
+        del label
+        yield None
+
     def __init__(
         self,
         *,
@@ -41,7 +50,7 @@ class _FakeNotebooksAPI(NotebooksAPI):
         create_results: list[Notebook | Exception],
         copy_results: list[Notebook | Exception] | None = None,
     ) -> None:
-        super().__init__(_EmptySourceLister())
+        super().__init__(_EmptySourceLister(), spawn_child=declared_spawn_child)
         self._list_results = list_results
         self._create_results = create_results
         self._copy_results = copy_results or []
@@ -192,13 +201,16 @@ class _StaleNotebooksAPI(_FakeNotebooksAPI):
 
 
 class _DrainingWebWorkflowAPI(_FakeNotebooksAPI):
-    """Web-shaped workflow: each RPC is scoped, while the neutral workflow is not."""
+    """Web-shaped workflow using the real supervisor scope."""
 
     def __init__(self, supervisor: CallSupervisor) -> None:
         super().__init__(list_results=[], create_results=[])
         self._supervisor = supervisor
         self.between_calls = asyncio.Event()
         self.resume_create = asyncio.Event()
+
+    def _operation_scope(self, label: str):
+        return self._supervisor.operation_scope(label)
 
     async def list(self) -> list[Notebook]:
         async with self._supervisor.call_scope("web.list", "ListNotebooks", None):
@@ -258,10 +270,6 @@ async def test_e5_stale_probe_after_committed_create_does_not_send_a_second_crea
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason="E6: Web notebook workflow admission is lost between baseline and create RPCs",
-)
 async def test_e6_web_create_holds_real_lifecycle_admission_across_drain() -> None:
     supervisor = CallSupervisor(
         metrics=ClientMetrics(),

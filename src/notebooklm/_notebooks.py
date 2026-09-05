@@ -15,7 +15,7 @@ from ._idempotency import (
     call_unconfirmed_on_transport_loss,
     unresolved_commit_error,
 )
-from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister
+from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister, SpawnChild
 from ._runtime.call_supervisor import OperationLease
 from .exceptions import (
     NetworkError,
@@ -69,17 +69,18 @@ class NotebooksAPI(ABC):
     _copy_method_id: str
     _copy_failure_chain: _CopyFailureChain
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(
         self,
         sources_api: NotebookSourceLister,
         *,
+        spawn_child: SpawnChild,
         metadata_service: NotebookMetadataService | None = None,
         share_url_builder: ShareUrlBuilder = _build_default_share_url,
     ) -> None:
@@ -96,6 +97,7 @@ class NotebooksAPI(ABC):
             # replace ``api.get`` after construction still affect get_metadata().
             get_notebook=lambda notebook_id: self.get(notebook_id),
             source_lister=self._sources,
+            spawn_child=spawn_child,
         )
         self._share_url_builder = share_url_builder
         # CREATE_NOTEBOOK/COPY_PROJECT may volunteer a chat-session id that
@@ -186,25 +188,26 @@ class NotebooksAPI(ABC):
         if not title or not title.strip():
             raise ValidationError("title must not be empty")
 
-        try:
-            return await self._send_copy(notebook_id, title)
-        except (NetworkError, RateLimitError, ServerError) as exc:
-            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            failure = unresolved_commit_error(
-                self._copy_method_id,
-                "CopyProject",
-                RPCError(
-                    "UNRESOLVED — CopyProject may have committed before its response was "
-                    "lost. Do not blindly retry; list notebooks and resolve copies "
-                    "manually first.",
-                    method_id=self._copy_method_id,
-                    rpc_code=rpc_code,
-                ),
-                preserve_exception=True,
-            )
-            if self._copy_failure_chain == "explicit":
-                raise failure from exc
-            raise failure from None
+        async with self._operation_scope("notebooks.copy"):
+            try:
+                return await self._send_copy(notebook_id, title)
+            except (NetworkError, RateLimitError, ServerError) as exc:
+                rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+                failure = unresolved_commit_error(
+                    self._copy_method_id,
+                    "CopyProject",
+                    RPCError(
+                        "UNRESOLVED — CopyProject may have committed before its response was "
+                        "lost. Do not blindly retry; list notebooks and resolve copies "
+                        "manually first.",
+                        method_id=self._copy_method_id,
+                        rpc_code=rpc_code,
+                    ),
+                    preserve_exception=True,
+                )
+                if self._copy_failure_chain == "explicit":
+                    raise failure from exc
+                raise failure from None
 
     @abstractmethod
     async def _send_copy(self, notebook_id: str, title: str) -> Notebook:
@@ -265,7 +268,8 @@ class NotebooksAPI(ABC):
 
     async def get_metadata(self, notebook_id: str) -> NotebookMetadata:
         """Get notebook details composed with simplified source metadata."""
-        return await self._metadata_service.get_metadata(notebook_id)
+        async with self._operation_scope("notebooks.get_metadata"):
+            return await self._metadata_service.get_metadata(notebook_id)
 
 
 __all__ = ["NotebooksAPI"]

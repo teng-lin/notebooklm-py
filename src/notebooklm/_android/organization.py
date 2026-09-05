@@ -6,7 +6,7 @@ import builtins
 from typing import Any, Literal, cast
 
 from .._idempotency import JournalEntry, call_unconfirmed_on_transport_loss, mark_unconfirmed
-from ..exceptions import NotebookNotFoundError, RPCError
+from ..exceptions import DecodingError, NotebookLMError, NotebookNotFoundError, RPCError
 from ..types import Collection, Label
 from .codecs.organization import decode_collections, decode_labels
 from .session import AndroidSession
@@ -172,6 +172,11 @@ async def generate_labels(
         # so a retry could repeat the mutation even when the read failed for a
         # non-transport reason. Cancellation and process-control exceptions
         # remain BaseException and therefore propagate untouched.
+        if not isinstance(error, NotebookLMError):
+            error = DecodingError(
+                "Generated labels could not be decoded from the required readback.",
+                method_id=GET_LABELS_METHOD,
+            )
         raise mark_unconfirmed(error) from None
 
 

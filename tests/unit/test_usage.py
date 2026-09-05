@@ -1,9 +1,15 @@
 """Unit coverage for the transport-neutral live usage API."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 import pytest
 
+from notebooklm._android.settings import AndroidSettingsAPI
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._runtime.call_supervisor import AdmissionState, CallSupervisor, OperationLease
+from notebooklm._runtime.lifecycle import ClientLifecycle
 from notebooklm._settings import SettingsAPI
 from notebooklm._usage import (
     RawUsageAction,
@@ -12,6 +18,7 @@ from notebooklm._usage import (
     UsageAccount,
     decode_usage_summary,
 )
+from notebooklm._web.settings import WebSettingsAPI
 from notebooklm.exceptions import DecodingError, ServerError
 from notebooklm.types import (
     AccountLimits,
@@ -22,6 +29,7 @@ from notebooklm.types import (
     UsageWindowKind,
     UserSettings,
 )
+from tests._fixtures.fake_core import declared_noop_operation_scope
 
 RESET = datetime(2026, 9, 5, 14, tzinfo=timezone.utc)
 
@@ -239,6 +247,8 @@ def test_decode_rejects_invalid_action_fields(action):
 
 
 class _Settings(SettingsAPI):
+    _operation_scope = staticmethod(declared_noop_operation_scope)
+
     def __init__(self, account: UsageAccount, summary: RawUsageSummary) -> None:
         self.account = account
         self.summary = summary
@@ -264,6 +274,132 @@ class _Settings(SettingsAPI):
     async def _list_quota_summary(self, *, lease: object) -> RawUsageSummary:
         self.summary_calls += 1
         return self.summary
+
+
+class _ScopedUsageHooks:
+    """Pause between the two usage reads without retaining an RPC slot."""
+
+    def _init_scope_hooks(self, supervisor: CallSupervisor) -> None:
+        self._test_supervisor = supervisor
+        self.account_read = asyncio.Event()
+        self.continue_after_account = asyncio.Event()
+
+    async def _get_usage_account(self, *, lease: OperationLease | None) -> UsageAccount:
+        assert lease is not None
+        async with self._test_supervisor.call_scope(
+            "usage.account",
+            None,
+            None,
+            expected_epoch=lease.epoch,
+        ):
+            pass
+        self.account_read.set()
+        await self.continue_after_account.wait()
+        return UsageAccount(True)
+
+    async def _list_quota_summary(self, *, lease: OperationLease | None) -> RawUsageSummary:
+        assert lease is not None
+        async with self._test_supervisor.call_scope(
+            "usage.quota",
+            None,
+            None,
+            expected_epoch=lease.epoch,
+        ):
+            return _ready()
+
+
+class _WebScopedUsage(_ScopedUsageHooks, WebSettingsAPI):
+    def __init__(self, supervisor: CallSupervisor) -> None:
+        WebSettingsAPI.__init__(self, cast(Any, object()), supervisor=supervisor)
+        self._init_scope_hooks(supervisor)
+
+
+class _AndroidScopedUsage(_ScopedUsageHooks, AndroidSettingsAPI):
+    def __init__(self, supervisor: CallSupervisor) -> None:
+        AndroidSettingsAPI.__init__(self, cast(Any, supervisor))
+        self._init_scope_hooks(supervisor)
+
+
+def _scoped_usage(backend: str) -> tuple[_ScopedUsageHooks, ClientLifecycle, CallSupervisor]:
+    supervisor = CallSupervisor(metrics=ClientMetrics(), max_concurrent_rpcs=1)
+    lifecycle = ClientLifecycle(
+        supervisor=supervisor,
+        transports=(),
+        loop_participants=(supervisor,),
+    )
+    api: _ScopedUsageHooks = (
+        _WebScopedUsage(supervisor) if backend == "web" else _AndroidScopedUsage(supervisor)
+    )
+    return api, lifecycle, supervisor
+
+
+async def _wait_for_drain(supervisor: CallSupervisor) -> None:
+    for _ in range(100):
+        generation = supervisor._current
+        if generation is not None and generation.state is AdmissionState.DRAINING:
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("usage workflow did not observe graceful drain")
+
+
+@pytest.mark.parametrize("backend", ["web", "android"])
+@pytest.mark.asyncio
+async def test_get_usage_holds_scope_across_both_reads_during_graceful_drain(
+    backend: str,
+) -> None:
+    api, lifecycle, supervisor = _scoped_usage(backend)
+    await lifecycle.open()
+    workflow = asyncio.create_task(cast(Any, api).get_usage())
+    await api.account_read.wait()
+
+    draining = asyncio.create_task(lifecycle.drain())
+    await _wait_for_drain(supervisor)
+    assert not draining.done()
+
+    api.continue_after_account.set()
+    usage, _ = await asyncio.gather(workflow, draining)
+    assert usage.status is UsageSummaryStatus.READY
+    await lifecycle.close(drain=False)
+
+
+@pytest.mark.parametrize("backend", ["web", "android"])
+@pytest.mark.asyncio
+async def test_get_usage_cancellation_releases_workflow_admission(backend: str) -> None:
+    api, lifecycle, supervisor = _scoped_usage(backend)
+    await lifecycle.open()
+    workflow = asyncio.create_task(cast(Any, api).get_usage())
+    await api.account_read.wait()
+
+    workflow.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await workflow
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert not generation.depths
+    await lifecycle.close(drain=False)
+
+
+@pytest.mark.parametrize("backend", ["web", "android"])
+@pytest.mark.asyncio
+async def test_get_usage_is_fenced_after_forced_close_and_reopen(backend: str) -> None:
+    api, lifecycle, supervisor = _scoped_usage(backend)
+    await lifecycle.open()
+    workflow = asyncio.create_task(cast(Any, api).get_usage())
+    await api.account_read.wait()
+
+    await lifecycle.close(drain=False)
+    assert supervisor._retired
+    await lifecycle.open()
+    reopened_epoch = lifecycle._epoch
+
+    api.continue_after_account.set()
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await workflow
+    assert lifecycle.is_open()
+    assert lifecycle._epoch == reopened_epoch
+    assert supervisor._retired == {}
+    await lifecycle.close(drain=False)
 
 
 @pytest.mark.asyncio

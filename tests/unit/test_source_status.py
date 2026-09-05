@@ -16,6 +16,7 @@ from notebooklm.types import (
     SourceStatus,
     SourceTimeoutError,
 )
+from tests._fixtures.fake_core import make_fake_core
 
 
 class TestSourceStatus:
@@ -184,7 +185,7 @@ class TestWaitUntilReady:
     @pytest.fixture
     def sources_api(self):
         """Create a SourcesAPI with mocked core."""
-        core = MagicMock()
+        core = make_fake_core()
         return WebSourcesAPI(core, supervisor=core, uploader=MagicMock())
 
     @pytest.mark.asyncio
@@ -385,7 +386,7 @@ class TestWaitUntilRegistered:
 
     @pytest.fixture
     def sources_api(self):
-        core = MagicMock()
+        core = make_fake_core()
         return WebSourcesAPI(core, supervisor=core, uploader=MagicMock())
 
     @pytest.mark.asyncio
@@ -488,7 +489,7 @@ class TestWaitForSources:
     @pytest.fixture
     def sources_api(self):
         """Create a SourcesAPI with mocked core."""
-        core = MagicMock()
+        core = make_fake_core()
         return WebSourcesAPI(core, supervisor=core, uploader=MagicMock())
 
     @pytest.mark.asyncio

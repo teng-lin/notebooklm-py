@@ -26,7 +26,7 @@ async def test_get_source_ids_warns_on_top_level_shape_drift(caplog):
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[{"unexpected": "dict"}]))
-    api = WebNotebooksAPI(core)
+    api = WebNotebooksAPI(core, supervisor=core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_drift")
@@ -49,7 +49,7 @@ async def test_get_source_ids_warns_on_inner_shape_drift(caplog):
 
     # notebook_data[0] is a list of length >1 but [1] is not a list
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None, "not a list", "x"]]))
-    api = WebNotebooksAPI(core)
+    api = WebNotebooksAPI(core, supervisor=core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_inner")
@@ -67,7 +67,7 @@ async def test_get_source_ids_happy_path_no_warning(caplog):
     core = make_fake_core(
         rpc_call=AsyncMock(return_value=[[None, [[["src_alpha"]], [["src_beta"]]]]])
     )
-    api = WebNotebooksAPI(core)
+    api = WebNotebooksAPI(core, supervisor=core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_happy")
@@ -91,7 +91,7 @@ async def test_get_source_ids_empty_notebook_emits_no_drift_warning(caplog):
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None] * 11]))
-    api = WebNotebooksAPI(core)
+    api = WebNotebooksAPI(core, supervisor=core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_empty")
@@ -114,7 +114,7 @@ async def test_get_source_ids_warns_when_the_sources_slot_is_absent(caplog):
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=AsyncMock(return_value=[[None]]))
-    api = WebNotebooksAPI(core)
+    api = WebNotebooksAPI(core, supervisor=core)
 
     with caplog.at_level(logging.WARNING, logger="notebooklm"):
         result = await api.get_source_ids("nb_short")

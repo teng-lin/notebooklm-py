@@ -11,12 +11,12 @@ from .types import AccountLimits, UsageSummary, UsageSummaryStatus, UserSettings
 class SettingsAPI(ABC):
     """Operations on NotebookLM user settings."""
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     @abstractmethod
     async def set_output_language(self, language: str) -> str | None:

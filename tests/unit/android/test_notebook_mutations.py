@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
@@ -57,6 +57,14 @@ class SequenceTransport:
         assert not kwargs
         self.scopes.append(label)
         yield _Lease()
+
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct transport tests."""
+        return asyncio.create_task(factory(), name=label)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         self.calls.append((method, request, kwargs))
@@ -584,6 +592,7 @@ async def test_suggest_prompts_uses_all_sources_query_field_six_and_maps_rows() 
     assert kwargs == {
         "replay_safe": True,
         "response_type": exact_notebooks_pb2.GeneratePromptSuggestionsResponse,
+        "expected_epoch": 7,
     }
 
 

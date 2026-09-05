@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
 
 from notebooklm._android.epoch import workflow_epoch_for
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 
 Handler = Callable[[Any, dict[str, Any]], Any]
+ChildT = TypeVar("ChildT")
 
 
 class SupervisedAndroidTransport:
@@ -32,6 +33,14 @@ class SupervisedAndroidTransport:
 
     def operation_scope(self, label: str, **kwargs: Any) -> Any:
         return self.supervisor.operation_scope(label, **kwargs)
+
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[ChildT]],
+    ) -> asyncio.Task[ChildT]:
+        """Register fake-transport fanout through the production supervisor."""
+        return await self.supervisor.spawn_child(label, factory)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         journal_entry = kwargs.pop("journal_entry", None)

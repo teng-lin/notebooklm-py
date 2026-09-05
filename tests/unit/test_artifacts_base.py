@@ -11,10 +11,13 @@ from notebooklm._artifacts import ArtifactsAPI, _ArtifactCopyResult
 from notebooklm._types.enums import ExportType
 from notebooklm.exceptions import ArtifactNotFoundError, DecodingError, RPCError, ValidationError
 from notebooklm.types import Artifact, ArtifactCustomizationChoices, CopiedArtifact
+from tests._fixtures.fake_core import declared_noop_operation_scope
 
 
 class _ConcreteArtifacts(ArtifactsAPI):
     """Minimal backend proving each shared workflow needs one wire hook."""
+
+    _operation_scope = staticmethod(declared_noop_operation_scope)
 
     def __init__(
         self,

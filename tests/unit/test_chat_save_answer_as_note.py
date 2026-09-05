@@ -34,6 +34,7 @@ from notebooklm._web.chat import WebChatAPI
 from notebooklm._web.contracts import RpcCaller
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import AskResult, ChatReference
+from tests._fixtures.fake_core import make_fake_core
 
 
 @pytest.fixture
@@ -63,6 +64,7 @@ def chat_api(mock_rpc: MagicMock) -> ChatAPI:
     notebooks = MagicMock(get_source_ids=AsyncMock(return_value=[]))
     return WebChatAPI(
         rpc=mock_rpc,
+        supervisor=make_fake_core(),
         transport=MagicMock(),
         reqid=MagicMock(),
         loop_guard=MagicMock(),

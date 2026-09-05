@@ -27,6 +27,7 @@ from ..types import (
 )
 from .artifact_proto import ARTIFACTS_PROTO as _PROTO
 from .codecs.artifacts import decode_artifact
+from .epoch import workflow_epoch_for
 from .session import AndroidSession
 
 logger = logging.getLogger(__name__)
@@ -75,19 +76,18 @@ class AndroidArtifactTransferMixin:
             artifact_ids=list(artifact_ids),
             target_project_id=target_notebook_id,
         )
-        async with self._transport.operation_scope("artifacts.copy") as lease:
-            response = await call_unconfirmed_on_transport_loss(
-                lambda: self._transport.unary(
-                    COPY_ARTIFACTS_ASYNC_METHOD,
-                    request,
-                    replay_safe=False,
-                    response_type=_PROTO.CopyArtifactsAsyncResponse,
-                    expected_epoch=lease.epoch,
-                ),
-                method=COPY_ARTIFACTS_ASYNC_METHOD,
-                what="CopyArtifactsAsync",
-                chain=None,
-            )
+        response = await call_unconfirmed_on_transport_loss(
+            lambda: self._transport.unary(
+                COPY_ARTIFACTS_ASYNC_METHOD,
+                request,
+                replay_safe=False,
+                response_type=_PROTO.CopyArtifactsAsyncResponse,
+                expected_epoch=workflow_epoch_for(self._transport),
+            ),
+            method=COPY_ARTIFACTS_ASYNC_METHOD,
+            what="CopyArtifactsAsync",
+            chain=None,
+        )
         # Malformed entries are skipped, not fatal: the well-formed ones are the
         # only proof of copies that have already committed.
         copied: builtins.list[CopiedArtifact] = []

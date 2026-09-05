@@ -125,7 +125,7 @@ class WebSourcesAPI(SourcesAPI):
         self._lister = SourceLister(self._rpc)
         self._play_books = PlayBooksService(self._rpc)
         self._searcher = SourceSearchService(self._rpc, logger=logger)
-        super().__init__()
+        super().__init__(spawn_child=supervisor.spawn_child)
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
         self._supervisor = supervisor
@@ -612,6 +612,23 @@ class WebSourcesAPI(SourcesAPI):
             **Breaking change:** ``return_object=False`` now runs the existence
             preflight on a null echo too, raising on a miss (#1362).
         """
+        async with self._operation_scope("source.rename"):
+            return await self._rename_in_scope(
+                notebook_id,
+                source_id,
+                new_title,
+                return_object=return_object,
+            )
+
+    async def _rename_in_scope(
+        self,
+        notebook_id: str,
+        source_id: str,
+        new_title: str,
+        *,
+        return_object: bool,
+    ) -> Source | None:
+        """Run the source mutation and fallback hydration under one admission."""
         logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = build_rename_source_params(source_id, new_title)
         result = await self._rpc.rpc_call(
