@@ -22,6 +22,7 @@ from notebooklm.exceptions import (
     ValidationError,
 )
 from notebooklm.types import Notebook, NotebookDescription, PromptSuggestion
+from tests._fixtures.fake_core import declared_spawn_child
 
 
 class _EmptySourceLister:
@@ -49,7 +50,7 @@ class _FakeNotebooksAPI(NotebooksAPI):
         create_results: list[Notebook | Exception],
         copy_results: list[Notebook | Exception] | None = None,
     ) -> None:
-        super().__init__(_EmptySourceLister())
+        super().__init__(_EmptySourceLister(), spawn_child=declared_spawn_child)
         self._list_results = list_results
         self._create_results = create_results
         self._copy_results = copy_results or []

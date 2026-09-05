@@ -534,10 +534,11 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             caller already holding the stream has consumed its final frame.
         """
         self._loop_guard.assert_bound_loop()
-        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
-        if resolved_id is None:
-            return ChatSessionStatus(generating=False)
-        return await self._get_session_status(notebook_id, resolved_id)
+        async with self._operation_scope("chat.session_status"):
+            resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+            if resolved_id is None:
+                return ChatSessionStatus(generating=False)
+            return await self._get_session_status(notebook_id, resolved_id)
 
     async def cancel(
         self,
@@ -561,11 +562,12 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             or cancel its local task after this method succeeds.
         """
         self._loop_guard.assert_bound_loop()
-        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
-        if resolved_id is None:
+        async with self._operation_scope("chat.cancel"):
+            resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+            if resolved_id is None:
+                return None
+            await self._cancel_generation(notebook_id, resolved_id)
             return None
-        await self._cancel_generation(notebook_id, resolved_id)
-        return None
 
     async def delete_conversation(self, notebook_id: str, conversation_id: str) -> None:
         """Delete a conversation from the server.

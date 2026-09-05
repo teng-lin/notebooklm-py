@@ -90,6 +90,14 @@ class FakeSession:
         self.scopes.append(label)
         yield _Lease(self.epoch)
 
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct session tests."""
+        return asyncio.create_task(factory(), name=label)
+
     def assert_epoch(self, expected_epoch: int) -> None:
         if expected_epoch != self.epoch:
             raise RuntimeError("retired fake epoch")

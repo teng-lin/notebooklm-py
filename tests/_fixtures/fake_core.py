@@ -105,6 +105,11 @@ async def declared_noop_operation_scope(label: str) -> AsyncIterator[FakeOperati
     yield FakeOperationLease()
 
 
+async def declared_spawn_child(label: str, factory: Any) -> asyncio.Task[Any]:
+    """Declare an unowned child task for transport-free unit fakes."""
+    return asyncio.create_task(factory(), name=label)
+
+
 def make_fake_core(**overrides: Any) -> FakeSession:
     """Return a :class:`FakeSession` with benign defaults overridden.
 
@@ -126,9 +131,6 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         result = await api.list()
         fake.rpc_executor.rpc_call.assert_awaited_once()
     """
-
-    async def _spawn_child(label: str, factory: Any) -> asyncio.Task[Any]:
-        return asyncio.create_task(factory(), name=label)
 
     live_cookies = httpx.Cookies()
     fake_http_client = SimpleNamespace(cookies=live_cookies)
@@ -167,7 +169,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         "assert_bound_loop": MagicMock(return_value=None),
         "is_closing": MagicMock(return_value=False),
         "operation_scope": MagicMock(side_effect=declared_noop_operation_scope),
-        "spawn_child": _spawn_child,
+        "spawn_child": declared_spawn_child,
         # CallSupervisor owns close-time artifact hook registration. Keep
         # ``_drain_hooks`` as a public attribute on the fake so test sites can
         # inspect registrations without a real supervisor.

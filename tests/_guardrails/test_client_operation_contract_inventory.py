@@ -613,7 +613,11 @@ READINESS_CALL_INVENTORY = _call_rows(
             1,
         ),
         ("src/notebooklm/_app/source_wait.py", "execute_source_wait", 1),
-        ("src/notebooklm/_source/polling.py", "SourcePoller.wait_for_sources", 1),
+        (
+            "src/notebooklm/_source/polling.py",
+            "SourcePoller.wait_for_sources._wait_factory._wait",
+            1,
+        ),
         ("src/notebooklm/_sources.py", "SourcesAPI._finalize_uploaded_file", 1),
         ("src/notebooklm/_sources.py", "SourcesAPI.wait_until_ready", 1),
         ("src/notebooklm/_web/sources/__init__.py", "WebSourcesAPI.add_play_book", 1),
@@ -896,6 +900,7 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
             ("src/notebooklm/_artifacts.py", "ArtifactsAPI.generate_slide_deck", 1),
             ("src/notebooklm/_artifacts.py", "ArtifactsAPI.generate_study_guide", 1),
             ("src/notebooklm/_artifacts.py", "ArtifactsAPI.generate_video", 1),
+            ("src/notebooklm/_chat.py", "ChatAPI.cancel", 1),
             ("src/notebooklm/_collections.py", "CollectionsAPI._mutate_members", 1),
             ("src/notebooklm/_collections.py", "CollectionsAPI.delete", 1),
             ("src/notebooklm/_collections.py", "CollectionsAPI.get", 1),
@@ -918,6 +923,8 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
             ("src/notebooklm/_notebooks.py", "NotebooksAPI.copy", 1),
             ("src/notebooklm/_artifacts.py", "ArtifactsAPI.copy", 1),
             ("src/notebooklm/_chat.py", "ChatAPI.ask", 1),
+            ("src/notebooklm/_chat.py", "ChatAPI.session_status", 1),
+            ("src/notebooklm/_notebooks.py", "NotebooksAPI.get_metadata", 1),
             (
                 "src/notebooklm/_research.py",
                 "BaseResearchAPI._import_sources_with_verification",
@@ -925,6 +932,10 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
             ),
             ("src/notebooklm/_research.py", "BaseResearchAPI._wait_for_completion", 1),
             ("src/notebooklm/_settings.py", "SettingsAPI.get_usage", 1),
+            ("src/notebooklm/_sources.py", "SourcesAPI.wait_all_until_ready", 1),
+            ("src/notebooklm/_sources.py", "SourcesAPI.wait_for_sources", 1),
+            ("src/notebooklm/_sources.py", "SourcesAPI.wait_until_ready", 1),
+            ("src/notebooklm/_sources.py", "SourcesAPI.wait_until_registered", 1),
         ),
         Disposition("P3", "Require shared supervisor admission for every neutral workflow."),
     ),
@@ -936,10 +947,20 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
                 "AndroidArtifactsAPI._generate_supported_family",
                 1,
             ),
+            ("src/notebooklm/_android/chat.py", "AndroidChatAPI.get_history", 1),
+            ("src/notebooklm/_android/notebooks.py", "AndroidNotebooksAPI.suggest_prompts", 1),
+            ("src/notebooklm/_android/sources.py", "AndroidSourcesAPI.add_drive", 1),
+            ("src/notebooklm/_android/sources.py", "AndroidSourcesAPI.add_play_book", 1),
             ("src/notebooklm/_sources.py", "SourcesAPI.add_urls_async", 1),
             ("src/notebooklm/_sources.py", "SourcesAPI.append_text", 1),
             ("src/notebooklm/_sources.py", "SourcesAPI.copy", 1),
+            ("src/notebooklm/_web/artifacts.py", "WebArtifactsAPI.generate_mind_map", 1),
+            ("src/notebooklm/_web/artifacts.py", "WebArtifactsAPI.rename", 1),
+            ("src/notebooklm/_web/chat.py", "WebChatAPI.get_history", 1),
             ("src/notebooklm/_web/collections.py", "WebCollectionsAPI.create", 1),
+            ("src/notebooklm/_web/labels.py", "WebLabelsAPI.create", 1),
+            ("src/notebooklm/_web/notebooks.py", "WebNotebooksAPI.suggest_prompts", 1),
+            ("src/notebooklm/_web/notebooks.py", "WebNotebooksAPI.update", 1),
             ("src/notebooklm/_web/notes.py", "WebNotesAPI.update", 1),
             (
                 "src/notebooklm/_web/research.py",
@@ -951,17 +972,44 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
                 "WebSharingAPI._share_and_readback",
                 1,
             ),
+            ("src/notebooklm/_web/sharing.py", "WebSharingAPI.set_view_level", 1),
+            ("src/notebooklm/_web/sources/__init__.py", "WebSourcesAPI.rename", 1),
         ),
         Disposition("P3", "Preserve existing scopes and cover Web-specific composites."),
     ),
 )
 
 
-WORKFLOW_ADDITIONAL_ENTRYPOINT_INVENTORY = (
+REQUIRED_WORKFLOW_ENTRYPOINT_INVENTORY = (
+    SymbolInventory(
+        "src/notebooklm/_notebooks.py",
+        "NotebooksAPI.create",
+        Disposition("P3", "Holds the baseline, create send, and identity probe."),
+    ),
     SymbolInventory(
         "src/notebooklm/_notebooks.py",
         "NotebooksAPI.copy",
         Disposition("P3", "Holds notebook source-read/copy send from its first await."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_notebooks.py",
+        "NotebooksAPI.get_metadata",
+        Disposition("P3", "Holds both registered metadata children through composition."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/notebooks.py",
+        "WebNotebooksAPI.suggest_prompts",
+        Disposition("P3", "Holds source resolution through the prompt request."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_android/notebooks.py",
+        "AndroidNotebooksAPI.suggest_prompts",
+        Disposition("P3", "Holds source resolution through the prompt request."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/notebooks.py",
+        "WebNotebooksAPI.update",
+        Disposition("P3", "Holds the notebook mutation and required readback."),
     ),
     SymbolInventory(
         "src/notebooklm/_chat.py",
@@ -969,9 +1017,49 @@ WORKFLOW_ADDITIONAL_ENTRYPOINT_INVENTORY = (
         Disposition("P3", "Holds locks, history, send, and cache publication."),
     ),
     SymbolInventory(
+        "src/notebooklm/_chat.py",
+        "ChatAPI.session_status",
+        Disposition("P3", "Holds session resolution and status read."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_chat.py",
+        "ChatAPI.cancel",
+        Disposition("P3", "Holds session resolution and cancel send."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/chat.py",
+        "WebChatAPI.get_history",
+        Disposition("P3", "Holds session resolution and the Web turn read."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_android/chat.py",
+        "AndroidChatAPI.get_history",
+        Disposition("P3", "Holds session resolution and the Android turn read."),
+    ),
+    SymbolInventory(
         "src/notebooklm/_artifacts.py",
         "ArtifactsAPI.copy",
         Disposition("P3", "Holds artifact lookup and copy send."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/artifacts.py",
+        "WebArtifactsAPI.generate_mind_map",
+        Disposition("P3", "Holds source resolution, generation, and note persistence."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/artifacts.py",
+        "WebArtifactsAPI.rename",
+        Disposition("P3", "Holds the artifact mutation and required readback."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_mind_maps_api.py",
+        "MindMapsAPI.generate",
+        Disposition("P3", "Holds note-backed and interactive generation workflows."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/labels.py",
+        "WebLabelsAPI.create",
+        Disposition("P3", "Holds the label baseline and create send."),
     ),
     SymbolInventory(
         "src/notebooklm/_web/sharing.py",
@@ -979,14 +1067,74 @@ WORKFLOW_ADDITIONAL_ENTRYPOINT_INVENTORY = (
         Disposition("P3", "Holds the sharing mutation and required readback."),
     ),
     SymbolInventory(
+        "src/notebooklm/_web/sharing.py",
+        "WebSharingAPI.set_view_level",
+        Disposition("P3", "Holds the view mutation and required status readback."),
+    ),
+    SymbolInventory(
         "src/notebooklm/_web/collections.py",
         "WebCollectionsAPI.create",
         Disposition("P3", "Holds baseline, create send, and collection readback."),
     ),
     SymbolInventory(
+        "src/notebooklm/_web/notes.py",
+        "WebNotesAPI.update",
+        Disposition("P3", "Holds note preflight, mutation, and result settlement."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_research.py",
+        "BaseResearchAPI._wait_for_completion",
+        Disposition("P3/P6", "Holds the complete research polling leader."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_research.py",
+        "BaseResearchAPI._import_sources_with_verification",
+        Disposition("P3/P6", "Holds baseline, import, retry, and readback reconciliation."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_settings.py",
+        "SettingsAPI.get_usage",
+        Disposition("P3", "Holds account eligibility and conditional quota reads."),
+    ),
+    SymbolInventory(
         "src/notebooklm/_source/polling.py",
         "SourcePoller.wait_until_ready",
         Disposition("P3/P6", "Preserve polling leader admission and inherit operation context."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_sources.py",
+        "SourcesAPI.wait_until_ready",
+        Disposition("P3/P6", "Holds a complete source readiness poll."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_sources.py",
+        "SourcesAPI.wait_until_registered",
+        Disposition("P3/P6", "Holds a complete source registration poll."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_sources.py",
+        "SourcesAPI.wait_all_until_ready",
+        Disposition("P3/P6", "Holds batched source polling through final outcomes."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_sources.py",
+        "SourcesAPI.wait_for_sources",
+        Disposition("P3/P6", "Holds registered polling children through settlement."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/sources/__init__.py",
+        "WebSourcesAPI.rename",
+        Disposition("P3", "Holds source mutation and fallback hydration."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_android/sources.py",
+        "AndroidSourcesAPI.add_drive",
+        Disposition("P3", "Holds registration, commit, wait, and title finalization."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_android/sources.py",
+        "AndroidSourcesAPI.add_play_book",
+        Disposition("P3", "Holds library lookup, registration, commit, and readiness."),
     ),
     SymbolInventory(
         "src/notebooklm/_artifact/polling.py",
@@ -1535,8 +1683,8 @@ def test_workflow_hook_inventory_is_exact() -> None:
     assert _symbol_census("_operation_scope") == expected
 
 
-@pytest.mark.parametrize("row", WORKFLOW_ADDITIONAL_ENTRYPOINT_INVENTORY)
-def test_additional_plan_named_workflow_entrypoint_is_structural(row: SymbolInventory) -> None:
+@pytest.mark.parametrize("row", REQUIRED_WORKFLOW_ENTRYPOINT_INVENTORY)
+def test_required_plan_named_workflow_entrypoint_is_structural(row: SymbolInventory) -> None:
     function = _qualified_functions(ROOT / row.path)[row.symbol]
     assert any(isinstance(part, ast.Await) for part in ast.walk(function))
 
@@ -1642,7 +1790,7 @@ def test_every_inventory_row_has_an_explicit_phase_disposition() -> None:
         *(row.disposition for row in CLEANUP_INVENTORY),
         *(row.disposition for row in WORKFLOW_INVENTORY),
         *(row.disposition for row in WORKFLOW_SCOPE_CALL_INVENTORY),
-        *(row.disposition for row in WORKFLOW_ADDITIONAL_ENTRYPOINT_INVENTORY),
+        *(row.disposition for row in REQUIRED_WORKFLOW_ENTRYPOINT_INVENTORY),
         PRESENTATION_DISPOSITION,
         *GUARDRAIL_DISPOSITIONS.values(),
         *PLANNED_GUARDRAIL_DISPOSITIONS.values(),

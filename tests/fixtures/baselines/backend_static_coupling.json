@@ -3,7 +3,7 @@
     {
       "callee": "import_module",
       "expression": "'grpc'",
-      "lineno": 182,
+      "lineno": 183,
       "scope": "_default_grpc_loader",
       "scope_kind": "function",
       "source": "notebooklm._android.session",
@@ -13,7 +13,7 @@
     {
       "callee": "import_module",
       "expression": "'google.protobuf.runtime_version'",
-      "lineno": 191,
+      "lineno": 192,
       "scope": "_default_protobuf_loader",
       "scope_kind": "function",
       "source": "notebooklm._android.session",
@@ -23,7 +23,7 @@
     {
       "callee": "import_module",
       "expression": "_ANDROID_NOTES_PROTO",
-      "lineno": 200,
+      "lineno": 201,
       "scope": "_default_protobuf_loader",
       "scope_kind": "function",
       "source": "notebooklm._android.session",
@@ -1436,7 +1436,7 @@
     },
     {
       "kind": "from",
-      "lineno": 73,
+      "lineno": 74,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.session",
@@ -2975,7 +2975,7 @@
     },
     {
       "kind": "from",
-      "lineno": 870,
+      "lineno": 872,
       "scope": "__getattr__",
       "scope_kind": "function",
       "source": "notebooklm._chat",
@@ -9789,7 +9789,7 @@
   ],
   "subsystems": {
     "android": {
-      "lines": 15449,
+      "lines": 15463,
       "modules": 51
     },
     "app": {
@@ -9809,7 +9809,7 @@
       "modules": 37
     },
     "root": {
-      "lines": 22775,
+      "lines": 22841,
       "modules": 76
     },
     "rpc": {
@@ -9829,12 +9829,12 @@
       "modules": 16
     },
     "web": {
-      "lines": 33280,
+      "lines": 33315,
       "modules": 95
     }
   },
   "summary": {
-    "authored_lines": 143080,
+    "authored_lines": 143195,
     "authored_modules": 452,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1076,

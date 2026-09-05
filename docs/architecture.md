@@ -1004,6 +1004,14 @@ collaborator by keyword-only constructor argument. The composition wiring is cen
 called by both `NotebookLMClient.__init__` and the canonical test
 factory.
 
+An operation lease surrounds each complete public workflow, from its first
+meaningful await through required mutation readback, reconciliation, cache
+publication, or polling settlement. Nested terminal calls acquire their RPC
+semaphore slots independently; the outer operation lease is admission-only.
+Parallel notebook-metadata reads and source-wait fanout are created with
+`CallSupervisor.spawn_child`, so drain observes every child in the originating
+generation instead of relying on task-context inheritance alone.
+
 ## Testing patterns
 
 Two policies define how tests interact with the architecture above.

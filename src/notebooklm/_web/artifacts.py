@@ -238,12 +238,13 @@ class WebArtifactsAPI(ArtifactsAPI):
         ``mind_map`` (parsed structure, or ``None`` on an empty response) and
         ``note_id`` (the persisted note id, or ``None``).
         """
-        return await self._generation.generate_mind_map(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-        )
+        async with self._operation_scope("artifacts.generate_mind_map"):
+            return await self._generation.generate_mind_map(
+                notebook_id,
+                source_ids=source_ids,
+                language=language,
+                instructions=instructions,
+            )
 
     # =========================================================================
     # Download Operations
@@ -446,26 +447,27 @@ class WebArtifactsAPI(ArtifactsAPI):
             :class:`ArtifactNotFoundError` instead of silently returning
             ``None`` (#1362).
         """
-        params = [[artifact_id, new_title], [["title"]]]
-        await self._rpc.rpc_call(
-            RPCMethod.RENAME_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
-        )
-        # Resolve via studio artifacts only — never public ``get()`` (#1247) nor
-        # the merged listing (a note-backed mind-map id no-ops on RENAME_ARTIFACT
-        # — use ``mind_maps.rename``). v0.8.0 (#1362): the lookup runs on
-        # ``False`` too so a missing target is detected, but ``False`` still
-        # returns ``None`` on success.
-        artifact = await self._listing.get_studio_only(
-            notebook_id, artifact_id, list_raw=self._list_raw
-        )
-        if artifact is None:
-            raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.RENAME_ARTIFACT.value)
-        return None if not return_object else artifact
+        async with self._operation_scope("artifacts.rename"):
+            params = [[artifact_id, new_title], [["title"]]]
+            await self._rpc.rpc_call(
+                RPCMethod.RENAME_ARTIFACT,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            )
+            # Resolve via studio artifacts only — never public ``get()`` (#1247) nor
+            # the merged listing (a note-backed mind-map id no-ops on RENAME_ARTIFACT
+            # — use ``mind_maps.rename``). v0.8.0 (#1362): the lookup runs on
+            # ``False`` too so a missing target is detected, but ``False`` still
+            # returns ``None`` on success.
+            artifact = await self._listing.get_studio_only(
+                notebook_id, artifact_id, list_raw=self._list_raw
+            )
+            if artifact is None:
+                raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.RENAME_ARTIFACT.value)
+            return None if not return_object else artifact
 
     # =========================================================================
     # Export Operations

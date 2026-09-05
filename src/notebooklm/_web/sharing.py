@@ -157,30 +157,31 @@ class WebSharingAPI(SharingAPI):
             returned status includes the view_level we just set rather
             than fetching it from the API.
         """
-        logger.debug("Setting notebook %s view level to %s", notebook_id, level.name)
-        params = [
-            notebook_id,
-            [[None, None, None, None, None, None, None, None, [[level.value]]]],
-        ]
-        await self._rpc.rpc_call(
-            RPCMethod.RENAME_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
-        )
-        # Fetch current status and override view_level with what we just set
-        # (GET_SHARE_STATUS doesn't return view_level)
-        status = await self.get_status(notebook_id)
-        # ``replace`` rather than a field-by-field rebuild: the old form listed
-        # six fields explicitly and silently dropped every field added to
-        # ``ShareStatus`` afterwards, so this path reported ``None`` for the
-        # collaborator cap and the public-sharing policy gate that
-        # ``get_status`` had just decoded (#2130). Copying by construction ties
-        # the set of preserved fields to the dataclass itself, so a future field
-        # cannot regress the same way.
-        return replace(status, view_level=level)
+        async with self._operation_scope("sharing.set_view_level"):
+            logger.debug("Setting notebook %s view level to %s", notebook_id, level.name)
+            params = [
+                notebook_id,
+                [[None, None, None, None, None, None, None, None, [[level.value]]]],
+            ]
+            await self._rpc.rpc_call(
+                RPCMethod.RENAME_NOTEBOOK,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            )
+            # Fetch current status and override view_level with what we just set
+            # (GET_SHARE_STATUS doesn't return view_level)
+            status = await self.get_status(notebook_id)
+            # ``replace`` rather than a field-by-field rebuild: the old form listed
+            # six fields explicitly and silently dropped every field added to
+            # ``ShareStatus`` afterwards, so this path reported ``None`` for the
+            # collaborator cap and the public-sharing policy gate that
+            # ``get_status`` had just decoded (#2130). Copying by construction ties
+            # the set of preserved fields to the dataclass itself, so a future field
+            # cannot regress the same way.
+            return replace(status, view_level=level)
 
     @staticmethod
     def _share_params(

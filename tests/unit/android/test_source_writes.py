@@ -100,6 +100,10 @@ class FakeTransport:
         self.scopes.append(label)
         yield _Lease()
 
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct transport tests."""
+        return asyncio.create_task(factory(), name=label)
+
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
         self.timeline.append(method)
         self.calls.append((method, request, kwargs))
@@ -731,7 +735,11 @@ async def test_add_drive_uses_exact_content_and_validates_identifier_before_io()
 
     assert result.id == SOURCE_A
     assert result.title == "Drive title"
-    assert transport.scopes == ["source.add_drive", "source.rename"]
+    assert transport.scopes == [
+        "source.add_drive",
+        "source.add_drive.commit",
+        "source.rename",
+    ]
     commit = next(call[1] for call in transport.calls if call[0] == ADD_SOURCES_METHOD)
     content = commit.user_content[0]
     assert content.google_drive_content.document_id == "drive-document-id"

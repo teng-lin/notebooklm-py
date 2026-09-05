@@ -126,7 +126,7 @@ class AndroidNotebooksAPI(NotebooksAPI):
         sources_api: NotebookSourceLister,
     ) -> None:
         self._transport = session
-        super().__init__(sources_api)
+        super().__init__(sources_api, spawn_child=session.spawn_child)
 
     def _remember_created_chat_session(self, notebook: Notebook) -> None:
         if notebook.id and notebook.chat_sessions:
@@ -282,30 +282,32 @@ class AndroidNotebooksAPI(NotebooksAPI):
     ) -> builtins.list[PromptSuggestion]:
         if not 1 <= mode <= 10:
             raise ValidationError(f"mode must be in the inclusive range 1..10, got {mode!r}")
-        if source_ids is None:
-            source_ids = await self.get_source_ids(notebook_id)
-        resolved_query = query if query and query.strip() else ""
-        notebook_proto = _notebook_proto()
-        read_proto = _read_proto()
-        response = await self._transport.unary(
-            GENERATE_PROMPT_SUGGESTIONS_METHOD,
-            notebook_proto.GeneratePromptSuggestionsRequest(
-                request_context=_android_request_context(),
-                project_id=notebook_id,
-                source_ids=[read_proto.SourceId(id=source_id) for source_id in source_ids],
-                config_id=mode,
-                query=resolved_query,
-            ),
-            replay_safe=True,
-            response_type=notebook_proto.GeneratePromptSuggestionsResponse,
-        )
-        return [
-            PromptSuggestion(
-                title=_strip_leading_list_marker(item.title),
-                prompt=_strip_leading_list_marker(item.prompt),
+        async with self._operation_scope("notebooks.suggest_prompts") as lease:
+            if source_ids is None:
+                source_ids = await self.get_source_ids(notebook_id)
+            resolved_query = query if query and query.strip() else ""
+            notebook_proto = _notebook_proto()
+            read_proto = _read_proto()
+            response = await self._transport.unary(
+                GENERATE_PROMPT_SUGGESTIONS_METHOD,
+                notebook_proto.GeneratePromptSuggestionsRequest(
+                    request_context=_android_request_context(),
+                    project_id=notebook_id,
+                    source_ids=[read_proto.SourceId(id=source_id) for source_id in source_ids],
+                    config_id=mode,
+                    query=resolved_query,
+                ),
+                replay_safe=True,
+                response_type=notebook_proto.GeneratePromptSuggestionsResponse,
+                expected_epoch=lease.epoch,
             )
-            for item in response.suggestions
-        ]
+            return [
+                PromptSuggestion(
+                    title=_strip_leading_list_marker(item.title),
+                    prompt=_strip_leading_list_marker(item.prompt),
+                )
+                for item in response.suggestions
+            ]
 
     async def suggest_next_steps(
         self,

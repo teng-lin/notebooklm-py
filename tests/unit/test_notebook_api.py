@@ -207,16 +207,19 @@ async def test_client_wires_sources_api_into_notebooks_as_structural_lister() ->
         session_id="test_session",
     )
     client = NotebookLMClient(auth)
-    client.notebooks.get = AsyncMock(
-        return_value=Notebook(id="nb_123", title="Client", sources_count=1)
-    )
-    client.sources.list = AsyncMock(return_value=[Source(id="src_1", title="Paper", _type_code=3)])
+    async with client:
+        client.notebooks.get = AsyncMock(
+            return_value=Notebook(id="nb_123", title="Client", sources_count=1)
+        )
+        client.sources.list = AsyncMock(
+            return_value=[Source(id="src_1", title="Paper", _type_code=3)]
+        )
 
-    metadata = await client.notebooks.get_metadata("nb_123")
+        metadata = await client.notebooks.get_metadata("nb_123")
 
-    assert metadata.notebook.title == "Client"
-    assert metadata.sources[0].kind == SourceType.PDF
-    client.sources.list.assert_awaited_once_with("nb_123")
+        assert metadata.notebook.title == "Client"
+        assert metadata.sources[0].kind == SourceType.PDF
+        client.sources.list.assert_awaited_once_with("nb_123")
 
 
 @pytest.mark.asyncio

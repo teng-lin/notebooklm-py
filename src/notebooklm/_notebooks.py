@@ -11,7 +11,7 @@ from urllib.parse import quote
 from ._env import get_base_url
 from ._idempotency import idempotent_create, unresolved_commit_error
 from ._idempotency import mark_unconfirmed as _unconfirmed
-from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister
+from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister, SpawnChild
 from ._runtime.call_supervisor import OperationLease
 from .exceptions import (
     AuthError,
@@ -87,6 +87,7 @@ class NotebooksAPI(ABC):
         self,
         sources_api: NotebookSourceLister,
         *,
+        spawn_child: SpawnChild,
         metadata_service: NotebookMetadataService | None = None,
         share_url_builder: ShareUrlBuilder = _build_default_share_url,
     ) -> None:
@@ -103,6 +104,7 @@ class NotebooksAPI(ABC):
             # replace ``api.get`` after construction still affect get_metadata().
             get_notebook=lambda notebook_id: self.get(notebook_id),
             source_lister=self._sources,
+            spawn_child=spawn_child,
         )
         self._share_url_builder = share_url_builder
         # CREATE_NOTEBOOK/COPY_PROJECT may volunteer a chat-session id that
@@ -444,7 +446,8 @@ class NotebooksAPI(ABC):
 
     async def get_metadata(self, notebook_id: str) -> NotebookMetadata:
         """Get notebook details composed with simplified source metadata."""
-        return await self._metadata_service.get_metadata(notebook_id)
+        async with self._operation_scope("notebooks.get_metadata"):
+            return await self._metadata_service.get_metadata(notebook_id)
 
 
 __all__ = ["NotebooksAPI"]
