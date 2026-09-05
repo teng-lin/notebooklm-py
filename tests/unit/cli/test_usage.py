@@ -1,5 +1,6 @@
 """Usage CLI output, account scope, and failure contracts."""
 
+import inspect
 import json
 import logging
 from dataclasses import replace
@@ -7,6 +8,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from click.testing import CliRunner
 
 import notebooklm.cli.helpers as helpers_module
 import notebooklm.client as client_module
@@ -23,6 +25,14 @@ from notebooklm.types import (
 )
 
 from .conftest import create_mock_client, inject_client
+
+
+@pytest.fixture
+def runner() -> CliRunner:
+    """Capture stdout and stderr separately across supported Click versions."""
+    if "mix_stderr" in inspect.signature(CliRunner).parameters:
+        return CliRunner(mix_stderr=False)
+    return CliRunner()
 
 
 @pytest.fixture(autouse=True)

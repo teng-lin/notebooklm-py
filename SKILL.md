@@ -132,6 +132,7 @@ Common operations:
 
 | Goal | Command |
 |---|---|
+| Check compute usage | `notebooklm usage --json`; `notebooklm usage --categories` for category availability and estimated costs |
 | List or create notebooks | `notebooklm list --json`; `notebooklm create "Title" --json` |
 | Add and wait for a source | `notebooklm source add <input> -n <nb> --json`; `notebooklm source wait <src> -n <nb>` |
 | Chat | `notebooklm ask "question" -n <nb> --json` |
