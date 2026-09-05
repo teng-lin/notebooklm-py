@@ -122,6 +122,9 @@ class WebResearchAPI(BaseResearchAPI):
 
         Args:
             rpc: RPC dispatch surface (typically the shared client session).
+            supervisor: Owning client's call supervisor. Standalone construction
+                must supply a real supervisor so multi-call workflows participate
+                in lifecycle admission and shutdown fencing.
             base_timeout: The owning client's configured ``timeout=``. The
                 batch-scaled IMPORT_RESEARCH window is floored at it so a
                 caller's larger explicit budget is never silently shortened
@@ -136,9 +139,8 @@ class WebResearchAPI(BaseResearchAPI):
                 :meth:`import_sources_with_verification` to snapshot baseline
                 source IDs before the import call and probe sources on
                 timeout. When omitted, a default lister is built from
-                ``rpc`` — mirrors the ``WebNotebooksAPI`` wiring pattern, so
-                ``WebResearchAPI(rpc)`` works standalone with no cross-API
-                dependency.
+                ``rpc`` — mirrors the ``WebNotebooksAPI`` wiring pattern and
+                avoids a cross-API dependency.
         """
         self._rpc = rpc
         self._supervisor = supervisor
