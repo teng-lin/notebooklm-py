@@ -15,13 +15,21 @@ import pytest
 
 from notebooklm._android.auth import BearerCredential
 from notebooklm._android.chat import GENERATE_FREE_FORM_STREAMED_METHOD
-from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    read_pb2,
+    sources_pb2,
+)
+from notebooklm._android.proto.google.internal.labs.tailwind.v1 import source_settings_pb2
 from notebooklm._android.session import AndroidSession
-from notebooklm._android.sources import AndroidSourcesAPI
+from notebooklm._android.source_transfers import (
+    ADD_SOURCES_METHOD,
+    ADD_TENTATIVE_SOURCES_METHOD,
+)
+from notebooklm._android.sources import GET_PROJECT_METHOD, AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._idempotency import OperationJournal
+from notebooklm._idempotency import OperationJournal, SendIdentity
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._web.sources.batch import SourceBatchAddService
 from notebooklm.auth import AuthTokens
@@ -35,6 +43,10 @@ from tests._fixtures.rpc_error_frames import raw_batchexecute_body
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 _URLS = ("https://a.example.test", "https://b.example.test")
+_SOURCE_IDS = (
+    "00000000-0000-4000-8000-000000000101",
+    "00000000-0000-4000-8000-000000000102",
+)
 
 
 @dataclass(frozen=True)
@@ -102,18 +114,18 @@ def _web_client(case: str, requests: list[httpx.Request]):
         requests.append(request)
         if case == "pre_dispatch":
             raise httpx.ConnectError("connect failed", request=request)
-        if case == "unknown":
+        if case == "decoder_failure_after_acceptance":
             return httpx.Response(200, text="malformed accepted response", request=request)
         if case == "lost_response":
             raise httpx.ReadError("response lost", request=request)
+        if case == "transport_read_timeout":
+            # P2 has a per-request HTTP read deadline, not the P6 workflow
+            # deadline. Exercise the real Kernel -> RuntimeTransport mapping
+            # for the transport reporting that deadline as expired.
+            raise httpx.ReadTimeout("read deadline expired", request=request)
         if case == "rejected":
             body = raw_batchexecute_body(
                 [["wrb.fr", RPCMethod.ADD_SOURCE.value, None, None, None, [9], "generic"]]
-            )
-            return httpx.Response(200, text=body, request=request)
-        if case == "expiry":
-            body = raw_batchexecute_body(
-                [["wrb.fr", RPCMethod.ADD_SOURCE.value, None, None, None, [16], "generic"]]
             )
             return httpx.Response(200, text=body, request=request)
         rows = [
@@ -146,6 +158,25 @@ class _RawRpcError(Exception):
         return _Status.UNKNOWN
 
 
+def _android_source(
+    source_id: str,
+    *,
+    title: str,
+    url: str,
+) -> read_pb2.Source:
+    return read_pb2.Source(
+        source_id=read_pb2.SourceId(id=source_id),
+        title=title,
+        metadata=read_pb2.SourceMetadata(
+            original_source_content_type=read_pb2.SOURCE_CONTENT_TYPE_URL,
+            webpage_metadata=read_pb2.WebpageMetadata(url=url),
+        ),
+        settings=source_settings_pb2.SourceSettings(
+            status=source_settings_pb2.SOURCE_STATUS_PENDING
+        ),
+    )
+
+
 class _Bearer:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
@@ -170,17 +201,73 @@ class _Channel:
     def __init__(self, case: str) -> None:
         self.case = case
         self.invocations = 0
+        self.methods: list[str] = []
 
     def unary_unary(self, method: str, *, request_serializer: Any, response_deserializer: Any):
         async def invoke(request: Any, *, metadata: Any, timeout: float | None) -> Any:
-            del metadata, timeout
+            del metadata
             self.invocations += 1
+            self.methods.append(method)
             request_serializer(request)
-            if self.case == "unknown":
+            if self.case == "lost_response":
                 raise _RawRpcError()
-            return response_deserializer(
-                sources_pb2.AddTentativeSourcesResponse().SerializeToString()
-            )
+            if self.case == "decoder_failure_after_acceptance":
+                return response_deserializer(b"\x80")
+            if self.case == "transport_deadline":
+                assert timeout is not None and timeout > 0
+                await asyncio.Event().wait()
+                raise AssertionError("the AndroidSession deadline must cancel the wire await")
+            if method == ADD_TENTATIVE_SOURCES_METHOD:
+                response = sources_pb2.AddTentativeSourcesResponse()
+                if self.case != "rejected":
+                    response.tentative_sources.extend(
+                        _android_source(
+                            source_id,
+                            title=registration.name,
+                            url=url,
+                        )
+                        for registration, source_id, url in zip(
+                            request.tentative_sources_metadata,
+                            _SOURCE_IDS,
+                            _URLS,
+                            strict=True,
+                        )
+                    )
+            elif method == ADD_SOURCES_METHOD:
+                response = sources_pb2.AddSourcesResponse(
+                    sources=[
+                        _android_source(
+                            item.tentative_source_id.id,
+                            title=f"Source {index}",
+                            url=(
+                                item.web_content.url
+                                if item.HasField("web_content")
+                                else item.video_content.youtube_url
+                            ),
+                        )
+                        for index, item in enumerate(request.user_content)
+                    ]
+                )
+            elif method == GET_PROJECT_METHOD:
+                response = read_pb2.GetProjectResponse(
+                    project=read_pb2.Project(
+                        id=request.project_id,
+                        title="Notebook",
+                        sources=[
+                            _android_source(
+                                source_id,
+                                title=f"Source {index}",
+                                url=url,
+                            )
+                            for index, (source_id, url) in enumerate(
+                                zip(_SOURCE_IDS, _URLS, strict=True)
+                            )
+                        ],
+                    )
+                )
+            else:  # pragma: no cover - matrix fixture contract
+                raise AssertionError(f"unexpected Android method {method}")
+            return response_deserializer(response.SerializeToString())
 
         return invoke
 
@@ -233,7 +320,9 @@ async def _android_session(case: str) -> tuple[AndroidSession, _Channel]:
     session = AndroidSession(
         _Bearer(fail=case == "pre_dispatch"),
         supervisor,
-        timeout=1.0,
+        # Android already owns a real aggregate *per-RPC* deadline. P6 will add
+        # the wider workflow deadline; do not synthesize that later contract.
+        timeout=0.01 if case == "transport_deadline" else 1.0,
         rate_limit_max_retries=0,
         server_error_max_retries=0,
         grpc_loader=lambda: _Grpc(channel),
@@ -297,12 +386,14 @@ async def _produce(backend: str, case: str) -> tuple[BaseException, _Expected]:
     [
         ("web", "rejected"),
         ("android", "rejected"),
-        ("web", "unknown"),
-        ("android", "unknown"),
+        ("web", "decoder_failure_after_acceptance"),
+        ("android", "decoder_failure_after_acceptance"),
         ("web", "pre_dispatch"),
         ("android", "pre_dispatch"),
         ("web", "lost_response"),
-        ("web", "expiry"),
+        ("android", "lost_response"),
+        ("web", "transport_read_timeout"),
+        ("android", "transport_deadline"),
     ],
 )
 async def test_commit_evidence_producer_consumer_matrix(
@@ -352,25 +443,38 @@ async def test_commit_evidence_producer_consumer_matrix(
     assert rest_payload["batch_outcome"] == cli_payload["batch_outcome"]
 
 
+@pytest.mark.parametrize("backend", ["web", "android"])
 @pytest.mark.asyncio
-async def test_real_web_transport_and_decoder_confirm_batch_success() -> None:
-    requests: list[httpx.Request] = []
-    client = _web_client("success", requests)
+async def test_real_transport_and_decoder_confirm_batch_success(backend: str) -> None:
+    if backend == "web":
+        requests: list[httpx.Request] = []
+        client = _web_client("success", requests)
+        async with client:
+            outcomes = await SourceBatchAddService().add_urls(
+                "notebook-1",
+                _URLS,
+                rpc=client._web_runtime.executor,
+                list_sources=lambda *_args, **_kwargs: asyncio.sleep(0, result=[]),
+                extract_youtube_video_id=lambda _url: None,
+                logger=logging.getLogger(__name__),
+            )
+        assert len(requests) == 1
+    else:
+        session, channel = await _android_session("success")
+        try:
+            api = AndroidSourcesAPI(session, object.__new__(AndroidUploadPipeline))
+            outcomes = await api._add_urls_batch("notebook-1", list(_URLS))
+        finally:
+            await session.close_resources()
+        assert channel.methods == [
+            ADD_TENTATIVE_SOURCES_METHOD,
+            ADD_SOURCES_METHOD,
+            GET_PROJECT_METHOD,
+        ]
 
-    async with client:
-        outcomes = await SourceBatchAddService().add_urls(
-            "notebook-1",
-            _URLS,
-            rpc=client._web_runtime.executor,
-            list_sources=lambda *_args, **_kwargs: asyncio.sleep(0, result=[]),
-            extract_youtube_video_id=lambda _url: None,
-            logger=logging.getLogger(__name__),
-        )
-
-    assert len(requests) == 1
     assert [item.source.id for item in outcomes if item.source is not None] == [
-        "source-a",
-        "source-b",
+        "source-a" if backend == "web" else _SOURCE_IDS[0],
+        "source-b" if backend == "web" else _SOURCE_IDS[1],
     ]
     assert [item.outcome.commit_state for item in outcomes if item.outcome is not None] == [
         CommitState.CONFIRMED,
@@ -405,11 +509,29 @@ async def test_real_web_auth_refresh_reposts_replay_safe_read_once() -> None:
         refresh_retry_delay=0,
         async_client_factory=factory,
     )
+    journal = OperationJournal("notebooks.list")
+    entry = journal.new_entry(
+        method=RPCMethod.LIST_NOTEBOOKS.value,
+        invocation_id=journal.invocation_id(),
+    )
+    identity = entry.identity
+    assert isinstance(identity, SendIdentity)
     async with client:
-        assert await client._web_runtime.executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) == []
+        assert (
+            await client._web_runtime.executor.rpc_call(
+                RPCMethod.LIST_NOTEBOOKS,
+                [],
+                journal_entry=entry,
+            )
+            == []
+        )
 
     assert len(requests) == 2
     assert requests[0].content != requests[1].content
+    assert entry.identity is identity
+    assert journal.entries == (entry,)
+    assert [attempt.ordinal for attempt in entry.attempts] == [1, 2]
+    assert entry.attempts[0] is not entry.attempts[1]
 
 
 @pytest.mark.asyncio
