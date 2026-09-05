@@ -38,7 +38,7 @@ class SourceUrlBatchItem:
                 "outcome",
                 BatchItemOutcome(
                     member=self.member,
-                    input=self.url[:200],
+                    input=self.url,
                     commit_state=state,
                     resource_id=(
                         self.source.id

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -103,6 +104,17 @@ class AndroidCollectionsAPI(CollectionsAPI):
                     expected_epoch=lease.epoch,
                     journal_entry=entry,
                 )
+            except asyncio.CancelledError as error:
+                attach_journal_entry(
+                    error,
+                    entry,
+                    recovery_action=(
+                        RecoveryAction.RETRY
+                        if entry.commit_state is CommitState.NOT_SENT
+                        else RecoveryAction.INSPECT_AND_RECONCILE
+                    ),
+                )
+                raise
             except RPCError as error:
                 attach_journal_entry(error, entry)
                 raise

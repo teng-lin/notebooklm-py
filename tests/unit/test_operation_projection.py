@@ -6,7 +6,8 @@ import json
 
 import pytest
 
-from notebooklm._idempotency import attach_operation_metadata
+from notebooklm._idempotency import attach_operation_metadata, reconciliation_report
+from notebooklm._source.batch import SourceUrlBatchItem
 from notebooklm.cli.error_handler import handle_errors
 from notebooklm.exceptions import NetworkError, RPCError, SourceAddError
 from notebooklm.mcp._errors import to_tool_error, tool_error_payload
@@ -21,6 +22,14 @@ from notebooklm.outcomes import (
     operation_metadata_payload,
 )
 from notebooklm.server._errors import error_response
+
+
+def _long_userinfo_url() -> str:
+    return (
+        "https://userinfo-must-not-leak-"
+        + "x" * 220
+        + ":password-must-not-leak@unknown.test/path?access_token=query-must-not-leak"
+    )
 
 
 def _rich_error() -> RPCError:
@@ -126,6 +135,59 @@ def test_shared_metadata_projection_is_full_bounded_and_redacted(
     items = unknown["items"]
     assert isinstance(items, list)
     assert items[2]["reconciliation"]["unresolved_inputs"]  # type: ignore[index]
+
+
+def test_long_userinfo_is_redacted_before_outcome_cap_across_adapters(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    url = _long_userinfo_url()
+    report = reconciliation_report([url], [url], reason=url)
+    source_error = SourceAddError(url)
+    item = SourceUrlBatchItem(url=url, error=source_error)
+    assert item.outcome is not None
+
+    for stored in (
+        report.candidates[0].id,
+        report.unresolved_inputs[0],
+        report.reason,
+        item.outcome.input,
+        item.outcome.reconciliation.unresolved_inputs[0],
+    ):
+        assert stored.startswith("https://***@unknown.test/")
+        assert len(stored) <= 201
+        assert "userinfo-must-not-leak" not in stored
+        assert "password-must-not-leak" not in stored
+        assert "query-must-not-leak" not in stored
+
+    error = attach_operation_metadata(
+        source_error,
+        OperationMetadata(
+            commit_state=CommitState.UNKNOWN,
+            operation="sources.add_urls",
+            recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+            reconciliation=report,
+            batch_outcome=BatchOutcome((item.outcome,)),
+        ),
+    )
+    with pytest.raises(SystemExit), handle_errors(json_output=True):
+        raise error
+    cli_json = json.loads(capsys.readouterr().out)
+    with pytest.raises(SystemExit), handle_errors(json_output=False):
+        raise error
+    cli_text = capsys.readouterr().err
+    payloads = (
+        cli_json,
+        tool_error_payload(error),
+        json.loads(error_response(error).body)["error"],
+    )
+    rendered_adapters = tuple(
+        json.dumps(payload) for payload in (*payloads, str(to_tool_error(error)), cli_text)
+    )
+    for rendered in rendered_adapters:
+        assert "https://***@unknown.test/" in rendered
+        assert "userinfo-must-not-leak" not in rendered
+        assert "password-must-not-leak" not in rendered
+        assert "query-must-not-leak" not in rendered
 
 
 def test_confirmed_chat_projection_says_recorded_but_readback_unresolved(

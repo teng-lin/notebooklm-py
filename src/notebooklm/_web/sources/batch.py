@@ -124,7 +124,7 @@ def _batch_outcome(
         tuple(
             BatchItemOutcome(
                 member=index,
-                input=url[:200],
+                input=url,
                 commit_state=entry.commit_state,
                 resource_id=(
                     source.id

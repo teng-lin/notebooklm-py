@@ -701,6 +701,51 @@ class TestSharingAPIValidation:
             CommitState.UNKNOWN,
         ]
 
+    @pytest.mark.parametrize(
+        ("dispatched", "expected_state", "expected_recovery"),
+        [
+            (False, CommitState.NOT_SENT, RecoveryAction.RETRY),
+            (True, CommitState.UNKNOWN, RecoveryAction.INSPECT_AND_RECONCILE),
+        ],
+        ids=["pre-dispatch", "post-dispatch"],
+    )
+    @pytest.mark.asyncio
+    async def test_mutation_cancellation_retains_sharing_journal(
+        self,
+        dispatched: bool,
+        expected_state: CommitState,
+        expected_recovery: RecoveryAction,
+    ) -> None:
+        from notebooklm._web.sharing import WebSharingAPI
+        from tests._fixtures.fake_core import make_fake_core
+
+        cancellation = asyncio.CancelledError("cancel sharing mutation")
+
+        class CancellingRpc:
+            async def rpc_call(self, method: RPCMethod, _params: list[Any], **kwargs: Any) -> Any:
+                assert method is RPCMethod.SHARE_NOTEBOOK
+                entry = kwargs["journal_entry"]
+                if dispatched:
+                    entry.mark_dispatched()
+                raise cancellation
+
+        api = WebSharingAPI(CancellingRpc(), supervisor=make_fake_core())
+
+        with pytest.raises(asyncio.CancelledError) as raised:
+            await api.set_public("nb_123", True)
+
+        assert raised.value is cancellation
+        metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+        assert metadata.commit_state is expected_state
+        assert metadata.recovery_action is expected_recovery
+        assert [entry.commit_state for entry in metadata.entries] == [
+            expected_state,
+            CommitState.NOT_SENT,
+        ]
+        assert [attempt.commit_state for attempt in metadata.attempts] == (
+            [CommitState.UNKNOWN] if dispatched else []
+        )
+
 
 class TestShareStatusDefaultValues:
     """Test ShareStatus default values and edge cases."""

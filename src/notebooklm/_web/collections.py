@@ -182,6 +182,18 @@ class WebCollectionsAPI(CollectionsAPI):
                     raise_on_null_status=True,
                     journal_entry=mutation_entry,
                 )
+            except asyncio.CancelledError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=(
+                        RecoveryAction.RETRY
+                        if mutation_entry.commit_state is CommitState.NOT_SENT
+                        else RecoveryAction.INSPECT_AND_RECONCILE
+                    ),
+                )
+                raise
             except NotebookLMError as exc:
                 attach_operation_journal(exc, journal, primary=mutation_entry)
                 raise

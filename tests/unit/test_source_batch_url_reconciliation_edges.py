@@ -20,6 +20,7 @@ from notebooklm._idempotency import OperationJournal
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.sources.batch import (
     SourceBatchAddService,
+    _batch_outcome,
     _unresolved_batch_error,
     _url_identity,
 )
@@ -133,7 +134,7 @@ def test_unresolved_batch_error_previews_three_urls_and_reports_the_total() -> N
     for entry in entries:
         entry.mark_dispatched()
 
-    error = _unresolved_batch_error(urls, "boom.", RuntimeError("cause"), entries)
+    error = _unresolved_batch_error(urls, "boom.", RuntimeError("cause"), entries, journal)
 
     # Assert on the previewed SET, not substring containment. Besides being the
     # stronger check (it pins exactly which three are shown, and their order),
@@ -145,6 +146,27 @@ def test_unresolved_batch_error_previews_three_urls_and_reports_the_total() -> N
     assert previewed == urls[:3]
     assert "… (5 total)" in rendered
     assert getattr(error, "unconfirmed", False) is True
+
+
+def test_web_batch_outcome_redacts_long_userinfo_before_length_cap() -> None:
+    url = (
+        "https://userinfo-must-not-leak-"
+        + "x" * 220
+        + ":password-must-not-leak@unknown.test/path?access_token=query-must-not-leak"
+    )
+    journal = OperationJournal("sources.add_urls")
+    entry = journal.new_entry(method=RPCMethod.ADD_SOURCE.value, member=0)
+    entry.mark_dispatched()
+
+    (item,) = _batch_outcome([url], [entry]).items
+
+    assert item.input.startswith("https://***@unknown.test/")
+    assert item.reconciliation is not None
+    assert item.reconciliation.unresolved_inputs == (item.input,)
+    rendered = repr(item)
+    assert "userinfo-must-not-leak" not in rendered
+    assert "password-must-not-leak" not in rendered
+    assert "query-must-not-leak" not in rendered
 
 
 @pytest.mark.asyncio

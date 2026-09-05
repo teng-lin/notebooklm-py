@@ -385,10 +385,10 @@ def reconciliation_report(
 
     return ReconciliationReport(
         candidates=tuple(
-            ReconciliationCandidate(str(candidate)[:200]) for candidate in candidate_ids[:20]
+            ReconciliationCandidate(str(candidate)) for candidate in candidate_ids[:20]
         ),
-        unresolved_inputs=tuple(str(item)[:200] for item in unresolved_inputs[:20]),
-        reason=reason[:200],
+        unresolved_inputs=tuple(str(item) for item in unresolved_inputs[:20]),
+        reason=reason,
     )
 
 

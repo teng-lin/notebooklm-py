@@ -914,7 +914,7 @@
     },
     {
       "kind": "from",
-      "lineno": 10,
+      "lineno": 11,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.collections",
@@ -923,7 +923,7 @@
     },
     {
       "kind": "from",
-      "lineno": 11,
+      "lineno": 12,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.collections",
@@ -932,7 +932,7 @@
     },
     {
       "kind": "from",
-      "lineno": 17,
+      "lineno": 18,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.collections",
@@ -941,7 +941,7 @@
     },
     {
       "kind": "from",
-      "lineno": 18,
+      "lineno": 19,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.collections",
@@ -950,7 +950,7 @@
     },
     {
       "kind": "from",
-      "lineno": 25,
+      "lineno": 26,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.collections",
@@ -959,7 +959,7 @@
     },
     {
       "kind": "from",
-      "lineno": 26,
+      "lineno": 27,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.collections",
@@ -10311,7 +10311,7 @@
   ],
   "subsystems": {
     "android": {
-      "lines": 16285,
+      "lines": 16297,
       "modules": 52
     },
     "app": {
@@ -10351,12 +10351,12 @@
       "modules": 16
     },
     "web": {
-      "lines": 33034,
+      "lines": 33058,
       "modules": 95
     }
   },
   "summary": {
-    "authored_lines": 144664,
+    "authored_lines": 144700,
     "authored_modules": 454,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1134,
