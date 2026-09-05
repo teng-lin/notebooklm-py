@@ -387,7 +387,7 @@ async def test_e8_unconfirmed_import_keeps_staged_drive_file(tmp_path: Path) -> 
     path.write_bytes(b"PK\x03\x04 docx payload")
     transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
     importer_calls: list[str] = []
-    error = SourceAddError("import response was lost", url="drive://staged")
+    error = SourceAddError("drive://staged", message="import response was lost")
     mark_unconfirmed(error)
 
     async def fake_importer(staged_id: str) -> None:

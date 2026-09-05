@@ -10,7 +10,7 @@ import pytest
 
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._notebooks import NotebooksAPI
-from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._runtime.call_supervisor import AdmissionState, CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle
 from notebooklm.exceptions import (
     NetworkError,
@@ -284,14 +284,32 @@ async def test_e6_web_create_holds_real_lifecycle_admission_across_drain() -> No
     create_task = asyncio.create_task(api.create("Drain-safe"))
     await api.between_calls.wait()
 
-    await lifecycle.drain()
-    api.resume_create.set()
+    draining = asyncio.Event()
+    stop_accepting = supervisor.stop_accepting
+
+    async def observed_stop_accepting(epoch: int) -> None:
+        await stop_accepting(epoch)
+        draining.set()
+
+    supervisor.stop_accepting = observed_stop_accepting  # type: ignore[method-assign]
+    drain_task = asyncio.create_task(lifecycle.drain())
+    await draining.wait()
+    assert supervisor._current is not None
+    assert supervisor._current.state is AdmissionState.DRAINING
     try:
-        created = await create_task
+        assert not drain_task.done()
     finally:
+        api.resume_create.set()
+        created_result, drain_result = await asyncio.gather(
+            create_task,
+            drain_task,
+            return_exceptions=True,
+        )
         await lifecycle.close(drain=False)
 
-    assert created.id == "nb-created"
+    assert drain_result is None
+    assert isinstance(created_result, Notebook)
+    assert created_result.id == "nb-created"
 
 
 def test_created_chat_session_hint_storage_is_owned_and_consumed_by_base() -> None:
