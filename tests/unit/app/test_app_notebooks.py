@@ -52,7 +52,7 @@ def _client() -> MagicMock:
     return client
 
 
-async def _resolve_nb(_client, nb_id, *, json_output=False):
+async def _resolve_nb(_client, nb_id):
     """Identity resolver that prefixes to verify the *resolved* id flows downstream."""
     return f"full_{nb_id}"
 
@@ -204,7 +204,6 @@ async def test_execute_notebook_copy_resolves_then_copies_once() -> None:
         "nb_part",
         "Copied notebook",
         resolve_notebook_id=_resolve_nb,
-        json_output=True,
     )
 
     assert isinstance(result, NotebookCopyResult)

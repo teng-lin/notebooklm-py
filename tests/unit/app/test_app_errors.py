@@ -376,18 +376,15 @@ def test_partial_upload_recovery_attributes_do_not_change_classification(
     assert result.retriable is retriable
 
 
-def test_source_mutation_error_keeps_cli_attributes() -> None:
-    """Re-basing onto NotebookLMError must not drop the CLI-read attributes."""
+def test_source_mutation_error_keeps_typed_attributes() -> None:
     err = SourceMutationError(
         "ambiguous id",
         "AMBIGUOUS_ID",
         {"source_id": "abc"},
-        status_message="[dim]Matched: abc[/dim]",
     )
     assert err.message == "ambiguous id"
     assert err.code == "AMBIGUOUS_ID"
     assert err.extra == {"source_id": "abc"}
-    assert err.status_message == "[dim]Matched: abc[/dim]"
 
 
 def test_download_plan_validation_error_keeps_code_and_message() -> None:

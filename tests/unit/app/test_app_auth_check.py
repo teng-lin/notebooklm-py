@@ -47,7 +47,6 @@ def _plan(
     has_home_env: bool = False,
     profile: str | None = "default",
     test_fetch: bool = False,
-    json_output: bool = False,
 ) -> AuthCheckPlan:
     return AuthCheckPlan(
         storage_path=storage_path,
@@ -56,7 +55,6 @@ def _plan(
         has_home_env=has_home_env,
         auth_source_label="file (storage_state.json)",
         test_fetch=test_fetch,
-        json_output=json_output,
     )
 
 

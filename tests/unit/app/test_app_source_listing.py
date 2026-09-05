@@ -64,23 +64,21 @@ async def test_label_filter_resolves_then_fetches_members() -> None:
     result = await fetch_sources(client, "nb_1", label_filter="Papers", label_resolver=resolver)
 
     assert result == members
-    resolver.assert_awaited_once_with(client, "nb_1", "Papers", json_output=False)
+    resolver.assert_awaited_once_with(client, "nb_1", "Papers")
     client.labels.sources.assert_awaited_once_with("nb_1", "lbl_full_id")
     # The full-list path is NOT taken when a filter is supplied.
     client.sources.list.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_json_output_forwarded_to_resolver_only() -> None:
+async def test_presentation_options_are_not_forwarded_to_resolver() -> None:
     client = _client()
     client.labels.sources = AsyncMock(return_value=[])
     resolver = AsyncMock(return_value="lbl_id")
 
-    await fetch_sources(
-        client, "nb_1", label_filter="Topics", label_resolver=resolver, json_output=True
-    )
+    await fetch_sources(client, "nb_1", label_filter="Topics", label_resolver=resolver)
 
-    resolver.assert_awaited_once_with(client, "nb_1", "Topics", json_output=True)
+    resolver.assert_awaited_once_with(client, "nb_1", "Topics")
 
 
 @pytest.mark.asyncio

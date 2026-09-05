@@ -24,10 +24,13 @@ from notebooklm.cli import _source_render, source_cmd
 from notebooklm.cli.services import source_mutations, source_research
 from notebooklm.cli.services.source_mutations import (
     SourceDeletePlan,
+    SourceIdResolution,
     SourceMutationError,
     SourceRenamePlan,
     execute_source_delete,
     execute_source_rename,
+    run_source_delete,
+    run_source_delete_by_title,
 )
 from notebooklm.cli.services.source_research import (
     SourceAddResearchPlan,
@@ -82,7 +85,7 @@ def _start(spec: dict) -> ResearchStart:
 
 
 @pytest.mark.asyncio
-async def test_source_delete_json_without_yes_uses_structured_confirmation_error() -> None:
+async def test_source_delete_executes_exact_prepared_target() -> None:
     client = SimpleNamespace(
         sources=SimpleNamespace(
             list=AsyncMock(return_value=[Source(id="src_abcdef", title="Paper")]),
@@ -91,16 +94,33 @@ async def test_source_delete_json_without_yes_uses_structured_confirmation_error
     )
     plan = SourceDeletePlan(
         notebook_id="nb_1",
-        source_id="src_abc",
-        yes=False,
-        json_output=True,
+        target=SourceIdResolution("src_abcdef", matched_title="Paper"),
+    )
+
+    result = await execute_source_delete(client, plan)
+
+    assert result.source_id == "src_abcdef"
+    assert result.matched_title == "Paper"
+    client.sources.delete.assert_awaited_once_with("nb_1", "src_abcdef")
+
+
+@pytest.mark.asyncio
+async def test_source_delete_noninteractive_without_approval_uses_cli_confirmation_error() -> None:
+    client = SimpleNamespace(
+        sources=SimpleNamespace(
+            list=AsyncMock(return_value=[Source(id="src_abcdef", title="Paper")]),
+            delete=AsyncMock(),
+        )
     )
 
     with pytest.raises(SourceMutationError) as exc_info:
-        await execute_source_delete(
+        await run_source_delete(
             client,
-            plan,
-            confirmer=lambda message: pytest.fail(f"unexpected confirmation: {message}"),
+            notebook_id="nb_1",
+            source_id="src_abc",
+            approved=False,
+            noninteractive=True,
+            confirm=lambda message: pytest.fail(f"unexpected confirmation: {message}"),
         )
 
     assert exc_info.value.message == "Pass --yes to confirm destructive operation in --json mode"
@@ -109,9 +129,58 @@ async def test_source_delete_json_without_yes_uses_structured_confirmation_error
         "action": "delete",
         "source_id": "src_abcdef",
         "notebook_id": "nb_1",
+        "status_message": "Matched: src_abcdef... (Paper)",
     }
-    assert exc_info.value.status_message == "[dim]Matched: src_abcdef... (Paper)[/dim]"
     client.sources.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_source_delete_declined_confirmation_preserves_resolved_target() -> None:
+    client = SimpleNamespace(
+        sources=SimpleNamespace(
+            list=AsyncMock(return_value=[Source(id="src_abcdef", title="Paper")]),
+            delete=AsyncMock(),
+        )
+    )
+
+    result = await run_source_delete(
+        client,
+        notebook_id="nb_1",
+        source_id="src_abc",
+        approved=False,
+        noninteractive=False,
+        confirm=lambda message: message == "never accept",
+    )
+
+    assert result.status == "cancelled"
+    assert result.source_id == "src_abcdef"
+    assert result.matched_title == "Paper"
+    client.sources.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_source_delete_by_title_confirms_then_executes_same_resolved_target() -> None:
+    client = SimpleNamespace(
+        sources=SimpleNamespace(
+            list=AsyncMock(return_value=[Source(id="src_1", title="Paper")]),
+            delete=AsyncMock(),
+        )
+    )
+    prompts: list[str] = []
+
+    result = await run_source_delete_by_title(
+        client,
+        notebook_id="nb_1",
+        title="Paper",
+        approved=False,
+        noninteractive=False,
+        confirm=lambda message: prompts.append(message) is None,
+    )
+
+    assert result.status == "completed"
+    assert prompts == ["Delete source 'Paper' (src_1)?"]
+    client.sources.list.assert_awaited_once_with("nb_1")
+    client.sources.delete.assert_awaited_once_with("nb_1", "src_1")
 
 
 @pytest.mark.asyncio
@@ -131,8 +200,8 @@ async def test_source_rename_returns_payload(monkeypatch: pytest.MonkeyPatch) ->
             notebook_id="nb_1",
             source_id="src",
             new_title="New",
-            json_output=True,
         ),
+        json_output=True,
     )
 
     client.sources.rename.assert_awaited_once_with("nb_1", "src_full", "New")
@@ -315,8 +384,8 @@ async def test_source_add_research_json_import_stays_silent(
             cited_only=True,
             no_wait=False,
             timeout=30,
-            json_output=True,
         ),
+        json_output=True,
     )
 
     assert result.outcome == "completed"
@@ -350,7 +419,6 @@ def test_render_add_research_started_no_wait_json_payload(
                 cited_only=False,
                 no_wait=True,
                 timeout=30,
-                json_output=True,
             ),
             start_task_id="task_123",
             poll_task_id="report_456",
@@ -390,7 +458,6 @@ def test_render_add_research_completed_json_payload(
                 cited_only=True,
                 no_wait=False,
                 timeout=30,
-                json_output=True,
             ),
             start_task_id="task_123",
             poll_task_id="task_123",

@@ -48,7 +48,6 @@ def _research_result(outcome: str, **kw) -> SourceAddResearchResult:
         cited_only=False,
         no_wait=False,
         timeout=60,
-        json_output=True,
     )
     return SourceAddResearchResult(outcome=outcome, plan=plan, **kw)
 
@@ -89,46 +88,42 @@ class TestRenderSourceWaitOutcomeGuard:
 
 
 # ---------------------------------------------------------------------------
-# _handle_source_mutation_error — status-message branches
+# _handle_source_mutation_error
 # ---------------------------------------------------------------------------
 class TestHandleSourceMutationError:
-    def test_status_message_routed_to_json_extra(self, capsys):
-        exc = SourceMutationError(
-            "boom", "DELETE_FAILED", extra={"k": "v"}, status_message="[red]bad[/red]"
-        )
+    def test_structured_extra_is_preserved(self, capsys):
+        exc = SourceMutationError("boom", "DELETE_FAILED", extra={"k": "v"})
         with pytest.raises(SystemExit):
             source_cmd._handle_source_mutation_error(exc, json_output=True)
         payload = json.loads(capsys.readouterr().out)
         assert payload["code"] == "DELETE_FAILED"
-        # Markup stripped to plain text in the JSON extra.
-        assert payload["status_message"] == "bad"
         assert payload["k"] == "v"
 
-    def test_status_message_routed_to_text_hint(self, capsys):
-        exc = SourceMutationError("boom", "DELETE_FAILED", status_message="[red]hint here[/red]")
+    def test_text_error_uses_adapter_renderer(self, capsys):
+        exc = SourceMutationError("boom", "DELETE_FAILED")
         with pytest.raises(SystemExit):
             source_cmd._handle_source_mutation_error(exc, json_output=False)
         err = capsys.readouterr().err
         assert "boom" in err
-        assert "hint here" in err
 
 
 # ---------------------------------------------------------------------------
 # _render_source_delete_result — status-message emission
 # ---------------------------------------------------------------------------
 class TestRenderSourceDeleteResult:
-    def test_status_message_emitted_text_mode(self, capsys):
+    def test_match_metadata_rendered_in_text_mode(self, capsys):
         ctx = click.Context(click.Command("x"))
         result = SourceDeleteResult(
             source_id="src_1",
             notebook_id="nb_1",
             success=True,
             status="completed",
-            status_message="[dim]queued[/dim]",
+            matched_title="Paper",
         )
         source_cmd._render_source_delete_result(result, json_output=False, ctx=ctx)
         out = capsys.readouterr().out
-        assert "queued" in out
+        assert "Matched:" in out
+        assert "Paper" in out
         assert "Deleted source" in out
 
 

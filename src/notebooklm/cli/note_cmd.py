@@ -12,6 +12,7 @@ Commands:
 from __future__ import annotations
 
 from dataclasses import asdict
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import click
@@ -171,8 +172,7 @@ def note_create(ctx, content, content_flag, notebook_id, title, json_output, cli
                 nb_id,
                 title,
                 content,
-                resolve_notebook_id=resolve_notebook_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
             )
             nb_id_resolved = create_result.notebook_id
             new_id = create_result.note_id
@@ -216,9 +216,8 @@ def note_get(ctx, note_id, notebook_id, json_output, client_auth):
                 client,
                 nb_id,
                 note_id,
-                resolve_notebook_id=resolve_notebook_id,
-                resolve_note_id=resolve_note_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
+                resolve_note_id=partial(resolve_note_id, json_output=json_output),
             )
             nb_id_resolved = get_result.notebook_id
             resolved_id = get_result.note_id
@@ -315,9 +314,8 @@ def note_save(ctx, note_id, notebook_id, title, content, json_output, client_aut
                 note_id,
                 title=title,
                 content=content,
-                resolve_notebook_id=resolve_notebook_id,
-                resolve_note_id=resolve_note_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
+                resolve_note_id=partial(resolve_note_id, json_output=json_output),
             )
             nb_id_resolved = save_result.notebook_id
             resolved_id = save_result.note_id
@@ -371,9 +369,8 @@ def note_rename(ctx, note_id, new_title, notebook_id, json_output, client_auth):
                 nb_id,
                 note_id,
                 new_title,
-                resolve_notebook_id=resolve_notebook_id,
-                resolve_note_id=resolve_note_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
+                resolve_note_id=partial(resolve_note_id, json_output=json_output),
             )
             nb_id_resolved = rename_result.notebook_id
             resolved_id = rename_result.note_id
@@ -424,9 +421,8 @@ def note_delete(ctx, note_id, notebook_id, yes, json_output, client_auth):
                     client,
                     nb_id,
                     note_id,
-                    resolve_notebook_id=resolve_notebook_id,
-                    resolve_note_id=resolve_note_id,
-                    json_output=json_output,
+                    resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
+                    resolve_note_id=partial(resolve_note_id, json_output=json_output),
                 )
 
                 # In JSON mode, refuse to prompt: ``click.confirm`` writes to

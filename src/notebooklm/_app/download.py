@@ -35,13 +35,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
 from pathlib import Path
-from typing import Any, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 from ..exceptions import AuthError, ValidationError
 from ..types import Artifact, ArtifactType
 from .download_specs import EXTENSION_MIME_TYPES, DownloadTypeSpec
 from .download_specs import FORMAT_EXTENSIONS as FORMAT_EXTENSIONS
-from .events import ProgressEvent, ProgressSink
 
 # Reserve space for " (999)" suffix when handling duplicate filenames.
 DUPLICATE_SUFFIX_RESERVE = 7
@@ -133,6 +132,32 @@ class DownloadPlanValidationError(ValidationError):
 
 
 @dataclass(frozen=True)
+class DownloadWarning:
+    """Semantic format/path mismatch for adapter-owned rendering."""
+
+    code: Literal["FORMAT_EXTENSION_MISMATCH"]
+    output_path: str
+    expected_extension: str
+    format_choice: str
+
+
+@dataclass(frozen=True)
+class DownloadEvent:
+    """Semantic download progress event for adapter-owned rendering."""
+
+    kind: Literal["ITEM_STARTED"]
+    index: int
+    total: int
+    title: str
+
+
+class DownloadEventSink(Protocol):
+    """Consumer for semantic download progress events."""
+
+    def emit(self, event: DownloadEvent) -> None: ...
+
+
+@dataclass(frozen=True)
 class DownloadPlan:
     """One validated download invocation.
 
@@ -167,7 +192,7 @@ class DownloadPlan:
     force: bool
     no_clobber: bool
     format_choice: str = ""
-    warnings: tuple[str, ...] = ()
+    warnings: tuple[DownloadWarning, ...] = ()
     # Captured at plan-build time so the executor doesn't have to re-derive it;
     # ``Path.cwd()`` at executor time would be wrong if the caller changed
     # directories between ``build_download_plan`` and the awaited
@@ -364,7 +389,7 @@ def _resolve_format_extension(
     format_choice: str,
     *,
     download_all: bool = False,
-) -> tuple[str, tuple[str, ...]]:
+) -> tuple[str, tuple[DownloadWarning, ...]]:
     """Compute the effective extension given the spec + user's ``--format``.
 
     Matches the historical wiring exactly:
@@ -388,8 +413,12 @@ def _resolve_format_extension(
         return (
             effective_ext,
             (
-                f"Warning: output path '{output_path}' does not end with "
-                f"'{effective_ext}' but --format {format_choice} was requested.",
+                DownloadWarning(
+                    "FORMAT_EXTENSION_MISMATCH",
+                    output_path,
+                    effective_ext,
+                    format_choice,
+                ),
             ),
         )
     return effective_ext, ()
@@ -626,12 +655,12 @@ async def _execute_download_all(
     nb_id_resolved: str,
     download_fn: _DownloadFn,
     *,
-    progress: ProgressSink | None = None,
+    progress: DownloadEventSink | None = None,
 ) -> DownloadResult:
     """Execute the ``--all`` branch: filter by name, dry-run preview, download.
 
     Per-artifact progress (``Downloading 1/N: <title>``) is emitted into the
-    optional :class:`ProgressSink` so the adapter renders it in its own
+    optional :class:`DownloadEventSink` so the adapter renders it in its own
     surface. The adapter owns JSON routing: it passes ``progress=None`` when it
     wants a clean JSON stream, so this core never inspects a presentation flag.
 
@@ -694,10 +723,11 @@ async def _execute_download_all(
     ):
         if progress is not None:
             progress.emit(
-                ProgressEvent(
-                    message=f"[dim]Downloading {i}/{total}:[/dim] {artifact['title']}",
-                    kind="download",
-                    pct=i / total if total else None,
+                DownloadEvent(
+                    kind="ITEM_STARTED",
+                    index=i,
+                    total=total,
+                    title=str(artifact["title"]),
                 )
             )
 
@@ -880,7 +910,7 @@ async def execute_download(
     *,
     notebook_resolver: NotebookResolver,
     artifact_resolver: ArtifactResolver,
-    progress: ProgressSink | None = None,
+    progress: DownloadEventSink | None = None,
 ) -> DownloadResult:
     """Run the validated plan against the live (or mocked) client facade.
 
@@ -901,7 +931,7 @@ async def execute_download(
         artifact_resolver: Sync callable resolving a partial ``-a/--artifact``
             id against the pre-fetched list, raising ``ValueError`` on
             no-match / ambiguity.
-        progress: Optional :class:`ProgressSink` for the ``--all`` per-artifact
+        progress: Optional :class:`DownloadEventSink` for the ``--all`` per-artifact
             progress events. ``None`` skips them.
     """
     nb_id_resolved = await notebook_resolver(plan.notebook_id)

@@ -76,10 +76,9 @@ class ResearchImportOutcome(Protocol):
     def cited_selection(self) -> Any: ...
 
 
-#: Signature of the injected source importer (the CLI passes
-#: ``cli.research_import.import_research_sources``). Keyword arguments
-#: (``report`` / ``cited_only`` / ``max_elapsed`` / ``json_output``) are
-#: forwarded verbatim, so this stays ``Callable[..., Awaitable[...]]``.
+#: Signature of the injected source importer. Neutral execution forwards only
+#: report/selection/deadline data; adapters may pre-bind their own presentation
+#: options before supplying the callable.
 ImportSourcesFn = Callable[..., Awaitable[ResearchImportOutcome]]
 
 
@@ -95,7 +94,6 @@ class SourceAddResearchPlan:
     cited_only: bool
     no_wait: bool
     timeout: int
-    json_output: bool = False
 
 
 @dataclass(frozen=True)
@@ -251,8 +249,6 @@ async def execute_source_add_research(
                 "cited_only": plan.cited_only,
                 "max_elapsed": plan.timeout,
             }
-            if plan.json_output:
-                import_kwargs["json_output"] = True
             import_result = await import_sources(
                 client,
                 plan.notebook_id,

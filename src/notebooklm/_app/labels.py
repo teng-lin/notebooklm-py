@@ -134,8 +134,6 @@ async def resolve_label_id(
     client: NotebookLMClient,
     notebook_id: str,
     token: str,
-    *,
-    json_output: bool = False,
 ) -> str:
     """Resolve a label ``<id|name>`` token to a full label id.
 

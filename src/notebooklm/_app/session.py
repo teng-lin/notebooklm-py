@@ -78,21 +78,18 @@ async def verify_and_set_notebook(
     client: NotebookLMClient,
     partial_id: str,
     *,
-    json_output: bool,
     resolve_notebook_id: ResolveNotebookIdFn,
 ) -> UseNotebookResult:
     """Verify a (possibly partial) notebook id by hitting the server, then return it.
 
     ``resolve_notebook_id`` is injected so this core stays free of the
     ``rich``-coupled resolver and the CLI's ``monkeypatch`` seam keeps landing.
-    ``json_output`` is forwarded so the resolver's "Matched: ..." diagnostic
-    routes to stderr in JSON mode (keeping stdout pure parseable JSON).
 
     Errors mirror the legacy contract: the resolver's ambiguity / "no match"
     error, plus :class:`NotebookNotFoundError` / :class:`AuthError` / any other
     exception, all propagate to the adapter's body-error handler.
     """
-    resolved_id = await resolve_notebook_id(client, partial_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, partial_id)
     notebook = await client.notebooks.get(resolved_id)
     return UseNotebookResult(notebook=notebook, resolved_id=resolved_id)
 

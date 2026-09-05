@@ -6,11 +6,10 @@ These pin the relocated source-mutation business logic at the ``_app`` boundary
 * source-id resolvers — :func:`resolve_source_for_delete` (UUID fast-path,
   partial-prefix match, ambiguity, title-instead-of-id hint, not-found) and
   :func:`resolve_source_by_exact_title`.
-* the typed :class:`SourceMutationError` (carried ``.code`` / ``.extra`` /
-  ``.status_message``) and the :func:`require_yes_in_json` JSON-mode gate.
+* the typed :class:`SourceMutationError` (carried ``.code`` / ``.extra``).
 * the small pure helpers :func:`looks_like_full_source_id` /
   :func:`build_id_ambiguity_error`.
-* the executors — delete / delete-by-title (confirm + cancel + JSON gate),
+* the executors — delete / delete-by-title from immutable resolved targets,
   rename / refresh (injected ``resolve_source_id``), add-drive (mime mapping).
 
 Pure-service tests (no Click / CliRunner): the command-layer rendering +
@@ -30,6 +29,7 @@ from notebooklm._app.source_mutations import (
     SourceAddDrivePlan,
     SourceDeleteByTitlePlan,
     SourceDeletePlan,
+    SourceIdResolution,
     SourceMutationError,
     SourceRefreshPlan,
     SourceRenamePlan,
@@ -41,7 +41,6 @@ from notebooklm._app.source_mutations import (
     execute_source_refresh,
     execute_source_rename,
     looks_like_full_source_id,
-    require_yes_in_json,
     resolve_source_by_exact_title,
     resolve_source_for_delete,
 )
@@ -90,7 +89,7 @@ class TestPureHelpers:
 
 
 # ===========================================================================
-# SourceMutationError + require_yes_in_json
+# SourceMutationError
 # ===========================================================================
 
 
@@ -99,10 +98,9 @@ class TestSourceMutationError:
         assert issubclass(SourceMutationError, NotebookLMError)
 
     def test_carries_code_and_extra(self) -> None:
-        err = SourceMutationError("boom", "NOT_FOUND", {"source_id": "s"}, "hint")
+        err = SourceMutationError("boom", "NOT_FOUND", {"source_id": "s"})
         assert err.code == "NOT_FOUND"
         assert err.extra == {"source_id": "s"}
-        assert err.status_message == "hint"
         # The metadata is embedded in the str message.
         assert "code=NOT_FOUND" in str(err)
         assert "extra=" in str(err)
@@ -111,14 +109,6 @@ class TestSourceMutationError:
         err = SourceMutationError("boom", "AMBIGUOUS_ID")
         assert "code=AMBIGUOUS_ID" in str(err)
         assert "extra=" not in str(err)
-
-    def test_require_yes_in_json_raises_confirm_required(self) -> None:
-        with pytest.raises(SourceMutationError) as exc:
-            require_yes_in_json(action="delete", extra={"source_id": "s"}, status_message="hint")
-        err = exc.value
-        assert err.code == "CONFIRM_REQUIRED"
-        assert err.extra == {"action": "delete", "source_id": "s"}
-        assert err.status_message == "hint"
 
 
 # ===========================================================================
@@ -132,7 +122,7 @@ class TestResolveSourceForDelete:
         client = _client()
         resolution = await resolve_source_for_delete(client, "nb_1", _FULL_UUID)
         assert resolution.source_id == _FULL_UUID
-        assert resolution.status_message is None
+        assert resolution.matched_title is None
         client.sources.list.assert_not_called()
 
     @pytest.mark.asyncio
@@ -140,9 +130,7 @@ class TestResolveSourceForDelete:
         client = _client(sources=[Source(id="src_aaa111", title="One")])
         resolution = await resolve_source_for_delete(client, "nb_1", "src_aaa")
         assert resolution.source_id == "src_aaa111"
-        # A partial→full expansion surfaces the "Matched:" status prose.
-        assert resolution.status_message is not None
-        assert "Matched:" in resolution.status_message
+        assert resolution.matched_title == "One"
 
     @pytest.mark.asyncio
     async def test_exact_partial_match_no_status(self) -> None:
@@ -150,7 +138,7 @@ class TestResolveSourceForDelete:
         client = _client(sources=[Source(id="src_aaa111", title="One")])
         resolution = await resolve_source_for_delete(client, "nb_1", "src_aaa111")
         assert resolution.source_id == "src_aaa111"
-        assert resolution.status_message is None
+        assert resolution.matched_title is None
 
     @pytest.mark.asyncio
     async def test_exact_match_wins_over_prefix_ambiguity(self) -> None:
@@ -164,7 +152,7 @@ class TestResolveSourceForDelete:
         resolution = await resolve_source_for_delete(client, "nb_1", "abc")
         assert resolution.source_id == "abc"
         # An exact match is not a partial expansion, so no "Matched:" prose.
-        assert resolution.status_message is None
+        assert resolution.matched_title is None
 
     @pytest.mark.asyncio
     async def test_exact_match_wins_case_insensitive(self) -> None:
@@ -174,7 +162,7 @@ class TestResolveSourceForDelete:
         )
         resolution = await resolve_source_for_delete(client, "nb_1", "abc")
         assert resolution.source_id == "ABC"
-        assert resolution.status_message is None
+        assert resolution.matched_title is None
 
     @pytest.mark.asyncio
     async def test_ambiguous_partial_raises(self) -> None:
@@ -270,62 +258,17 @@ class TestResolveSourceByExactTitle:
 
 class TestExecuteSourceDelete:
     @pytest.mark.asyncio
-    async def test_delete_with_yes_completes(self) -> None:
+    async def test_delete_exact_prepared_target_completes(self) -> None:
         client = _client()
-        confirm = MagicMock()  # never consulted under yes=True
         plan = SourceDeletePlan(
-            notebook_id="nb_1", source_id=_FULL_UUID, yes=True, json_output=False
+            notebook_id="nb_1",
+            target=SourceIdResolution(_FULL_UUID, matched_title="Paper"),
         )
-        result = await execute_source_delete(client, plan, confirmer=confirm)
+        result = await execute_source_delete(client, plan)
         assert result.success is True
         assert result.status == "completed"
+        assert result.matched_title == "Paper"
         client.sources.delete.assert_awaited_once_with("nb_1", _FULL_UUID)
-        confirm.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_delete_declined_confirmation_cancels(self) -> None:
-        client = _client()
-        plan = SourceDeletePlan(
-            notebook_id="nb_1", source_id=_FULL_UUID, yes=False, json_output=False
-        )
-        result = await execute_source_delete(client, plan, confirmer=lambda _msg: False)
-        assert result.success is False
-        assert result.status == "cancelled"
-        client.sources.delete.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_delete_confirmed_interactively_completes(self) -> None:
-        client = _client()
-        plan = SourceDeletePlan(
-            notebook_id="nb_1", source_id=_FULL_UUID, yes=False, json_output=False
-        )
-        result = await execute_source_delete(client, plan, confirmer=lambda _msg: True)
-        assert result.success is True
-        client.sources.delete.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_delete_json_with_yes_bypasses_gate(self) -> None:
-        client = _client()
-        plan = SourceDeletePlan(
-            notebook_id="nb_1", source_id=_FULL_UUID, yes=True, json_output=True
-        )
-        # yes=True bypasses the gate even in json mode → completes.
-        result = await execute_source_delete(client, plan, confirmer=MagicMock())
-        assert result.success is True
-        client.sources.delete.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_delete_json_no_yes_raises_confirm_required(self) -> None:
-        client = _client()
-        plan = SourceDeletePlan(
-            notebook_id="nb_1", source_id=_FULL_UUID, yes=False, json_output=True
-        )
-        with pytest.raises(SourceMutationError) as exc:
-            await execute_source_delete(client, plan, confirmer=MagicMock())
-        assert exc.value.code == "CONFIRM_REQUIRED"
-        assert exc.value.extra is not None
-        assert exc.value.extra["action"] == "delete"
-        client.sources.delete.assert_not_called()
 
 
 # ===========================================================================
@@ -335,35 +278,14 @@ class TestExecuteSourceDelete:
 
 class TestExecuteSourceDeleteByTitle:
     @pytest.mark.asyncio
-    async def test_delete_by_title_with_yes_completes(self) -> None:
-        client = _client(sources=[Source(id="src_1", title="Doc")])
-        plan = SourceDeleteByTitlePlan(notebook_id="nb_1", title="Doc", yes=True, json_output=False)
-        result = await execute_source_delete_by_title(client, plan, confirmer=MagicMock())
+    async def test_delete_by_title_exact_prepared_target_completes(self) -> None:
+        client = _client()
+        plan = SourceDeleteByTitlePlan(notebook_id="nb_1", source_id="src_1", title="Doc")
+        result = await execute_source_delete_by_title(client, plan)
         assert result.success is True
         assert result.source_id == "src_1"
         assert result.title == "Doc"
         client.sources.delete.assert_awaited_once_with("nb_1", "src_1")
-
-    @pytest.mark.asyncio
-    async def test_delete_by_title_declined_cancels(self) -> None:
-        client = _client(sources=[Source(id="src_1", title="Doc")])
-        plan = SourceDeleteByTitlePlan(
-            notebook_id="nb_1", title="Doc", yes=False, json_output=False
-        )
-        result = await execute_source_delete_by_title(client, plan, confirmer=lambda _m: False)
-        assert result.success is False
-        assert result.status == "cancelled"
-        client.sources.delete.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_delete_by_title_json_no_yes_raises(self) -> None:
-        client = _client(sources=[Source(id="src_1", title="Doc")])
-        plan = SourceDeleteByTitlePlan(notebook_id="nb_1", title="Doc", yes=False, json_output=True)
-        with pytest.raises(SourceMutationError) as exc:
-            await execute_source_delete_by_title(client, plan, confirmer=MagicMock())
-        assert exc.value.code == "CONFIRM_REQUIRED"
-        assert exc.value.extra is not None
-        assert exc.value.extra["action"] == "delete-by-title"
 
 
 # ===========================================================================
@@ -377,13 +299,11 @@ async def test_rename_resolves_then_renames() -> None:
     renamed = Source(id="src_full", title="New Name")
     client.sources.rename = AsyncMock(return_value=renamed)
     resolve = AsyncMock(return_value="src_full")
-    plan = SourceRenamePlan(
-        notebook_id="nb_1", source_id="src", new_title="New Name", json_output=False
-    )
+    plan = SourceRenamePlan(notebook_id="nb_1", source_id="src", new_title="New Name")
     result = await execute_source_rename(client, plan, resolve_source_id=resolve)
     assert result.source is renamed
     assert result.notebook_id == "nb_1"
-    resolve.assert_awaited_once_with(client, "nb_1", "src", json_output=False)
+    resolve.assert_awaited_once_with(client, "nb_1", "src")
     client.sources.rename.assert_awaited_once_with("nb_1", "src_full", "New Name")
 
 
@@ -396,12 +316,12 @@ async def test_rename_resolves_then_renames() -> None:
 async def test_refresh_resolves_then_refreshes() -> None:
     client = _client()
     resolve = AsyncMock(return_value="src_full")
-    plan = SourceRefreshPlan(notebook_id="nb_1", source_id="src", json_output=False)
+    plan = SourceRefreshPlan(notebook_id="nb_1", source_id="src")
     result = await execute_source_refresh(client, plan, resolve_source_id=resolve)
     assert result.source_id == "src_full"
     assert result.notebook_id == "nb_1"
     assert result.result is None
-    resolve.assert_awaited_once_with(client, "nb_1", "src", json_output=False)
+    resolve.assert_awaited_once_with(client, "nb_1", "src")
     client.sources.refresh.assert_awaited_once_with("nb_1", "src_full")
 
 

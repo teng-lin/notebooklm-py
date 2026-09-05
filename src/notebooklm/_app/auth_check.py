@@ -72,10 +72,6 @@ class AuthCheckPlan:
             env-var name). Surfaced verbatim in ``details.auth_source``.
         test_fetch: When ``True``, also exercise the token-fetch path (network
             round-trip). Off by default.
-        json_output: When ``True``, signals the caller to render a JSON envelope
-            and propagate non-zero exit on failure. Carried on the plan so the
-            renderer (in the adapter) picks the right shape without re-resolving
-            the flag.
         passive: When ``True``, the optional ``test_fetch`` token round-trip uses
             the strictly read-only :func:`~notebooklm.auth.fetch_tokens_passive`
             path — it never runs ``NOTEBOOKLM_REFRESH_CMD``, never fires the
@@ -91,7 +87,6 @@ class AuthCheckPlan:
     has_home_env: bool
     auth_source_label: str
     test_fetch: bool
-    json_output: bool
     passive: bool = False
 
 

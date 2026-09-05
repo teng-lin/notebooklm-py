@@ -91,7 +91,6 @@ def plan_from_click_context(
             storage_path=storage_path,
         ),
         test_fetch=test_fetch,
-        json_output=json_output,
         passive=passive,
     )
 

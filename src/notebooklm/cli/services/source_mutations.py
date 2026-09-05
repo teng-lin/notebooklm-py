@@ -22,6 +22,7 @@ so the historical ``monkeypatch.setattr(source_mutations, "resolve_source_id",
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING
 
 from ..._app.source_mutations import (
@@ -44,7 +45,6 @@ from ..._app.source_mutations import (
     execute_source_add_drive,
     execute_source_add_drive_file,
     looks_like_full_source_id,
-    require_yes_in_json,
 )
 from ..._app.source_mutations import (
     execute_source_delete as _execute_source_delete,
@@ -89,28 +89,98 @@ async def resolve_source_by_exact_title(client: NotebookLMClient, notebook_id: s
 async def execute_source_delete(
     client: NotebookLMClient,
     plan: SourceDeletePlan,
-    *,
-    confirmer: Callable[[str], bool],
 ) -> SourceDeleteResult:
-    """Resolve + confirm + delete a single source, injecting the Click ``validate_id``."""
-    return await _execute_source_delete(client, plan, confirmer=confirmer, validate_id=validate_id)
+    """Delete an adapter-authorized source target."""
+    return await _execute_source_delete(client, plan)
 
 
 async def execute_source_delete_by_title(
     client: NotebookLMClient,
     plan: SourceDeleteByTitlePlan,
-    *,
-    confirmer: Callable[[str], bool],
 ) -> SourceDeleteByTitleResult:
-    """Resolve + confirm + delete by exact title, injecting the Click ``validate_id``."""
-    return await _execute_source_delete_by_title(
-        client, plan, confirmer=confirmer, validate_id=validate_id
+    """Delete an adapter-authorized title-resolved source target."""
+    return await _execute_source_delete_by_title(client, plan)
+
+
+async def run_source_delete(
+    client: NotebookLMClient,
+    *,
+    notebook_id: str,
+    source_id: str,
+    approved: bool,
+    noninteractive: bool,
+    confirm: Callable[[str], bool],
+) -> SourceDeleteResult:
+    """Resolve, obtain adapter authorization, and execute one source delete."""
+    target = await resolve_source_for_delete(client, notebook_id, source_id)
+    if noninteractive and not approved:
+        extra = {
+            "action": "delete",
+            "source_id": target.source_id,
+            "notebook_id": notebook_id,
+        }
+        if target.matched_title is not None:
+            extra["status_message"] = (
+                f"Matched: {target.source_id[:12]}... ({target.matched_title})"
+            )
+        raise SourceMutationError(
+            "Pass --yes to confirm destructive operation in --json mode",
+            "CONFIRM_REQUIRED",
+            extra,
+        )
+    if not approved and not confirm(f"Delete source {target.source_id}?"):
+        return SourceDeleteResult(
+            source_id=target.source_id,
+            notebook_id=notebook_id,
+            success=False,
+            status="cancelled",
+            matched_title=target.matched_title,
+        )
+    return await execute_source_delete(client, SourceDeletePlan(notebook_id, target))
+
+
+async def run_source_delete_by_title(
+    client: NotebookLMClient,
+    *,
+    notebook_id: str,
+    title: str,
+    approved: bool,
+    noninteractive: bool,
+    confirm: Callable[[str], bool],
+) -> SourceDeleteByTitleResult:
+    """Resolve title once, authorize that immutable target, then delete it."""
+    target = await resolve_source_by_exact_title(client, notebook_id, title)
+    target_title = target.title or ""
+    if noninteractive and not approved:
+        raise SourceMutationError(
+            "Pass --yes to confirm destructive operation in --json mode",
+            "CONFIRM_REQUIRED",
+            {
+                "action": "delete-by-title",
+                "source_id": target.id,
+                "title": target_title,
+                "notebook_id": notebook_id,
+            },
+        )
+    if not approved and not confirm(f"Delete source '{target_title}' ({target.id})?"):
+        return SourceDeleteByTitleResult(
+            source_id=target.id,
+            title=target_title,
+            notebook_id=notebook_id,
+            success=False,
+            status="cancelled",
+        )
+    return await execute_source_delete_by_title(
+        client,
+        SourceDeleteByTitlePlan(notebook_id, target.id, target_title),
     )
 
 
 async def execute_source_rename(
     client: NotebookLMClient,
     plan: SourceRenamePlan,
+    *,
+    json_output: bool = False,
 ) -> SourceRenameResult:
     """Resolve + rename a source, injecting the CLI ``resolve_source_id``.
 
@@ -118,15 +188,25 @@ async def execute_source_rename(
     ``monkeypatch.setattr(source_mutations, "resolve_source_id", ...)`` seam
     keeps landing.
     """
-    return await _execute_source_rename(client, plan, resolve_source_id=resolve_source_id)
+    return await _execute_source_rename(
+        client,
+        plan,
+        resolve_source_id=partial(resolve_source_id, json_output=json_output),
+    )
 
 
 async def execute_source_refresh(
     client: NotebookLMClient,
     plan: SourceRefreshPlan,
+    *,
+    json_output: bool = False,
 ) -> SourceRefreshResult:
     """Resolve + refresh a source, injecting the CLI ``resolve_source_id``."""
-    return await _execute_source_refresh(client, plan, resolve_source_id=resolve_source_id)
+    return await _execute_source_refresh(
+        client,
+        plan,
+        resolve_source_id=partial(resolve_source_id, json_output=json_output),
+    )
 
 
 __all__ = [
@@ -153,9 +233,10 @@ __all__ = [
     "execute_source_refresh",
     "execute_source_rename",
     "looks_like_full_source_id",
-    "require_yes_in_json",
     "resolve_source_by_exact_title",
     "resolve_source_for_delete",
     "resolve_source_id",
+    "run_source_delete",
+    "run_source_delete_by_title",
     "validate_id",
 ]

@@ -87,9 +87,10 @@ def test_build_download_plan_applies_registry_format_extension_and_warning() -> 
 
     assert plan.file_extension == ".pptx"
     assert plan.format_choice == "pptx"
-    assert list(plan.warnings) == [
-        "Warning: output path 'deck.pdf' does not end with '.pptx' but --format pptx was requested."
-    ]
+    assert len(plan.warnings) == 1
+    assert plan.warnings[0].output_path == "deck.pdf"
+    assert plan.warnings[0].expected_extension == ".pptx"
+    assert plan.warnings[0].format_choice == "pptx"
 
 
 @pytest.mark.asyncio

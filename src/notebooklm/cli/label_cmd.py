@@ -139,9 +139,7 @@ def label_sources(ctx, label_ref, notebook_id, json_output, client_auth):
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
-                label_id = await resolve_label_id(
-                    client, nb_id_resolved, label_ref, json_output=json_output
-                )
+                label_id = await resolve_label_id(client, nb_id_resolved, label_ref)
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
             sources = await execute_label_sources(client, nb_id_resolved, label_id)
@@ -271,9 +269,7 @@ def label_rename(ctx, label_ref, new_name, notebook_id, json_output, client_auth
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
-                label_id = await resolve_label_id(
-                    client, nb_id_resolved, label_ref, json_output=json_output
-                )
+                label_id = await resolve_label_id(client, nb_id_resolved, label_ref)
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
             label_ = await execute_label_rename(client, nb_id_resolved, label_id, new_name)
@@ -304,9 +300,7 @@ def label_emoji(ctx, label_ref, emoji_value, notebook_id, json_output, client_au
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
-                label_id = await resolve_label_id(
-                    client, nb_id_resolved, label_ref, json_output=json_output
-                )
+                label_id = await resolve_label_id(client, nb_id_resolved, label_ref)
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
             label_ = await execute_label_set_emoji(client, nb_id_resolved, label_id, emoji_value)
@@ -338,9 +332,7 @@ def label_add(ctx, label_ref, source_ids, notebook_id, json_output, client_auth)
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
-                label_id = await resolve_label_id(
-                    client, nb_id_resolved, label_ref, json_output=json_output
-                )
+                label_id = await resolve_label_id(client, nb_id_resolved, label_ref)
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
             resolved_source_ids = await resolve_source_ids(
@@ -392,9 +384,7 @@ def label_remove(ctx, label_ref, source_ids, notebook_id, json_output, client_au
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
-                label_id = await resolve_label_id(
-                    client, nb_id_resolved, label_ref, json_output=json_output
-                )
+                label_id = await resolve_label_id(client, nb_id_resolved, label_ref)
             except LabelResolutionError as exc:
                 _handle_label_resolution_error(exc, json_output=json_output)
             resolved_source_ids = await resolve_source_ids(
@@ -443,8 +433,7 @@ def label_delete(ctx, label_refs, notebook_id, yes, json_output, client_auth):
                 nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
                 try:
                     label_ids = [
-                        await resolve_label_id(client, nb_id_resolved, ref, json_output=json_output)
-                        for ref in label_refs
+                        await resolve_label_id(client, nb_id_resolved, ref) for ref in label_refs
                     ]
                 except LabelResolutionError as exc:
                     _handle_label_resolution_error(exc, json_output=json_output)

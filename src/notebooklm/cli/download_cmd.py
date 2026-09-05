@@ -124,7 +124,13 @@ def _run_artifact_download(ctx: click.Context, spec: DownloadTypeSpec, **kwargs:
         ) from exc
 
     for warning in plan.warnings:
-        click.echo(warning, err=True)
+        if warning.code == "FORMAT_EXTENSION_MISMATCH":
+            click.echo(
+                f"Warning: output path '{warning.output_path}' does not end with "
+                f"'{warning.expected_extension}' but --format "
+                f"{warning.format_choice} was requested.",
+                err=True,
+            )
 
     async def body(client: NotebookLMClient) -> dict[str, Any]:
         return await execute_download(

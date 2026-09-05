@@ -28,6 +28,7 @@ import pytest
 
 from notebooklm._app.download import (
     FORMAT_EXTENSIONS,
+    DownloadEvent,
     DownloadOutcome,
     DownloadPlan,
     DownloadPlanValidationError,
@@ -540,8 +541,9 @@ class TestFormatExtensionResolution:
         ext, warnings = _resolve_format_extension(_SLIDE_SPEC, "deck.pdf", "pptx")
         assert ext == ".pptx"
         assert len(warnings) == 1
-        assert "deck.pdf" in warnings[0]
-        assert ".pptx" in warnings[0]
+        assert warnings[0].output_path == "deck.pdf"
+        assert warnings[0].expected_extension == ".pptx"
+        assert warnings[0].format_choice == "pptx"
 
     def test_matching_output_path_no_warning(self):
         _ext, warnings = _resolve_format_extension(_SLIDE_SPEC, "deck.pptx", "pptx")
@@ -714,17 +716,23 @@ class TestExecuteDownload:
             {"notebook_id": "nb_1", "download_all": True, "output_path": str(tmp_path / "out")},
             cwd=tmp_path,
         )
+        progress = MagicMock()
         result = await execute_download(
             plan,
             facade,
             notebook_resolver=_passthrough_notebook_resolver(),
             artifact_resolver=_artifact_resolver_identity,
+            progress=progress,
         )
         assert result.outcome is DownloadOutcome.ALL_EXECUTED
         assert result.is_failure is True
         assert result.has_error  # ANY per-item failure surfaces a non-zero exit
         assert result.failed_count == 1
         assert result.succeeded_count == 1
+        assert [call.args[0] for call in progress.emit.call_args_list] == [
+            DownloadEvent("ITEM_STARTED", index=1, total=2, title="First"),
+            DownloadEvent("ITEM_STARTED", index=2, total=2, title="Second"),
+        ]
 
     @pytest.mark.asyncio
     async def test_all_auth_failure_keeps_rows_and_typed_guidance(self, tmp_path):

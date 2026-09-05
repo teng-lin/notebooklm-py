@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import click
 from rich.markup import escape as escape_markup
-from rich.markup import render as render_markup
 from rich.table import Table
 
 from .._app import source_add as source_add_service
@@ -463,21 +462,12 @@ def _render_source_stale_result(
 def _handle_source_mutation_error(exc: SourceMutationError, *, json_output: bool) -> NoReturn:
     """Render a typed source-mutation error through the CLI error contract."""
     extra = dict(exc.extra) if exc.extra else None
-    hint = None
-    if exc.status_message:
-        plain_status = render_markup(exc.status_message).plain
-        if json_output:
-            extra = extra or {}
-            extra["status_message"] = plain_status
-        else:
-            hint = plain_status
     _output_error(
         exc.message,
         code=exc.code,
         json_output=json_output,
         exit_code=1,
         extra=extra,
-        hint=hint,
     )
     raise AssertionError("unreachable")  # pragma: no cover
 
@@ -550,8 +540,11 @@ def _render_source_delete_result(
     json_output: bool,
     ctx: click.Context,
 ) -> None:
-    if result.status_message:
-        emit_status(result.status_message, json_output=json_output)
+    if isinstance(result, SourceDeleteResult) and result.matched_title is not None:
+        emit_status(
+            f"[dim]Matched: {result.source_id[:12]}... ({result.matched_title})[/dim]",
+            json_output=json_output,
+        )
 
     if json_output:
         payload = (

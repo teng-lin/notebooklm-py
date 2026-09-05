@@ -456,7 +456,6 @@ class ResearchWaitPlan:
     interval: int
     import_all: bool = False
     cited_only: bool = False
-    json_output: bool = False
     task_id: str | None = None
 
 
@@ -563,7 +562,7 @@ async def execute_research_wait(
           third guard is required because without a task_id the importer has
           nothing to verify against.)
     """
-    nb_id_resolved = await resolve_id(client, plan.notebook_id, json_output=plan.json_output)
+    nb_id_resolved = await resolve_id(client, plan.notebook_id)
 
     async with wait_context():
         try:
@@ -621,17 +620,11 @@ async def execute_research_wait(
 
     import_result: ResearchImportLike | None = None
     if plan.import_all and sources and task_id:
-        # In text mode the importer renders its own "Importing sources..."
-        # status; in JSON mode it stays silent.
         import_kwargs: dict[str, Any] = {
             "report": report,
             "cited_only": plan.cited_only,
             "max_elapsed": plan.timeout,
         }
-        if plan.json_output:
-            import_kwargs["json_output"] = True
-        else:
-            import_kwargs["status_message"] = "Importing sources..."
         import_result = await import_sources(
             client,
             nb_id_resolved,

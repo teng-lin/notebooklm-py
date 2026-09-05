@@ -157,9 +157,7 @@ def collection_notebooks(ctx, collection_ref, json_output, client_auth):
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             notebooks = await execute_collection_notebooks(client, collection_id)
@@ -219,9 +217,7 @@ def collection_rename(ctx, collection_ref, new_name, json_output, client_auth):
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             collection_ = await execute_collection_rename(client, collection_id, new_name)
@@ -250,9 +246,7 @@ def collection_add(ctx, collection_ref, notebook_refs, json_output, client_auth)
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             notebook_ids = await _resolve_notebook_ids(
@@ -297,9 +291,7 @@ def collection_remove(ctx, collection_ref, notebook_refs, json_output, client_au
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             notebook_ids = await _resolve_notebook_ids(
@@ -345,9 +337,7 @@ def collection_delete(ctx, collection_refs, yes, json_output, client_auth):
                 try:
                     collections = await client.collections.list()
                     collection_ids = [
-                        await resolve_collection_id(
-                            client, ref, json_output=json_output, collections=collections
-                        )
+                        await resolve_collection_id(client, ref, collections=collections)
                         for ref in collection_refs
                     ]
                 except CollectionResolutionError as exc:

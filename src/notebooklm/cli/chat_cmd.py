@@ -14,6 +14,8 @@ import click
 from rich.table import Table
 
 from .._app.chat import (
+    ChatEvent,
+    ChatValidationError,
     ClearCacheResult,
     ConfigureResult,
     determine_conversation_id,
@@ -26,7 +28,6 @@ from .._app.chat import (
     save_answer_as_note,
     validate_ask_flags,
 )
-from .._app.events import ProgressEvent
 from .._app.views import ask_result_view
 from ..exceptions import ValidationError
 from .auth_runtime import resolve_client_factory, with_client
@@ -105,8 +106,29 @@ def _history_json_payload(
     }
 
 
+def _render_chat_event(event: ChatEvent) -> str:
+    """Render one neutral chat event into the established CLI status prose."""
+    if event.kind == "NOTEBOOK_CHANGED":
+        return "[dim]Different notebook specified, starting new conversation...[/dim]"
+    if event.kind == "HISTORY_CONTINUING":
+        return f"[dim]Continuing conversation {(event.conversation_id or '')[:8]}...[/dim]"
+    if event.kind == "HISTORY_UNAVAILABLE":
+        return "[dim]Starting new conversation (history unavailable)[/dim]"
+    if event.kind == "NOTE_NO_ANSWER":
+        return "[yellow]Warning: No answer to save as note[/yellow]"
+    if event.kind == "NOTE_PLAIN_TEXT_FALLBACK":
+        return "[dim]No citations in answer; saving as plain-text note.[/dim]"
+    if event.kind == "NOTE_SAVED":
+        return (
+            f"\n[dim]Saved as note: {event.note_title or ''} ({(event.note_id or '')[:8]}...)[/dim]"
+        )
+    if event.kind == "NOTE_SAVE_FAILED":
+        return f"[yellow]Warning: Failed to save note: {event.detail or ''}[/yellow]"
+    raise AssertionError(f"Unhandled chat event: {event.kind}")
+
+
 class _CliPrintStatusSink:
-    """:class:`ProgressSink` routing neutral status events through ``cli_print``.
+    """Route neutral chat events through ``cli_print``.
 
     Used for the conversation-selection prose, which the historical command only
     emitted under ``not json_output`` — so the sink is constructed only on that
@@ -114,12 +136,12 @@ class _CliPrintStatusSink:
     Rich markup in the message is preserved.
     """
 
-    def emit(self, event: ProgressEvent) -> None:
-        cli_print(event.message)
+    def emit(self, event: ChatEvent) -> None:
+        cli_print(_render_chat_event(event))
 
 
 class _EmitStatusSink:
-    """:class:`ProgressSink` routing neutral status events through ``emit_status``.
+    """Route neutral chat events through ``emit_status``.
 
     Used for the ``ask --save-as-note`` status lines: routes to stderr under
     ``--json`` (keeping stdout JSON-pure) and to stdout otherwise, honoring root
@@ -129,11 +151,11 @@ class _EmitStatusSink:
     def __init__(self, *, json_output: bool) -> None:
         self._json_output = json_output
 
-    def emit(self, event: ProgressEvent) -> None:
+    def emit(self, event: ChatEvent) -> None:
         # Status forwarder for a secondary --save-as-note action: the neutral
         # workflow folds its own failures into the returned outcome (never
         # raised), so this emit is never on an error path.
-        emit_status(event.message, json_output=self._json_output)
+        emit_status(_render_chat_event(event), json_output=self._json_output)
 
 
 # Re-export the neutral note-content formatters under their historical
@@ -297,8 +319,12 @@ def register_chat_commands(cli):
         # maps it to the CLI's own ``VALIDATION_ERROR`` code / Click UsageError.
         try:
             validate_ask_flags(new_conversation=new_conversation, conversation_id=conversation_id)
-        except ValidationError as exc:
-            message = str(exc)
+        except ChatValidationError as exc:
+            message = (
+                "--new and --conversation-id are mutually exclusive: "
+                "--new starts a fresh conversation while --conversation-id "
+                "resumes a specific one."
+            )
             if json_output:
                 _output_error(message, "VALIDATION_ERROR", json_output, 1)
             raise click.UsageError(  # cli-input-validation: --new and --conversation-id are mutually exclusive

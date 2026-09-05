@@ -261,7 +261,7 @@ def _render_logout_outcome(outcome: LogoutOutcome, *, json_output: bool = False)
         console.print("[yellow]No active session found.[/yellow] Already logged out.")
 
 
-def _render_auth_check_result(result: AuthCheckResult) -> None:
+def _render_auth_check_result(result: AuthCheckResult, *, json_output: bool) -> None:
     """Render an :class:`AuthCheckResult` (table or JSON) and exit on failure.
 
     The presentation + exit-code policy lives here in the command layer
@@ -273,7 +273,7 @@ def _render_auth_check_result(result: AuthCheckResult) -> None:
     checks = result.checks
     details = result.details
 
-    if plan.json_output:
+    if json_output:
         # Promote the identity/location facts to top-level keys for CI gates
         # (the same values the Rich table shows — sourced from one ``details``
         # so the two surfaces can't disagree, issue #1640). ``notebook_count`` is

@@ -1115,9 +1115,6 @@ PRESENTATION_DISPOSITION = Disposition(
 
 PRESENTATION_INVENTORY = frozenset(
     {
-        PresentationHit("_app/auth_check.py", "AuthCheckPlan", "field", "json_output"),
-        PresentationHit("_app/collections.py", "resolve_collection_id", "parameter", "json_output"),
-        PresentationHit("_app/download.py", "DownloadPlan", "field", "warnings"),
         PresentationHit(
             "_app/generate.py", "execute_generation", "string-callback", "wait_context"
         ),
@@ -1142,57 +1139,6 @@ PRESENTATION_INVENTORY = frozenset(
             "string-callback",
             "wait_start_sink",
         ),
-        PresentationHit("_app/labels.py", "resolve_label_id", "parameter", "json_output"),
-        PresentationHit(
-            "_app/login_browser.py",
-            "repair_playwright_account_metadata",
-            "parameter",
-            "quiet",
-        ),
-        PresentationHit("_app/login_cookie.py", "BrowserCookieProbeRequest", "field", "quiet"),
-        PresentationHit("_app/notebooks.py", "execute_notebook_copy", "parameter", "json_output"),
-        PresentationHit("_app/notebooks.py", "execute_notebook_rename", "parameter", "json_output"),
-        PresentationHit(
-            "_app/notebooks.py", "execute_notebook_describe", "parameter", "json_output"
-        ),
-        PresentationHit(
-            "_app/notebooks.py", "execute_notebook_metadata", "parameter", "json_output"
-        ),
-        PresentationHit("_app/notes.py", "execute_note_create", "parameter", "json_output"),
-        PresentationHit("_app/notes.py", "execute_note_get", "parameter", "json_output"),
-        PresentationHit("_app/notes.py", "execute_note_save", "parameter", "json_output"),
-        PresentationHit("_app/notes.py", "execute_note_rename", "parameter", "json_output"),
-        PresentationHit("_app/notes.py", "resolve_note_for_delete", "parameter", "json_output"),
-        PresentationHit("_app/research.py", "ResearchWaitPlan", "field", "json_output"),
-        PresentationHit("_app/session.py", "verify_and_set_notebook", "parameter", "json_output"),
-        PresentationHit("_app/sharing.py", "execute_share_status", "parameter", "json_output"),
-        PresentationHit("_app/sharing.py", "execute_share_set_public", "parameter", "json_output"),
-        PresentationHit(
-            "_app/sharing.py", "execute_share_set_view_level", "parameter", "json_output"
-        ),
-        PresentationHit("_app/sharing.py", "execute_share_add_user", "parameter", "json_output"),
-        PresentationHit("_app/sharing.py", "execute_share_update_user", "parameter", "json_output"),
-        PresentationHit("_app/source_add.py", "SourceAddPlan", "field", "warnings"),
-        PresentationHit("_app/source_clean.py", "run_source_clean", "parameter", "yes"),
-        PresentationHit("_app/source_listing.py", "fetch_sources", "parameter", "json_output"),
-        PresentationHit("_app/source_mutations.py", "SourceDeletePlan", "field", "yes"),
-        PresentationHit("_app/source_mutations.py", "SourceDeletePlan", "field", "json_output"),
-        PresentationHit(
-            "_app/source_mutations.py", "execute_source_delete", "parameter", "confirmer"
-        ),
-        PresentationHit("_app/source_mutations.py", "SourceDeleteByTitlePlan", "field", "yes"),
-        PresentationHit(
-            "_app/source_mutations.py", "SourceDeleteByTitlePlan", "field", "json_output"
-        ),
-        PresentationHit(
-            "_app/source_mutations.py",
-            "execute_source_delete_by_title",
-            "parameter",
-            "confirmer",
-        ),
-        PresentationHit("_app/source_mutations.py", "SourceRenamePlan", "field", "json_output"),
-        PresentationHit("_app/source_mutations.py", "SourceRefreshPlan", "field", "json_output"),
-        PresentationHit("_app/source_research.py", "SourceAddResearchPlan", "field", "json_output"),
     }
 )
 

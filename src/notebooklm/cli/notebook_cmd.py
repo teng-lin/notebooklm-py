@@ -12,6 +12,8 @@ Commands:
 Note: Sharing commands moved to 'share' command group.
 """
 
+from functools import partial
+
 import click
 
 from .._app.notebooks import (
@@ -202,8 +204,7 @@ def register_notebook_commands(cli):
                     client,
                     source_id,
                     title,
-                    resolve_notebook_id=resolve_notebook_id,
-                    json_output=json_output,
+                    resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
                 )
                 nb = result.notebook
 
@@ -347,8 +348,7 @@ def register_notebook_commands(cli):
                     client,
                     notebook_id,
                     new_title,
-                    resolve_notebook_id=resolve_notebook_id,
-                    json_output=json_output,
+                    resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
                 )
                 resolved_id = result.notebook_id
                 if json_output:
@@ -388,8 +388,7 @@ def register_notebook_commands(cli):
                 describe_result = await execute_notebook_describe(
                     client,
                     notebook_id,
-                    resolve_notebook_id=resolve_notebook_id,
-                    json_output=json_output,
+                    resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
                 )
                 resolved_id = describe_result.notebook_id
                 description = describe_result.description
@@ -458,8 +457,7 @@ def register_notebook_commands(cli):
                 metadata_result = await execute_notebook_metadata(
                     client,
                     notebook_id,
-                    resolve_notebook_id=resolve_notebook_id,
-                    json_output=json_output,
+                    resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
                 )
                 metadata = metadata_result.metadata
 

@@ -41,6 +41,15 @@ if TYPE_CHECKING:
 
 SourceAddType = Literal["url", "text", "file", "youtube"]
 
+
+@dataclass(frozen=True)
+class SourceAddWarning:
+    """Semantic warning emitted while classifying a source-add input."""
+
+    code: Literal["PATH_NOT_FOUND"]
+    content: str
+
+
 #: Maximum length of a file's basename on the common filesystems (ext4, APFS,
 #: NTFS) — measured in **bytes**, not characters. A multibyte name (emoji, CJK)
 #: can blow past this while looking short by ``len()``, so truncation is
@@ -140,7 +149,7 @@ class SourceAddPlan:
     title: str | None
     upload_path: Path | None
     mime_type: str | None = None
-    warnings: tuple[str, ...] = ()
+    warnings: tuple[SourceAddWarning, ...] = ()
 
 
 #: Extensions that make an argument *look* path-shaped. Not declared here: this is
@@ -343,7 +352,7 @@ def build_source_add_plan(
     detected_type = source_type
     file_title = title
     upload_path: Path | None = None
-    warnings: list[str] = []
+    warnings: list[SourceAddWarning] = []
 
     if detected_type is None:
         if _is_url_shaped(content):
@@ -358,11 +367,7 @@ def build_source_add_plan(
             detected_type = "file"
         else:
             if looks_path_shaped(content):
-                warnings.append(
-                    f"warning: '{content}' looks like a path but does not "
-                    "exist; ingesting as inline text. Pass --type text to "
-                    "suppress this warning, or check the path for typos."
-                )
+                warnings.append(SourceAddWarning("PATH_NOT_FOUND", content))
             detected_type = "text"
             file_title = title or "Pasted Text"
     elif detected_type == "file":
@@ -465,6 +470,7 @@ __all__ = [
     "SourceAddPlan",
     "SourceAddResult",
     "SourceAddType",
+    "SourceAddWarning",
     "SourceAddValidationError",
     "add_source",
     "build_source_add_plan",

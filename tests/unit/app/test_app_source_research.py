@@ -207,7 +207,7 @@ async def test_completed_import_all_but_no_sources_skips_importer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_json_output_threaded_to_importer() -> None:
+async def test_importer_receives_only_neutral_operation_inputs() -> None:
     client = _client()
     client.research.start = AsyncMock(return_value=_start())
     client.research.wait_for_completion = AsyncMock(
@@ -216,11 +216,9 @@ async def test_json_output_threaded_to_importer() -> None:
     importer = AsyncMock(
         return_value=SimpleNamespace(imported=[], sources=[], cited_selection=None)
     )
-    await execute_source_add_research(
-        client, _plan(import_all=True, json_output=True), import_sources=importer
-    )
+    await execute_source_add_research(client, _plan(import_all=True), import_sources=importer)
     _, kwargs = importer.call_args
-    assert kwargs["json_output"] is True
+    assert "json_output" not in kwargs
 
 
 @pytest.mark.asyncio

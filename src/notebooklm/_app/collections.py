@@ -101,7 +101,6 @@ async def resolve_collection_id(
     client: NotebookLMClient,
     token: str,
     *,
-    json_output: bool = False,
     collections: Sequence[Collection] | None = None,
 ) -> str:
     """Resolve a collection ``<id|name>`` token to a full collection id.

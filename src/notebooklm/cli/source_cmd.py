@@ -18,7 +18,9 @@ from .._app.source_add import SourceAddExecutionPlan, execute_source_add
 from .._app.source_clean import (
     SourceCleanResult,
     candidates_payload,
-    run_source_clean,
+    execute_source_clean,
+    prepare_source_clean,
+    skip_source_clean,
 )
 from .._app.source_content import (
     SourceFulltextPlan,
@@ -107,18 +109,15 @@ from .services.source_listing import SourceListPlan, execute_source_list
 from .services.source_mutations import (
     SourceAddDriveFilePlan,
     SourceAddDrivePlan,
-    SourceDeleteByTitlePlan,
-    SourceDeletePlan,
     SourceMutationError,
     SourceRefreshPlan,
     SourceRenamePlan,
     execute_source_add_drive,
     execute_source_add_drive_file,
-    execute_source_delete,
-    execute_source_delete_by_title,
     execute_source_refresh,
     execute_source_rename,
-    require_yes_in_json,
+    run_source_delete,
+    run_source_delete_by_title,
 )
 from .services.source_research import (
     SourceAddResearchPlan,
@@ -395,7 +394,13 @@ def source_add(
         raise AssertionError("unreachable") from None  # pragma: no cover
 
     for warning in plan.warnings:
-        click.echo(warning, err=True)
+        if warning.code == "PATH_NOT_FOUND":
+            click.echo(
+                f"warning: '{warning.content}' looks like a path but does not "
+                "exist; ingesting as inline text. Pass --type text to "
+                "suppress this warning, or check the path for typos.",
+                err=True,
+            )
 
     client_kwargs: dict = {"timeout": timeout} if timeout is not None else {}
 
@@ -456,15 +461,13 @@ def source_delete(ctx, source_id, notebook_id, yes, json_output, client_auth):
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
-                result = await execute_source_delete(
+                result = await run_source_delete(
                     client,
-                    SourceDeletePlan(
-                        notebook_id=nb_id_resolved,
-                        source_id=source_id,
-                        yes=yes,
-                        json_output=json_output,
-                    ),
-                    confirmer=click.confirm,
+                    notebook_id=nb_id_resolved,
+                    source_id=source_id,
+                    approved=yes,
+                    noninteractive=json_output,
+                    confirm=click.confirm,
                 )
             except SourceMutationError as exc:
                 _handle_source_mutation_error(exc, json_output=json_output)
@@ -487,15 +490,13 @@ def source_delete_by_title(ctx, title, notebook_id, yes, json_output, client_aut
         async with resolve_client_factory(ctx)(client_auth) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
             try:
-                result = await execute_source_delete_by_title(
+                result = await run_source_delete_by_title(
                     client,
-                    SourceDeleteByTitlePlan(
-                        notebook_id=nb_id_resolved,
-                        title=title,
-                        yes=yes,
-                        json_output=json_output,
-                    ),
-                    confirmer=click.confirm,
+                    notebook_id=nb_id_resolved,
+                    title=title,
+                    approved=yes,
+                    noninteractive=json_output,
+                    confirm=click.confirm,
                 )
             except SourceMutationError as exc:
                 _handle_source_mutation_error(exc, json_output=json_output)
@@ -523,8 +524,8 @@ def source_rename(ctx, source_id, new_title, notebook_id, json_output, client_au
                     notebook_id=nb_id_resolved,
                     source_id=source_id,
                     new_title=new_title,
-                    json_output=json_output,
                 ),
+                json_output=json_output,
             )
             _render_source_rename_result(result, json_output=json_output, ctx=ctx)
 
@@ -546,10 +547,9 @@ def source_refresh(ctx, source_id, notebook_id, json_output, client_auth):
             plan = SourceRefreshPlan(
                 notebook_id=nb_id_resolved,
                 source_id=source_id,
-                json_output=json_output,
             )
             if json_output:
-                result = await execute_source_refresh(client, plan)
+                result = await execute_source_refresh(client, plan, json_output=True)
             else:
                 with cli_status("Refreshing source...", ctx=ctx):
                     result = await execute_source_refresh(client, plan)
@@ -790,8 +790,8 @@ def source_add_research(
                     cited_only=cited_only,
                     no_wait=no_wait,
                     timeout=timeout,
-                    json_output=json_output,
                 ),
+                json_output=json_output,
             )
             _render_add_research_result(result, json_output=json_output)
 
@@ -1024,37 +1024,34 @@ def source_clean(ctx, notebook_id, dry_run, yes, json_output, client_auth):
                 with cli_status("Fetching sources for cleanup...", ctx=ctx):
                     return await client.sources.list(notebook_id_inner)
 
-            # In --json mode, never prompt: pass a ``confirm_delete`` that always
-            # declines, then synthesize a ``CONFIRM_REQUIRED`` error from the
-            # resulting ``cancelled`` status below.
-            confirm_delete = (
-                (lambda count: False)
-                if json_output
-                else (lambda count: click.confirm(f"Delete {count} source(s)?"))
-            )
-
             suppress_status = json_output or quiet_mode
-            cb_candidates = None if suppress_status else _print_clean_candidates
-            cb_delete_start = (
-                None
-                if suppress_status
-                else lambda count: cli_print(
-                    f"[dim]Cleaning {count} source(s) (in chunks of 10)...[/dim]",
-                    ctx=ctx,
-                )
-            )
-
-            result: SourceCleanResult = await run_source_clean(
+            preview = await prepare_source_clean(
                 notebook_id=nb_id_resolved,
                 dry_run=dry_run,
-                yes=yes,
                 list_sources=_list_sources,
-                delete_source=client.sources.delete,
-                confirm_delete=confirm_delete,
-                on_candidates=cb_candidates,
-                on_delete_start=cb_delete_start,
                 classify_sources=_classify_junk_sources,
             )
+
+            if preview.candidates and not suppress_status:
+                _print_clean_candidates(list(preview.candidates))
+
+            if not preview.candidates or preview.dry_run:
+                result = skip_source_clean(preview)
+            elif not yes and (
+                json_output or not click.confirm(f"Delete {len(preview.candidates)} source(s)?")
+            ):
+                result = skip_source_clean(preview, cancelled=True)
+            else:
+                if not suppress_status:
+                    cli_print(
+                        f"[dim]Cleaning {len(preview.candidates)} source(s) "
+                        "(in chunks of 10)...[/dim]",
+                        ctx=ctx,
+                    )
+                result = await execute_source_clean(
+                    preview,
+                    delete_source=client.sources.delete,
+                )
 
             _dispatch_source_clean_result(result, json_output=json_output, yes=yes, ctx=ctx)
 
@@ -1078,14 +1075,15 @@ def _dispatch_source_clean_result(
     candidate_payload = candidates_payload(result.candidates)
 
     if json_output:
-        # Synthesize structured error when --json + no --yes
-        # left candidates uncleaned. ``require_yes_in_json`` raises a typed
-        # source-mutation error for the command layer — it never returns.
+        # Synthesize the CLI-owned confirmation error when automation omitted
+        # its explicit destructive-operation approval.
         if result.status == "cancelled" and not yes:
             try:
-                require_yes_in_json(
-                    action="clean",
-                    extra={
+                raise SourceMutationError(
+                    "Pass --yes to confirm destructive operation in --json mode",
+                    "CONFIRM_REQUIRED",
+                    {
+                        "action": "clean",
                         "notebook_id": result.notebook_id,
                         "candidate_count": result.candidate_count,
                         "candidates": candidate_payload,
