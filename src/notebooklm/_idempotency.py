@@ -800,6 +800,47 @@ def unresolved_commit_error(
     )
 
 
+def _attach_transport_loss_entry(exc: BaseException, entry: JournalEntry) -> None:
+    """Attach one send, conservatively filling a missing producer handoff."""
+
+    producer_state = getattr(exc, "commit_state", None)
+    if producer_state in (
+        CommitState.NOT_SENT,
+        CommitState.REJECTED,
+        CommitState.CONFIRMED,
+    ):
+        if entry.commit_state is CommitState.UNKNOWN:
+            entry.record(producer_state, "producer evidence")
+        elif (
+            entry.commit_state is CommitState.NOT_SENT
+            and not entry.attempts
+            and entry._preflight_evidence is None
+            and producer_state is not CommitState.NOT_SENT
+        ):
+            entry.mark_dispatched()
+            entry.record(producer_state, "producer evidence")
+    elif (
+        entry.commit_state is CommitState.NOT_SENT
+        and not entry.attempts
+        and entry._preflight_evidence is None
+    ):
+        # Transport-free fakes and third-party producer seams may accept the
+        # journal parameter without recording their dispatch handoff. A
+        # transport-loss exception is ambiguous unless the producer attached
+        # positive NOT_SENT evidence, so fail closed instead of treating the
+        # entry's untouched default as proof that nothing was sent.
+        entry.mark_dispatched()
+    attach_journal_entry(
+        exc,
+        entry,
+        recovery_action=(
+            RecoveryAction.INSPECT_AND_RECONCILE
+            if entry.commit_state is CommitState.UNKNOWN
+            else None
+        ),
+    )
+
+
 async def call_unconfirmed_on_transport_loss(
     call: Callable[[], Awaitable[T]],
     *,
@@ -826,15 +867,7 @@ async def call_unconfirmed_on_transport_loss(
         return await call()
     except AMBIGUOUS_WRITE_ERRORS as exc:
         if journal_entry is not None:
-            attach_journal_entry(
-                exc,
-                journal_entry,
-                recovery_action=(
-                    RecoveryAction.INSPECT_AND_RECONCILE
-                    if journal_entry.commit_state is CommitState.UNKNOWN
-                    else None
-                ),
-            )
+            _attach_transport_loss_entry(exc, journal_entry)
         else:
             mark_unconfirmed(exc, force_unknown=force_unknown, operation=operation)
         if chain == "exc":
@@ -845,15 +878,7 @@ async def call_unconfirmed_on_transport_loss(
         if not force_unknown:
             raise
         if journal_entry is not None:
-            attach_journal_entry(
-                exc,
-                journal_entry,
-                recovery_action=(
-                    RecoveryAction.INSPECT_AND_RECONCILE
-                    if journal_entry.commit_state is CommitState.UNKNOWN
-                    else None
-                ),
-            )
+            _attach_transport_loss_entry(exc, journal_entry)
         else:
             mark_unconfirmed(exc, force_unknown=True, operation=operation)
         if chain == "exc":
