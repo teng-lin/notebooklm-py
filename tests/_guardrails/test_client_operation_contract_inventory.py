@@ -1189,7 +1189,7 @@ def _parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, ...]
 def _call_family_census(call_names: set[str]) -> Counter[tuple[str, str, str]]:
     found: Counter[tuple[str, str, str]] = Counter()
     for path in sorted(SRC.rglob("*.py")):
-        relative = str(path.relative_to(ROOT))
+        relative = path.relative_to(ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         class Visitor(ast.NodeVisitor):
@@ -1233,7 +1233,7 @@ def _inventory_census(rows: tuple[CallFamilyInventory, ...]) -> Counter[tuple[st
 
 def _symbol_census(symbol_name: str) -> set[tuple[str, str]]:
     return {
-        (str(path.relative_to(ROOT)), qualified)
+        (path.relative_to(ROOT).as_posix(), qualified)
         for path in sorted(SRC.rglob("*.py"))
         for qualified in _qualified_functions(path)
         if qualified.rsplit(".", 1)[-1] == symbol_name
@@ -1244,7 +1244,7 @@ def _composite_wrapper_census() -> set[tuple[str, str, str]]:
     """Find multi-await local callbacks passed to the uncertainty wrapper."""
     found: set[tuple[str, str, str]] = set()
     for path in sorted(SRC.rglob("*.py")):
-        relative = str(path.relative_to(ROOT))
+        relative = path.relative_to(ROOT).as_posix()
         functions = _qualified_functions(path)
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
@@ -1347,7 +1347,7 @@ def _presentation_hits(
     prohibited = {"json_output", "yes", "quiet", "exit_code", "confirmer"}
     hits: set[PresentationHit] = set()
     for path in sorted(app_root.rglob("*.py")):
-        relative = str(path.relative_to(source_root))
+        relative = path.relative_to(source_root).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         class Visitor(ast.NodeVisitor):
