@@ -5837,7 +5837,7 @@
     },
     {
       "kind": "from",
-      "lineno": 1070,
+      "lineno": 1069,
       "scope": "SourceUploadPipeline.upload_file_streaming._do_finalize",
       "scope_kind": "function",
       "source": "notebooklm._web.sources.upload",
@@ -9892,12 +9892,12 @@
       "modules": 16
     },
     "web": {
-      "lines": 32290,
+      "lines": 32289,
       "modules": 95
     }
   },
   "summary": {
-    "authored_lines": 141648,
+    "authored_lines": 141647,
     "authored_modules": 453,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1083,
