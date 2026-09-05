@@ -59,7 +59,14 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "install_redaction",
     ],
     "notebooklm.outcomes": [
+        "BatchItemOutcome",
+        "BatchOutcome",
         "CommitState",
+        "LookupSuggestion",
+        "OperationMetadata",
+        "ReconciliationCandidate",
+        "ReconciliationReport",
+        "RecoveryAction",
     ],
     "notebooklm.research": [
         "extract_report_urls",

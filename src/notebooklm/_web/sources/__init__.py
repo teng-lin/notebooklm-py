@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ..._idempotency import JournalEntry
 from ..._runtime.call_supervisor import CallSupervisor, OperationLease
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ..._sources import SourcesAPI, _TransferResult, _validate_add_text_idempotency, validate_search
@@ -839,7 +840,9 @@ class WebSourcesAPI(SourcesAPI):
         """
         return self._adder.is_valid_video_id(video_id)
 
-    async def _add_youtube_source(self, notebook_id: str, url: str) -> Any:
+    async def _add_youtube_source(
+        self, notebook_id: str, url: str, *, journal_entry: JournalEntry | None = None
+    ) -> Any:
         """Add a YouTube video as a source.
 
         ``disable_internal_retries=True``: ADD_SOURCE is a
@@ -855,9 +858,12 @@ class WebSourcesAPI(SourcesAPI):
             notebook_id,
             url,
             rpc=self._rpc,
+            journal_entry=journal_entry,
         )
 
-    async def _add_url_source(self, notebook_id: str, url: str) -> Any:
+    async def _add_url_source(
+        self, notebook_id: str, url: str, *, journal_entry: JournalEntry | None = None
+    ) -> Any:
         """Add a regular URL as a source.
 
         ``disable_internal_retries=True``: see
@@ -867,6 +873,7 @@ class WebSourcesAPI(SourcesAPI):
             notebook_id,
             url,
             rpc=self._rpc,
+            journal_entry=journal_entry,
         )
 
     async def _register_file_source(self, notebook_id: str, filename: str) -> str:

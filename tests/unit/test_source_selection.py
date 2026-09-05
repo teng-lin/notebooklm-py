@@ -76,6 +76,10 @@ def mock_core():
     )
 
     async def _rpc_call_dispatch(method, params, **kwargs):
+        journal_entry = kwargs.get("journal_entry")
+        journal_entries = kwargs.get("journal_entries")
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
         if method == _RPC.GET_LAST_CONVERSATION_ID:
             return [[["mock-core-conv-id"]]]
         if method == _RPC.GET_CONVERSATION_TURNS:
@@ -98,8 +102,11 @@ def mock_core():
         read_timeout=None,
         max_response_bytes=None,
         disable_read_timeout_retries=False,
-        **_kwargs,
+        **kwargs,
     ):
+        journal_entry = kwargs.get("journal_entry")
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         snapshot = AuthSnapshot(
             csrf_token=auth.csrf_token,
             session_id=auth.session_id,

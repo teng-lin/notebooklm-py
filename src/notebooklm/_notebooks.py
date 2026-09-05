@@ -9,7 +9,12 @@ from typing import Any, Literal
 from urllib.parse import quote
 
 from ._env import get_base_url
-from ._idempotency import call_unconfirmed_on_transport_loss, unresolved_commit_error
+from ._idempotency import (
+    JournalEntry,
+    OperationJournal,
+    call_unconfirmed_on_transport_loss,
+    unresolved_commit_error,
+)
 from ._notebook_metadata import NotebookMetadataService, NotebookSourceLister, SpawnChild
 from ._runtime.call_supervisor import OperationLease
 from .exceptions import (
@@ -152,18 +157,22 @@ class NotebooksAPI(ABC):
         """
         async with self._operation_scope("notebooks.create"):
             logger.debug("Creating notebook: %s", title)
+            entry = OperationJournal("notebooks.create").new_entry(method=self._create_method_id)
 
             async def _create() -> Notebook:
-                return await self._send_create(title)
+                return await self._send_create(title, journal_entry=entry)
 
             return await call_unconfirmed_on_transport_loss(
                 _create,
                 method=self._create_method_id,
                 what="the notebook create",
+                journal_entry=entry,
             )
 
     @abstractmethod
-    async def _send_create(self, title: str) -> Notebook:
+    async def _send_create(
+        self, title: str, *, journal_entry: JournalEntry | None = None
+    ) -> Notebook:
         """Send one backend create operation and decode the notebook."""
 
     async def copy(self, notebook_id: str, title: str) -> Notebook:

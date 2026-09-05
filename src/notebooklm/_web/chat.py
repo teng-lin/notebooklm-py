@@ -16,7 +16,7 @@ from .._chat import (
     _TurnRoleSnapshot,
 )
 from .._conversation_cache import ConversationCache
-from .._idempotency import mark_unconfirmed
+from .._idempotency import OperationJournal, attach_journal_entry, mark_unconfirmed
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.config import (
@@ -27,6 +27,7 @@ from .._runtime.config import (
 from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
 from ..exceptions import ChatError, NetworkError, NotebookLMError, UnknownRPCMethodError
+from ..outcomes import CommitState
 from ..rpc import RPCMethod, safe_index
 from ..types import ChatReference, ChatSessionStatus, ConversationTurn, Note
 from .contracts import RpcCaller
@@ -237,6 +238,8 @@ class WebChatAPI(ChatAPI):
             )
 
         reqid_token = None if get_request_id() is not None else set_request_id()
+        journal = OperationJournal("chat")
+        journal_entry = journal.new_entry(method="chat.ask")
         try:
             response = await chat_aware_authed_post(
                 self._transport,
@@ -245,6 +248,7 @@ class WebChatAPI(ChatAPI):
                 read_timeout=self._chat_timeout,
                 max_response_bytes=self._chat_response_max_bytes,
                 disable_read_timeout_retries=True,
+                journal_entry=journal_entry,
             )
         finally:
             if reqid_token is not None:
@@ -253,14 +257,17 @@ class WebChatAPI(ChatAPI):
         try:
             parsed = parse_streaming_chat_response(response.text)
         except NotebookLMError as exc:
-            if getattr(exc, "commit_state", None) is None:
-                mark_unconfirmed(exc, operation="chat")
+            if exc.commit_state is not None:
+                journal_entry.record(exc.commit_state, "decoded chat outcome")
+            attach_journal_entry(exc, journal_entry)
             raise
         except Exception as exc:
-            raise mark_unconfirmed(
+            error = mark_unconfirmed(
                 ChatError(f"Failed to decode streamed chat response: {type(exc).__name__}"),
                 operation="chat",
-            ) from exc
+            )
+            raise attach_journal_entry(error, journal_entry) from exc
+        journal_entry.record(CommitState.CONFIRMED, "decoded terminal chat response")
         return _PostedAsk(
             answer=parsed.answer,
             references=parsed.references,

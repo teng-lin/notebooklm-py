@@ -475,7 +475,6 @@ UNCERTAINTY_WRAPPER_CALL_INVENTORY = _call_rows(
         ),
         ("src/notebooklm/_notebooks.py", "NotebooksAPI.create", 1),
         ("src/notebooklm/_web/artifacts.py", "WebArtifactsAPI._send_export", 1),
-        ("src/notebooklm/_web/collections.py", "WebCollectionsAPI.create", 1),
         ("src/notebooklm/_web/labels.py", "WebLabelsAPI.create", 1),
         ("src/notebooklm/_web/labels.py", "WebLabelsAPI.generate", 1),
         (
@@ -485,7 +484,6 @@ UNCERTAINTY_WRAPPER_CALL_INVENTORY = _call_rows(
         ),
         ("src/notebooklm/_web/notes.py", "NoteService._create_note_admitted", 1),
         ("src/notebooklm/_web/research.py", "WebResearchAPI.start", 1),
-        ("src/notebooklm/_web/sharing.py", "WebSharingAPI._share_and_readback", 1),
         ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_drive", 1),
         ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_text", 1),
         ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_url", 1),
@@ -505,7 +503,11 @@ UNRESOLVED_COMMIT_CALL_INVENTORY = _call_rows(
     "unresolved_commit_error",
     (
         ("src/notebooklm/_android/artifact_creation.py", "create_artifact_once", 1),
-        ("src/notebooklm/_android/sources.py", "_unresolved_add_error", 1),
+        (
+            "src/notebooklm/_android/source_transfers.py",
+            "unresolved_add_error",
+            1,
+        ),
         ("src/notebooklm/_notebooks.py", "NotebooksAPI.copy", 1),
         ("src/notebooklm/_web/artifacts.py", "WebArtifactsAPI._send_copy", 1),
         ("src/notebooklm/_web/sources/batch.py", "SourceBatchAddService.add_urls", 2),
@@ -564,16 +566,6 @@ READINESS_CALL_INVENTORY = _call_rows(
 
 
 COMPOSITE_WRAPPER_INVENTORY = {
-    (
-        "src/notebooklm/_web/collections.py",
-        "WebCollectionsAPI.create",
-        "WebCollectionsAPI.create.create_and_readback",
-    ): Disposition("P1/P2", "Force unknown in P1, then journal mutation and readback separately."),
-    (
-        "src/notebooklm/_web/sharing.py",
-        "WebSharingAPI._share_and_readback",
-        "WebSharingAPI._share_and_readback.mutate_and_readback",
-    ): Disposition("P1/P2", "Force unknown in P1, then journal mutation and readback separately."),
     (
         "src/notebooklm/_web/sources/upload.py",
         "SourceUploadPipeline._register_file_source_result",

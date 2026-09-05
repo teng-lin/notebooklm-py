@@ -75,6 +75,7 @@ from ..exceptions import (
     ValidationError,
     WaitTimeoutError,
 )
+from ..outcomes import CommitState
 from ..types import GrpcStatusCode, normalize_grpc_status, normalize_rpc_code
 from .source_mutations import SourceMutationError
 
@@ -235,7 +236,24 @@ _DEFAULT_UNCONFIRMED_HINT = (
 
 def unconfirmed_hint(exc: BaseException) -> str:
     """Return operation-aware recovery guidance for an uncertain write."""
-    if getattr(exc, "operation", None) == "chat":
+    metadata = getattr(exc, "operation_metadata", None)
+    operation = None if metadata is None else metadata.operation
+    if (
+        operation == "chat"
+        and metadata is not None
+        and metadata.commit_state is CommitState.CONFIRMED
+    ):
+        conversation = (
+            f" (conversation id: {metadata.known_resource_ids[0]})"
+            if metadata.known_resource_ids
+            else ""
+        )
+        return (
+            f"The chat turn was recorded{conversation}, but its identifier or required readback could not "
+            "be resolved. Inspect the conversation history before continuing; replaying the "
+            "question can record a duplicate turn."
+        )
+    if operation == "chat":
         return (
             "The chat turn may or may not have been recorded. Inspect the conversation "
             "history before trying again; replaying the question can record a duplicate turn."

@@ -49,6 +49,7 @@ from notebooklm.exceptions import (
     RPCTimeoutError,
     ServerError,
 )
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.types import Collection, Label, Notebook, Source
 
 NB = "00000000-0000-4000-8000-000000000100"
@@ -166,6 +167,9 @@ class FakeOrganizationServer:
         )
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.pop("journal_entry", None)
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         failure = self.failures.get(len(self.calls))
         if failure is not None:
@@ -438,6 +442,48 @@ async def test_manual_create_transport_loss_is_unconfirmed_and_sent_once(
         [GET_LABELS_METHOD, CREATE_LABEL_METHOD] if kind == "collection" else [CREATE_LABEL_METHOD]
     )
     assert [method for method, _request, _kwargs in server.calls] == expected_methods
+
+
+@pytest.mark.parametrize(
+    ("dispatched", "expected_state", "expected_recovery"),
+    [
+        (False, CommitState.NOT_SENT, RecoveryAction.RETRY),
+        (True, CommitState.UNKNOWN, RecoveryAction.INSPECT_AND_RECONCILE),
+    ],
+    ids=["pre-dispatch", "post-dispatch"],
+)
+async def test_android_collection_create_cancellation_retains_journal(
+    dispatched: bool,
+    expected_state: CommitState,
+    expected_recovery: RecoveryAction,
+) -> None:
+    cancellation = asyncio.CancelledError("cancel Android collection mutation")
+
+    class CancellingServer(FakeOrganizationServer):
+        async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+            if method != CREATE_LABEL_METHOD:
+                return await super().unary(method, request, **kwargs)
+            self.calls.append((method, request, kwargs))
+            entry = kwargs["journal_entry"]
+            if dispatched:
+                entry.mark_dispatched()
+            raise cancellation
+
+    server = CancellingServer()
+    _labels, collections = _apis(server)
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await collections.create("Requested")
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is expected_state
+    assert metadata.recovery_action is expected_recovery
+    assert metadata.method == CREATE_LABEL_METHOD
+    assert metadata.entries == ()
+    assert [attempt.commit_state for attempt in metadata.attempts] == (
+        [CommitState.UNKNOWN] if dispatched else []
+    )
 
 
 async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
@@ -888,10 +934,13 @@ async def test_generate_failed_post_write_readback_is_unconfirmed_without_resend
     server.failures[2] = read_error
     labels, _collections = _apis(server)
 
-    with pytest.raises(type(read_error)) as raised:
+    expected_type = DecodingError if isinstance(read_error, ValueError) else type(read_error)
+    with pytest.raises(expected_type) as raised:
         await labels.generate(NB)
 
-    if isinstance(read_error, RPCError) and read_error.rpc_code == 5:
+    if isinstance(read_error, ValueError):
+        assert isinstance(raised.value, DecodingError)
+    elif isinstance(read_error, RPCError) and read_error.rpc_code == 5:
         assert isinstance(raised.value, NotebookNotFoundError)
     else:
         assert raised.value is read_error

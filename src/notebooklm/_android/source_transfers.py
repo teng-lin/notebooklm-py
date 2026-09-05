@@ -14,12 +14,30 @@ from __future__ import annotations
 
 import builtins
 import logging
+import uuid
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import replace
-from typing import Any, cast
+from pathlib import Path
+from typing import Any, Protocol, cast
 
-from .._idempotency import call_unconfirmed_on_transport_loss
+from .._idempotency import (
+    JournalEntry,
+    OperationJournal,
+    call_unconfirmed_on_transport_loss,
+    mark_unconfirmed,
+    unresolved_commit_error,
+)
 from .._sources import _TransferResult
 from .._url_utils import is_youtube_url
+from ..exceptions import (
+    NetworkError,
+    RPCError,
+    SourceAddError,
+    SourceProcessingError,
+    ValidationError,
+)
+from ..outcomes import RecoveryAction
 from ..types import CopiedSource, Source, SourceStatus
 from .codecs.sources import decode_source
 from .session import AndroidSession
@@ -27,9 +45,126 @@ from .session import AndroidSession
 logger = logging.getLogger(__name__)
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
+ADD_TENTATIVE_SOURCES_METHOD = f"/{_SERVICE}/AddTentativeSources"
+ADD_SOURCES_METHOD = f"/{_SERVICE}/AddSources"
 ADD_SOURCES_ASYNC_METHOD = f"/{_SERVICE}/AddSourcesAsync"
 APPEND_SOURCE_METHOD = f"/{_SERVICE}/AppendSource"
 COPY_SOURCES_ASYNC_METHOD = f"/{_SERVICE}/CopySourcesAsync"
+_CORRELATION_PREFIX = "nblm-"
+
+
+def correlation_name() -> str:
+    """Allocate one bounded, opaque, per-occurrence registration key."""
+
+    return f"{_CORRELATION_PREFIX}{uuid.uuid4().hex}"
+
+
+def new_source_send_entries(
+    operation: str,
+    count: int = 1,
+) -> tuple[tuple[JournalEntry, ...], tuple[JournalEntry, ...]]:
+    """Create occurrence-indexed registration and commit entries."""
+
+    journal = OperationJournal(operation)
+    invocation_id = journal.invocation_id()
+    registration = tuple(
+        journal.new_entry(
+            method=ADD_TENTATIVE_SOURCES_METHOD,
+            phase="registration",
+            member=(index if count > 1 else None),
+            invocation_id=invocation_id,
+        )
+        for index in range(count)
+    )
+    commit = tuple(
+        journal.new_entry(
+            method=ADD_SOURCES_METHOD,
+            member=(index if count > 1 else None),
+            invocation_id=invocation_id,
+        )
+        for index in range(count)
+    )
+    return registration, commit
+
+
+def known_registration_error(subject: str, *, kind: str = "URL") -> SourceAddError:
+    error = SourceAddError(
+        subject,
+        message=f"Failed to register {kind} source {subject!r}: the backend omitted its registration.",
+    )
+    error.stage = "register"
+    return error
+
+
+def unresolved_add_error(
+    subject: str,
+    *,
+    stage: str,
+    cause: Exception | None = None,
+    kind: str = "URL",
+) -> SourceAddError:
+    return cast(
+        SourceAddError,
+        unresolved_commit_error(
+            ADD_SOURCES_METHOD,
+            f"the Android {kind} add",
+            SourceAddError(
+                subject,
+                cause=cause,
+                message=(
+                    "UNRESOLVED — check the notebook source list before retrying. "
+                    f"The Android {kind} add could not prove {stage} for {subject!r}; neither "
+                    "write was replayed and no cleanup delete was sent."
+                ),
+            ),
+            preserve_exception=True,
+        ),
+    )
+
+
+def validate_drive_file_id(file_id: str) -> None:
+    if not file_id or not file_id.strip():
+        raise ValidationError("Drive file_id cannot be empty or whitespace-only")
+
+
+def unresolved_file_registration_error(filename: str) -> SourceAddError:
+    error = SourceAddError(
+        filename,
+        message=(
+            f"Android file upload tentative registration outcome is unconfirmed for {filename!r}."
+        ),
+    )
+    error.stage = "register"
+    return mark_unconfirmed(error)
+
+
+def source_wait_recovery_action(error: BaseException) -> RecoveryAction:
+    return RecoveryAction.NONE if isinstance(error, SourceProcessingError) else RecoveryAction.WAIT
+
+
+class DriveDownload(Protocol):
+    """Narrow authenticated download context used by ``add_drive_file``."""
+
+    def __call__(
+        self,
+        document_id: str,
+    ) -> AbstractAsyncContextManager[tuple[Path, str, str | None]]: ...
+
+
+class AddFileCompat(Protocol):
+    """Narrow Web upload capability for formats rejected by the mobile plane."""
+
+    async def __call__(
+        self,
+        notebook_id: str,
+        file_path: str | Path,
+        mime_type: str | None = None,
+        *,
+        wait: bool = False,
+        wait_timeout: float = 120.0,
+        title: str | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
+    ) -> Source: ...
 
 
 def _read_proto() -> Any:
@@ -79,6 +214,22 @@ class AndroidSourceTransferMixin:
     """
 
     _transport: AndroidSession
+
+    async def _best_effort_title(
+        self,
+        notebook_id: str,
+        source: Source,
+        requested_title: str,
+    ) -> Source:
+        try:
+            renamed = await self.rename(notebook_id, source.id, requested_title)  # type: ignore[attr-defined]
+        except (RPCError, NetworkError):
+            logger.warning(
+                "Source %s added but Android title finalization failed; keeping upstream title",
+                source.id,
+            )
+            return source
+        return replace(source, title=(renamed.title if renamed else None) or requested_title)
 
     async def _send_add_urls_async(
         self,
@@ -208,8 +359,19 @@ class AndroidSourceTransferMixin:
 
 
 __all__ = [
+    "ADD_SOURCES_METHOD",
     "ADD_SOURCES_ASYNC_METHOD",
+    "ADD_TENTATIVE_SOURCES_METHOD",
     "APPEND_SOURCE_METHOD",
     "COPY_SOURCES_ASYNC_METHOD",
     "AndroidSourceTransferMixin",
+    "AddFileCompat",
+    "DriveDownload",
+    "correlation_name",
+    "known_registration_error",
+    "new_source_send_entries",
+    "source_wait_recovery_action",
+    "unresolved_add_error",
+    "unresolved_file_registration_error",
+    "validate_drive_file_id",
 ]

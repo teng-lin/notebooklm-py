@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,7 @@ from notebooklm.exceptions import (
     CollectionNotFoundError,
     UnknownRPCMethodError,
 )
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.fake_core import make_fake_core
 
@@ -58,7 +60,12 @@ class FakeRpc:
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
         raise_on_null_status: bool = False,
+        journal_entry: Any = None,
+        journal_entries: Any = None,
     ) -> Any:
+        assert journal_entries is None
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         self.calls.append(
             SimpleNamespace(
                 method=method,
@@ -70,9 +77,10 @@ class FakeRpc:
             )
         )
         queue = self.sequences.get(method)
-        if queue:
-            return queue.popleft()
-        return self.responses.get(method)
+        outcome = queue.popleft() if queue else self.responses.get(method)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
 
     def methods(self) -> list[RPCMethod]:
         return [c.method for c in self.calls]
@@ -203,6 +211,72 @@ async def test_collection_create_does_not_attribute_delayed_foreign_web_singleto
         await api.create("Requested")
 
     assert getattr(raised.value, "unconfirmed", False) is True
+
+
+async def test_collection_readback_cancellation_retains_confirmed_mutation_journal() -> None:
+    cancellation = asyncio.CancelledError("cancel collection readback")
+    api, _, _ = _api(
+        sequences={RPCMethod.LIST_LABELS: [_list_env(), cancellation]},
+        responses={RPCMethod.CREATE_LABEL: None},
+    )
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await api.create("Requested")
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is CommitState.CONFIRMED
+    assert metadata.recovery_action is RecoveryAction.INSPECT_AND_RECONCILE
+    assert [entry.commit_state for entry in metadata.entries] == [
+        CommitState.CONFIRMED,
+        CommitState.UNKNOWN,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("dispatched", "expected_state", "expected_recovery"),
+    [
+        (False, CommitState.NOT_SENT, RecoveryAction.RETRY),
+        (True, CommitState.UNKNOWN, RecoveryAction.INSPECT_AND_RECONCILE),
+    ],
+    ids=["pre-dispatch", "post-dispatch"],
+)
+async def test_collection_mutation_cancellation_retains_create_journal(
+    dispatched: bool,
+    expected_state: CommitState,
+    expected_recovery: RecoveryAction,
+) -> None:
+    cancellation = asyncio.CancelledError("cancel collection mutation")
+
+    async def rpc_call(method: RPCMethod, _params: list[Any], **kwargs: Any) -> Any:
+        if method is RPCMethod.LIST_LABELS:
+            return _list_env()
+        assert method is RPCMethod.CREATE_LABEL
+        entry = kwargs["journal_entry"]
+        if dispatched:
+            entry.mark_dispatched()
+        raise cancellation
+
+    api = WebCollectionsAPI(
+        SimpleNamespace(rpc_call=rpc_call),
+        supervisor=make_fake_core(),
+        list_notebooks=AsyncMock(return_value=[]),
+    )
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await api.create("Requested")
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is expected_state
+    assert metadata.recovery_action is expected_recovery
+    assert [entry.commit_state for entry in metadata.entries] == [
+        expected_state,
+        CommitState.NOT_SENT,
+    ]
+    assert [attempt.commit_state for attempt in metadata.attempts] == (
+        [CommitState.UNKNOWN] if dispatched else []
+    )
 
 
 # -- rename ------------------------------------------------------------------

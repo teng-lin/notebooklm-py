@@ -12,7 +12,13 @@ from dataclasses import replace
 from typing import Any
 
 from . import research as _research_pub
-from ._idempotency import mark_unconfirmed
+from ._idempotency import (
+    JournalEntry,
+    OperationJournal,
+    attach_reconciliation_report,
+    mark_unconfirmed,
+    reconciliation_report,
+)
 from ._notebook_metadata import NotebookSourceLister
 from ._research_import import (
     _WEB_RESEARCH_IMPORT_POLICY,
@@ -315,10 +321,12 @@ class BaseResearchAPI(ABC):
             )
         if not batch.items:
             return []
+        entry = OperationJournal("research.import_sources").new_entry(method="import_sources")
         return await self._send_import(
             notebook_id,
             batch,
             _remaining_budget=_remaining_budget,
+            journal_entry=entry,
         )
 
     @abstractmethod
@@ -328,6 +336,7 @@ class BaseResearchAPI(ABC):
         batch: _ResearchImportBatch,
         *,
         _remaining_budget: float | None,
+        journal_entry: JournalEntry | None = None,
     ) -> list[dict[str, str]]:
         """Encode, send, and decode one backend import mutation."""
 
@@ -490,13 +499,16 @@ class BaseResearchAPI(ABC):
                 delay = min(delay * backoff_factor, max_delay)
 
             unresolved = [
-                source.url[:200]
+                source.url
                 for source in models
                 if source.url and _normalize_import_verification_url(source.url) not in visible_urls
             ]
-            unresolved.extend(source.title[:200] for source in models if not source.url)
-            failure.reconciliation_candidates = tuple(candidate_ids[:20])  # type: ignore[union-attr]
-            failure.unresolved_inputs = tuple(unresolved[:20])  # type: ignore[union-attr]
+            unresolved.extend(source.title for source in models if not source.url)
+            attach_reconciliation_report(
+                failure,
+                reconciliation_report(candidate_ids, unresolved),
+                operation="research.import_sources",
+            )
             raise
 
         return _imported_result(imported, already_present)

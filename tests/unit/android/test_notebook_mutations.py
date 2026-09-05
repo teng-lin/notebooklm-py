@@ -67,6 +67,10 @@ class SequenceTransport:
         return asyncio.create_task(factory(), name=label)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.pop("journal_entry", None)
+        journal_entries = kwargs.pop("journal_entries", None)
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         outcome = self.outcomes[method].pop(0)
         if isinstance(outcome, BaseException):

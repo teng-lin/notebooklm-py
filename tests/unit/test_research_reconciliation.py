@@ -106,6 +106,7 @@ class _StubResearchAPI(BaseResearchAPI):
         batch: _ResearchImportBatch,
         *,
         _remaining_budget: float | None,
+        journal_entry=None,
     ) -> list[dict[str, str]]:
         del notebook_id
         self.import_calls.append(([item.source_input for item in batch.items], _remaining_budget))
@@ -345,6 +346,39 @@ async def test_unmarked_rpc_failure_is_conservative_unknown_and_preserves_identi
     assert failure.reconciliation_candidates == ("possible",)  # type: ignore[attr-defined]
     assert len(api.import_calls) == 1
     assert len(lister.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_import_verification_redacts_long_userinfo_before_reconciliation_cap() -> None:
+    url = (
+        "https://userinfo-must-not-leak-"
+        + "x" * 220
+        + ":password-must-not-leak@unknown.test/path?access_token=query-must-not-leak"
+    )
+    failure = NetworkError("response lost")
+    api, _lister = _make_api(
+        list_outcomes=[[], []],
+        import_outcomes=[failure],
+    )
+
+    with pytest.raises(NetworkError) as raised:
+        await api.import_sources_with_verification(
+            "nb",
+            "task",
+            [{"url": url, "title": "Unresolved"}],
+            max_elapsed=0,
+        )
+
+    assert raised.value is failure
+    assert failure.operation_metadata is not None
+    assert failure.operation_metadata.reconciliation is not None
+    assert failure.operation_metadata.reconciliation.unresolved_inputs == (
+        "https://***@unknown.test/path?access_token=***",
+    )
+    rendered = repr(failure.operation_metadata)
+    assert "userinfo-must-not-leak" not in rendered
+    assert "password-must-not-leak" not in rendered
+    assert "query-must-not-leak" not in rendered
 
 
 @pytest.mark.asyncio

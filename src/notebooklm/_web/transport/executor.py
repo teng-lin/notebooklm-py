@@ -16,10 +16,11 @@ import httpx
 from ..._auth.account import format_authuser_value
 from ..._deadline import RuntimeDeadline
 from ..._env import get_base_url, get_default_language
-from ..._idempotency import ReplayGrant, mark_unconfirmed
+from ..._idempotency import JournalEntry, ReplayGrant, attach_journal_entry, mark_unconfirmed
 from ..._logging import get_request_id, reset_request_id, set_request_id
 from ..._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
-from ...exceptions import DecodingError
+from ...exceptions import DecodingError, NotebookLMError
+from ...outcomes import CommitState, RecoveryAction
 from ...rpc import (
     ClientError,
     NetworkError,
@@ -135,6 +136,8 @@ class RpcExecutor:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
+        journal_entry: JournalEntry | None = None,
+        journal_entries: tuple[JournalEntry, ...] | None = None,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
         _resource_epoch: int | None = None,
@@ -194,20 +197,26 @@ class RpcExecutor:
         # inside ``RuntimeTransport.perform_authed_post`` without recursion, so
         # they don't need this guard.
         if _is_retry:
-            return await self._execute_once(
-                method,
-                params,
-                source_path,
-                allow_null,
-                _is_retry,
-                disable_internal_retries=disable_internal_retries,
-                operation_variant=operation_variant,
-                read_timeout=read_timeout,
-                raise_on_null_status=raise_on_null_status,
-                _refresh_budget=_refresh_budget,
-                _retry_deadline=_retry_deadline,
-                _resource_epoch=_resource_epoch,
-            )
+            try:
+                return await self._execute_once(
+                    method,
+                    params,
+                    source_path,
+                    allow_null,
+                    _is_retry,
+                    disable_internal_retries=disable_internal_retries,
+                    operation_variant=operation_variant,
+                    read_timeout=read_timeout,
+                    raise_on_null_status=raise_on_null_status,
+                    journal_entry=journal_entry,
+                    journal_entries=journal_entries,
+                    _refresh_budget=_refresh_budget,
+                    _retry_deadline=_retry_deadline,
+                    _resource_epoch=_resource_epoch,
+                )
+            except NotebookLMError as exc:
+                self._attach_journal_failure(exc, journal_entry)
+                raise
 
         self._call_supervisor.record_started(method.name)
         # ``rpc_calls_started`` and reqid stay HERE (outside the chain)
@@ -228,10 +237,15 @@ class RpcExecutor:
                 operation_variant=operation_variant,
                 read_timeout=read_timeout,
                 raise_on_null_status=raise_on_null_status,
+                journal_entry=journal_entry,
+                journal_entries=journal_entries,
                 _refresh_budget=_refresh_budget,
                 _retry_deadline=_retry_deadline,
                 _resource_epoch=_resource_epoch,
             )
+        except NotebookLMError as exc:
+            self._attach_journal_failure(exc, journal_entry)
+            raise
         finally:
             if _reqid_token is not None:
                 reset_request_id(_reqid_token)
@@ -248,6 +262,8 @@ class RpcExecutor:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
+        journal_entry: JournalEntry | None = None,
+        journal_entries: tuple[JournalEntry, ...] | None = None,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
         _resource_epoch: int | None = None,
@@ -327,6 +343,8 @@ class RpcExecutor:
                 read_timeout=read_timeout,
                 expected_epoch=resource_epoch,
                 epoch_observer=_bind_resource_epoch,
+                journal_entry=journal_entry,
+                journal_entries=journal_entries,
             )
         except TransportAuthExpired as exc:
             # Preserve the historical raw transport exception on refresh failure.
@@ -452,6 +470,8 @@ class RpcExecutor:
                     operation_variant=operation_variant,
                     read_timeout=read_timeout,
                     raise_on_null_status=raise_on_null_status,
+                    journal_entry=journal_entry,
+                    journal_entries=journal_entries,
                     _refresh_budget=_refresh_budget,
                     _retry_deadline=_retry_deadline,
                     _resource_epoch=resource_epoch,
@@ -634,6 +654,8 @@ class RpcExecutor:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
+        journal_entry: JournalEntry | None = None,
+        journal_entries: tuple[JournalEntry, ...] | None = None,
         _refresh_budget: RefreshBudget,
         _retry_deadline: RuntimeDeadline | None = None,
         _resource_epoch: int | None = None,
@@ -716,9 +738,27 @@ class RpcExecutor:
             operation_variant=operation_variant,
             read_timeout=read_timeout,
             raise_on_null_status=raise_on_null_status,
+            journal_entry=journal_entry,
+            journal_entries=journal_entries,
             _refresh_budget=_refresh_budget,
             _retry_deadline=_retry_deadline,
             _resource_epoch=_resource_epoch,
+        )
+
+    @staticmethod
+    def _attach_journal_failure(exc: NotebookLMError, entry: JournalEntry | None) -> None:
+        if entry is None:
+            return
+        if exc.commit_state in (CommitState.NOT_SENT, CommitState.REJECTED):
+            entry.record(exc.commit_state, "producer evidence")
+        attach_journal_entry(
+            exc,
+            entry,
+            recovery_action=(
+                RecoveryAction.INSPECT_AND_RECONCILE
+                if entry.commit_state is CommitState.UNKNOWN
+                else RecoveryAction.NONE
+            ),
         )
 
     def _start_retry_deadline(self) -> RuntimeDeadline | None:

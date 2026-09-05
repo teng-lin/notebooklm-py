@@ -97,6 +97,10 @@ class FakeTransport:
         return asyncio.create_task(factory(), name=label)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.pop("journal_entry", None)
+        journal_entries = kwargs.pop("journal_entries", None)
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         if method == GET_PROJECT_METHOD and method not in self.handlers:
             return _project(_source(SOURCE_A), _source(SOURCE_B))

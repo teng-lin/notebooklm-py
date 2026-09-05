@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import hashlib
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -12,7 +13,12 @@ from typing import Any, cast
 import httpx
 
 from .._artifacts import ArtifactsAPI
-from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
+from .._idempotency import (
+    attach_journal_entry,
+    call_unconfirmed_on_transport_loss,
+    claim_generation_entry,
+    mark_unconfirmed,
+)
 from .._notebook_metadata import NotebookSourceIdProvider
 from .._runtime.call_supervisor import CallSupervisor, OperationLease
 from .._types.artifacts import _status_from_code
@@ -34,6 +40,7 @@ from ..exceptions import (
     RPCError,
     ValidationError,
 )
+from ..outcomes import CommitState
 from ..types import Artifact, ArtifactType, GenerationStatus, ReportSuggestion
 from .artifact_collaborators import NoteBackedMindMapLister
 from .artifact_creation import (
@@ -353,9 +360,22 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
         else:
             raise AssertionError(f"unreachable artifact family: {family}")
 
+        fingerprint = hashlib.sha256(
+            b"\0".join(
+                (
+                    str(id(self._transport)).encode(),
+                    request.SerializeToString(),
+                )
+            )
+        ).hexdigest()
+        journal_entry = claim_generation_entry(
+            method=CREATE_ARTIFACT_METHOD,
+            semantic_key=fingerprint,
+        )
         response = await create_artifact_once(
             self._transport,
             request,
+            journal_entry=journal_entry,
         )
         try:
             artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
@@ -368,7 +388,13 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
                 )
             validate_echoed_source_ids(artifact, source_ids, family_label, CREATE_ARTIFACT_METHOD)
         except DecodingError as error:
-            raise mark_unconfirmed(error) from None
+            attach_journal_entry(error, journal_entry)
+            raise error from None
+        journal_entry.record(
+            CommitState.CONFIRMED,
+            "decoded artifact generation",
+            known_resource_ids=((artifact.id,) if artifact.id else ()),
+        )
         return GenerationStatus(
             task_id=artifact.id,
             status=_status_from_code(artifact.status),

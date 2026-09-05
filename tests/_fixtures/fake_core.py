@@ -67,6 +67,25 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 
 
+def _journalize_rpc_mock(mock: AsyncMock) -> AsyncMock:
+    """Make a test RPC mock emulate the production terminal's dispatch handoff."""
+
+    if mock.__dict__.get("_notebooklm_journalized", False):
+        return mock
+    execute = mock._execute_mock_call
+
+    async def execute_with_journal(*args: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.get("journal_entry")
+        journal_entries = kwargs.get("journal_entries")
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
+        return await execute(*args, **kwargs)
+
+    mock._execute_mock_call = execute_with_journal
+    mock._notebooklm_journalized = True
+    return mock
+
+
 class FakeSession:
     """A duck-typed stand-in for capability-Protocol collaborators in tests.
 
@@ -150,7 +169,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     # ``fake.rpc_executor.rpc_call`` mirror so both attribute paths see
     # the same observed calls. Fresh list per call so tests can mutate
     # the response without bleeding into siblings.
-    rpc_call_mock = AsyncMock(side_effect=lambda *a, **kw: [])
+    rpc_call_mock = _journalize_rpc_mock(AsyncMock(side_effect=lambda *a, **kw: []))
 
     defaults: dict[str, Any] = {
         # AuthMetadata + Kernel — consumed by SourceUploadPipeline test sites.
@@ -195,6 +214,8 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     # the same mock so test idioms using either path observe the same
     # interactions.
     if "rpc_call" in overrides:
+        if isinstance(overrides["rpc_call"], AsyncMock):
+            overrides["rpc_call"] = _journalize_rpc_mock(overrides["rpc_call"])
         overrides["rpc_executor"] = SimpleNamespace(rpc_call=overrides["rpc_call"])
 
     # Validate overrides early so a typo like ``rpc_cal=`` fails loudly

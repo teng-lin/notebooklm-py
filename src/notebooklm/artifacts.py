@@ -15,7 +15,13 @@ import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from ._idempotency import ReplayGrant, replay_allowed
+from ._idempotency import (
+    ReplayGrant,
+    activate_generation_retry_binding,
+    new_generation_retry_binding,
+    replay_allowed,
+    settle_generation_failure,
+)
 from .exceptions import RateLimitError
 from .types import GenerationState, GenerationStatus
 
@@ -122,6 +128,7 @@ async def with_rate_limit_retry(
         raise ValueError("multiplier must be positive")
 
     sleep_func = asyncio.sleep if sleep is None else sleep
+    binding = new_generation_retry_binding()
 
     attempt = 0
     while True:
@@ -130,12 +137,14 @@ async def with_rate_limit_retry(
         # the callback shape is uniform — a *returned* status is never a retry
         # signal (v0.8.0, #1342).
         try:
-            result = await generate_fn()
+            with activate_generation_retry_binding(binding):
+                result = await generate_fn()
         except RateLimitError as exc:
+            settle_generation_failure(binding, exc)
             if not replay_allowed(
                 exc,
                 grant=ReplayGrant.REFUSAL_RETRY_AUTHORIZED,
-                disabled=False,
+                disabled=binding.replay_disabled,
                 remaining=float(max_retries - attempt),
             ):
                 raise

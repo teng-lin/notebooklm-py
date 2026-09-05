@@ -44,9 +44,9 @@
             ]
           },
           "module_counts": {
-            "android": 47,
+            "android": 48,
             "auth": 32,
-            "root": 58,
+            "root": 59,
             "runtime": 9,
             "types": 16
           },
@@ -95,6 +95,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -166,6 +167,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -265,9 +267,9 @@
             ]
           },
           "module_counts": {
-            "android": 47,
+            "android": 48,
             "auth": 32,
-            "root": 58,
+            "root": 59,
             "runtime": 9,
             "types": 16
           },
@@ -316,6 +318,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -387,6 +390,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -502,9 +506,9 @@
             ]
           },
           "module_counts": {
-            "android": 72,
+            "android": 73,
             "auth": 32,
-            "root": 58,
+            "root": 59,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -580,6 +584,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -651,6 +656,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -873,7 +879,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "runtime": 8,
             "types": 16
           },
@@ -946,6 +952,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -1038,9 +1045,9 @@
             ]
           },
           "module_counts": {
-            "android": 72,
+            "android": 73,
             "auth": 32,
-            "root": 58,
+            "root": 59,
             "runtime": 9,
             "types": 16
           },
@@ -1114,6 +1121,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -1185,6 +1193,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -1340,9 +1349,9 @@
             ]
           },
           "module_counts": {
-            "android": 72,
+            "android": 73,
             "auth": 32,
-            "root": 58,
+            "root": 59,
             "runtime": 9,
             "types": 16
           },
@@ -1416,6 +1425,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -1487,6 +1497,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -1671,7 +1682,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -1746,6 +1757,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -1963,7 +1975,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -2038,6 +2050,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -2193,7 +2206,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "runtime": 8,
             "types": 16
           },
@@ -2266,6 +2279,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -2381,7 +2395,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -2456,6 +2470,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -2675,7 +2690,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -2750,6 +2765,7 @@
             "notebooklm._notebooks",
             "notebooklm._notes",
             "notebooklm._polling_registry",
+            "notebooklm._redact",
             "notebooklm._research",
             "notebooklm._research_import",
             "notebooklm._runtime",
@@ -2914,7 +2930,7 @@
       "module_counts": {
         "android": 4,
         "auth": 32,
-        "root": 57,
+        "root": 58,
         "runtime": 8,
         "types": 16
       },
@@ -2991,6 +3007,7 @@
         "notebooklm._notebooks",
         "notebooklm._notes",
         "notebooklm._polling_registry",
+        "notebooklm._redact",
         "notebooklm._research",
         "notebooklm._research_import",
         "notebooklm._runtime",
@@ -3042,7 +3059,7 @@
     "client_reexport": {
       "module_counts": {
         "auth": 32,
-        "root": 57,
+        "root": 58,
         "runtime": 8,
         "types": 16
       },
@@ -3115,6 +3132,7 @@
         "notebooklm._notebooks",
         "notebooklm._notes",
         "notebooklm._polling_registry",
+        "notebooklm._redact",
         "notebooklm._research",
         "notebooklm._research_import",
         "notebooklm._runtime",
@@ -3166,7 +3184,7 @@
     "legacy_client_attribute": {
       "module_counts": {
         "auth": 32,
-        "root": 57,
+        "root": 58,
         "runtime": 8,
         "types": 16,
         "web": 3
@@ -3240,6 +3258,7 @@
         "notebooklm._notebooks",
         "notebooklm._notes",
         "notebooklm._polling_registry",
+        "notebooklm._redact",
         "notebooklm._research",
         "notebooklm._research_import",
         "notebooklm._runtime",
@@ -3294,7 +3313,7 @@
     "package": {
       "module_counts": {
         "auth": 32,
-        "root": 57,
+        "root": 58,
         "runtime": 8,
         "types": 16
       },
@@ -3367,6 +3386,7 @@
         "notebooklm._notebooks",
         "notebooklm._notes",
         "notebooklm._polling_registry",
+        "notebooklm._redact",
         "notebooklm._research",
         "notebooklm._research_import",
         "notebooklm._runtime",
@@ -3418,7 +3438,7 @@
     "raw_module": {
       "module_counts": {
         "auth": 32,
-        "root": 57,
+        "root": 58,
         "runtime": 8,
         "types": 16
       },
@@ -3491,6 +3511,7 @@
         "notebooklm._notebooks",
         "notebooklm._notes",
         "notebooklm._polling_registry",
+        "notebooklm._redact",
         "notebooklm._research",
         "notebooklm._research_import",
         "notebooklm._runtime",
@@ -3542,7 +3563,7 @@
     "web_raw_api": {
       "module_counts": {
         "auth": 32,
-        "root": 57,
+        "root": 58,
         "rpc": 3,
         "runtime": 8,
         "types": 16,
@@ -3617,6 +3638,7 @@
         "notebooklm._notebooks",
         "notebooklm._notes",
         "notebooklm._polling_registry",
+        "notebooklm._redact",
         "notebooklm._research",
         "notebooklm._research_import",
         "notebooklm._runtime",
