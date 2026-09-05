@@ -297,7 +297,22 @@ def _method_owner(api_type: type[Any], method_name: str) -> type[Any]:
 
 
 def _build_web_api(namespace: str, side_effect: Any) -> Any:
-    fake = make_fake_core(rpc_call=AsyncMock(side_effect=side_effect))
+    outcomes = list(side_effect) if isinstance(side_effect, list) else [side_effect]
+
+    async def terminal(*args: Any, **kwargs: Any) -> Any:
+        del args
+        journal_entry = kwargs.get("journal_entry")
+        journal_entries = kwargs.get("journal_entries")
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
+        if not outcomes:
+            raise AssertionError("web test terminal exhausted")
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    fake = make_fake_core(rpc_call=AsyncMock(side_effect=terminal))
     if namespace == "notebooks":
         return WebNotebooksAPI(fake.rpc_executor, fake, supervisor=fake)
     if namespace == "sources":

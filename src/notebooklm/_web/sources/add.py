@@ -6,10 +6,13 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import parse_qs
 
 from ..._idempotency import (
+    JournalEntry,
+    OperationJournal,
+    attach_journal_entry,
     call_unconfirmed_on_transport_loss,
     mark_commit_state,
     mark_unconfirmed,
@@ -17,12 +20,14 @@ from ..._idempotency import (
 from ...exceptions import (
     AuthError,
     NetworkError,
+    NotebookLMError,
     RateLimitError,
     ServerError,
     SourceAddError,
+    SourceProcessingError,
     ValidationError,
 )
-from ...outcomes import CommitState
+from ...outcomes import CommitState, RecoveryAction
 from ...rpc import RPCError, RPCMethod
 from ...types import Source
 from ..contracts import RpcCaller
@@ -31,7 +36,14 @@ from ..rows.source_models import decode_source
 
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
-RawSourceAdder = Callable[[str, str], Awaitable[Any]]
+
+
+class RawSourceAdder(Protocol):
+    async def __call__(
+        self, notebook_id: str, url: str, *, journal_entry: JournalEntry | None = None
+    ) -> Any: ...
+
+
 RenameSource = Callable[[str, str, str], Awaitable[Source | None]]
 ParseUrl = Callable[[str], Any]
 ExtractVideoId = Callable[[Any, str], str | None]
@@ -155,6 +167,9 @@ class SourceAddService:
         """
 
         logger.debug("Adding URL source to notebook %s: %s", notebook_id, url[:80])
+        journal_entry = OperationJournal("sources.add_url").new_entry(
+            method=RPCMethod.ADD_SOURCE.value
+        )
         video_id = extract_youtube_video_id(url)
         if not video_id and is_youtube_url(url):
             logger.warning(
@@ -174,7 +189,7 @@ class SourceAddService:
             # committed the write.
             try:
                 adder = add_youtube_source if video_id else add_url_source
-                result = await adder(notebook_id, url)
+                result = await adder(notebook_id, url, journal_entry=journal_entry)
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
@@ -191,7 +206,13 @@ class SourceAddService:
                     operation="sources.add_url",
                 )
             try:
-                return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded source create",
+                    known_resource_ids=((source.id,) if source.id else ()),
+                )
+                return source
             except Exception as e:
                 raise _source_add_failure(
                     url,
@@ -205,10 +226,24 @@ class SourceAddService:
             method=RPCMethod.ADD_SOURCE,
             what="the URL-source add",
             operation="sources.add_url",
+            journal_entry=journal_entry,
         )
 
         if wait:
-            source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            try:
+                source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            except NotebookLMError as exc:
+                journal_entry.stage = "wait"
+                attach_journal_entry(
+                    exc,
+                    journal_entry,
+                    recovery_action=(
+                        RecoveryAction.NONE
+                        if isinstance(exc, SourceProcessingError)
+                        else RecoveryAction.WAIT
+                    ),
+                )
+                raise
 
         return source
 
@@ -227,6 +262,9 @@ class SourceAddService:
     ) -> Source:
         """Add a text source to a notebook."""
         logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
+        journal_entry = OperationJournal("sources.add_text").new_entry(
+            method=RPCMethod.ADD_SOURCE.value
+        )
         # Nested template block per the Gemini-3.5 wire migration (#1546): the
         # text spec grew from 8 to 11 elements (slot 3 None -> 2, trailing 1) and
         # the flat [2],None,None tail collapsed into the shared template block.
@@ -246,6 +284,7 @@ class SourceAddService:
                     params,
                     source_path=f"/notebook/{notebook_id}",
                     operation_variant="text",
+                    journal_entry=journal_entry,
                 )
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
@@ -264,7 +303,13 @@ class SourceAddService:
                     operation="sources.add_text",
                 )
             try:
-                return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded source create",
+                    known_resource_ids=((source.id,) if source.id else ()),
+                )
+                return source
             except Exception as e:
                 raise _source_add_failure(
                     title,
@@ -278,10 +323,24 @@ class SourceAddService:
             method=RPCMethod.ADD_SOURCE,
             what="the text-source add",
             operation="sources.add_text",
+            journal_entry=journal_entry,
         )
 
         if wait:
-            return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            try:
+                return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            except NotebookLMError as exc:
+                journal_entry.stage = "wait"
+                attach_journal_entry(
+                    exc,
+                    journal_entry,
+                    recovery_action=(
+                        RecoveryAction.NONE
+                        if isinstance(exc, SourceProcessingError)
+                        else RecoveryAction.WAIT
+                    ),
+                )
+                raise
 
         return source
 
@@ -313,6 +372,9 @@ class SourceAddService:
         # transport failure would retry the blank add and could leave two
         # garbage sources behind.
         _validate_drive_file_id(file_id)
+        journal_entry = OperationJournal("sources.add_drive").new_entry(
+            method=RPCMethod.ADD_SOURCE.value
+        )
         logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
         source_data = [
             [file_id, mime_type, 1, title],
@@ -351,6 +413,7 @@ class SourceAddService:
                     allow_null=True,
                     disable_internal_retries=True,
                     operation_variant="drive",
+                    journal_entry=journal_entry,
                 )
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
@@ -375,7 +438,13 @@ class SourceAddService:
                     operation="sources.add_drive",
                 )
             try:
-                return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded source create",
+                    known_resource_ids=((source.id,) if source.id else ()),
+                )
+                return source
             except Exception as e:
                 raise _source_add_failure(
                     title,
@@ -389,10 +458,24 @@ class SourceAddService:
             method=RPCMethod.ADD_SOURCE,
             what="the Drive-source add",
             operation="sources.add_drive",
+            journal_entry=journal_entry,
         )
 
         if wait:
-            source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            try:
+                source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            except NotebookLMError as exc:
+                journal_entry.stage = "wait"
+                attach_journal_entry(
+                    exc,
+                    journal_entry,
+                    recovery_action=(
+                        RecoveryAction.NONE
+                        if isinstance(exc, SourceProcessingError)
+                        else RecoveryAction.WAIT
+                    ),
+                )
+                raise
 
         return source
 
@@ -474,6 +557,7 @@ class SourceAddService:
         url: str,
         *,
         rpc: RpcCaller,
+        journal_entry: JournalEntry | None = None,
     ) -> Any:
         """Add a YouTube video as a source.
 
@@ -494,6 +578,7 @@ class SourceAddService:
             allow_null=False,
             disable_internal_retries=True,
             operation_variant="url",
+            journal_entry=journal_entry,
         )
 
     async def add_url_source(
@@ -502,6 +587,7 @@ class SourceAddService:
         url: str,
         *,
         rpc: RpcCaller,
+        journal_entry: JournalEntry | None = None,
     ) -> Any:
         """Add a regular URL as a source.
 
@@ -522,6 +608,7 @@ class SourceAddService:
             source_path=f"/notebook/{notebook_id}",
             disable_internal_retries=True,
             operation_variant="url",
+            journal_entry=journal_entry,
         )
 
 

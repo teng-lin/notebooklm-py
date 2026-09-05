@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app import source_add as cli_source_add
-from notebooklm._idempotency import mark_commit_state
+from notebooklm._idempotency import JournalEntry, mark_commit_state
 from notebooklm._sources import SourcesAPI, _validate_add_text_idempotency
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.sources import WebSourcesAPI
@@ -45,7 +45,12 @@ class RecordingRpc:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
+        journal_entry: JournalEntry | None = None,
+        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> Any:
+        assert journal_entries is None
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         self.calls.append(
             {
                 "method": method,
@@ -57,6 +62,20 @@ class RecordingRpc:
             }
         )
         return self.response
+
+
+def dispatched_response(response: Any) -> AsyncMock:
+    async def _respond(
+        _notebook_id: str,
+        _value: str,
+        *,
+        journal_entry: JournalEntry | None = None,
+    ) -> Any:
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
+        return response
+
+    return AsyncMock(side_effect=_respond)
 
 
 @pytest.fixture
@@ -171,7 +190,7 @@ async def test_add_url_routes_youtube_through_late_bound_hook(
     service: SourceAddService,
     logger: logging.Logger,
 ) -> None:
-    add_youtube_source = AsyncMock(return_value=source_response("yt", "Video"))
+    add_youtube_source = dispatched_response(source_response("yt", "Video"))
     add_url_source = AsyncMock()
 
     source = await service.add_url(
@@ -187,7 +206,7 @@ async def test_add_url_routes_youtube_through_late_bound_hook(
     )
 
     assert source.id == "src_yt"
-    add_youtube_source.assert_awaited_once_with("nb_1", "https://youtu.be/video")
+    assert add_youtube_source.await_args.args == ("nb_1", "https://youtu.be/video")
     add_url_source.assert_not_awaited()
 
 
@@ -233,7 +252,7 @@ async def test_add_url_baseline_failure_does_not_break_a_successful_add(
     mirror the probe's transport re-raise, which would fail every add whenever
     the notebook read blips.
     """
-    add_url_source = AsyncMock(return_value=source_response("ok", "Example"))
+    add_url_source = dispatched_response(source_response("ok", "Example"))
 
     source = await service.add_url(
         "nb_1",
@@ -553,7 +572,7 @@ async def test_sources_api_add_url_uses_late_bound_facade_hooks() -> None:
     core = MagicMock()
     api = WebSourcesAPI(core, supervisor=core, uploader=MagicMock())
     api._extract_youtube_video_id = MagicMock(return_value="video")  # type: ignore[method-assign]
-    api._add_youtube_source = AsyncMock(return_value=source_response("yt", "Video"))  # type: ignore[method-assign]
+    api._add_youtube_source = dispatched_response(source_response("yt", "Video"))  # type: ignore[method-assign]
     api._add_url_source = AsyncMock()  # type: ignore[method-assign]
     api.list = AsyncMock(return_value=[])  # type: ignore[method-assign]
     api.wait_until_ready = AsyncMock(return_value=Source(id="ready"))  # type: ignore[method-assign]
@@ -561,7 +580,7 @@ async def test_sources_api_add_url_uses_late_bound_facade_hooks() -> None:
     result = await api.add_url("nb_1", "https://youtu.be/video", wait=True, wait_timeout=3.0)
 
     assert result.id == "ready"
-    api._add_youtube_source.assert_awaited_once_with("nb_1", "https://youtu.be/video")
+    assert api._add_youtube_source.await_args.args == ("nb_1", "https://youtu.be/video")
     api._add_url_source.assert_not_awaited()
     api.wait_until_ready.assert_awaited_once_with("nb_1", "src_yt", timeout=3.0)
 

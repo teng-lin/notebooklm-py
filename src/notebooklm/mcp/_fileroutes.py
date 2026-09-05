@@ -49,6 +49,7 @@ from .._app import download as download_core
 from .._app import source_add as add_core
 from .._app.errors import ErrorCategory, classify
 from ..exceptions import AuthError, NotebookLMError, ValidationError
+from ..outcomes import format_operation_metadata, operation_metadata_payload
 from ._context import get_client_from_app
 from ._errors import redact
 from ._filelink import FileLinkError, FileTransferConfig
@@ -179,8 +180,10 @@ def _upstream_error_response(exc: NotebookLMError, *, note: str = "") -> PlainTe
     """
     status = _FILE_ROUTE_STATUS.get(classify(exc).category, 502)
     prefix = f"{redact(note)} " if note else ""
+    operation = operation_metadata_payload(exc)
+    suffix = f" Operation metadata: {format_operation_metadata(operation)}" if operation else ""
     return PlainTextResponse(
-        f"{prefix}Upstream NotebookLM error: {redact(str(exc))}",
+        f"{prefix}Upstream NotebookLM error: {redact(str(exc))}{suffix}",
         status_code=status,
         # ACAO so the cross-origin widget can read the (redacted) failure, not "Failed to fetch".
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", **_CORS_ORIGIN},
@@ -709,7 +712,8 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     # names the retained row: a retry re-registers a NEW row rather
                     # than replacing this one, and #2138's own evidence is exactly
                     # this shape (an HTTP-400 upload rejection after registration).
-                    retained_id = getattr(exc, "source_id", None)
+                    operation = operation_metadata_payload(exc)
+                    retained_id = operation.get("source_id")
                     retained = (
                         f"\nRegistered source {retained_id} was left behind; "
                         "delete it to retry cleanly."
@@ -717,7 +721,12 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                         else ""
                     )
                     return PlainTextResponse(
-                        f"Upload rejected: {redact(str(exc))}{retained}",
+                        f"Upload rejected: {redact(str(exc))}{retained}"
+                        + (
+                            f"\nOperation metadata: {format_operation_metadata(operation)}"
+                            if operation
+                            else ""
+                        ),
                         status_code=400,
                         headers={
                             "Cache-Control": "no-store",
@@ -741,8 +750,9 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     # Otherwise the bytes already finished uploading by here, so tell
                     # the user a retry re-sends the whole file (vs a mid-stream failure
                     # that did not).
-                    retained_id = getattr(exc, "source_id", None)
-                    stage = getattr(exc, "stage", None)
+                    operation = operation_metadata_payload(exc)
+                    retained_id = operation.get("source_id")
+                    stage = operation.get("stage")
                     if retained_id is not None:
                         return _upstream_error_response(
                             exc,

@@ -1103,7 +1103,8 @@ Vocabulary that recurs in this document and the surrounding code.
 | Capability Protocol | A narrow structural `Protocol` (e.g. `RpcCaller`, `LoopGuard`) a feature depends on instead of taking the deleted concrete `Session` class or a broad runtime facade. See [ADR-0013](./adr/0013-composable-session-capabilities.md). |
 | Chain / leaf / terminal | The middleware chain's ordering vocabulary. The chain wraps outermost-first; the **leaf** is the innermost middleware (`TracingMiddleware`); the **terminal** is the authed-POST function (`RuntimeTransport.terminal → Kernel.post`) that ends the chain. |
 | Drain | Graceful-shutdown waiting on admitted transport operations to complete. Policy, generation ownership, and in-flight accounting live in `CallSupervisor`. |
-| `CommitState` | Public evidence describing whether a mutation was not sent, rejected, has an unknown outcome, or was confirmed. Absence of evidence is treated conservatively as unknown. |
+| Operation outcomes | `CommitState` and `RecoveryAction` describe mutation certainty and the safe next step. `OperationMetadata`, `BatchOutcome`, and `BatchItemOutcome` carry bounded immutable evidence; `ReconciliationReport` / `ReconciliationCandidate` distinguish inspectable candidates from proven IDs, and `LookupSuggestion` carries ordinary non-authoritative lookup matches. |
+| Operation journal | Private `_idempotency.OperationJournal` groups semantic sends by stable `SendIdentity`; each `JournalEntry` records ordered physical `AttemptRecord` values so auth refresh/retry can reuse one identity without erasing attempt evidence. |
 | Reconciliation candidates | Bounded diagnostic rows attached after an ambiguous mutation. They help callers reconcile manually but never turn an uncorrelated row into success. |
 | `operation_variant` | Optional kwarg on `rpc_call(...)` that selects a method-variant-specific idempotency policy from the registry (e.g. `ADD_SOURCE` `"url"` vs `"drive"`). Unknown variants raise `IdempotencyVariantError`. |
 | RPC method id | A short obfuscated identifier (`rpcids=`) Google uses to route batchexecute calls. Source of truth: `RPCMethod` enum in `rpc/_identifiers.py`; `rpc/types.py` preserves the historical import and runtime identity. |
@@ -1148,8 +1149,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/notebooks.py` | Selected Android notebook adapter: reads and evidence-admitted notebook create/delete/title-and-emoji update/copy/guide operations. Copy implements the neutral `_send_copy` boundary while retaining native decode validation and chat-session hints. Recent-removal uses the native route; its `INTERNAL` response for owned notebooks is folded into the same already-absent no-op the Web frontend exposes, while genuinely shared notebooks are removed natively. |
 | `_android/session.py` | Lazy Google-TLS gRPC transport participating in root loop/lifecycle supervision, aggregate deadlines, per-call bearer metadata, status mapping, safe-read replay, and full stream leases. |
 | `_android/epoch.py` | Session-tagged task-local epoch propagation for Android namespace workflow scopes. |
-| `_idempotency.py` | Backend-neutral create probing and transport-loss outcome helpers; marks ambiguous non-idempotent writes unconfirmed while preserving confirmed authentication, validation, and backend rejections. |
+| `_idempotency.py` | Private backend-neutral mutation evidence owner. `OperationJournal` groups workflow sends, stable `SendIdentity` keys one semantic occurrence, `JournalEntry` settles it, and ordered `AttemptRecord` values retain every physical dispatch; helpers attach bounded immutable public metadata while preserving positive rejection/confirmation evidence. |
 | `_android/sources.py` | Selected Android source adapter: `GetProject` reads, exact URL/text/YouTube/Drive adds, freshness checks, native stale-Drive-source refresh, maintenance/content methods, generic file uploads, and Android-bearer Drive-file download followed by Android registration/upload. |
+| `_android/source_batch.py` | Android two-phase positional URL-batch owner: journals each tentative-registration and commit occurrence, preserves input order, settles whole-request failures/cancellation, and projects the same confirmed/rejected/unknown/not-sent `BatchOutcome` contract as Web. |
 | `_android/source_search.py` | Native replay-safe `RetrieveRelevantChunks` dispatch and protobuf-to-`RelevantChunk` projection for `sources.search`. |
 | `_android/source_transfers.py` | `AndroidSourceTransferMixin`: `AddSourcesAsync` (queued stub rows + acknowledgements), `AppendSource` (in-place text append) and `CopySourcesAsync` (original→copy mapping) over native gRPC (#2283); kept out of `sources.py` for the module-size budget. |
 | `_android/drive_staging.py` | `DriveStagingTransfer`: stages a local file in the caller's own Drive, imports it, and deletes the staged copy. Used for the file types the mobile upload frontend will not parse (the OOXML containers `.docx`/`.pptx`), so an Android-selected client needs no Web collaborator. Built over the upload pipeline's transport, so it shares its epoch/deadline/client-tracking discipline. |
@@ -1262,9 +1264,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/transport/cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_runtime/contracts.py` | Transport-neutral `LoopGuard` Protocol |
 | `_web/contracts.py` | Web-only `Kernel` and `RpcCaller` Protocols |
-| `outcomes.py` | Public `CommitState` evidence enum used by callers and adapters to distinguish proven rejection from an unknown mutation outcome |
 | `options.py` | Import-light public frozen client construction options grouped by runtime, retry, backend, transfer, feature, and Web session ownership |
-| `_idempotency.py` | Transport-neutral private replay decision gate, one-shot mutation wrapper, and unconfirmed-write metadata helpers; imports neither `_web` nor `rpc` |
+| `outcomes.py` | Public bounded outcome vocabulary: `CommitState`, `RecoveryAction`, `OperationMetadata`, `BatchOutcome`, `BatchItemOutcome`, `ReconciliationReport`, `ReconciliationCandidate`, and `LookupSuggestion`; also owns the shared redacted CLI/MCP/REST projection |
+| `_idempotency.py` | Transport-neutral private evidence journal (`OperationJournal`, stable `SendIdentity`, `JournalEntry`, ordered `AttemptRecord`), replay decision gate, one-shot mutation wrapper, and metadata attachment helpers; imports neither `_web` nor `rpc` |
 | `_web/policy.py` | Web RPC idempotency types, declarative per-RPC classifications, resolution, and the one production `IDEMPOTENCY_REGISTRY` seed. Holds the load-bearing two-pass order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
@@ -1404,7 +1406,7 @@ src/notebooklm/
 ├── io.py                        # Public atomic-I/O facade for CLI boundary compliance
 ├── log.py                       # Public logging helper facade
 ├── migration.py                 # Legacy flat-layout to profile migration
-├── outcomes.py                  # Public mutation commit-state evidence
+├── outcomes.py                  # Public operation/batch/reconciliation evidence + adapter projection
 ├── paths.py                     # Profile-aware path resolution
 ├── research.py                  # Public research citation/report helpers
 ├── raw.py                       # Public backend-selected raw wire APIs and gRPC descriptors
@@ -1420,7 +1422,7 @@ src/notebooklm/
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth/raw-call specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers
-├── _idempotency.py              # Private replay gate and unknown-outcome helpers
+├── _idempotency.py              # Private semantic-send journal, attempts, replay gate, metadata helpers
 ├── _usage.py                    # Neutral live-usage bridge, validation, and projection
 ├── _logging.py                  # Redaction + correlation logging internals
 ├── _secrets.py                  # Canonical runtime secret registry (cookie names + secure/host umbrellas + token/API-key shapes) the redaction patterns derive from
@@ -1507,6 +1509,7 @@ src/notebooklm/
 │   ├── epoch.py                 # Session-tagged task-local workflow epoch propagation
 │   ├── retry_policy.py          # Web-registry-derived Android replay-safety manifest
 │   ├── sources.py               # Selected source surface (fully native)
+│   ├── source_batch.py          # Two-phase positional URL batch journal + outcome owner
 │   ├── source_search.py         # Native RetrieveRelevantChunks search service
 │   ├── upload.py                # Epoch-fenced generic Android Scotty transaction
 │   ├── drive_staging.py         # Drive round-trip for types the mobile upload frontend rejects

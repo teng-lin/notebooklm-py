@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import httpx
 import pytest
@@ -123,7 +123,13 @@ class RecordingRpc:
         _is_retry: bool = False,
         *,
         disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+        journal_entry: Any = None,
+        journal_entries: Any = None,
     ) -> Any:
+        assert journal_entries is None
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         self.calls.append(
             {
                 "method": method,
@@ -632,7 +638,7 @@ async def test_add_file_does_not_wrap_registration_failure(
         )
 
     assert exc_info.value is failure
-    assert not hasattr(exc_info.value, "source_id")
+    assert exc_info.value.source_id is None
     assert opened_files and opened_files[0].closed
     start.assert_not_awaited()
 
@@ -920,12 +926,22 @@ async def test_register_file_source_preserves_real_decoder_rejection(
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
+        journal_entry: Any = None,
+        journal_entries: Any = None,
     ) -> Any:
         nonlocal calls
         calls += 1
+        assert journal_entries is None
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         frames = user_displayable_rejection_chunks(method.value)[0]
         raw = raw_batchexecute_body(frames)
-        return decode_response(raw, method.value, allow_null=allow_null)
+        try:
+            return decode_response(raw, method.value, allow_null=allow_null)
+        except RateLimitError:
+            if journal_entry is not None:
+                journal_entry.record(CommitState.REJECTED, "decoded refusal")
+            raise
 
     list_sources = AsyncMock()
     with pytest.raises(RateLimitError) as captured:
@@ -1034,7 +1050,7 @@ async def test_register_file_source_uses_configured_source_limit_lookup(
         )
 
     assert "56/50 sources" in str(exc_info.value)
-    list_sources.assert_awaited_once_with("nb_123")
+    assert list_sources.await_args_list == [call("nb_123"), call("nb_123")]
     get_source_limit.assert_awaited_once_with()
 
 

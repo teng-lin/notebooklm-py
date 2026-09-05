@@ -102,6 +102,9 @@ class FakeSession:
         yield _Lease()
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.pop("journal_entry", None)
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         error = self.errors.get(method)
         if error is not None:

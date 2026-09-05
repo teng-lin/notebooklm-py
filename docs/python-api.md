@@ -3815,15 +3815,36 @@ artifact-generation callable that returns `GenerationStatus`.
 
 ### Mutation outcome evidence
 
-`CommitState` is public from `notebooklm.outcomes`:
+Typed mutation evidence is public from `notebooklm.outcomes`:
 
 ```python
-from notebooklm.outcomes import CommitState
+from notebooklm.outcomes import (
+    BatchItemOutcome,
+    BatchOutcome,
+    CommitState,
+    LookupSuggestion,
+    OperationMetadata,
+    ReconciliationCandidate,
+    ReconciliationReport,
+    RecoveryAction,
+)
 ```
 
 It distinguishes a request that was never sent (`NOT_SENT`), a decoded refusal
 (`REJECTED`), an outcome that cannot be confirmed (`UNKNOWN`), and a correlated
 success (`CONFIRMED`). Exceptions may expose this value as `commit_state`.
+`OperationMetadata` also retains the operation/send identity, per-attempt
+evidence, confirmed resource and prerequisite IDs, typed reconciliation
+candidates, and any ordered partial `BatchOutcome`. `RecoveryAction` tells
+adapters whether the safe next action is retrying, inspecting and reconciling,
+waiting, or no recovery action.
+
+`operation_metadata`, `commit_state`, and `batch_outcome` are read-only
+exception properties. The legacy `unconfirmed`, `source_id`, and `stage`
+attributes remain compatible projections of that carrier. Because these
+attributes are now declared on `NotebookLMError`, use
+`getattr(error, "source_id", None)` or compare `error.source_id is None`
+instead of using `hasattr` to detect a known source ID.
 
 #### `notebooklm.artifacts.with_rate_limit_retry`
 

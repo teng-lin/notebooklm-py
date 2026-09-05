@@ -27,28 +27,41 @@ from urllib.parse import quote
 import httpx
 
 from .._deadline import RuntimeDeadline
+from .._idempotency import (
+    JournalEntry,
+    OperationJournal,
+    attach_journal_entry,
+    attach_prerequisite_ids,
+    mark_unconfirmed,
+)
 from .._runtime.helpers import map_google_http_status
 from ..exceptions import (
-    AuthError,
     NetworkError,
+    NotebookLMError,
     SourceAddError,
     SourceProcessingError,
     ValidationError,
 )
+from ..outcomes import CommitState, RecoveryAction
 from ..types import Source
 
 logger = logging.getLogger(__name__)
 
 
 def _cleanup_allowed_after_import_error(error: BaseException) -> bool:
-    """Conservative P1 allowlist until per-send settlement evidence exists."""
-    if getattr(error, "unconfirmed", False):
+    """Allow deletion only when canonical dependent-send evidence settles it."""
+    if not isinstance(error, NotebookLMError):
         return False
-    if isinstance(error, (SourceProcessingError, ValidationError)):
+    metadata = error.operation_metadata
+    if metadata is None or metadata.commit_state is None:
+        return False
+    if metadata.commit_state in (CommitState.NOT_SENT, CommitState.REJECTED):
         return True
-    if isinstance(error, SourceAddError):
-        return getattr(error, "stage", None) == "register"
-    return isinstance(error, AuthError) and getattr(error, "stage", None) == "register"
+    return (
+        metadata.commit_state is CommitState.CONFIRMED
+        and metadata.recovery_action is RecoveryAction.NONE
+        and isinstance(error, SourceProcessingError)
+    )
 
 
 #: Extensions the mobile upload frontend will not parse, which therefore reach
@@ -194,7 +207,29 @@ class DriveStagingTransfer:
     def _deadline(self) -> RuntimeDeadline:
         return RuntimeDeadline.start(self._upload_timeout, monotonic=self._monotonic)
 
-    async def stage(self, file_path: Path, filename: str, content_type: str) -> str:
+    def _cleanup_fence_open(
+        self,
+        expected_epoch: int | None,
+        deadline: RuntimeDeadline,
+    ) -> bool:
+        if deadline.expired():
+            return False
+        if expected_epoch is None:
+            return True
+        try:
+            self._assert_epoch(expected_epoch)
+        except RuntimeError:
+            return False
+        return True
+
+    async def stage(
+        self,
+        file_path: Path,
+        filename: str,
+        content_type: str,
+        *,
+        journal_entry: JournalEntry | None = None,
+    ) -> str:
         """Upload one local file to the caller's Drive; return the new file id."""
 
         deadline = self._deadline()
@@ -258,18 +293,29 @@ class DriveStagingTransfer:
                 )
                 self._track_client(client)
                 async with client:
-                    response = await self._bounded(
-                        client.post(
-                            _UPLOAD_URL,
-                            headers={
-                                "Authorization": f"Bearer {credential.token}",
-                                "Content-Type": (f"multipart/related; boundary={_BOUNDARY}"),
-                            },
-                            content=body,
-                            follow_redirects=False,
-                        ),
-                        deadline,
-                    )
+                    if journal_entry is not None:
+                        attempt = journal_entry.mark_dispatched()
+                    try:
+                        response = await self._bounded(
+                            client.post(
+                                _UPLOAD_URL,
+                                headers={
+                                    "Authorization": f"Bearer {credential.token}",
+                                    "Content-Type": (f"multipart/related; boundary={_BOUNDARY}"),
+                                },
+                                content=body,
+                                follow_redirects=False,
+                            ),
+                            deadline,
+                        )
+                    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+                        if journal_entry is not None:
+                            journal_entry.record(
+                                CommitState.NOT_SENT,
+                                "verified zero-send staging failure",
+                                attempt=attempt,
+                            )
+                        raise
                     status = int(response.status_code)
                     if status == 401:
                         self._bearer_provider.invalidate(credential.generation)
@@ -285,12 +331,24 @@ class DriveStagingTransfer:
                         raise ValidationError(
                             f"Drive did not return a file id while staging {filename}."
                         )
+                    if journal_entry is not None:
+                        journal_entry.record(
+                            CommitState.CONFIRMED,
+                            "decoded staged Drive file",
+                            known_resource_ids=(file_id,),
+                        )
+                        journal_entry.prerequisite_ids = (file_id,)
                     return file_id
         finally:
             if client is not None:
                 self._untrack_client(client)
 
-    async def unstage(self, file_id: str) -> None:
+    async def unstage(
+        self,
+        file_id: str,
+        *,
+        journal_entry: JournalEntry | None = None,
+    ) -> None:
         """Delete a staged Drive file. Best effort: never masks the real outcome."""
 
         deadline = self._deadline()
@@ -305,6 +363,8 @@ class DriveStagingTransfer:
                 )
                 self._track_client(client)
                 async with client:
+                    if journal_entry is not None:
+                        journal_entry.mark_dispatched()
                     response = await self._bounded(
                         client.delete(
                             f"{DRIVE_API_ORIGIN}/drive/v3/files/"
@@ -319,6 +379,8 @@ class DriveStagingTransfer:
                     # state. Anything else non-2xx left the file in place.
                     if status >= 300 and status != 404:
                         raise _StagingCleanupFailed(status)
+                    if journal_entry is not None:
+                        journal_entry.record(CommitState.CONFIRMED, "decoded staging cleanup")
         except Exception as error:
             # An orphaned staging file is untidy, not incorrect. Surfacing this
             # would replace a successful add -- or the real failure -- with a
@@ -355,10 +417,33 @@ class DriveStagingTransfer:
         from .errors import sanitize_escaping_exception
 
         transfer = self
+        cleanup_deadline = self._deadline()
+        expected_epoch = getattr(
+            self._transport,
+            "active_epoch",
+            getattr(self._transport, "epoch", None),
+        )
+        journal = OperationJournal("sources.add_file.drive_staging")
+        invocation_id = journal.invocation_id()
+        stage_entry = journal.new_entry(
+            method="drive.files.create",
+            phase="prerequisite",
+            invocation_id=invocation_id,
+        )
+        cleanup_entry = journal.new_entry(
+            method="drive.files.delete",
+            phase="cleanup",
+            invocation_id=invocation_id,
+        )
         file_id: str | None = None
         failure: BaseException | None = None
         try:
-            file_id = await transfer.stage(file_path, filename, content_type)
+            file_id = await transfer.stage(
+                file_path,
+                filename,
+                content_type,
+                journal_entry=stage_entry,
+            )
         except BaseException as error:
             # Match ``drive_download_scope``: a transport-level failure reaches
             # callers as NetworkError, so retry-by-public-exception-type works
@@ -375,6 +460,8 @@ class DriveStagingTransfer:
             del self
 
         if failure is not None:
+            if isinstance(failure, NotebookLMError):
+                attach_journal_entry(failure, stage_entry)
             del transfer
             raise sanitize_escaping_exception(failure) from None
         assert file_id is not None
@@ -382,8 +469,32 @@ class DriveStagingTransfer:
         try:
             yield file_id
         except BaseException as error:
-            if _cleanup_allowed_after_import_error(error):
-                await transfer.unstage(file_id)
+            escaping: BaseException
+            if isinstance(error, (asyncio.CancelledError, NotebookLMError)):
+                escaping = attach_prerequisite_ids(error, file_id)
+            elif isinstance(error, Exception):
+                escaping = mark_unconfirmed(
+                    SourceAddError(
+                        filename,
+                        cause=error,
+                        message=(
+                            f"Failed to import the Drive-staged source {filename!r}; the "
+                            "dependent import outcome is unknown. Keep the staged file until "
+                            "the notebook source state is reconciled."
+                        ),
+                    ),
+                    operation="sources.add_file.drive_staging",
+                    stage="import",
+                )
+                attach_prerequisite_ids(escaping, file_id)
+            else:
+                # KeyboardInterrupt/SystemExit remain control-flow signals and
+                # are not turned into application exceptions or annotated.
+                escaping = error
+            if _cleanup_allowed_after_import_error(escaping) and transfer._cleanup_fence_open(
+                expected_epoch, cleanup_deadline
+            ):
+                await transfer.unstage(file_id, journal_entry=cleanup_entry)
             else:
                 # An exception class alone does not prove that the dependent
                 # import stopped reading this prerequisite. Retention is the
@@ -394,9 +505,18 @@ class DriveStagingTransfer:
                     "or has failed.",
                     file_id,
                 )
-            raise
+            if escaping is error:
+                raise
+            raise escaping from error
         else:
-            await transfer.unstage(file_id)
+            if transfer._cleanup_fence_open(expected_epoch, cleanup_deadline):
+                await transfer.unstage(file_id, journal_entry=cleanup_entry)
+            else:
+                logger.warning(
+                    "Left the staged Drive file %s in place because the workflow cleanup "
+                    "deadline or resource epoch had closed.",
+                    file_id,
+                )
 
 
 __all__ = [

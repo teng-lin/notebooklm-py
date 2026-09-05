@@ -16,14 +16,20 @@ Like ``WebLabelsAPI`` it takes a narrow ``list_notebooks`` callable
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, Literal
 
 from .._collections import CollectionsAPI, ListNotebooks
-from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
-from ..exceptions import CollectionError, UnknownRPCMethodError
+from .._idempotency import (
+    OperationJournal,
+    attach_operation_journal,
+    reconciliation_report,
+)
+from ..exceptions import CollectionError, NotebookLMError, UnknownRPCMethodError
+from ..outcomes import CommitState, RecoveryAction
 from ..rpc import RPCMethod
 from ..types import Collection
 from .contracts import RpcCaller
@@ -154,33 +160,91 @@ class WebCollectionsAPI(CollectionsAPI):
         async with self._operation_scope("collections.create"):
             before_ids = {collection.id for collection in await self.list()}
 
-            async def create_and_readback() -> builtins.list[Collection]:
+            journal = OperationJournal("collections.create")
+            invocation_id = journal.invocation_id()
+            mutation_entry = journal.new_entry(
+                method=RPCMethod.CREATE_LABEL.value,
+                phase="mutation",
+                invocation_id=invocation_id,
+            )
+            readback_entry = journal.new_entry(
+                method=RPCMethod.LIST_LABELS.value,
+                phase="readback",
+                invocation_id=invocation_id,
+            )
+            try:
                 await self._rpc.rpc_call(
                     RPCMethod.CREATE_LABEL,
                     build_create_collection_params(name),
                     source_path=_ACCOUNT_PATH,
                     allow_null=True,
-                    # #2290: status-tagged null is rejection, not empty success.
+                    # #2290: a status-tagged null is a server rejection, not an empty success.
                     raise_on_null_status=True,
+                    journal_entry=mutation_entry,
                 )
-                return await self.list()
-
-            after = await call_unconfirmed_on_transport_loss(
-                create_and_readback,
-                method=RPCMethod.CREATE_LABEL,
-                what="the collection create and required list readback",
-                force_unknown=True,
-            )
+            except asyncio.CancelledError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=(
+                        RecoveryAction.RETRY
+                        if mutation_entry.commit_state is CommitState.NOT_SENT
+                        else RecoveryAction.INSPECT_AND_RECONCILE
+                    ),
+                )
+                raise
+            except NotebookLMError as exc:
+                attach_operation_journal(exc, journal, primary=mutation_entry)
+                raise
+            mutation_entry.record(CommitState.CONFIRMED, "decoded collection-set response")
+            mutation_entry.recovery_action = RecoveryAction.INSPECT_AND_RECONCILE
+            try:
+                result = await self._rpc.rpc_call(
+                    RPCMethod.LIST_LABELS,
+                    build_list_collections_params(),
+                    source_path=_ACCOUNT_PATH,
+                    allow_null=True,
+                    journal_entry=readback_entry,
+                )
+                after = self._collections_from_envelope(
+                    result,
+                    method_id=RPCMethod.LIST_LABELS.value,
+                    index=1,
+                )
+                readback_entry.record(CommitState.CONFIRMED, "decoded collection readback")
+            except asyncio.CancelledError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                )
+                raise
+            except NotebookLMError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                )
+                raise
             new = [collection for collection in after if collection.id not in before_ids]
             error = CollectionError(
                 f"Collection create for {name!r} returned no caller-correlated id. "
                 "Inspect the collection list before creating again."
             )
-            error.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
-                collection.id for collection in new[:20]
+            mutation_entry.reconciliation = reconciliation_report(
+                [collection.id for collection in new],
+                [name],
+                reason="create response and readback do not correlate a collection id",
             )
-            error.unresolved_inputs = (name[:200],)  # type: ignore[attr-defined]
-            raise mark_unconfirmed(error)
+            raise attach_operation_journal(
+                error,
+                journal,
+                primary=mutation_entry,
+                recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+            )
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 

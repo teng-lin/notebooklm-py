@@ -14,11 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transfer phases, feature read windows, and Web session hooks. Both direct
   construction and `from_storage` accept keyword-only `config=` while retaining
   flat 0.x arguments through one compatibility normalizer.
-- **Public mutation-outcome evidence.** `notebooklm.outcomes.CommitState` lets callers
+- **Public mutation-outcome evidence.** `notebooklm.outcomes` now exposes
+  `CommitState`, `RecoveryAction`, frozen `OperationMetadata`, typed reconciliation reports,
+  and ordered batch outcomes. These let callers
   distinguish a request proven not sent, a decoded rejection, an unknown
   commit outcome, and a caller-correlated confirmation. Unknown-outcome errors
   retain the compatibility `unconfirmed` marker and may expose bounded
-  reconciliation candidates for manual inspection.
+  reconciliation candidates for manual inspection. Legacy `unconfirmed`, `source_id`, and
+  `stage` attributes remain projections; because they are now declared on `NotebookLMError`,
+  callers should test `source_id is None` rather than `hasattr(error, "source_id")`.
 - **Pre-merge live CI qualification.** The repository owner can dispatch RPC health or nightly
   E2E from the trusted `main` workflow against the immutable head SHA of an open, same-repository
   PR targeting `main`. Forks, non-owner dispatches, and direct feature-ref dispatches remain

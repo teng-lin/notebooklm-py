@@ -366,9 +366,9 @@ def _upload_failure(filename: str, state: _UploadState, detail: str) -> SourceAd
         message=f"Android file upload failed during {state.stage}: {detail}.",
     )
     error.cause = None
-    cast(Any, error).stage = state.stage
+    error.stage = state.stage
     if state.source_id is not None:
-        cast(Any, error).source_id = state.source_id
+        error.source_id = state.source_id
     return error
 
 
@@ -1102,8 +1102,8 @@ class AndroidUploadPipeline(EpochFenced):
                 raise _upload_failure(filename, state, "request failed")
             if start.status_code == 401:
                 error = AuthError(f"Authentication failed uploading {filename!r} (HTTP 401)")
-                error.source_id = state.source_id  # type: ignore[attr-defined]
-                error.stage = state.stage  # type: ignore[attr-defined]
+                error.source_id = state.source_id
+                error.stage = state.stage
                 raise error
             if start.status_code != 200 or start.upload_status != "active":
                 raise _upload_failure(filename, state, f"HTTP status {start.status_code}")
@@ -1131,8 +1131,8 @@ class AndroidUploadPipeline(EpochFenced):
                 raise _upload_failure(filename, state, "request failed")
             if final.status_code == 401:
                 error = AuthError(f"Authentication failed uploading {filename!r} (HTTP 401)")
-                error.source_id = state.source_id  # type: ignore[attr-defined]
-                error.stage = state.stage  # type: ignore[attr-defined]
+                error.source_id = state.source_id
+                error.stage = state.stage
                 raise error
             if final.status_code != 200 or final.upload_status != "final":
                 raise _upload_failure(filename, state, f"HTTP status {final.status_code}")

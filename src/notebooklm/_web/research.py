@@ -10,7 +10,7 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
+from .._idempotency import JournalEntry, call_unconfirmed_on_transport_loss, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._research_import import (
@@ -40,6 +40,7 @@ from ..exceptions import (
     ServerError,
     ValidationError,
 )
+from ..outcomes import CommitState
 from ..rpc import RPCMethod
 from ..types import CitedSourceSelection
 from .contracts import RpcCaller
@@ -507,6 +508,7 @@ class WebResearchAPI(BaseResearchAPI):
         batch: _ResearchImportBatch,
         *,
         _remaining_budget: float | None,
+        journal_entry: JournalEntry | None = None,
     ) -> list[dict[str, str]]:
         source_array = [
             self._build_report_import_entry(item.source.title, item.source.report_markdown)
@@ -525,6 +527,7 @@ class WebResearchAPI(BaseResearchAPI):
                 override=self._import_research_timeout,
                 remaining_budget=_remaining_budget,
             ),
+            journal_entry=journal_entry,
         )
         imported = []
         # ``unwrap_import_rows`` centralises the ``[[src1, ...]]`` envelope probe
@@ -538,6 +541,12 @@ class WebResearchAPI(BaseResearchAPI):
             if src_id:
                 imported.append({"id": src_id, "title": row.title_slot})
 
+        if journal_entry is not None:
+            journal_entry.record(
+                CommitState.CONFIRMED,
+                "decoded research import",
+                known_resource_ids=tuple(item["id"] for item in imported),
+            )
         return imported
 
 

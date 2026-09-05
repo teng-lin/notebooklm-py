@@ -27,7 +27,7 @@ from notebooklm._android.drive_staging import (
 )
 from notebooklm._android.errors import GrpcStatus, raise_grpc_status
 from notebooklm._android.sources import ADD_TENTATIVE_SOURCES_METHOD, AndroidSourcesAPI
-from notebooklm._idempotency import mark_unconfirmed
+from notebooklm._idempotency import mark_commit_state, mark_unconfirmed
 from notebooklm.exceptions import (
     AuthError,
     ClientError,
@@ -450,15 +450,19 @@ async def test_registration_auth_refusal_flows_mapper_to_importer_and_cleans_sta
 
 def _staging_matrix_error(case: str) -> BaseException:
     if case == "register-auth":
-        error = AuthError("registration refused")
-        error.stage = "register"  # type: ignore[attr-defined]
-        return error
+        return mark_commit_state(
+            AuthError("registration refused"),
+            CommitState.NOT_SENT,
+            stage="register",
+        )
     if case in {"commit-auth", "readiness-auth"}:
         return AuthError(f"{case} failed")
     if case == "known-registration":
-        error = SourceAddError("input")
-        error.stage = "register"  # type: ignore[attr-defined]
-        return error
+        return mark_commit_state(
+            SourceAddError("input"),
+            CommitState.REJECTED,
+            stage="register",
+        )
     if case == "client-error":
         return ClientError("decoded but stage unknown")
     if case == "rpc-timeout":
@@ -474,7 +478,11 @@ def _staging_matrix_error(case: str) -> BaseException:
     if case == "timeout":
         return SourceTimeoutError("source-1", 1.0)
     if case == "terminal-processing":
-        return SourceProcessingError("source-1")
+        return mark_commit_state(
+            SourceProcessingError("source-1"),
+            CommitState.CONFIRMED,
+            source_id="source-1",
+        )
     raise AssertionError(case)
 
 
@@ -506,12 +514,29 @@ async def test_real_staging_scope_cleanup_allowlist_matrix(
     transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
     error = _staging_matrix_error(case)
 
-    with pytest.raises(type(error)) as captured:
+    expected_type = SourceAddError if case == "runtime" else type(error)
+    with pytest.raises(expected_type) as captured:
         async with transfer.scope(path, path.name, "application/vnd.ms-word"):
             raise error
 
-    assert captured.value is error
     assert len(client.deletes) == delete_count
+    if case == "cancel":
+        assert captured.value is error
+        metadata = error._operation_metadata  # type: ignore[attr-defined]
+        assert metadata.prerequisite_ids == (FILE_ID,)
+        assert not hasattr(error, "operation_metadata")
+    elif case == "runtime":
+        wrapped = captured.value
+        assert wrapped is not error
+        assert wrapped.cause is error
+        assert wrapped.commit_state is CommitState.UNKNOWN
+        assert wrapped.stage == "import"
+        assert wrapped.operation_metadata is not None
+        assert wrapped.operation_metadata.prerequisite_ids == (FILE_ID,)
+        assert not hasattr(error, "_operation_metadata")
+        assert not hasattr(error, "operation_metadata")
+    else:
+        assert captured.value is error
 
 
 @pytest.mark.asyncio
