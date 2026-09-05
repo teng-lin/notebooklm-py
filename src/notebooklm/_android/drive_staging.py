@@ -28,10 +28,28 @@ import httpx
 
 from .._deadline import RuntimeDeadline
 from .._runtime.helpers import map_google_http_status
-from ..exceptions import NetworkError, SourceTimeoutError, ValidationError
+from ..exceptions import (
+    AuthError,
+    NetworkError,
+    SourceAddError,
+    SourceProcessingError,
+    ValidationError,
+)
 from ..types import Source
 
 logger = logging.getLogger(__name__)
+
+
+def _cleanup_allowed_after_import_error(error: BaseException) -> bool:
+    """Conservative P1 allowlist until per-send settlement evidence exists."""
+    if getattr(error, "unconfirmed", False):
+        return False
+    if isinstance(error, (SourceProcessingError, ValidationError)):
+        return True
+    if isinstance(error, SourceAddError):
+        return getattr(error, "stage", None) == "register"
+    return isinstance(error, AuthError) and getattr(error, "stage", None) == "register"
+
 
 #: Extensions the mobile upload frontend will not parse, which therefore reach
 #: the backend by way of Drive instead (``add_file_via_drive_staging``).
@@ -114,7 +132,12 @@ def map_staging_status(response: Any, filename: str) -> None:
     """Translate a Drive HTTP status into the public exception taxonomy."""
 
     status = int(response if type(response) is int else response.status_code)
-    map_google_http_status(response, filename=f"staging {filename}", chain=False)
+    map_google_http_status(
+        response,
+        filename=f"staging {filename}",
+        chain=False,
+        mutation=True,
+    )
     if status == 403:
         raise ValidationError(
             f"Drive refused the staging upload for {filename}. The selected account needs "
@@ -358,22 +381,19 @@ class DriveStagingTransfer:
 
         try:
             yield file_id
-        except (asyncio.CancelledError, TimeoutError, SourceTimeoutError):
-            # Ambiguous: the import may still be running server-side. Deleting
-            # the only copy now can turn a slow-but-successful import into a
-            # permanently errored source, so the file is kept and named instead.
-            # A leaked file is recoverable; a broken source is not.
-            logger.warning(
-                "Left the staged Drive file %s in place: the import did not settle "
-                "and may still be reading it. Remove it once the source is READY "
-                "or has failed.",
-                file_id,
-            )
-            raise
-        except BaseException:
-            # A settled failure -- the import will not complete, so the staged
-            # copy is dead weight.
-            await transfer.unstage(file_id)
+        except BaseException as error:
+            if _cleanup_allowed_after_import_error(error):
+                await transfer.unstage(file_id)
+            else:
+                # An exception class alone does not prove that the dependent
+                # import stopped reading this prerequisite. Retention is the
+                # safe default until READY or a verified terminal refusal.
+                logger.warning(
+                    "Left the staged Drive file %s in place: the import did not settle "
+                    "and may still be reading it. Remove it once the source is READY "
+                    "or has failed.",
+                    file_id,
+                )
             raise
         else:
             await transfer.unstage(file_id)

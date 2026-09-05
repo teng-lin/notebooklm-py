@@ -144,7 +144,7 @@ fixtures. Hashes prevent a later local checkout from silently changing what was 
 | [`public-api-audit.md`](public-api-audit.md) | `f2fbe716b0b95899737e3abda740009bc9a17fa8dd1a0b0702a18f07e06301b0` | dated 2026-08-29 public-adapter rejection inventory and disposable-copy validation; its three compatibility seams are superseded by the closure report |
 | [`artifact-contracts-and-live-validation.md`](artifact-contracts-and-live-validation.md) | `58af0bbeebdfa6a6a7366577d90a5479bdf971a1ed76fe3d6d7d0b8420f8454d` | consolidated artifact generation, representation, data-table, retry/export, mind-map, and transfer evidence; preserves all four source-report hashes and cleanup qualifications |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | `3752ef8cf75e3fcafaca3522a28a323c01d931c4d9f4ca39eb2d5ddb0679d2b9` | official-app/headless PDF upload request, qualified CSV/DOCX compatibility boundary, and live artifact representation/direct infographic/slide transfer |
-| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `bf66c01d168e2cb8f191a97670d767c796681610b9a649c891e8439a27117526` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
+| [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | `237a40f981523058a987f3fc4b3a0800fb0812750dbc5ec285a167940d4e2861` | consolidated notebook copy/metadata, note/mind-map, label/collection, membership, cleanup, and public-qualification evidence; preserves all four source-report hashes |
 | [`endpoints.md`](endpoints.md) | `1769a5120a958ae6710b72a8294aae2b99ad57a6226c359157db6c4e2fbabfd4` | live request/response envelopes, route results, version-scoped APK inventories, captured note/sharing bytes, and the account-bootstrap replay boundary |
 
 The recovery method and the warning about duplicate packages are committed in
@@ -954,7 +954,7 @@ not labeled `google.protobuf.Empty`.
 
 | Method | Generated web-derived populated wire | Runtime rule |
 |---|---|---|
-| `CreateLabel` | request `project_id #2`; `auto_create #5` with optional regenerate-all `#1`, or `manual_create #6` containing properties `#1`, sources `#2`, notebooks `#3`; collection discriminator `#7 = 3`; response labels `#2`, collections `#3` | non-replayed write; manual label and collection creates require exactly one canonical row in the direct response, avoiding a racy `GetLabels` diff; auto create uses canonical read-back for the complete post-write set |
+| `CreateLabel` | request `project_id #2`; `auto_create #5` with optional regenerate-all `#1`, or `manual_create #6` containing properties `#1`, sources `#2`, notebooks `#3`; collection discriminator `#7 = 3`; response labels `#2`, collections `#3` | non-replayed write; manual labels retain their canonical-row rule, while cumulative collection rows are only bounded reconciliation candidates on an unknown outcome; auto create uses canonical read-back for the complete post-write set |
 | `MutateLabel` | resource `#3`, repeated operation `#4`; label project `#2`; collection discriminator `#5 = 3`; property `#1`; member add/remove variants `#2`-`#5` | one member per non-replayed RPC, one final read-back, partial/non-atomic failure across members |
 | `DeleteLabels` | label project `#2`, repeated IDs `#3`; collection discriminator `#4 = 3` | preflight absent IDs as idempotent no-ops, one non-replayed batch delete, then absence read-back |
 

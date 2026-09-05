@@ -385,14 +385,15 @@ async def test_get_and_membership_joins_preserve_order_and_skip_missing() -> Non
         await collections.get(COLLECTION_MISSING)
 
 
-async def test_label_and_collection_create_use_exact_response_rows() -> None:
+async def test_label_create_uses_exact_row_and_collection_reports_candidates() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
 
     created_label = await labels.create(NB, "Duplicate-safe", "🧪")
-    created_collection = await collections.create("Duplicate-safe")
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Duplicate-safe")
     assert created_label.id == LABEL_B
-    assert created_collection.id == COLLECTION_B
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
     assert [method for method, _request, _kwargs in server.calls] == [
         CREATE_LABEL_METHOD,
         GET_LABELS_METHOD,
@@ -452,7 +453,7 @@ async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
     assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
 
 
-async def test_collection_create_selects_new_row_from_cumulative_response() -> None:
+async def test_collection_create_reports_cumulative_row_without_attribution() -> None:
     server = FakeOrganizationServer()
     server.create_response_override = organization_pb2.CreateLabelResponse(
         notebook_collections=[
@@ -465,19 +466,17 @@ async def test_collection_create_selects_new_row_from_cumulative_response() -> N
     )
     _labels, collections = _apis(server)
 
-    created = await collections.create("Requested")
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Requested")
 
-    assert created.id == COLLECTION_B
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
+    assert getattr(raised.value, "unconfirmed", False) is True
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
         CREATE_LABEL_METHOD,
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="E5-class collection attribution: a foreign singleton response row has no provenance",
-)
 async def test_collection_create_does_not_attribute_delayed_foreign_android_singleton() -> None:
     """The caller's create is invisible while an external same-shaped row is echoed."""
     server = FakeOrganizationServer()
@@ -498,15 +497,16 @@ async def test_collection_create_does_not_attribute_delayed_foreign_android_sing
     assert getattr(raised.value, "unconfirmed", False) is True
 
 
-async def test_collection_create_ignores_unrelated_concurrent_post_state() -> None:
+async def test_collection_create_reports_unrelated_concurrent_post_state() -> None:
     server = FakeOrganizationServer()
     server.concurrent_collection_ids = [COLLECTION_MISSING]
     _labels, collections = _apis(server)
 
-    created = await collections.create("Requested")
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Requested")
 
-    assert created.id == COLLECTION_B
-    assert created.name == "Requested"
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
+    assert getattr(raised.value, "unconfirmed", False) is True
     assert set(server.collections) == {COLLECTION_A, COLLECTION_B, COLLECTION_MISSING}
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
@@ -585,10 +585,9 @@ async def test_collection_create_rejects_uncorrelated_direct_response(row: Any) 
     )
     _labels, collections = _apis(server)
 
-    with pytest.raises(DecodingError, match="requested empty collection") as caught:
+    with pytest.raises(CollectionError, match="no caller-correlated id") as caught:
         await collections.create("Requested")
 
-    assert caught.value.method_id == CREATE_LABEL_METHOD
     assert getattr(caught.value, "unconfirmed", False) is True
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
@@ -979,9 +978,10 @@ async def test_real_supervisor_outer_lease_keeps_create_alive_during_graceful_dr
     assert not idle_task.done()
 
     server.release_write.set()
-    created = await create_task
+    with pytest.raises(CollectionError) as raised:
+        await create_task
     await idle_task
-    assert created.id == COLLECTION_B
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
         CREATE_LABEL_METHOD,

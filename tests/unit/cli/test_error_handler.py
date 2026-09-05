@@ -26,6 +26,7 @@ from notebooklm.exceptions import (
     NotFoundError,
     RateLimitError,
     RPCError,
+    SourceAddError,
     SourceNotFoundError,
     ValidationError,
 )
@@ -714,6 +715,31 @@ def test_unconfirmed_create_note_reaches_human_output(capsys):
     # both would repeat the whole paragraph.
     assert combined.count("retrying blind can create a duplicate") == 1
     assert "could not be confirmed" in combined
+
+
+@pytest.mark.parametrize("operation", ["sources.add_url", "sources.add_drive", "sources.add_text"])
+def test_source_add_unknown_operations_project_reconciliation_guidance(capsys, operation: str):
+    from notebooklm._idempotency import mark_unconfirmed
+
+    error = mark_unconfirmed(SourceAddError("input"), operation=operation)
+    with pytest.raises(SystemExit), handle_errors(json_output=True):
+        raise error
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["code"] == "UNCONFIRMED_WRITE"
+    assert data["unconfirmed"] is True
+    assert "source list" in data["hint"]
+
+
+def test_chat_unknown_operation_projects_conversation_history_guidance(capsys):
+    from notebooklm._idempotency import mark_unconfirmed
+
+    with pytest.raises(SystemExit), handle_errors(json_output=True):
+        raise mark_unconfirmed(NetworkError("stream lost"), operation="chat")
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["unconfirmed"] is True
+    assert "conversation history" in data["hint"]
 
 
 def test_ordinary_errors_keep_their_typed_branch_code(capsys):

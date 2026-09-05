@@ -46,7 +46,7 @@
           "module_counts": {
             "android": 47,
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "runtime": 9,
             "types": 16
           },
@@ -207,6 +207,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -266,7 +267,7 @@
           "module_counts": {
             "android": 47,
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "runtime": 9,
             "types": 16
           },
@@ -427,6 +428,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -503,7 +505,7 @@
           "module_counts": {
             "android": 72,
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -783,6 +785,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -871,7 +874,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 56,
+            "root": 57,
             "runtime": 8,
             "types": 16
           },
@@ -983,6 +986,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -1037,7 +1041,7 @@
           "module_counts": {
             "android": 72,
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "runtime": 9,
             "types": 16
           },
@@ -1223,6 +1227,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -1338,7 +1343,7 @@
           "module_counts": {
             "android": 72,
             "auth": 32,
-            "root": 57,
+            "root": 58,
             "runtime": 9,
             "types": 16
           },
@@ -1524,6 +1529,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -1666,7 +1672,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 56,
+            "root": 57,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -1873,6 +1879,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -1957,7 +1964,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 56,
+            "root": 57,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -2164,6 +2171,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -2186,7 +2194,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 56,
+            "root": 57,
             "runtime": 8,
             "types": 16
           },
@@ -2298,6 +2306,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -2373,7 +2382,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 56,
+            "root": 57,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -2580,6 +2589,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -2666,7 +2676,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 56,
+            "root": 57,
             "rpc": 3,
             "runtime": 9,
             "types": 16,
@@ -2873,6 +2883,7 @@
             "notebooklm.auth",
             "notebooklm.client",
             "notebooklm.exceptions",
+            "notebooklm.outcomes",
             "notebooklm.paths",
             "notebooklm.raw",
             "notebooklm.research",
@@ -2902,9 +2913,9 @@
   "public_entries": {
     "android_raw_api": {
       "module_counts": {
-        "android": 3,
+        "android": 4,
         "auth": 32,
-        "root": 56,
+        "root": 57,
         "runtime": 8,
         "types": 16
       },
@@ -2913,6 +2924,7 @@
         "notebooklm._android",
         "notebooklm._android.errors",
         "notebooklm._android.raw",
+        "notebooklm._android.retry_policy",
         "notebooklm._artifact",
         "notebooklm._artifact._download_client",
         "notebooklm._artifact._guarded_transfer",
@@ -3019,6 +3031,7 @@
         "notebooklm.auth",
         "notebooklm.client",
         "notebooklm.exceptions",
+        "notebooklm.outcomes",
         "notebooklm.paths",
         "notebooklm.raw",
         "notebooklm.research",
@@ -3030,7 +3043,7 @@
     "client_reexport": {
       "module_counts": {
         "auth": 32,
-        "root": 56,
+        "root": 57,
         "runtime": 8,
         "types": 16
       },
@@ -3142,6 +3155,7 @@
         "notebooklm.auth",
         "notebooklm.client",
         "notebooklm.exceptions",
+        "notebooklm.outcomes",
         "notebooklm.paths",
         "notebooklm.raw",
         "notebooklm.research",
@@ -3153,7 +3167,7 @@
     "legacy_client_attribute": {
       "module_counts": {
         "auth": 32,
-        "root": 56,
+        "root": 57,
         "runtime": 8,
         "types": 16,
         "web": 3
@@ -3269,6 +3283,7 @@
         "notebooklm.auth",
         "notebooklm.client",
         "notebooklm.exceptions",
+        "notebooklm.outcomes",
         "notebooklm.paths",
         "notebooklm.raw",
         "notebooklm.research",
@@ -3280,7 +3295,7 @@
     "package": {
       "module_counts": {
         "auth": 32,
-        "root": 56,
+        "root": 57,
         "runtime": 8,
         "types": 16
       },
@@ -3392,6 +3407,7 @@
         "notebooklm.auth",
         "notebooklm.client",
         "notebooklm.exceptions",
+        "notebooklm.outcomes",
         "notebooklm.paths",
         "notebooklm.raw",
         "notebooklm.research",
@@ -3403,7 +3419,7 @@
     "raw_module": {
       "module_counts": {
         "auth": 32,
-        "root": 56,
+        "root": 57,
         "runtime": 8,
         "types": 16
       },
@@ -3515,6 +3531,7 @@
         "notebooklm.auth",
         "notebooklm.client",
         "notebooklm.exceptions",
+        "notebooklm.outcomes",
         "notebooklm.paths",
         "notebooklm.raw",
         "notebooklm.research",
@@ -3526,7 +3543,7 @@
     "web_raw_api": {
       "module_counts": {
         "auth": 32,
-        "root": 56,
+        "root": 57,
         "rpc": 3,
         "runtime": 8,
         "types": 16,
@@ -3642,6 +3659,7 @@
         "notebooklm.auth",
         "notebooklm.client",
         "notebooklm.exceptions",
+        "notebooklm.outcomes",
         "notebooklm.paths",
         "notebooklm.raw",
         "notebooklm.research",

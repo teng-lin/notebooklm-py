@@ -281,9 +281,11 @@ callable.
 
 Explicit `backend="android"` selects all eleven Android namespace adapters, including
 `AndroidCollectionsAPI`. Its permanent authenticated E2E gate
-passed twice independently. Each run created a fresh disposable Web-backed notebook and an
-Android-backed collection, then exercised `list`, `get_or_none`, `get`, `notebooks`, `create`,
-`rename`, `add_notebooks`, `remove_notebooks`, and `delete`.
+passed twice independently. Current qualification creates a fresh disposable
+notebook and operates on an independently provisioned collection ID; collection
+create itself is covered as an unknown-outcome operation because the cumulative
+response does not correlate a row. The lifecycle exercises `list`, `get_or_none`,
+`get`, `notebooks`, `rename`, `add_notebooks`, `remove_notebooks`, and `delete`.
 
 Both runs verified membership expansion, deleted the exact collection and notebook
 IDs in `finally`, and left no created resource behind. The selected lifecycle loaded the isolated

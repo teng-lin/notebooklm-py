@@ -244,10 +244,10 @@ class NotebookLMClient:
                 window (60 s + 3 s per requested source, capped at 240 s)
                 floored at ``timeout``; a value replaces both the scaling and
                 the floor; ``None`` inherits ``timeout`` verbatim. Either way an
-                attempt made by ``import_sources_with_verification`` is
+                import sent by ``import_sources_with_verification`` is
                 additionally clamped to what remains of that call's
-                ``max_elapsed`` budget, and that loop stops rather than sending
-                an attempt too short to observe its own result.
+                ``max_elapsed`` budget. The mutation is never retried; that
+                budget otherwise governs read-only candidate inspection.
 
                 A non-positive or non-finite ``chat_timeout`` /
                 ``import_research_timeout`` raises rather than silently

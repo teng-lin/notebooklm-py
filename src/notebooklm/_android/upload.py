@@ -593,6 +593,7 @@ class AndroidUploadPipeline(EpochFenced):
             response,
             filename=f"fetching Drive file {ref.file_id}",
             chain=False,
+            mutation=False,
         )
         if status >= 300:
             raise ValidationError(

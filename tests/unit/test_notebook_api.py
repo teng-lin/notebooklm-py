@@ -355,65 +355,6 @@ def _set_account_limit(api: WebNotebooksAPI, limit: int | None) -> AsyncMock:
     return mock
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "baseline_failure",
-    [
-        # A drifted LIST_NOTEBOOKS: the strict decoder raises, not the transport.
-        pytest.param(RPCError("baseline decode failed"), id="decode_failure"),
-        # A transport failure. The probe deliberately re-RAISES this class; the
-        # baseline capture deliberately swallows it, so pin that asymmetry.
-        pytest.param(ServerError("baseline 503"), id="transport_failure"),
-    ],
-)
-async def test_create_baseline_failure_makes_a_match_ambiguous(
-    caplog: pytest.LogCaptureFixture,
-    baseline_failure: Exception,
-) -> None:
-    """No baseline + a match = ``RPCError``, not a guess (#2232).
-
-    The notebook twin of ``test_add_url_baseline_failure_makes_a_match_ambiguous``.
-    Titles are not unique in NotebookLM, so without a baseline a probe match may
-    predate the create; adopting it hands the caller someone else's notebook
-    under the name of one they think they just made, and every subsequent write
-    in that session lands there. The error must carry enough to act on: what
-    broke the baseline, and which notebook is ambiguous.
-    """
-    transport_error = NetworkError("temporary network failure")
-    api = _make_api(rpc_call=AsyncMock(side_effect=transport_error))
-    pre_existing = Notebook(id="nb_pre_existing", title="Quarterly Review")
-    # First call = the baseline (fails); second = the probe.
-    api.list = AsyncMock(side_effect=[baseline_failure, [pre_existing]])  # type: ignore[method-assign]
-
-    with (
-        caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"),
-        pytest.raises(RPCError) as raised,
-    ):
-        await api.create("Quarterly Review")
-
-    # Not the pre-existing notebook, under any guise.
-    assert "disambiguate" in str(raised.value)
-    assert pre_existing.id in str(raised.value)
-    # The message names what broke the baseline — otherwise nothing reaching the
-    # caller can explain why the snapshot was unavailable.
-    assert type(baseline_failure).__name__ in str(raised.value)
-    # The transport error that triggered the probe survives as context, and
-    # ``__cause__`` is deliberately left unset so the traceback keeps printing
-    # it — ``idempotent_create`` promises both halves stay visible.
-    assert raised.value.__context__ is transport_error
-    assert raised.value.__cause__ is None
-    # The action survives the 300-char truncation the MCP/REST surfaces apply.
-    assert "check your notebook list before retrying" in str(raised.value)[:300].lower()
-    # An ambiguity IS an unconfirmed create (#2220): nothing threw inside the
-    # probe, so this looks like an ordinary rejection — but the server may hold
-    # a notebook either way, which is precisely what the marker names.
-    assert getattr(raised.value, "unconfirmed", False) is True
-    # One create attempt: the ambiguity aborts the loop, it does not re-issue.
-    assert api._rpc.rpc_call.await_count == 1
-    # The swallow is visible at the default logger level (WARNING), not DEBUG.
-    assert "baseline list() failed" in caplog.text
-
-
 class TestCreateNotebookQuotaDetection:
     @pytest.mark.asyncio
     async def test_create_uses_canonical_payload(self):
@@ -482,9 +423,8 @@ class TestCreateNotebookQuotaDetection:
         assert exc_info.value.original_error is original
         assert "499/500" in str(exc_info.value)
         account_limits.assert_awaited_once()
-        # ``create`` calls ``list`` twice on an RPC failure path:
-        # once for the baseline snapshot, once for the quota check.
-        assert api.list.await_count == 2
+        # The only list is the quota diagnostic; create has no probe baseline.
+        assert api.list.await_count == 1
 
     @pytest.mark.asyncio
     async def test_quota_check_counts_owned_notebooks_the_user_has_shared(self):
@@ -602,10 +542,8 @@ class TestCreateNotebookQuotaDetection:
 
         assert exc_info.value is original
         api._get_account_limits.assert_not_awaited()
-        # baseline list runs once before CREATE_NOTEBOOK; no
-        # quota-check list because the RPC code (13) is not the
-        # quota-exhausted code (3).
-        assert api.list.await_count == 1
+        # No candidate probe or quota check for a non-quota code.
+        assert api.list.await_count == 0
 
     @pytest.mark.asyncio
     async def test_non_create_method_preserves_rpc_error_without_listing(self):
@@ -621,9 +559,7 @@ class TestCreateNotebookQuotaDetection:
 
         assert exc_info.value is original
         api._get_account_limits.assert_not_awaited()
-        # baseline list runs once before CREATE_NOTEBOOK; no
-        # quota-check list because the failing method isn't CREATE_NOTEBOOK.
-        assert api.list.await_count == 1
+        assert api.list.await_count == 0
 
     @pytest.mark.asyncio
     async def test_shared_notebooks_do_not_trigger_owned_quota_error(self):
@@ -650,9 +586,8 @@ class TestCreateNotebookQuotaDetection:
             await api.create("Settings Fails")
 
         assert exc_info.value is original
-        # only the baseline list runs; the quota-check list is
-        # skipped because account-limit lookup itself failed.
-        assert api.list.await_count == 1
+        # The quota-check list is skipped because account-limit lookup failed.
+        assert api.list.await_count == 0
 
     @pytest.mark.asyncio
     async def test_account_limit_rpc_error_preserves_original_create_error_without_listing(self):
@@ -667,8 +602,7 @@ class TestCreateNotebookQuotaDetection:
             await api.create("Settings RPC Fails")
 
         assert exc_info.value is original
-        # only the baseline list runs.
-        assert api.list.await_count == 1
+        assert api.list.await_count == 0
 
     @pytest.mark.asyncio
     async def test_missing_account_limit_preserves_original_create_error_without_listing(self):
@@ -681,8 +615,7 @@ class TestCreateNotebookQuotaDetection:
             await api.create("No Limit")
 
         assert exc_info.value is original
-        # only the baseline list runs.
-        assert api.list.await_count == 1
+        assert api.list.await_count == 0
 
     @pytest.mark.asyncio
     async def test_list_failure_preserves_original_create_error(self):

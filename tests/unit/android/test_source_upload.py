@@ -1332,8 +1332,8 @@ async def test_docx_stages_through_drive_and_removes_the_staged_copy(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_drive_staged_copy_is_removed_when_registration_fails(tmp_path: Path) -> None:
-    """Staging happens before registration, so its failure must still clean up."""
+async def test_drive_staged_copy_is_retained_when_registration_is_ambiguous(tmp_path: Path) -> None:
+    """An ambiguous registration may still be reading the staged Drive file."""
     harness = HTTPHarness()
     session, _, pipeline, api = await _graph(harness)
     session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = ServerError("rejected", rpc_code=13)
@@ -1344,8 +1344,7 @@ async def test_drive_staged_copy_is_removed_when_registration_fails(tmp_path: Pa
         await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
 
     deletes = [c for c in harness.calls if c.method == "DELETE"]
-    assert len(deletes) == 1
-    assert DRIVE_STAGED_ID in deletes[0].url
+    assert deletes == []
     del pipeline
 
 

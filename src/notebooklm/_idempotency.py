@@ -1,29 +1,11 @@
-"""Transport-neutral probe-then-retry helpers for mutating create workflows.
-
-:func:`idempotent_create` wraps create-RPC patterns where the server may have
-committed a write even though the client observed a transport failure. The
-wrapper probes for the server-side commit before it permits another create.
-
-Per-API probes used by :func:`idempotent_create` are caller-supplied
-because there is no universal probe key (notebooks: title +
-baseline-diff; ``add_url``: url-match + baseline-diff; ``add_drive``:
-Drive ``documentId``-match + baseline-diff; ``add_text``: no probe
-possible — see :class:`~notebooklm.exceptions.NonIdempotentRetryError`).
-
-The web executor's RPC classification registry remains separate in
-``notebooklm._web.policy``. This module owns only backend-neutral outcome
-helpers; it accepts both web RPC method enum values and Android gRPC method
-strings without importing either backend package.
-"""
+"""Transport-neutral commit evidence and replay decisions."""
 
 from __future__ import annotations
 
-import logging
 import traceback
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from enum import Enum
-from typing import Generic, Literal, Protocol, TypeVar
+from typing import Literal, Protocol, TypeVar
 
 from .exceptions import (
     NetworkError,
@@ -31,32 +13,35 @@ from .exceptions import (
     RPCError,
     ServerError,
 )
-
-logger = logging.getLogger(__name__)
+from .outcomes import CommitState
 
 T = TypeVar("T")
 
 
-class _CreateResultKind(str, Enum):
-    """How an idempotent create obtained its result."""
+class ReplayGrant(str, Enum):
+    """Private semantic permission supplied by the operation owner."""
 
-    CREATED = "created"
-    PROBED = "probed"
-
-
-@dataclass(frozen=True)
-class _IdempotentCreateResult(Generic[T]):
-    """Private provenance carrier for idempotent create callers."""
-
-    value: T
-    kind: _CreateResultKind
+    REFUSAL_RETRY_AUTHORIZED = "refusal_retry_authorized"
+    NO_REPLAY = "no_replay"
+    REPLAY_SAFE = "replay_safe"
 
 
-def _coerce_create_result(value: T | _IdempotentCreateResult[T]) -> _IdempotentCreateResult[T]:
-    """Attach fresh-create provenance to a legacy value-only result."""
-    if isinstance(value, _IdempotentCreateResult):
-        return value
-    return _IdempotentCreateResult(value=value, kind=_CreateResultKind.CREATED)
+def replay_allowed(
+    exc: BaseException | None,
+    *,
+    grant: ReplayGrant,
+    disabled: bool,
+    remaining: float | None,
+) -> bool:
+    """Return whether canonical evidence and operation semantics permit replay."""
+    if disabled or (remaining is not None and remaining <= 0):
+        return False
+    if grant is ReplayGrant.NO_REPLAY:
+        return False
+    if grant is ReplayGrant.REPLAY_SAFE:
+        return True
+    state = getattr(exc, "commit_state", CommitState.UNKNOWN)
+    return state in (CommitState.REJECTED, CommitState.NOT_SENT)
 
 
 # The translated exception types that ``rpc_call`` raises when the
@@ -65,9 +50,8 @@ def _coerce_create_result(value: T | _IdempotentCreateResult[T]) -> _IdempotentC
 # inside ``RuntimeTransport.perform_authed_post`` does not replay these;
 # instead ``rpc_call`` translates the underlying ``TransportServerError`` /
 # network failure into ``ServerError`` / ``NetworkError`` / ``RateLimitError``
-# and surfaces it here. ``idempotent_create`` catches exactly these; anything else (auth,
-# validation, decoding) propagates unchanged because it indicates the
-# request never reached a state where the write could land.
+# and surfaces it here. Anything else (auth, validation, decoding) propagates
+# unchanged unless a producer has attached more precise evidence.
 #
 # Note: ``RPCTimeoutError`` inherits from ``NetworkError`` so it is
 # already covered by the ``NetworkError`` catch.
@@ -83,7 +67,27 @@ AMBIGUOUS_WRITE_ERRORS = _RETRYABLE_TRANSPORT_ERRORS
 _E = TypeVar("_E", bound=BaseException)
 
 
-def mark_unconfirmed(exc: _E) -> _E:
+def mark_commit_state(
+    exc: _E,
+    state: CommitState,
+    *,
+    operation: str | None = None,
+) -> _E:
+    """Attach positive commit evidence without overwriting earlier evidence."""
+    current = getattr(exc, "commit_state", None)
+    if current is None:
+        exc.commit_state = state  # type: ignore[attr-defined]
+    if operation is not None and getattr(exc, "operation", None) is None:
+        exc.operation = operation  # type: ignore[attr-defined]
+    return exc
+
+
+def mark_unconfirmed(
+    exc: _E,
+    *,
+    force_unknown: bool = False,
+    operation: str | None = None,
+) -> _E:
     """Tag an error as *"the write may have committed and we cannot confirm it"*.
 
     Raised by a probe that could not answer (#2220). This is a genuinely
@@ -133,7 +137,19 @@ def mark_unconfirmed(exc: _E) -> _E:
     sites. Every ``except SourceAddError`` / ``except RPCError`` keeps matching
     exactly as before; only code that asks for the marker sees a difference.
     """
+    current = getattr(exc, "commit_state", None)
+    if not force_unknown and current in (
+        CommitState.NOT_SENT,
+        CommitState.REJECTED,
+        CommitState.CONFIRMED,
+    ):
+        if operation is not None and getattr(exc, "operation", None) is None:
+            exc.operation = operation  # type: ignore[attr-defined]
+        return exc
+    exc.commit_state = CommitState.UNKNOWN  # type: ignore[attr-defined]
     exc.unconfirmed = True  # type: ignore[attr-defined]
+    if operation is not None:
+        exc.operation = operation  # type: ignore[attr-defined]
     return exc
 
 
@@ -161,6 +177,8 @@ def unresolved_commit_error(
     exc: _E,
     *,
     preserve_exception: bool = False,
+    force_unknown: bool = False,
+    operation: str | None = None,
 ) -> _E | RPCError:
     """Build or tag an error for a write whose commit outcome is unknown.
 
@@ -172,7 +190,7 @@ def unresolved_commit_error(
     """
 
     if preserve_exception:
-        return mark_unconfirmed(exc)
+        return mark_unconfirmed(exc, force_unknown=force_unknown, operation=operation)
 
     rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
     return mark_unconfirmed(
@@ -182,7 +200,9 @@ def unresolved_commit_error(
             f"No automatic retry was attempted. {exc}",
             method_id=_method_id(method),
             rpc_code=rpc_code,
-        )
+        ),
+        force_unknown=force_unknown,
+        operation=operation,
     )
 
 
@@ -192,6 +212,8 @@ async def call_unconfirmed_on_transport_loss(
     method: _Method,
     what: str,
     chain: Literal["exc"] | None = "exc",
+    force_unknown: bool = False,
+    operation: str | None = None,
 ) -> T:
     """Run one non-replayed write and mark transport-loss ambiguity.
 
@@ -208,7 +230,15 @@ async def call_unconfirmed_on_transport_loss(
     try:
         return await call()
     except AMBIGUOUS_WRITE_ERRORS as exc:
-        mark_unconfirmed(exc)
+        mark_unconfirmed(exc, force_unknown=force_unknown, operation=operation)
+        if chain == "exc":
+            del call, method, what
+            raise
+        failure = exc
+    except RPCError as exc:
+        if not force_unknown:
+            raise
+        mark_unconfirmed(exc, force_unknown=True, operation=operation)
         if chain == "exc":
             del call, method, what
             raise
@@ -233,127 +263,12 @@ async def call_unconfirmed_on_transport_loss(
     raise failure from None
 
 
-async def idempotent_create(
-    create: Callable[[], Awaitable[T]],
-    probe: Callable[[], Awaitable[T | None]],
-    *,
-    max_attempts: int = 2,
-    label: str = "create",
-) -> _IdempotentCreateResult[T]:
-    """Probe-then-retry wrapper for mutating create RPCs.
-
-    Args:
-        create: Coroutine factory that issues the create RPC. The
-            underlying ``rpc_call`` MUST be invoked with
-            ``disable_internal_retries=True`` so the first transport
-            failure surfaces to this wrapper instead of being replayed
-            blindly by the retry middleware inside
-            ``RuntimeTransport.perform_authed_post``.
-        probe: Coroutine factory that returns the resource if it
-            already exists server-side, or ``None`` if not. Probes are
-            API-specific (notebooks: list-then-baseline-diff by title;
-            ``add_url``: list-then-url-match and ``add_drive``:
-            list-then-documentId-match, both filtered by a pre-create
-            baseline).
-
-            **A probe must return ``None`` only when it has affirmatively
-            established that no matching resource exists.** ``None`` is
-            read here as evidence that the create did not land, and it is
-            acted on by re-issuing that create. A probe that cannot answer
-            — its own list failed, a match it cannot attribute, several
-            matches it cannot choose between — must raise instead (#2220).
-            Raising aborts the retry loop and surfaces to the caller. A probe
-            that wraps its own failure (all four do) yields
-            ``__cause__`` = that failure and ``__context__.__context__`` =
-            the transport error, since the wrap happens inside the probe's own
-            ``except``; a probe that raises directly puts the transport error
-            at ``__context__``.
-
-            The alternative, swallowing and returning ``None``, silently
-            converts a ``PROBE_THEN_CREATE`` operation into an
-            at-least-once one at the moment its guarantee matters most.
-            The web policy's ``AT_LEAST_ONCE_ACCEPTED`` classification exists
-            for callers who want that, and it is opt-in by name.
-        max_attempts: Maximum total ``create()`` invocations (default
-            2 — one initial + one retry). Each attempt is followed by
-            a probe; the probe runs only after a transport failure.
-        label: Diagnostic label embedded in log messages.
-
-    Returns:
-        A private result carrying the value and whether it came from a
-        successful create or a probe match. Callers must unwrap ``value``
-        before returning it from a public API.
-
-    Raises:
-        Whatever ``create()`` raises on the final attempt if the probe
-        consistently returns ``None`` and retries are exhausted. Non-
-        transport exceptions (auth, validation, decoding) propagate
-        from the first ``create()`` call without invoking the probe.
-
-        Whatever ``probe()`` raises, immediately and without a further
-        create attempt. The probe is awaited inside the handler for the
-        transport failure, so that failure is always reachable through the
-        ``__context__`` chain and the traceback shows both halves: the
-        create that may have committed, and the probe that could not say
-        whether it did. Its exact depth depends on the probe — one level
-        (``__context__``) when the probe re-raises directly, two when the
-        probe wraps its own failure first, as all four in-tree probes do.
-
-    Cancellation:
-        Pure ``await`` — no ``asyncio.shield``. A ``CancelledError``
-        propagates immediately at the next yield point so the caller
-        keeps full structured-concurrency semantics.
-    """
-    if max_attempts < 1:
-        raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
-
-    last_error: BaseException | None = None
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return _IdempotentCreateResult(value=await create(), kind=_CreateResultKind.CREATED)
-        except _RETRYABLE_TRANSPORT_ERRORS as exc:
-            last_error = exc
-            logger.warning(
-                "%s attempt %d/%d failed with transport error (%s); "
-                "probing for server-side commit before retry",
-                label,
-                attempt,
-                max_attempts,
-                type(exc).__name__,
-            )
-            existing = await probe()
-            if existing is not None:
-                logger.info(
-                    "%s probe found existing resource after transport "
-                    "failure on attempt %d; returning it without retry",
-                    label,
-                    attempt,
-                )
-                return _IdempotentCreateResult(value=existing, kind=_CreateResultKind.PROBED)
-            # Probe returned None: the create did not land. Loop and
-            # retry as long as we have attempts remaining.
-            logger.debug(
-                "%s probe returned no match on attempt %d; will retry create",
-                label,
-                attempt,
-            )
-
-    # Exhausted attempts. Re-raise the last transport error so callers
-    # see the original failure, not a synthetic wrapper.
-    assert last_error is not None  # loop body always sets this on failure
-    logger.error(
-        "%s failed after %d attempts with no probe match; re-raising last error",
-        label,
-        max_attempts,
-    )
-    raise last_error
-
-
 __all__ = [
     "AMBIGUOUS_WRITE_ERRORS",
+    "ReplayGrant",
     "call_unconfirmed_on_transport_loss",
-    "idempotent_create",
+    "mark_commit_state",
     "mark_unconfirmed",
+    "replay_allowed",
     "unresolved_commit_error",
 ]

@@ -250,6 +250,9 @@
     "ensure_profiles_dir",
     "migrate_to_profiles"
   ],
+  "notebooklm.outcomes": [
+    "CommitState"
+  ],
   "notebooklm.paths": [
     "get_active_profile",
     "get_browser_profile_dir",

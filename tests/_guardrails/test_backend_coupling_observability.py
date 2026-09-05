@@ -72,6 +72,7 @@ def test_public_entries_are_distinct_probes_with_current_clean_deltas() -> None:
         "notebooklm._android",
         "notebooklm._android.errors",
         "notebooklm._android.raw",
+        "notebooklm._android.retry_policy",
     }
     assert deltas["legacy_client_attribute"] - deltas["android_raw_api"] == {
         "notebooklm._web",

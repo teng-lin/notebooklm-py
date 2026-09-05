@@ -476,7 +476,7 @@ async def test_chat_start_failure_surfaces_via_status(server_factory, mock_clien
         # The stored exception is projected through the shared MCP error
         # vocabulary: {code, message, retriable} — agents branch on these.
         assert set(status["error"]) >= {"code", "message", "retriable"}
-        assert "retry" in status["hint"]
+        assert "hint" not in status
 
 
 async def test_chat_status_batch_shape_and_timings(server_factory, mock_client) -> None:

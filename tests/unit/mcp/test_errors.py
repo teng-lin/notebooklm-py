@@ -461,20 +461,44 @@ def test_unconfirmed_create_is_surfaced_in_the_mcp_payload() -> None:
     source may already exist, which is the one fact it needs to avoid creating a
     duplicate on its next call.
     """
-    from notebooklm._app.errors import UNCONFIRMED_HINT
+    from notebooklm._app.errors import unconfirmed_hint
     from notebooklm._idempotency import mark_unconfirmed
     from notebooklm.mcp._errors import tool_error_payload
 
-    payload = tool_error_payload(mark_unconfirmed(exc.NetworkError("connection reset")))
+    error = mark_unconfirmed(exc.NetworkError("connection reset"))
+    payload = tool_error_payload(error)
 
     assert payload["unconfirmed"] is True
     assert payload["retriable"] is False
-    assert payload["hint"] == UNCONFIRMED_HINT
+    assert payload["hint"] == unconfirmed_hint(error)
     # The point is the override: NETWORK's own hint is "Transient connectivity
     # issue; retry.", which is the exact advice that would duplicate the source.
     from notebooklm._app.errors import CATEGORY_HINTS
 
     assert payload["hint"] != CATEGORY_HINTS[ErrorCategory.NETWORK]
+
+
+@pytest.mark.parametrize("operation", ["sources.add_url", "sources.add_drive", "sources.add_text"])
+def test_source_add_unknown_operations_project_reconciliation_guidance(operation: str) -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+
+    error = mark_unconfirmed(exc.SourceAddError("input"), operation=operation)
+    payload = tool_error_payload(error)
+
+    assert payload["unconfirmed"] is True
+    assert payload["retriable"] is False
+    assert "source list" in payload["hint"]
+
+
+def test_chat_unknown_operation_projects_conversation_history_guidance() -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+
+    payload = tool_error_payload(
+        mark_unconfirmed(exc.NetworkError("stream lost"), operation="chat")
+    )
+
+    assert payload["unconfirmed"] is True
+    assert "conversation history" in payload["hint"]
 
 
 def test_ordinary_errors_carry_no_unconfirmed_field() -> None:

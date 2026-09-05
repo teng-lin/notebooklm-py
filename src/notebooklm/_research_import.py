@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit, urlunsplit
 
@@ -267,136 +267,6 @@ def _imported_result(
     ``list[dict[str, str]]`` so callers see no annotation change.
     """
     return _ImportedResearchSources(imported, already_present)
-
-
-@dataclass
-class _ImportProbeOutcome:
-    """Result of reconciling ``sources.list`` against a failed IMPORT_RESEARCH call.
-
-    ``fully_verified_entries`` is ``None`` unless every outstanding requested
-    source (URL or no-URL) is confirmed present — a non-``None`` value
-    (including an empty list) means the caller should return success. The
-    remaining fields describe the retry-continuation state: whether anything
-    was filtered, and the (possibly unchanged) inputs to retry with.
-
-    When the pre-import baseline snapshot failed (``baseline_ids is None``),
-    "confirmed present" widens from "present among *new* sources" to "present
-    among *all current* sources" for the filtered-to-empty path — i.e. every
-    remaining requested URL merely already existing in the notebook (not
-    necessarily committed by this call) counts as verified. This mirrors the
-    pre-existing RPCTimeoutError behavior for a failed snapshot; it is not new
-    to the FAILED_PRECONDITION case.
-    """
-
-    fully_verified_entries: list[dict[str, str]] | None
-    newly_verified: list[dict[str, str]] = field(default_factory=list)
-    filtered: bool = False
-    removed_count: int = 0
-    source_inputs: list[ResearchSourceInput] = field(default_factory=list)
-    source_models: list[ResearchSource] = field(default_factory=list)
-    requested_urls_norm: set[str] = field(default_factory=set)
-    requested_no_url_count: int = 0
-
-
-def _reconcile_import_probe(
-    *,
-    current: Sequence[Source],
-    baseline_ids: set[str] | None,
-    requested_urls_norm: set[str],
-    requested_no_url_count: int,
-    source_inputs: list[ResearchSourceInput],
-    source_models: list[ResearchSource],
-    already_verified_ids: set[str],
-    allow_duplicate: bool,
-) -> _ImportProbeOutcome:
-    """Reconcile a post-failure ``sources.list`` snapshot against what was requested.
-
-    Pure computation extracted from ``import_sources_with_verification``'s
-    retry loop (ADR-0008 module-size ratchet) — no I/O, no logging, no
-    exception-type awareness. The caller (which knows whether the triggering
-    exception was ``RPCTimeoutError`` or the #2187 FAILED_PRECONDITION case)
-    decides what to log and whether a non-fully-verified outcome is safe to
-    retry from.
-    """
-    new_sources = (
-        [src for src in current if src.id not in baseline_ids] if baseline_ids is not None else []
-    )
-    new_urls_norm = {_normalize_import_verification_url(src.url) for src in new_sources if src.url}
-    current_urls_norm = {_normalize_import_verification_url(src.url) for src in current if src.url}
-    committed_urls_norm = requested_urls_norm & new_urls_norm
-
-    # Every URL landing is treated as the whole batch verified — including any
-    # no-URL (report) entries — on the assumption reports commit first
-    # server-side (see ``drop_no_url_entries`` below), so a URL landing implies
-    # the report did too. Pre-existing assumption, unchanged by #2187; noted
-    # here since this path now also resolves FAILED_PRECONDITION, not just
-    # RPCTimeoutError (claude review).
-    if baseline_ids is not None and requested_urls_norm.issubset(new_urls_norm):
-        entries: list[dict[str, str]] = []
-        remaining_no_url = requested_no_url_count
-        for src in new_sources:
-            if src.url and _normalize_import_verification_url(src.url) in requested_urls_norm:
-                entries.append(_imported_source_entry(src))
-            elif not src.url and remaining_no_url > 0:
-                entries.append(_imported_source_entry(src))
-                remaining_no_url -= 1
-        return _ImportProbeOutcome(fully_verified_entries=entries)
-
-    source_norms = [
-        (source_input, source, _source_import_verification_url(source))
-        for source_input, source in zip(source_inputs, source_models, strict=True)
-    ]
-    # Filter for retry: drop already-present URLs. Also, when *any* URL
-    # committed, drop no-URL entries (deep-research reports are appended
-    # FIRST in the IMPORT_RESEARCH payload, so a newly-observed URL implies
-    # the report committed too — without this guard each retry duplicates it
-    # server-side). Pre-existing URLs only de-dupe URL entries. When no URL
-    # committed, keep no-URL entries (report fate unknown; the caller's
-    # report-only attempt cap bounds the worst case).
-    drop_no_url_entries = bool(committed_urls_norm)
-    # Drop-for-retry anchor: normally a URL already present in the notebook
-    # (baseline OR committed by this call) is dropped to avoid duplicate
-    # inflation. But under ``allow_duplicate`` the caller explicitly opted to
-    # re-add baseline URLs, so anchor on the post-baseline ``new_urls_norm`` —
-    # only URLs THIS attempt committed are dropped; a pre-existing baseline
-    # URL is still retried and re-added, not silently treated as "already
-    # done" (#1961 codex review). #1934 safety holds in both modes: a URL
-    # committed by this attempt is never retried.
-    retry_present_urls = new_urls_norm if allow_duplicate else current_urls_norm
-    filtered_source_pairs = [
-        (source_input, source)
-        for source_input, source, url in source_norms
-        if url not in retry_present_urls and not (drop_no_url_entries and url is None)
-    ]
-
-    if len(filtered_source_pairs) == len(source_models):
-        return _ImportProbeOutcome(
-            fully_verified_entries=None,
-            source_inputs=source_inputs,
-            source_models=source_models,
-            requested_urls_norm=requested_urls_norm,
-            requested_no_url_count=requested_no_url_count,
-        )
-
-    newly_verified = [
-        _imported_source_entry(src)
-        for src in new_sources
-        if src.url
-        and _normalize_import_verification_url(src.url) in committed_urls_norm
-        and src.id not in already_verified_ids
-    ]
-    filtered_source_inputs = [source_input for source_input, _ in filtered_source_pairs]
-    filtered_source_models = [source for _, source in filtered_source_pairs]
-    return _ImportProbeOutcome(
-        fully_verified_entries=[] if not filtered_source_models else None,
-        newly_verified=newly_verified,
-        filtered=True,
-        removed_count=len(source_models) - len(filtered_source_pairs),
-        source_inputs=filtered_source_inputs,
-        source_models=filtered_source_models,
-        requested_urls_norm=_requested_import_verification_urls(filtered_source_models),
-        requested_no_url_count=_no_import_verification_url_entry_count(filtered_source_models),
-    )
 
 
 def _partition_requested_sources(

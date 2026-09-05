@@ -681,58 +681,9 @@ def legacy_vcr_follow_up_probe(monkeypatch):
 
 
 @pytest.fixture
-def legacy_vcr_add_url_baseline(monkeypatch):
-    """Answer the pre-create source baseline omitted from legacy add_url cassettes.
-
-    ``sources.add_url`` snapshots the notebook's source ids before issuing the
-    create so its idempotency probe can tell a source it created from one that
-    was already there (#2204). Cassettes recorded before that change hold no
-    such ``GET_NOTEBOOK``. Without this fixture the read still *fires*: VCR
-    refuses it, the add swallows the failure, and the call proceeds with the
-    probe disabled — green, and silently not testing the thing it names. In a
-    cassette that also records later ``GET_NOTEBOOK``s the miss is worse, since
-    the baseline consumes a poll's response and desynchronises the journey.
-
-    Keep those recordings immutable and answer only the missing read. Every
-    consumer of this fixture replays a cassette whose create **succeeds**, so
-    the probe never runs and the returned value is never compared against
-    anything — ``[]`` is the neutral answer, not a claim about the notebook.
-    That invariant is enforced rather than trusted: a second call means the
-    probe fired, and the fixture fails the test instead of letting an invented
-    empty baseline license a match. Every other list still replays from the
-    cassette. The probe itself is covered against explicit request sequences in
-    ``tests/integration/test_sources_idempotency.py``, so nothing here is its
-    only coverage. Mirrors :func:`legacy_vcr_follow_up_probe`.
-    """
-    from notebooklm._web.sources.add import SourceAddService
-
-    original_add_url = SourceAddService.add_url
-
-    async def _add_url(self, notebook_id, url, *, list_sources, **kwargs):
-        calls = 0
-
-        async def _list_sources(nb_id: str):
-            nonlocal calls
-            calls += 1
-            if calls > 1:
-                raise AssertionError(
-                    "legacy_vcr_add_url_baseline: the idempotency probe fired, so this "
-                    "cassette's create did not succeed. The stubbed empty baseline would "
-                    "decide the probe's answer — record the probe's GET_NOTEBOOK instead "
-                    "of stubbing the baseline."
-                )
-            return []
-
-        result = await original_add_url(
-            self, notebook_id, url, list_sources=_list_sources, **kwargs
-        )
-        assert calls == 1, (
-            "legacy_vcr_add_url_baseline: add_url no longer captures a pre-create "
-            "baseline, so this fixture is stale — drop it."
-        )
-        return result
-
-    monkeypatch.setattr(SourceAddService, "add_url", _add_url)
+def legacy_vcr_add_url_baseline():
+    """Compatibility no-op for recordings made before URL creation became one-send."""
+    return None
 
 
 @pytest.fixture

@@ -16,6 +16,7 @@ import httpx
 from ..._auth.account import format_authuser_value
 from ..._deadline import RuntimeDeadline
 from ..._env import get_base_url, get_default_language
+from ..._idempotency import ReplayGrant, mark_unconfirmed
 from ..._logging import get_request_id, reset_request_id, set_request_id
 from ..._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from ...exceptions import DecodingError
@@ -32,7 +33,11 @@ from ...rpc import (
     get_batchexecute_url,
     resolve_rpc_id,
 )
-from ..policy import IDEMPOTENCY_REGISTRY, resolve_effective_disable_internal_retries
+from ..policy import (
+    IDEMPOTENCY_REGISTRY,
+    replay_grant_for,
+    resolve_effective_disable_internal_retries,
+)
 from .errors import (
     TransportAuthExpired,
     TransportRateLimited,
@@ -285,6 +290,10 @@ class RpcExecutor:
             caller_disable_internal_retries=disable_internal_retries,
             operation_variant=operation_variant,
         )
+        replay_grant = replay_grant_for(
+            IDEMPOTENCY_REGISTRY.get_entry(method, operation_variant=operation_variant).policy
+        )
+        mutation_without_replay = replay_grant is ReplayGrant.NO_REPLAY
 
         # Resolve once per logical call so URL, body, and decode use the same
         # override-aware RPC id.
@@ -334,11 +343,14 @@ class RpcExecutor:
             msg = f"API rate limit exceeded calling {method.name}{on_host}"
             if exc.retry_after:
                 msg += f". Retry after {exc.retry_after} seconds"
-            raise RateLimitError(
+            error = RateLimitError(
                 msg,
                 method_id=method.value,
                 retry_after=exc.retry_after,
-            ) from exc.original
+            )
+            if mutation_without_replay:
+                mark_unconfirmed(error)
+            raise error from exc.original
         except TransportServerError as exc:
             elapsed = time.perf_counter() - start
             if isinstance(exc.original, httpx.HTTPStatusError):
@@ -348,7 +360,12 @@ class RpcExecutor:
                     elapsed,
                     exc.original.response.status_code,
                 )
-                self.raise_rpc_error_from_http_status(exc.original, method)
+                try:
+                    self.raise_rpc_error_from_http_status(exc.original, method)
+                except RPCError as error:
+                    if mutation_without_replay:
+                        mark_unconfirmed(error)
+                    raise
 
             if isinstance(exc.original, httpx.RequestError):
                 logger.error(
@@ -357,9 +374,14 @@ class RpcExecutor:
                     elapsed,
                     exc.original,
                 )
-                self.raise_rpc_error_from_request_error(
-                    exc.original, method, read_timeout=read_timeout
-                )
+                try:
+                    self.raise_rpc_error_from_request_error(
+                        exc.original, method, read_timeout=read_timeout
+                    )
+                except RPCError as error:
+                    if mutation_without_replay:
+                        mark_unconfirmed(error)
+                    raise
 
             raise TypeError(
                 f"Unexpected TransportServerError.original type: {type(exc.original)}"
@@ -372,7 +394,12 @@ class RpcExecutor:
                 elapsed,
                 exc.response.status_code,
             )
-            self.raise_rpc_error_from_http_status(exc, method)
+            try:
+                self.raise_rpc_error_from_http_status(exc, method)
+            except RPCError as error:
+                if mutation_without_replay:
+                    mark_unconfirmed(error)
+                raise
 
         try:
             result = self._decode_response(
@@ -386,15 +413,17 @@ class RpcExecutor:
             return result
         except RPCError as exc:
             elapsed = time.perf_counter() - start
+            if mutation_without_replay and getattr(exc, "commit_state", None) is None:
+                mark_unconfirmed(exc)
             # A decoded auth-shaped ``RPCError`` triggers a refresh-and-retry
             # ONLY when the effective idempotency classification permits a
             # replay. ``effective_disable_internal_retries`` folds the
-            # registry policy with the caller's intent: for non-idempotent /
-            # probe-then-create methods it is forced True, in which case the
+            # registry policy with the caller's intent: for retry-unsafe
+            # mutations it is forced True, in which case the
             # server may have already committed the write before the
             # auth-shaped error surfaced. Re-POSTing would duplicate the side
-            # effect (issue #1157), so we surface the original error and let
-            # the caller's probe-then-create wrapper disambiguate instead.
+            # effect (issue #1157), so we surface the original error with its
+            # commit evidence unchanged.
             #
             # ``_refresh_budget.consume()`` is the LAST guard and MUST remain
             # last: it is side-effecting (claims the single refresh allowance),
@@ -470,10 +499,13 @@ class RpcExecutor:
             # single decode-boundary, so this is the one site for the wrapped
             # case — symmetric with the surfaced ``DecodingError`` leg above).
             self._metrics.increment(rpc_decode_errors=1)
-            raise RPCError(
+            decode_error = RPCError(
                 f"Failed to decode response for {method.name}: {exc}",
                 method_id=method.value,
-            ) from exc
+            )
+            if mutation_without_replay:
+                mark_unconfirmed(decode_error)
+            raise decode_error from exc
 
     def build_url(
         self,

@@ -385,7 +385,6 @@ _ANDROID_INHERITED_WORKFLOWS = {
     ),
     "NotebooksAPI": frozenset(
         {
-            "_create_with_probe",
             "copy",
             "create",
             "get_metadata",
@@ -651,9 +650,10 @@ def test_research_neutral_helpers_are_inherited_without_a_web_import_cycle() -> 
     assert "_web_select_cited_sources" not in WebResearchAPI.__dict__
     assert "import_sources" not in WebResearchAPI.__dict__
     assert WebResearchAPI.import_sources is BaseResearchAPI.import_sources
+    assert "_import_sources_with_verification" not in WebResearchAPI.__dict__
     assert (
         WebResearchAPI._import_sources_with_verification
-        is not BaseResearchAPI._import_sources_with_verification
+        is BaseResearchAPI._import_sources_with_verification
     )
     assert (
         AndroidResearchAPI._import_sources_with_verification

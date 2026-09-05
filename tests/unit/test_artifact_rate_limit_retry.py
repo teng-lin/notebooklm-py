@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from notebooklm._idempotency import call_unconfirmed_on_transport_loss
+from notebooklm._web.wire.decoder import extract_rpc_result
 from notebooklm.artifacts import (
     RATE_LIMIT_RETRY_MAX_DELAY,
     RateLimitRetryEvent,
@@ -13,7 +14,9 @@ from notebooklm.artifacts import (
     with_rate_limit_retry,
 )
 from notebooklm.exceptions import RateLimitError, RPCError
+from notebooklm.rpc import RPCMethod
 from notebooklm.types import GenerationStatus
+from tests._fixtures.rpc_error_frames import user_displayable_rejection_chunks
 
 
 def _rate_limited_status() -> GenerationStatus:
@@ -23,6 +26,15 @@ def _rate_limited_status() -> GenerationStatus:
         error="Rate limited",
         error_code="USER_DISPLAYABLE_ERROR",
     )
+
+
+def _decoded_refusal() -> RateLimitError:
+    with pytest.raises(RateLimitError) as captured:
+        extract_rpc_result(
+            user_displayable_rejection_chunks(RPCMethod.CREATE_ARTIFACT.value),
+            RPCMethod.CREATE_ARTIFACT.value,
+        )
+    return captured.value
 
 
 class TestCalculateBackoffDelay:
@@ -46,10 +58,6 @@ class TestCalculateBackoffDelay:
 
 class TestWithRateLimitRetry:
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="E4: the outer Smart Retry helper ignores lower-layer unknown-commit evidence",
-    )
     async def test_e4_unconfirmed_rate_limit_is_not_replayed_by_outer_helper(self) -> None:
         """A fake transport's unknown-commit verdict must survive outer orchestration."""
         error = RateLimitError("response lost after artifact create dispatch")
@@ -125,7 +133,7 @@ class TestWithRateLimitRetry:
         success = GenerationStatus(task_id="task_123", status="pending")
         generate_fn = AsyncMock(
             side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                _decoded_refusal(),
                 success,
             ]
         )
@@ -152,7 +160,7 @@ class TestWithRateLimitRetry:
         success = GenerationStatus(task_id="task_123", status="in_progress")
         generate_fn = AsyncMock(
             side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                _decoded_refusal(),
                 success,
             ]
         )
@@ -172,29 +180,29 @@ class TestWithRateLimitRetry:
         # callback shape is uniform across the returned-status and raised paths.
         assert len(events) == 1
         assert events[0].result.error_code == "USER_DISPLAYABLE_ERROR"
-        assert events[0].result.error == "Rate limited"
+        assert "Resource exhausted" in (events[0].result.error or "")
         assert events[0].retry_number == 1
 
     @pytest.mark.asyncio
-    async def test_synthesized_event_is_rate_limited_without_rpc_code(self) -> None:
-        # A RateLimitError with no rpc_code must still produce a callback event
-        # whose result reads as rate-limited (uniform-callback contract), so we
-        # don't fall back to brittle message-substring matching.
-        success = GenerationStatus(task_id="task_123", status="in_progress")
-        generate_fn = AsyncMock(side_effect=[RateLimitError("429 from gateway"), success])
+    async def test_naked_gateway_rate_limit_is_not_replayed(self) -> None:
+        error = RateLimitError("429 from gateway")
+        generate_fn = AsyncMock(side_effect=error)
         events: list[RateLimitRetryEvent] = []
 
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await with_rate_limit_retry(generate_fn, max_retries=2, on_retry=events.append)
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as sleep,
+            pytest.raises(RateLimitError) as captured,
+        ):
+            await with_rate_limit_retry(generate_fn, max_retries=2, on_retry=events.append)
 
-        assert result == success
-        assert len(events) == 1
-        assert events[0].result.error_code == "USER_DISPLAYABLE_ERROR"
-        assert events[0].result.is_rate_limited is True
+        assert captured.value is error
+        assert generate_fn.await_count == 1
+        sleep.assert_not_awaited()
+        assert events == []
 
     @pytest.mark.asyncio
     async def test_reraises_rate_limit_error_when_budget_exhausted(self) -> None:
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        error = _decoded_refusal()
         generate_fn = AsyncMock(side_effect=error)
 
         with (

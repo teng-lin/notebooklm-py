@@ -390,6 +390,7 @@ class DriveFetcher:
             response,
             filename=f"fetching Drive file {file_id}",
             chain=True,
+            mutation=False,
             cause=status_error,
         )
 

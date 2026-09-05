@@ -16,6 +16,7 @@ from .._chat import (
     _TurnRoleSnapshot,
 )
 from .._conversation_cache import ConversationCache
+from .._idempotency import mark_unconfirmed
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.config import (
@@ -25,7 +26,7 @@ from .._runtime.config import (
 )
 from .._runtime.contracts import LoopGuard
 from .._types.enums import ChatGoal, ChatResponseLength
-from ..exceptions import ChatError, NetworkError, UnknownRPCMethodError
+from ..exceptions import ChatError, NetworkError, NotebookLMError, UnknownRPCMethodError
 from ..rpc import RPCMethod, safe_index
 from ..types import ChatReference, ChatSessionStatus, ConversationTurn, Note
 from .contracts import RpcCaller
@@ -249,7 +250,17 @@ class WebChatAPI(ChatAPI):
             if reqid_token is not None:
                 reset_request_id(reqid_token)
 
-        parsed = parse_streaming_chat_response(response.text)
+        try:
+            parsed = parse_streaming_chat_response(response.text)
+        except NotebookLMError as exc:
+            if getattr(exc, "commit_state", None) is None:
+                mark_unconfirmed(exc, operation="chat")
+            raise
+        except Exception as exc:
+            raise mark_unconfirmed(
+                ChatError(f"Failed to decode streamed chat response: {type(exc).__name__}"),
+                operation="chat",
+            ) from exc
         return _PostedAsk(
             answer=parsed.answer,
             references=parsed.references,

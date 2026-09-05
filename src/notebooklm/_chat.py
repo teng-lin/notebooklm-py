@@ -13,13 +13,14 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from ._conversation_cache import ConversationCache
+from ._idempotency import mark_unconfirmed
 from ._loop_bound import LoopBoundPrimitive
 from ._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from ._runtime.call_supervisor import OperationLease
 from ._runtime.contracts import LoopGuard
 from ._types.documents import StructuredDocument, utf16_len
 from ._types.enums import ChatGoal, ChatResponseLength
-from .exceptions import ChatError, NetworkError, ValidationError
+from .exceptions import ChatError, NotebookLMError, ValidationError
 from .types import (
     AskResult,
     ChatMode,
@@ -387,13 +388,14 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             elif is_new_conversation:
                 try:
                     resolved_conversation_id = await self.get_conversation_id(notebook_id)
-                except (ChatError, NetworkError):
+                except NotebookLMError as exc:
                     logger.error(
                         "Chat ask succeeded but post-ask get_conversation_id "
                         "failed. Answer (%d chars, may be truncated): %r",
                         len(posted.answer or ""),
                         (posted.answer or "")[:500],
                     )
+                    mark_unconfirmed(exc, force_unknown=True, operation="chat")
                     raise
                 if resolved_conversation_id is None:
                     if posted.answer:
@@ -403,11 +405,14 @@ class ChatAPI(LoopBoundPrimitive, ABC):
                             len(posted.answer),
                             posted.answer[:500],
                         )
-                    raise ChatError(
-                        "Server did not register a conversation for this ask "
-                        "(hPTbtc returned no id). The response may have been "
-                        "empty, or the API shape may have changed. Please file "
-                        "an issue at https://github.com/teng-lin/notebooklm-py/issues."
+                    raise mark_unconfirmed(
+                        ChatError(
+                            "Server returned an answer but its conversation id could not be "
+                            "resolved. The turn may have been recorded; inspect conversation "
+                            "history before trying again."
+                        ),
+                        force_unknown=True,
+                        operation="chat",
                     )
 
             assert resolved_conversation_id is not None
