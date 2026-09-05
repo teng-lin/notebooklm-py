@@ -6,6 +6,7 @@ and importing discovered sources into notebooks.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -47,7 +48,7 @@ from .rows.research import ImportedSourceRow, ResearchStartRow, unwrap_import_ro
 from .rows.research_task import parse_discover_task, parse_research_task_models
 
 if TYPE_CHECKING:
-    pass
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 __all__ = [
     "CitedSourceSelection",
@@ -102,10 +103,17 @@ class WebResearchAPI(BaseResearchAPI):
 
     _import_policy = _WEB_RESEARCH_IMPORT_POLICY
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral research workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
     def __init__(
         self,
         rpc: RpcCaller,
         *,
+        supervisor: CallSupervisor,
         source_lister: NotebookSourceLister | None = None,
         base_timeout: float | None = DEFAULT_TIMEOUT,
         import_research_timeout: float | None = AUTO_READ_TIMEOUT,
@@ -133,6 +141,7 @@ class WebResearchAPI(BaseResearchAPI):
                 dependency.
         """
         self._rpc = rpc
+        self._supervisor = supervisor
         super().__init__(
             source_lister=source_lister or create_default_source_lister(self._rpc),
             base_timeout=base_timeout,

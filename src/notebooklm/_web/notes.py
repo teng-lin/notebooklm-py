@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import contextlib
 import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -39,7 +40,7 @@ from .note_tasks import NoteTaskRegistry
 from .rows.notes import NoteRow
 
 if TYPE_CHECKING:
-    from .._runtime.call_supervisor import CallSupervisor
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
     from .contracts import RpcCaller
     from .mind_maps import NoteBackedMindMapService
 
@@ -511,11 +512,18 @@ class WebNotesAPI(NotesAPI):
             await client.notes.delete(notebook_id, note.id)
     """
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral note workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
     def __init__(
         self,
         *,
         notes: NoteService,
         mind_maps: NoteBackedMindMapService,
+        supervisor: CallSupervisor,
     ):
         """Initialize the notes API.
 
@@ -529,6 +537,7 @@ class WebNotesAPI(NotesAPI):
         """
         self._notes = notes
         self._mind_maps = mind_maps
+        self._supervisor = supervisor
 
     async def list(self, notebook_id: str) -> list[Note]:
         """List all text notes in the notebook.
@@ -647,9 +656,10 @@ class WebNotesAPI(NotesAPI):
             :class:`NoteNotFoundError` instead of silently "succeeding" via the
             ``allow_null=True`` no-op (#1362).
         """
-        if await self.get_or_none(notebook_id, note_id) is None:
-            raise NoteNotFoundError(note_id)
-        await self._notes.update_note(notebook_id, note_id, content, title)
+        async with self._operation_scope("notes.update"):
+            if await self.get_or_none(notebook_id, note_id) is None:
+                raise NoteNotFoundError(note_id)
+            await self._notes.update_note(notebook_id, note_id, content, title)
 
     async def delete(self, notebook_id: str, note_id: str) -> None:
         """Delete a note from the notebook.

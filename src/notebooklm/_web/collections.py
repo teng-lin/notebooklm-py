@@ -17,8 +17,9 @@ Like ``WebLabelsAPI`` it takes a narrow ``list_notebooks`` callable
 from __future__ import annotations
 
 import builtins
+import contextlib
 import logging
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from .._collections import CollectionsAPI, ListNotebooks
 from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
@@ -34,6 +35,9 @@ from .params.collections import (
     build_update_collection_notebooks_params,
 )
 from .rows.collections import decode_collection
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 # Preserve the historical logger key across the whole-module move.
 logger = logging.getLogger("notebooklm._collections")
@@ -64,13 +68,26 @@ class WebCollectionsAPI(CollectionsAPI):
     _property_readback_miss_method_id = RPCMethod.LIST_LABELS.value
     _delete_method_id = RPCMethod.DELETE_LABEL.value
 
-    def __init__(self, rpc: RpcCaller, *, list_notebooks: ListNotebooks) -> None:
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral collection workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
+    def __init__(
+        self,
+        rpc: RpcCaller,
+        *,
+        list_notebooks: ListNotebooks,
+        supervisor: CallSupervisor,
+    ) -> None:
         """``list_notebooks`` is ``client.notebooks.list`` (wired in
         ``_client_assembly.py`` after ``NotebooksAPI`` is constructed) — needed
         for the membership→``Notebook`` join in ``notebooks()``. Same client /
         bound loop, so no loop-affinity concern (ADR-0004)."""
         super().__init__(list_notebooks=list_notebooks)
         self._rpc = rpc
+        self._supervisor = supervisor
 
     # -- internal -----------------------------------------------------------
 
@@ -134,35 +151,36 @@ class WebCollectionsAPI(CollectionsAPI):
         Collections carry no emoji at creation (the wire has no emoji slot); set
         one later in the UI if desired.
         """
-        before_ids = {collection.id for collection in await self.list()}
+        async with self._operation_scope("collections.create"):
+            before_ids = {collection.id for collection in await self.list()}
 
-        async def create_and_readback() -> builtins.list[Collection]:
-            await self._rpc.rpc_call(
-                RPCMethod.CREATE_LABEL,
-                build_create_collection_params(name),
-                source_path=_ACCOUNT_PATH,
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
+            async def create_and_readback() -> builtins.list[Collection]:
+                await self._rpc.rpc_call(
+                    RPCMethod.CREATE_LABEL,
+                    build_create_collection_params(name),
+                    source_path=_ACCOUNT_PATH,
+                    allow_null=True,
+                    # #2290: status-tagged null is rejection, not empty success.
+                    raise_on_null_status=True,
+                )
+                return await self.list()
+
+            after = await call_unconfirmed_on_transport_loss(
+                create_and_readback,
+                method=RPCMethod.CREATE_LABEL,
+                what="the collection create and required list readback",
+                force_unknown=True,
             )
-            return await self.list()
-
-        after = await call_unconfirmed_on_transport_loss(
-            create_and_readback,
-            method=RPCMethod.CREATE_LABEL,
-            what="the collection create and required list readback",
-            force_unknown=True,
-        )
-        new = [collection for collection in after if collection.id not in before_ids]
-        error = CollectionError(
-            f"Collection create for {name!r} returned no caller-correlated id. "
-            "Inspect the collection list before creating again."
-        )
-        error.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
-            collection.id for collection in new[:20]
-        )
-        error.unresolved_inputs = (name[:200],)  # type: ignore[attr-defined]
-        raise mark_unconfirmed(error)
+            new = [collection for collection in after if collection.id not in before_ids]
+            error = CollectionError(
+                f"Collection create for {name!r} returned no caller-correlated id. "
+                "Inspect the collection list before creating again."
+            )
+            error.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
+                collection.id for collection in new[:20]
+            )
+            error.unresolved_inputs = (name[:200],)  # type: ignore[attr-defined]
+            raise mark_unconfirmed(error)
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 

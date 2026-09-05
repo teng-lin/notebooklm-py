@@ -19,6 +19,7 @@ from notebooklm._web.params.notebooks import build_prompt_suggestions_params
 from notebooklm.exceptions import ValidationError
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import PromptSuggestion
+from tests._fixtures.fake_core import make_fake_core
 
 # One live-verified response (issue #1612): a wrapped single-element envelope
 # whose inner list holds ``[title, prompt]`` rows.
@@ -43,7 +44,7 @@ def api(mock_rpc: MagicMock) -> WebNotebooksAPI:
     The default-all-sources path resolves ids through ``get_source_ids``; tests
     that pass explicit ``source_ids`` assert it is never awaited.
     """
-    notebooks = WebNotebooksAPI(mock_rpc)
+    notebooks = WebNotebooksAPI(mock_rpc, supervisor=make_fake_core())
     notebooks.get_source_ids = AsyncMock(return_value=["src_a", "src_b"])  # type: ignore[method-assign]
     return notebooks
 

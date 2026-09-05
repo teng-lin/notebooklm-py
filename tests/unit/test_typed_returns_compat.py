@@ -25,6 +25,7 @@ from notebooklm import (
     ResearchTask,
     SourceGuide,
 )
+from tests._fixtures.fake_core import make_fake_core
 
 
 class TestResearchStatusEnum:
@@ -194,7 +195,7 @@ class TestNoInternalSelfWarn:
                 # Empty POLL_RESEARCH envelope -> ResearchTask.empty().
                 return []
 
-        api = WebResearchAPI(_Rpc())
+        api = WebResearchAPI(_Rpc(), supervisor=make_fake_core())
         with warnings.catch_warnings():
             warnings.simplefilter("error", DeprecationWarning)
             result = await api.poll("nb_1")

@@ -186,8 +186,9 @@ shows lazy bearer acquisition, channel creation, and result projection.
 ```text
 NotebookLMClient.<feature>.<method>()
     → backend-neutral <Feature>API runs shared workflow orchestration
-    → Android<Feature>API._operation_scope(...) for multi-call workflows
-      → AndroidSession.operation_scope(...) + task-local workflow epoch
+    → concrete <Feature>API._operation_scope(...) for multi-call workflows
+      → shared CallSupervisor.operation_scope(...) + generation lease
+      → AndroidSession.operation_scope(...) additionally binds its task-local workflow epoch
     → Android<Feature>API validates/builds a protobuf request
     → AndroidSession.unary(...) or .unary_stream(...)
     → CallSupervisor terminal scope (drain, metrics, semaphore)
@@ -196,15 +197,17 @@ NotebookLMClient.<feature>.<method>()
     → strict protobuf/public-dataclass projection
 ```
 
-Every backend-neutral namespace base exposes the same non-abstract
-`_operation_scope(label)` template hook. Its default is an async-compatible
-no-op, while each Android namespace overrides it with the session's
-generation-bearing scope. The Android scope binds a module-level `ContextVar`
+Every backend-neutral namespace base requires an abstract
+`_operation_scope(label)` capability; there is no production no-op. Every Web
+namespace delegates it to the client-owned `CallSupervisor`, as the Sources
+namespace already did, and every Android namespace delegates through
+`AndroidSession.operation_scope`. Both paths therefore retain one generation
+lease from the first meaningful await through the final required result or
+reconciliation. The Android scope also binds a module-level `ContextVar`
 tagged with that `AndroidSession`'s unique identity and lease epoch. Nested
-namespace calls therefore inherit the original workflow fence without adding
-epoch parameters to wire hooks; unrelated Android clients in the same task
-cannot consume each other's tag, and nested scopes restore the outer tag on
-exit.
+namespace calls inherit the original workflow fence without adding epoch
+parameters to wire hooks; unrelated Android clients in the same task cannot
+consume each other's tag, and nested scopes restore the outer tag on exit.
 
 Android optional dependencies and the master-token credential are validated at
 async open; the channel itself remains lazy until the first Android RPC. Asset
@@ -998,6 +1001,14 @@ collaborator by keyword-only constructor argument. The composition wiring is cen
 [`_client_assembly.py`](../src/notebooklm/_client_assembly.py), which is
 called by both `NotebookLMClient.__init__` and the canonical test
 factory.
+
+An operation lease surrounds each complete public workflow, from its first
+meaningful await through required mutation readback, reconciliation, cache
+publication, or polling settlement. Nested terminal calls acquire their RPC
+semaphore slots independently; the outer operation lease is admission-only.
+Parallel notebook-metadata reads and source-wait fanout are created with
+`CallSupervisor.spawn_child`, so drain observes every child in the originating
+generation instead of relying on task-context inheritance alone.
 
 ## Testing patterns
 

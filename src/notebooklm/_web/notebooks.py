@@ -1,9 +1,12 @@
 """Web backend for notebook operations."""
 
+from __future__ import annotations
+
 import builtins
+import contextlib
 import logging
 import reprlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .._notebook_metadata import (
     NotebookMetadataService,
@@ -53,6 +56,9 @@ from .rows.sources import SourceRow
 from .settings import build_get_user_settings_params, extract_account_limits
 from .sharing import ShareManager
 from .sources.listing import SourceLister
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 logger = logging.getLogger("notebooklm._notebooks")
 
@@ -215,11 +221,18 @@ class WebNotebooksAPI(NotebooksAPI):
     _copy_method_id = RPCMethod.COPY_NOTEBOOK.value
     _copy_failure_chain = "explicit"
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral notebook workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
     def __init__(
         self,
         rpc: RpcCaller,
         sources_api: NotebookSourceLister | None = None,
         *,
+        supervisor: CallSupervisor,
         metadata_service: NotebookMetadataService | None = None,
         share_manager: ShareManager | None = None,
     ) -> None:
@@ -232,8 +245,13 @@ class WebNotebooksAPI(NotebooksAPI):
             share_manager: Optional explicit legacy share manager for tests or advanced wiring.
         """
         self._rpc = rpc
+        self._supervisor = supervisor
         resolved_sources = sources_api or create_default_source_lister(self._rpc)
-        super().__init__(resolved_sources, metadata_service=metadata_service)
+        super().__init__(
+            resolved_sources,
+            spawn_child=supervisor.spawn_child,
+            metadata_service=metadata_service,
+        )
 
         if share_manager:
             self._share_manager = share_manager
@@ -456,30 +474,33 @@ class WebNotebooksAPI(NotebooksAPI):
             build_prompt_suggestions_params(notebook_id, [], mode=mode)
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
-        if source_ids is None:
-            source_ids = await self.get_source_ids(notebook_id)
+        async with self._operation_scope("notebooks.suggest_prompts"):
+            if source_ids is None:
+                source_ids = await self.get_source_ids(notebook_id)
 
-        params = build_prompt_suggestions_params(notebook_id, source_ids, mode=mode, query=query)
-        result = await self._rpc.rpc_call(
-            RPCMethod.SUGGEST_PROMPTS,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
+            params = build_prompt_suggestions_params(
+                notebook_id, source_ids, mode=mode, query=query
+            )
+            result = await self._rpc.rpc_call(
+                RPCMethod.SUGGEST_PROMPTS,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+            )
 
-        rows = unwrap_prompt_suggestions(result, source="suggest_prompts")
-        # ``is_well_formed`` only gates on row LENGTH (>= 2 slots), not on the
-        # field values, mirroring ``ReportSuggestionRow``: a length-ok row whose
-        # title/prompt degrade to "" (a non-string leaf) still maps to a
-        # ``PromptSuggestion("", "")``. Real traffic always carries string
-        # leaves, so this is a best-effort tolerance for a degenerate server
-        # payload, not an expected output — callers should not treat an empty
-        # title/prompt as meaningful.
-        return [
-            PromptSuggestion(title=row.title, prompt=row.prompt)
-            for row in map(PromptSuggestionRow, rows)
-            if row.is_well_formed
-        ]
+            rows = unwrap_prompt_suggestions(result, source="suggest_prompts")
+            # ``is_well_formed`` only gates on row LENGTH (>= 2 slots), not on the
+            # field values, mirroring ``ReportSuggestionRow``: a length-ok row whose
+            # title/prompt degrade to "" (a non-string leaf) still maps to a
+            # ``PromptSuggestion("", "")``. Real traffic always carries string
+            # leaves, so this is a best-effort tolerance for a degenerate server
+            # payload, not an expected output — callers should not treat an empty
+            # title/prompt as meaningful.
+            return [
+                PromptSuggestion(title=row.title, prompt=row.prompt)
+                for row in map(PromptSuggestionRow, rows)
+                if row.is_well_formed
+            ]
 
     async def suggest_next_steps(
         self,
@@ -808,27 +829,28 @@ class WebNotebooksAPI(NotebooksAPI):
         if title is None and emoji is None:
             raise ValidationError("At least one of title or emoji must be provided")
 
-        logger.debug("Updating notebook %s (title=%r, emoji=%r)", notebook_id, title, emoji)
-        # RENAME_NOTEBOOK is the live ``MutateProject``, a generic notebook
-        # mutator: the same RPC sets the title here, chat config in
-        # ``ChatAPI.configure``, and the share view-level in
-        # ``SharingAPI.set_view_level`` — each with a different params shape.
-        # Payload format recovered from the web client's generated protobuf
-        # serializer and live-verified: ChangeProperty tag 2 is title and tag 3
-        # is emoji.
-        # [notebook_id, [[null, null, null, [null, title, emoji]]]]
-        # (the trailing emoji slot is omitted for a title-only mutation)
-        params = build_update_notebook_params(notebook_id, title=title, emoji=emoji)
-        await self._rpc.rpc_call(
-            RPCMethod.RENAME_NOTEBOOK,
-            params,
-            source_path="/",  # Home page context, not notebook page
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
-        )
-        # Fetch and return the updated notebook
-        return await self.get(notebook_id)
+        async with self._operation_scope("notebooks.update"):
+            logger.debug("Updating notebook %s (title=%r, emoji=%r)", notebook_id, title, emoji)
+            # RENAME_NOTEBOOK is the live ``MutateProject``, a generic notebook
+            # mutator: the same RPC sets the title here, chat config in
+            # ``ChatAPI.configure``, and the share view-level in
+            # ``SharingAPI.set_view_level`` — each with a different params shape.
+            # Payload format recovered from the web client's generated protobuf
+            # serializer and live-verified: ChangeProperty tag 2 is title and tag 3
+            # is emoji.
+            # [notebook_id, [[null, null, null, [null, title, emoji]]]]
+            # (the trailing emoji slot is omitted for a title-only mutation)
+            params = build_update_notebook_params(notebook_id, title=title, emoji=emoji)
+            await self._rpc.rpc_call(
+                RPCMethod.RENAME_NOTEBOOK,
+                params,
+                source_path="/",  # Home page context, not notebook page
+                allow_null=True,
+                # #2290: status-tagged null is a server rejection, not empty success.
+                raise_on_null_status=True,
+            )
+            # Fetch and return the updated notebook
+            return await self.get(notebook_id)
 
     async def get_summary(self, notebook_id: str) -> str:
         """Get raw summary text for a notebook.

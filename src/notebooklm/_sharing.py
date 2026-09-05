@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 class SharingAPI(ABC):
     """Operations for notebook sharing."""
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     @abstractmethod
     async def get_status(self, notebook_id: str) -> ShareStatus:

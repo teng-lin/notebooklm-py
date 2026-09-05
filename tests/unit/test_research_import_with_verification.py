@@ -25,6 +25,7 @@ from notebooklm.exceptions import (
     RPCError,
     RPCTimeoutError,
 )
+from tests._fixtures.fake_core import make_fake_core
 
 
 class _RecordingRpc:
@@ -94,7 +95,11 @@ def _make_research() -> tuple[WebResearchAPI, MagicMock, MagicMock]:
     """
     mock_rpc = MagicMock()
     mock_source_lister = MagicMock()
-    research = WebResearchAPI(mock_rpc, source_lister=mock_source_lister)
+    research = WebResearchAPI(
+        mock_rpc,
+        supervisor=make_fake_core(),
+        source_lister=mock_source_lister,
+    )
     return research, mock_rpc, mock_source_lister
 
 

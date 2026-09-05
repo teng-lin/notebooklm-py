@@ -23,12 +23,12 @@ class MindMapsAPI(ABC):
 
     _reject_unsuccessful_interactive_wait = False
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(self, *, artifacts: ArtifactsAPI, notes: NotesAPI) -> None:
         self._artifacts = artifacts

@@ -14,16 +14,19 @@ from notebooklm._sources import SourcesAPI, _TransferResult
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import DecodingError, RPCError, SourceNotFoundError, ValidationError
 from notebooklm.types import CopiedSource, Source, SourceStatus, SourceType
+from tests._fixtures.fake_core import declared_noop_operation_scope, declared_spawn_child
 
 
 class _ConcreteSources(SourcesAPI):
+    _operation_scope = staticmethod(declared_noop_operation_scope)
+
     def __init__(
         self,
         sources: list[Source] | Exception,
         *,
         copy_result: _TransferResult[CopiedSource] | Exception | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(spawn_child=declared_spawn_child)
         self._listed = sources
         self.copy_result = copy_result
         self.copy_calls: list[tuple[str, list[str], str]] = []

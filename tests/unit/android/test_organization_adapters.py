@@ -323,18 +323,21 @@ def test_adapters_are_concrete_and_module_imports_keep_protobuf_lazy() -> None:
     assert server.calls == []
     assert server.operation_scopes == []
     assert CollectionsAPI.__abstractmethods__ == {
+        "_operation_scope",
         "list",
         "create",
         "_send_update",
         "_send_mutate_member",
     }
+    assert callable(AndroidCollectionsAPI._operation_scope)
+    assert callable(AndroidLabelsAPI._operation_scope)
     assert all(
         inspect.iscoroutinefunction(getattr(AndroidCollectionsAPI, name))
-        for name in CollectionsAPI.__abstractmethods__
+        for name in CollectionsAPI.__abstractmethods__ - {"_operation_scope"}
     )
     assert all(
         inspect.iscoroutinefunction(getattr(AndroidLabelsAPI, name))
-        for name in LabelsAPI.__abstractmethods__
+        for name in LabelsAPI.__abstractmethods__ - {"_operation_scope"}
     )
 
     root = Path(__file__).resolve().parents[3]

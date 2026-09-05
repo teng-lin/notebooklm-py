@@ -203,6 +203,7 @@ def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
     notebooks = notebooks if notebooks is not None else MagicMock()
     return WebChatAPI(
         rpc=mock_core.rpc_executor,
+        supervisor=mock_core,
         transport=mock_core.session_transport,
         reqid=mock_core,
         loop_guard=mock_core,
@@ -1246,7 +1247,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         # Mock notebook data with multiple sources
         # Structure: notebook_data[0][1] = sources list
@@ -1275,7 +1276,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         rpc.return_value = [["nb_123", []]]
 
@@ -1291,7 +1292,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         rpc.return_value = None
 
@@ -1307,7 +1308,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         # Malformed data - missing nested structure
         # Structure: source[0] must be a list, source[0][0] must be a string

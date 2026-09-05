@@ -402,7 +402,7 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         self._drive_download = drive_download or (
             native_drive_download if callable(native_drive_download) else None
         )
-        super().__init__()
+        super().__init__(spawn_child=session.spawn_child)
 
     async def list(
         self,
@@ -1092,17 +1092,37 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         title: str | None,
         on_progress: Callable[[int, int], object] | None,
     ) -> Source:
-        adapter = self
-        pipeline = adapter._upload_pipeline
-        compat: AddFileCompat | None = None
-        result: Source | None = None
-        failure: BaseException | None = None
-        try:
-            canonical_path = await asyncio.to_thread(Path(file_path).resolve)
-            if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
-                compat = adapter._add_file_compat
-                if compat is not None:
-                    result = await compat(
+        async with self._operation_scope("source.add_file"):
+            adapter = self
+            pipeline = adapter._upload_pipeline
+            compat: AddFileCompat | None = None
+            result: Source | None = None
+            failure: BaseException | None = None
+            try:
+                canonical_path = await asyncio.to_thread(Path(file_path).resolve)
+                if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
+                    compat = adapter._add_file_compat
+                    if compat is not None:
+                        result = await compat(
+                            notebook_id,
+                            canonical_path,
+                            mime_type,
+                            wait=wait,
+                            wait_timeout=wait_timeout,
+                            title=title,
+                            on_progress=on_progress,
+                        )
+                    else:
+                        result = await pipeline.add_file_via_drive_staging(
+                            notebook_id,
+                            canonical_path,
+                            mime_type,
+                            wait_timeout=wait_timeout,
+                            title=title,
+                            import_drive_file=adapter.add_drive,
+                        )
+                else:
+                    result = await pipeline.upload_file(
                         notebook_id,
                         canonical_path,
                         mime_type,
@@ -1110,40 +1130,21 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                         wait_timeout=wait_timeout,
                         title=title,
                         on_progress=on_progress,
+                        register_tentative=adapter._register_file_tentative,
+                        wait_until_registered=adapter._wait_uploaded_registered,
+                        wait_until_ready=adapter._wait_uploaded_ready,
+                        rename_uploaded=adapter._rename_uploaded,
+                        finalize_uploaded=SourcesAPI._finalize_uploaded_file,
                     )
-                else:
-                    result = await pipeline.add_file_via_drive_staging(
-                        notebook_id,
-                        canonical_path,
-                        mime_type,
-                        wait_timeout=wait_timeout,
-                        title=title,
-                        import_drive_file=adapter.add_drive,
-                    )
-            else:
-                result = await pipeline.upload_file(
-                    notebook_id,
-                    canonical_path,
-                    mime_type,
-                    wait=wait,
-                    wait_timeout=wait_timeout,
-                    title=title,
-                    on_progress=on_progress,
-                    register_tentative=adapter._register_file_tentative,
-                    wait_until_registered=adapter._wait_uploaded_registered,
-                    wait_until_ready=adapter._wait_uploaded_ready,
-                    rename_uploaded=adapter._rename_uploaded,
-                    finalize_uploaded=SourcesAPI._finalize_uploaded_file,
-                )
-        except BaseException as error:
-            from .errors import sanitize_escaping_exception
+            except BaseException as error:
+                from .errors import sanitize_escaping_exception
 
-            failure = sanitize_escaping_exception(error)
-        finally:
-            del self, adapter, pipeline, compat, file_path, title, on_progress
-        if failure is not None:
-            raise failure from None
-        return cast(Source, result)
+                failure = sanitize_escaping_exception(error)
+            finally:
+                del self, adapter, pipeline, compat, file_path, title, on_progress
+            if failure is not None:
+                raise failure from None
+            return cast(Source, result)
 
     async def add_drive(
         self,
@@ -1157,26 +1158,27 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
     ) -> Source:
         _validate_drive_file_id(file_id)
         requested_title = title.strip() or None
-        source = await self._add_registered_content(
-            notebook_id,
-            subject=file_id,
-            kind="Drive",
-            operation_label="source.add_drive",
-            build_content=lambda source_id: _write_proto().UserContent(
-                google_drive_content=_write_proto().GoogleDriveContent(
-                    document_id=file_id,
-                    mime_type=mime_type,
-                    can_download=True,
-                    source_name=title,
+        async with self._operation_scope("source.add_drive"):
+            source = await self._add_registered_content(
+                notebook_id,
+                subject=file_id,
+                kind="Drive",
+                operation_label="source.add_drive.commit",
+                build_content=lambda source_id: _write_proto().UserContent(
+                    google_drive_content=_write_proto().GoogleDriveContent(
+                        document_id=file_id,
+                        mime_type=mime_type,
+                        can_download=True,
+                        source_name=title,
+                    ),
+                    tentative_source_id=_read_proto().SourceId(id=source_id),
                 ),
-                tentative_source_id=_read_proto().SourceId(id=source_id),
-            ),
-            wait=wait,
-            wait_timeout=wait_timeout,
-        )
-        if requested_title is not None and source.title != requested_title:
-            source = await self._best_effort_title(notebook_id, source, requested_title)
-        return source
+                wait=wait,
+                wait_timeout=wait_timeout,
+            )
+            if requested_title is not None and source.title != requested_title:
+                source = await self._best_effort_title(notebook_id, source, requested_title)
+            return source
 
     async def list_play_books(self) -> builtins.list[PlayBook]:
         """List the account's Google Play Books library (#2292, #2302).
@@ -1231,36 +1233,37 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             SourceNotFoundError: ``content_id`` is not in the library.
             PlayBookNotExportableError: the title cannot be exported.
         """
-        books = await self.list_play_books()
-        book = next((b for b in books if b.content_id == content_id), None)
-        if book is None:
-            raise SourceNotFoundError(
-                content_id,
-                method_id=LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD,
+        async with self._operation_scope("source.add_play_book"):
+            books = await self.list_play_books()
+            book = next((b for b in books if b.content_id == content_id), None)
+            if book is None:
+                raise SourceNotFoundError(
+                    content_id,
+                    method_id=LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD,
+                )
+            if book.export_disabled:
+                raise PlayBookNotExportableError(book.content_id, book.reason)
+
+            async def _augment(bearer: str) -> tuple[tuple[str, bytes], ...]:
+                return await self._phenotype.experiment_metadata(bearer)
+
+            async def _refresh(bearer: str) -> tuple[tuple[str, bytes], ...]:
+                return await self._phenotype.experiment_metadata(bearer, force=True)
+
+            return await self._add_registered_content(
+                notebook_id,
+                subject=book.title or content_id,
+                kind="Play Books",
+                operation_label="source.add_play_book.commit",
+                build_content=lambda source_id: _write_proto().UserContent(
+                    expert_intelligence_content=build_expert_intelligence_content(book),
+                    tentative_source_id=_read_proto().SourceId(id=source_id),
+                ),
+                wait=wait,
+                wait_timeout=wait_timeout,
+                metadata_augmentor=_augment,
+                metadata_refresher=_refresh,
             )
-        if book.export_disabled:
-            raise PlayBookNotExportableError(book.content_id, book.reason)
-
-        async def _augment(bearer: str) -> tuple[tuple[str, bytes], ...]:
-            return await self._phenotype.experiment_metadata(bearer)
-
-        async def _refresh(bearer: str) -> tuple[tuple[str, bytes], ...]:
-            return await self._phenotype.experiment_metadata(bearer, force=True)
-
-        return await self._add_registered_content(
-            notebook_id,
-            subject=book.title or content_id,
-            kind="Play Books",
-            operation_label="source.add_play_book",
-            build_content=lambda source_id: _write_proto().UserContent(
-                expert_intelligence_content=build_expert_intelligence_content(book),
-                tentative_source_id=_read_proto().SourceId(id=source_id),
-            ),
-            wait=wait,
-            wait_timeout=wait_timeout,
-            metadata_augmentor=_augment,
-            metadata_refresher=_refresh,
-        )
 
     async def add_drive_file(
         self,
@@ -1276,7 +1279,10 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             raise ConfigurationError(
                 "Android Drive-file import requires the native download pipeline."
             )
-        async with drive_download(document_id) as (path, filename, content_type):
+        async with (
+            self._operation_scope("source.add_drive_file"),
+            drive_download(document_id) as (path, filename, content_type),
+        ):
             return await self.add_file(
                 notebook_id,
                 path,

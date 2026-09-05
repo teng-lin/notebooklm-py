@@ -183,12 +183,12 @@ class ChatAPI(LoopBoundPrimitive, ABC):
 
     _configure_attempt_log_policy: _ConfigureAttemptLogPolicy = "silent"
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(
         self,
@@ -338,6 +338,22 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             last_conversation_id)`` — the server then has nothing to
             extend and the next ``ask()`` starts a new conversation.
         """
+        async with self._operation_scope("chat.ask"):
+            return await self._ask_in_scope(
+                notebook_id,
+                question,
+                source_ids=source_ids,
+                conversation_id=conversation_id,
+            )
+
+    async def _ask_in_scope(
+        self,
+        notebook_id: str,
+        question: str,
+        source_ids: list[str] | None = None,
+        conversation_id: str | None = None,
+    ) -> AskResult:
+        """Execute :meth:`ask` after its workflow admission has been acquired."""
         self._loop_guard.assert_bound_loop()
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",
@@ -523,10 +539,11 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             caller already holding the stream has consumed its final frame.
         """
         self._loop_guard.assert_bound_loop()
-        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
-        if resolved_id is None:
-            return ChatSessionStatus(generating=False)
-        return await self._get_session_status(notebook_id, resolved_id)
+        async with self._operation_scope("chat.session_status"):
+            resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+            if resolved_id is None:
+                return ChatSessionStatus(generating=False)
+            return await self._get_session_status(notebook_id, resolved_id)
 
     async def cancel(
         self,
@@ -550,11 +567,12 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             or cancel its local task after this method succeeds.
         """
         self._loop_guard.assert_bound_loop()
-        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
-        if resolved_id is None:
+        async with self._operation_scope("chat.cancel"):
+            resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+            if resolved_id is None:
+                return None
+            await self._cancel_generation(notebook_id, resolved_id)
             return None
-        await self._cancel_generation(notebook_id, resolved_id)
-        return None
 
     async def delete_conversation(self, notebook_id: str, conversation_id: str) -> None:
         """Delete a conversation from the server.

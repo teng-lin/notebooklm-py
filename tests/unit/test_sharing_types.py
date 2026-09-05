@@ -595,7 +595,7 @@ class TestSharingAPIValidation:
         from tests._fixtures.fake_core import make_fake_core
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         with pytest.raises(ValueError, match="Cannot assign OWNER permission"):
             await api.add_user("nb_123", "test@example.com", SharePermission.OWNER)
@@ -612,7 +612,7 @@ class TestSharingAPIValidation:
         from tests._fixtures.fake_core import make_fake_core
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         with pytest.raises(ValueError, match="Use remove_user"):
             await api.add_user("nb_123", "test@example.com", SharePermission._REMOVE)
@@ -640,7 +640,7 @@ class TestSharingAPIValidation:
                 ]
             )
         )
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         status = await api.add_user("nb_123", "test@example.com", SharePermission.EDITOR)
 
@@ -668,7 +668,7 @@ class TestSharingAPIValidation:
                 ]
             )
         )
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         # Use default permission (VIEWER)
         status = await api.add_user("nb_123", "test@example.com")

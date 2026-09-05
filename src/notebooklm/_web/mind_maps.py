@@ -12,6 +12,7 @@ studio-artifact RPCs (``CREATE_ARTIFACT`` type-4/variant-4 /
 from __future__ import annotations
 
 import builtins
+import contextlib
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from .._artifacts import ArtifactsAPI
     from .._notebooks import NotebooksAPI
     from .._notes import NotesAPI
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
     from .contracts import RpcCaller
 
 
@@ -162,6 +164,12 @@ class NoteBackedMindMapService:
 class WebMindMapsAPI(MindMapsAPI):
     """``client.mind_maps`` — one surface over both mind-map backends."""
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral mind-map workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
     def __init__(
         self,
         *,
@@ -170,11 +178,13 @@ class WebMindMapsAPI(MindMapsAPI):
         artifacts: ArtifactsAPI,
         notebooks: NotebooksAPI,
         notes: NotesAPI,
+        supervisor: CallSupervisor,
     ) -> None:
         super().__init__(artifacts=artifacts, notes=notes)
         self._rpc = rpc
         self._mind_maps = mind_maps
         self._notebooks = notebooks
+        self._supervisor = supervisor
 
     async def list_note_backed(self, notebook_id: str) -> builtins.list[MindMap]:
         """List only the **note-backed** mind maps in a notebook.

@@ -44,6 +44,8 @@ class LoopParticipant(Protocol):
 class LifecycleSupervisor(LoopParticipant, Protocol):
     """Narrow admission seam consumed by the root lifecycle."""
 
+    def assert_shutdown_allowed(self, action: str) -> None: ...
+
     def prepare_generation(self, epoch: int) -> None: ...
 
     def start_accepting(self, epoch: int) -> None: ...
@@ -379,9 +381,15 @@ class ClientLifecycle:
             raise process_exit
 
     async def drain(self, timeout: float | None = None) -> None:
-        """Stop top-level admission while leaving resources open."""
+        """Stop top-level admission while leaving resources open.
+
+        Raises:
+            RuntimeError: If called by a task that currently holds admission
+                for this client, including admission from a retired generation.
+        """
         if timeout is not None and timeout < 0:
             raise ValueError(f"timeout must be >= 0 or None, got {timeout!r}")
+        self._supervisor.assert_shutdown_allowed("drain")
         loop = asyncio.get_running_loop()
         while True:
             with self._state_lock:
@@ -441,9 +449,15 @@ class ClientLifecycle:
         drain: bool = True,
         drain_timeout: float | None = None,
     ) -> None:
-        """Coalesce one phased close wave and retain it across cancellation."""
+        """Coalesce one phased close wave and retain it across cancellation.
+
+        Raises:
+            RuntimeError: If called by a task that currently holds admission
+                for this client, including admission from a retired generation.
+        """
         if drain and drain_timeout is not None and drain_timeout < 0:
             raise ValueError(f"timeout must be >= 0 or None, got {drain_timeout!r}")
+        self._supervisor.assert_shutdown_allowed("close")
         loop = asyncio.get_running_loop()
         while True:
             start_gate: asyncio.Future[None] | None = None

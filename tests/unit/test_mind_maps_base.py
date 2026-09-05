@@ -12,10 +12,13 @@ from notebooklm._android.mind_maps import AndroidMindMapsAPI
 from notebooklm._mind_maps_api import MindMapsAPI
 from notebooklm._web.mind_maps import WebMindMapsAPI
 from notebooklm.types import Artifact, MindMap, MindMapKind
+from tests._fixtures.fake_core import declared_noop_operation_scope
 
 
 class _FakeMindMapsAPI(MindMapsAPI):
     """Minimal backend proving shared workflows need only the rename hook."""
+
+    _operation_scope = staticmethod(declared_noop_operation_scope)
 
     def __init__(
         self,
@@ -172,6 +175,7 @@ def test_web_backend_inherits_every_base_concrete_workflow_and_its_docs() -> Non
 def test_exact_abstract_set_and_frontends_are_concrete() -> None:
     assert MindMapsAPI.__abstractmethods__ == frozenset(
         {
+            "_operation_scope",
             "_list_studio_mind_map_rows",
             "_read_interactive_tree",
             "_send_rename_note_backed",

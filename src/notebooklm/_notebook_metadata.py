@@ -46,6 +46,17 @@ class CreatedChatSessionProvider(Protocol):
 
 NotebookGetter = Callable[[str], Awaitable[Notebook]]
 _CopyMappingItem = TypeVar("_CopyMappingItem")
+_ChildResult = TypeVar("_ChildResult")
+
+
+class SpawnChild(Protocol):
+    """Reserve and start one same-generation child operation."""
+
+    async def __call__(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[_ChildResult]],
+    ) -> asyncio.Task[_ChildResult]: ...
 
 
 def reconcile_copy_mapping(
@@ -99,16 +110,38 @@ class NotebookMetadataService:
         self,
         get_notebook: NotebookGetter,
         source_lister: NotebookSourceLister,
+        *,
+        spawn_child: SpawnChild,
     ) -> None:
         self._get_notebook = get_notebook
         self._source_lister = source_lister
+        self._spawn_child = spawn_child
 
     async def get_metadata(self, notebook_id: str) -> NotebookMetadata:
         """Get notebook metadata and simplified sources concurrently."""
-        notebook, sources = await asyncio.gather(
-            self._get_notebook(notebook_id),
-            self._source_lister.list(notebook_id),
+        notebook_task = await self._spawn_child(
+            f"notebook-metadata-notebook-{notebook_id}",
+            lambda: self._get_notebook(notebook_id),
         )
+        try:
+            sources_task = await self._spawn_child(
+                f"notebook-metadata-sources-{notebook_id}",
+                lambda: self._source_lister.list(notebook_id),
+            )
+        except BaseException:
+            notebook_task.cancel()
+            await asyncio.gather(notebook_task, return_exceptions=True)
+            raise
+
+        tasks = (notebook_task, sources_task)
+        try:
+            notebook, sources = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
         if notebook.sources_count > 0 and len(sources) == 0:
             logger.warning(
@@ -135,5 +168,6 @@ __all__ = [
     "CreatedChatSessionProvider",
     "NotebookSourceIdProvider",
     "NotebookSourceLister",
+    "SpawnChild",
     "reconcile_copy_mapping",
 ]

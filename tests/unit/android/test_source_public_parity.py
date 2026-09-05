@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import cast
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -13,6 +15,22 @@ from notebooklm._android.session import AndroidSession
 from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm.types import Source, SourceStatus
+
+
+class _DirectSession:
+    @asynccontextmanager
+    async def operation_scope(self, label: str) -> AsyncIterator[Any]:
+        """Declare transport-free workflow admission for the parity adapter."""
+        del label
+        yield SimpleNamespace(epoch=1)
+
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for the direct parity adapter."""
+        return asyncio.create_task(factory(), name=label)
 
 
 class _DriveDownload:
@@ -42,7 +60,7 @@ class _ParitySources(AndroidSourcesAPI):
         drive_download: _DriveDownload,
     ) -> None:
         super().__init__(
-            cast(AndroidSession, object()),
+            cast(AndroidSession, _DirectSession()),
             cast(AndroidUploadPipeline, object()),
             drive_download=drive_download,
         )
