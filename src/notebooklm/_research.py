@@ -499,11 +499,11 @@ class BaseResearchAPI(ABC):
                 delay = min(delay * backoff_factor, max_delay)
 
             unresolved = [
-                source.url[:200]
+                source.url
                 for source in models
                 if source.url and _normalize_import_verification_url(source.url) not in visible_urls
             ]
-            unresolved.extend(source.title[:200] for source in models if not source.url)
+            unresolved.extend(source.title for source in models if not source.url)
             attach_reconciliation_report(
                 failure,
                 reconciliation_report(candidate_ids, unresolved),
