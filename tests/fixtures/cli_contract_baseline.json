@@ -8597,6 +8597,7 @@
         "suggest-next-steps",
         "suggest-prompts",
         "summary",
+        "usage",
         "use"
       ],
       "params": [
@@ -12301,6 +12302,48 @@
       ],
       "short_help": "Get notebook summary with AI-generated..."
     },
+    "usage": {
+      "class": "Command",
+      "params": [
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Include action availability and advertised costs.",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "actions",
+          "opts": [
+            "--actions"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output as JSON",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "json_output",
+          "opts": [
+            "--json"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        }
+      ],
+      "short_help": "Show live compute usage for the current..."
+    },
     "use": {
       "class": "Command",
       "params": [
@@ -12390,6 +12433,7 @@
     "suggest-next-steps",
     "suggest-prompts",
     "summary",
+    "usage",
     "use"
   ],
   "schema_version": 1,
@@ -12414,6 +12458,7 @@
       "auth",
       "use",
       "status",
+      "usage",
       "clear"
     ]
   },

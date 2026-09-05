@@ -1858,6 +1858,7 @@ src/notebooklm/
     ├── label_cmd.py             # label list/sources/generate/create/rename/emoji/add/remove/delete
     ├── collection_cmd.py        # collection list/notebooks/create/rename/add/remove/delete (account-level)
     ├── language_cmd.py          # Language configuration CLI commands
+    ├── usage_cmd.py             # Account compute usage windows and action details
     ├── master_token_login.py    # Command driver for `login --master-token[-refresh]` (ADR-0023)
     ├── mcp_cmd.py               # `mcp install <client>` command — thin Click adapter over `_app/mcp_install.py`; resolves the client config path (`--config-path` override) and applies the merge inside `notebooklm.io.atomic_update_json` (locked, crash-safe, merge-not-clobber)
     ├── notebook_cmd.py          # list, create, delete, rename
