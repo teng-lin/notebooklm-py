@@ -47,11 +47,9 @@ from ._chat import ChatAPI
 from ._client_assembly import (
     BackendName,
     BackendPreference,
-    ConstructionHandoff,
     _assemble_client,
-    construction_handoff,
+    _finalize_loaded_client,
     resolve_backend_preference,
-    suspended_construction_handoff,
 )
 from ._client_contracts import CookieRotator, CookieSaver
 from ._collections import CollectionsAPI
@@ -1021,46 +1019,30 @@ class _FromStorageContext:
                 pass
         storage_path = auth.storage_path
 
-        constructor_kwargs = {
-            "timeout": kwargs["timeout"],
-            "storage_path": storage_path,
-            "keepalive": kwargs["keepalive"],
-            "keepalive_min_interval": kwargs["keepalive_min_interval"],
-            "rate_limit_max_retries": kwargs["rate_limit_max_retries"],
-            "server_error_max_retries": kwargs["server_error_max_retries"],
-            "limits": kwargs["limits"],
-            "max_concurrent_uploads": kwargs["max_concurrent_uploads"],
-            "max_concurrent_rpcs": kwargs["max_concurrent_rpcs"],
-            "chat_timeout": kwargs["chat_timeout"],
-            "chat_response_max_bytes": kwargs["chat_response_max_bytes"],
-            "import_research_timeout": kwargs["import_research_timeout"],
-            "upload_timeout": kwargs["upload_timeout"],
-            "on_rpc_event": kwargs["on_rpc_event"],
-            "backend": kwargs["backend_preference"].preferred,
-        }
-        with suspended_construction_handoff():
-            new_method: Callable[..., object] = self._cls.__new__
-            if new_method is object.__new__:
-                candidate = new_method(self._cls)
-            else:
-                candidate = new_method(self._cls, auth, **constructor_kwargs)
-        if not isinstance(candidate, self._cls):
-            client = cast(NotebookLMClient, candidate)
-            self._client = client
-            return client
-
-        handoff = ConstructionHandoff(
-            backend_preference=kwargs["backend_preference"],
-            target_client=candidate,
-            target_auth=auth,
-            loaded_auth=loaded,
+        client = self._cls(
+            auth,
+            timeout=kwargs["timeout"],
+            storage_path=storage_path,
+            keepalive=kwargs["keepalive"],
+            keepalive_min_interval=kwargs["keepalive_min_interval"],
+            rate_limit_max_retries=kwargs["rate_limit_max_retries"],
+            server_error_max_retries=kwargs["server_error_max_retries"],
+            limits=kwargs["limits"],
+            max_concurrent_uploads=kwargs["max_concurrent_uploads"],
+            max_concurrent_rpcs=kwargs["max_concurrent_rpcs"],
+            chat_timeout=kwargs["chat_timeout"],
+            chat_response_max_bytes=kwargs["chat_response_max_bytes"],
+            import_research_timeout=kwargs["import_research_timeout"],
+            upload_timeout=kwargs["upload_timeout"],
+            on_rpc_event=kwargs["on_rpc_event"],
+            backend=kwargs["backend_preference"].preferred,
         )
-        constructor_kwargs["backend"] = handoff.backend_argument
-        with construction_handoff(handoff):
-            init_result = type(candidate).__init__(candidate, auth, **constructor_kwargs)
-        if init_result is not None:
-            raise TypeError(f"__init__() should return None, not '{type(init_result).__name__}'")
-        client = candidate
+        if any(base is NotebookLMClient for base in type(client).__mro__):
+            _finalize_loaded_client(
+                client,
+                preference=kwargs["backend_preference"],
+                loaded_auth=loaded,
+            )
         self._client = client
         return client
 

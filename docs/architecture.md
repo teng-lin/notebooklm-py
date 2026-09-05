@@ -1119,7 +1119,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
 | `raw.py` | Public raw descriptors, replay policy, and backend-selected escape-hatch APIs. |
-| `_client_assembly.py` | Single private composition root: builds shared services once, invokes one typed backend builder, constructs the sole lifecycle, and installs the complete graph. Its private handoff preserves a backend preference frozen before deferred auth loading plus exact loaded-store baseline identity. |
+| `_client_assembly.py` | Single private composition root: builds shared services once, invokes one typed backend builder, constructs the sole lifecycle, and installs the complete graph. Root-owned post-construction finalization preserves a backend preference frozen before deferred auth loading plus exact loaded-store baseline identity. |
 | `_client_compat.py` | Pure 0.x Android-to-Web sidecar factory and inert `LazyWebSidecar`; imports `_web.assembly` only inside the first-use builder and never closes over a public client. |
 | `_client_contracts.py` | Complete frozen `FeatureNamespaces`, discriminated `WebAssembly`/`AndroidAssembly`, narrow lifecycle participants, and warning-free private P4 construction carriers. |
 | `_adapter_support.py` | Small transport-neutral support leaf for adapter error/response helpers; imported by MCP and REST adapters without importing a backend implementation. |

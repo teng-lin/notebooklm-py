@@ -206,9 +206,18 @@ CONSTRUCTION_SIGNATURES = (
             "assembly",
             "sidecar",
             "android_seams",
-            "loaded_auth",
         ),
         Disposition("P4", "Install the complete lifecycle graph once without backend rebinding."),
+    ),
+    SignatureInventory(
+        "src/notebooklm/_client_assembly.py",
+        "_finalize_loaded_client",
+        (
+            "client",
+            "preference",
+            "loaded_auth",
+        ),
+        Disposition("P4", "Finalize frozen preference and loaded-auth persistence once."),
     ),
     SignatureInventory(
         "src/notebooklm/_client_compat.py",

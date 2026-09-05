@@ -5,10 +5,8 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -66,65 +64,6 @@ class BackendPreference:
     reason: Literal["explicit", "env", "default"]
 
 
-class _ConstructionBackend(str):
-    """Backend spelling carrying ownership of one stored-auth initialization."""
-
-    construction_token: object
-
-    def __new__(cls, value: BackendName, construction_token: object) -> _ConstructionBackend:
-        instance = super().__new__(cls, value)
-        instance.construction_token = construction_token
-        return instance
-
-
-@dataclass(frozen=True)
-class ConstructionHandoff:
-    """Private handoff for decisions frozen before deferred auth loading."""
-
-    backend_preference: BackendPreference
-    target_client: object
-    target_auth: AuthTokens
-    loaded_auth: LoadedAuth | None = None
-    construction_token: object = field(default_factory=object, repr=False, compare=False)
-
-    @property
-    def backend_argument(self) -> BackendName:
-        """Return the backend spelling owned by this target initialization."""
-
-        return cast(
-            BackendName,
-            _ConstructionBackend(self.backend_preference.preferred, self.construction_token),
-        )
-
-
-_ACTIVE_HANDOFF: ContextVar[ConstructionHandoff | None] = ContextVar(
-    "notebooklm_construction_handoff",
-    default=None,
-)
-
-
-@contextmanager
-def construction_handoff(context: ConstructionHandoff) -> Iterator[None]:
-    """Make one deferred handoff visible to its exact target initialization."""
-
-    token = _ACTIVE_HANDOFF.set(context)
-    try:
-        yield
-    finally:
-        _ACTIVE_HANDOFF.reset(token)
-
-
-@contextmanager
-def suspended_construction_handoff() -> Iterator[None]:
-    """Suspend an outer initialization handoff while allocating another client."""
-
-    token = _ACTIVE_HANDOFF.set(None)
-    try:
-        yield
-    finally:
-        _ACTIVE_HANDOFF.reset(token)
-
-
 def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
     """Resolve and validate the backend preference without performing I/O."""
 
@@ -162,7 +101,6 @@ def _install_client(
     assembly: BackendAssembly,
     sidecar: LazyWebSidecar | None,
     android_seams: WebSeamOverrides | None,
-    loaded_auth: LoadedAuth | None,
 ) -> None:
     """Install one completed graph; this is the sole client mutation owner."""
 
@@ -201,16 +139,29 @@ def _install_client(
         client._android_runtime = None
         client._web_sidecar = None
         client._seams = assembly.seams
-        if isinstance(loaded_auth, FileLoadedAuth):
-            assembly.runtime.cookie_persistence.register_open_baseline(
-                loaded_auth.store,
-                loaded_auth.persistence_baseline,
-            )
     else:
         client._web_runtime = None
         client._android_runtime = assembly.runtime
         client._web_sidecar = sidecar
         client._seams = android_seams
+
+
+def _finalize_loaded_client(
+    client: NotebookLMClient,
+    *,
+    preference: BackendPreference,
+    loaded_auth: LoadedAuth,
+) -> None:
+    """Install stored-auth provenance on the exact client returned by its class call."""
+
+    client._backend_preference = preference
+    if not isinstance(loaded_auth, FileLoadedAuth):
+        return
+    if hasattr(client, "_web_runtime") and client._web_runtime is not None:
+        client._web_runtime.cookie_persistence.register_open_baseline(
+            loaded_auth.store,
+            loaded_auth.persistence_baseline,
+        )
 
 
 def _assemble_client(
@@ -247,32 +198,10 @@ def _assemble_client(
 ) -> None:
     """Normalize root-owned inputs, select one backend, and freeze its lifecycle."""
 
-    active_handoff = _ACTIVE_HANDOFF.get()
-    if active_handoff is not None and not (
-        client is active_handoff.target_client
-        and auth is active_handoff.target_auth
-        and isinstance(backend, _ConstructionBackend)
-        and backend.construction_token is active_handoff.construction_token
-    ):
-        active_handoff = None
-    elif active_handoff is not None:
-        # Consume the handoff at the exact target construction. A subclass may
-        # construct another client before calling ``super().__init__``; that
-        # nested client must resolve its own backend and auth provenance.
-        _ACTIVE_HANDOFF.set(None)
-    if isinstance(backend, _ConstructionBackend):
-        # A subclass may forward all of its kwargs into a nested construction.
-        # The marker conveys no preference authority away from its exact target.
-        backend = None
-    preference = (
-        active_handoff.backend_preference
-        if active_handoff is not None
-        else resolve_backend_preference(
-            explicit=backend,
-            env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
-        )
+    preference = resolve_backend_preference(
+        explicit=backend,
+        env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
     )
-    loaded_auth = active_handoff.loaded_auth if active_handoff is not None else None
     if storage_path is not None:
         storage_path = Path(storage_path)
         if auth.storage_path != storage_path:
@@ -393,7 +322,6 @@ def _assemble_client(
             assembly=android_assembly,
             sidecar=sidecar,
             android_seams=seam_overrides,
-            loaded_auth=loaded_auth,
         )
         return
 
@@ -441,16 +369,13 @@ def _assemble_client(
         assembly=web_assembly,
         sidecar=None,
         android_seams=None,
-        loaded_auth=loaded_auth,
     )
 
 
 __all__ = [
     "BackendName",
     "BackendPreference",
-    "ConstructionHandoff",
     "_assemble_client",
-    "construction_handoff",
+    "_finalize_loaded_client",
     "resolve_backend_preference",
-    "suspended_construction_handoff",
 ]

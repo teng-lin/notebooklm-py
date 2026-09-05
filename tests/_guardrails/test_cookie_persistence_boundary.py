@@ -559,8 +559,8 @@ class _MemberCollector(ast.NodeVisitor):
             and self._local_client_is_canonical("client")
         ) or (
             self.path == ASSEMBLY_PATH
-            and self.owner == "_install_client"
-            and ast.unparse(node) == "assembly.runtime.cookie_persistence"
+            and self.owner == "_finalize_loaded_client"
+            and ast.unparse(node) == "client._web_runtime.cookie_persistence"
         )
 
     def _local_client_is_canonical(self, name: str) -> bool:
@@ -1064,7 +1064,7 @@ def test_private_persistence_callers_and_capabilities_are_exact() -> None:
         ("_web/transport/init.py", "_build_web_transport"),
         ("_web/transport/lifecycle.py", "WebTransportLifecycle.open"),
         ("_web/transport/lifecycle.py", "WebTransportLifecycle.save_cookies"),
-        ("_client_assembly.py", "_install_client"),
+        ("_client_assembly.py", "_finalize_loaded_client"),
     }
     assert escapes == set()
 
@@ -1459,16 +1459,16 @@ def test_global_declaration_anywhere_poisons_deferred_module_provider() -> None:
 
 def test_client_registration_requires_exact_sequential_constructor_provenance() -> None:
     live_tree = ast.parse(
-        "def _install_client(assembly):\n"
-        "    assembly.runtime.cookie_persistence.register_open_baseline(None, None)\n"
+        "def _finalize_loaded_client(client):\n"
+        "    client._web_runtime.cookie_persistence.register_open_baseline(None, None)\n"
     )
     calls, escapes = _member_projection(live_tree, ASSEMBLY_PATH, _PRIVATE_MEMBERS)
-    assert calls == {("_client_assembly.py", "_install_client")}
+    assert calls == {("_client_assembly.py", "_finalize_loaded_client")}
     assert escapes == set()
 
     evil_tree = ast.parse(
-        "def other(assembly):\n"
-        "    assembly.runtime.cookie_persistence.register_open_baseline(None, None)\n"
+        "def other(client):\n"
+        "    client._web_runtime.cookie_persistence.register_open_baseline(None, None)\n"
     )
     calls, escapes = _member_projection(evil_tree, ASSEMBLY_PATH, _PRIVATE_MEMBERS)
     assert calls == set()

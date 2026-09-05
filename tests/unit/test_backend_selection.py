@@ -988,6 +988,63 @@ async def test_from_storage_passes_auth_and_options_to_mi_allocator(
     assert client._backend_preference == BackendPreference("web", "env")
 
 
+async def test_from_storage_preserves_custom_metaclass_call_hook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+    calls: list[tuple[object, object]] = []
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class TrackingMeta(type):
+        def __call__(cls, *args: object, **kwargs: object) -> object:
+            calls.append((args[0], kwargs["backend"]))
+            return super().__call__(*args, **kwargs)
+
+    class MetaclassClient(NotebookLMClient, metaclass=TrackingMeta):
+        pass
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = MetaclassClient.from_storage()
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    client = await context._build()
+
+    assert isinstance(client, MetaclassClient)
+    assert calls == [(loaded_auth, "web")]
+    assert type(calls[0][1]) is str
+    assert client._backend_preference == BackendPreference("web", "env")
+
+
+async def test_from_storage_ignores_adversarial_instancecheck_for_non_client_sentinel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+    sentinel = object()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class LyingInstanceMeta(type):
+        def __instancecheck__(cls, instance: object) -> bool:
+            del cls, instance
+            return True
+
+        def __call__(cls, *args: object, **kwargs: object) -> object:
+            del cls, args, kwargs
+            return sentinel
+
+    class SentinelClient(NotebookLMClient, metaclass=LyingInstanceMeta):
+        pass
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+
+    assert isinstance(sentinel, SentinelClient)
+    assert await SentinelClient.from_storage()._build() is sentinel
+
+
 async def test_from_storage_mirrors_non_instance_new_and_non_none_init_semantics(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

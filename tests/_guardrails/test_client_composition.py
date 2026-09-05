@@ -242,7 +242,7 @@ def test_android_web_compatibility_installer_has_one_root_owner() -> None:
 
 
 def test_android_web_compatibility_import_and_lifecycle_placement_are_exact() -> None:
-    """The sidecar closes over typed inputs, while only root installation mutates a client."""
+    """Only root installation and loaded-auth finalization mutate a client."""
     tree = _tree(CLIENT_COMPAT_PATH)
     factory = next(
         node
@@ -283,7 +283,8 @@ def test_android_web_compatibility_import_and_lifecycle_placement_are_exact() ->
                 arg.arg for arg in function.args.kwonlyargs if arg.arg == "client"
             )
             if not client_parameters or (
-                path == ASSEMBLY_PATH and function.name == "_install_client"
+                path == ASSEMBLY_PATH
+                and function.name in {"_install_client", "_finalize_loaded_client"}
             ):
                 continue
             for node in ast.walk(function):
