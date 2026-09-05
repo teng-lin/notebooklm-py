@@ -58,8 +58,10 @@ class WebTransportLifecycle:
         auth_coord: AuthRefreshCoordinator,
         cookie_persistence: CookiePersistence,
         kernel: Kernel,
-        timeout: float,
-        connect_timeout: float,
+        read_timeout: float | None,
+        write_timeout: float | None,
+        pool_timeout: float | None,
+        connect_timeout: float | None,
         limits: ConnectionLimits,
         keepalive_interval: float | None,
         keepalive_storage_path: Path | None,
@@ -71,7 +73,9 @@ class WebTransportLifecycle:
         self._auth_coord = auth_coord
         self._cookie_persistence = cookie_persistence
         self._kernel = kernel
-        self._timeout = timeout
+        self._read_timeout = read_timeout
+        self._write_timeout = write_timeout
+        self._pool_timeout = pool_timeout
         self._connect_timeout = connect_timeout
         self._limits = limits
         self._keepalive_interval = keepalive_interval
@@ -96,7 +100,9 @@ class WebTransportLifecycle:
         )
         await self._kernel.open(
             auth=self._auth,
-            timeout=self._timeout,
+            read_timeout=self._read_timeout,
+            write_timeout=self._write_timeout,
+            pool_timeout=self._pool_timeout,
             connect_timeout=self._connect_timeout,
             limits=self._limits,
             capture_cookie_snapshot=self._cookie_persistence.capture_open_snapshot,

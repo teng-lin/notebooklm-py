@@ -59,6 +59,7 @@ CONSTRUCTION_SIGNATURES = (
             "chat_response_max_bytes",
             "import_research_timeout",
             "backend",
+            "config",
         ),
         Disposition("P5/P8", "Normalize once into typed owner configs; remove flat tuning at v1."),
     ),
@@ -84,6 +85,7 @@ CONSTRUCTION_SIGNATURES = (
             "import_research_timeout",
             "allow_headless",
             "backend",
+            "config",
         ),
         Disposition(
             "P5/P8",
@@ -96,23 +98,8 @@ CONSTRUCTION_SIGNATURES = (
         (
             "client",
             "auth",
-            "timeout",
+            "options",
             "storage_path",
-            "keepalive",
-            "keepalive_min_interval",
-            "rate_limit_max_retries",
-            "server_error_max_retries",
-            "limits",
-            "max_concurrent_uploads",
-            "max_concurrent_rpcs",
-            "upload_timeout",
-            "on_rpc_event",
-            "cookie_saver",
-            "cookie_rotator",
-            "chat_timeout",
-            "import_research_timeout",
-            "chat_response_max_bytes",
-            "backend",
             "refresh_callback",
             "refresh_retry_delay",
             "connect_timeout",
@@ -233,6 +220,7 @@ CONSTRUCTION_SIGNATURES = (
 
 
 PUBLIC_OPTION_DISPOSITIONS = {
+    "config": Disposition("P5", "Add the frozen owner-grouped construction facade."),
     "auth": Disposition("P5/P8", "Remain a credential input; remove obsolete shadows only at v1."),
     "storage_path": Disposition("P5", "Remain a direct credential-normalization override."),
     "path": Disposition("P5", "Remain a stored-credential loader input with path precedence."),
@@ -284,6 +272,7 @@ PUBLIC_OPTION_DISPOSITIONS = {
 
 
 PRIVATE_DEPENDENCY_DISPOSITIONS = {
+    "options": Disposition("P5", "Carry the resolved config and compatibility diagnostics."),
     "refresh_callback": Disposition("P5", "Move to WebDependencies; preserve UNSET versus None."),
     "keepalive_storage_path": Disposition(
         "P5", "Move to WebDependencies; preserve UNSET, None, and derived-path states."
@@ -1311,10 +1300,6 @@ GUARDRAIL_DISPOSITIONS = {
     "tests/_guardrails/test_docs_module_refs.py": Disposition(
         "P1/P4/P5/P6", "Keep architecture index references live as ownership modules change."
     ),
-}
-
-
-PLANNED_GUARDRAIL_DISPOSITIONS = {
     "tests/_guardrails/_v100_breaks.py": Disposition(
         "P5/P6/P7/P8", "Create the v1 runway registry in P5, extend it, then delete it at v1."
     ),
@@ -1325,6 +1310,9 @@ PLANNED_GUARDRAIL_DISPOSITIONS = {
         "P5/P6/P7/P8", "Create the staged release gate in P5 and drain it at the release cut."
     ),
 }
+
+
+PLANNED_GUARDRAIL_DISPOSITIONS: dict[str, Disposition] = {}
 
 
 def _qualified_functions(path: Path) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:

@@ -29,9 +29,11 @@ import pytest
 
 from notebooklm._client_contracts import (
     AndroidAssembly,
+    AndroidAssemblyConfig,
     BackendAssembly,
     FeatureNamespaces,
     WebAssembly,
+    WebAssemblyConfig,
 )
 from notebooklm._runtime.init import RuntimeCollaborators, SharedRuntime, SharedRuntimeConfig
 from notebooklm._web.transport.composed import ClientComposed
@@ -61,13 +63,18 @@ def _make_auth() -> AuthTokens:
     )
 
 
-def test_shared_runtime_config_contains_only_the_rpc_admission_cap() -> None:
-    assert [field.name for field in fields(SharedRuntimeConfig)] == ["max_concurrent_rpcs"]
+def test_shared_runtime_config_retains_resolved_runtime_options() -> None:
+    assert [field.name for field in fields(SharedRuntimeConfig)] == [
+        "max_concurrent_rpcs",
+        "operation_timeout",
+    ]
 
 
 def test_web_session_config_owns_every_web_transport_setting() -> None:
     assert {field.name for field in fields(WebSessionConfig)} == {
-        "timeout",
+        "read_timeout",
+        "write_timeout",
+        "pool_timeout",
         "connect_timeout",
         "limits",
         "refresh_retry_delay",
@@ -92,6 +99,7 @@ def test_runtime_bundles_follow_backend_ownership_boundary() -> None:
     assert tuple(field.name for field in fields(SharedRuntime)) == (
         "metrics",
         "call_supervisor",
+        "config",
     )
     assert tuple(field.name for field in fields(WebRuntime)) == (
         "reqid",
@@ -123,6 +131,27 @@ def test_backend_assembly_is_complete_frozen_discriminated_graph() -> None:
     )
     assert WebAssembly.__dataclass_params__.frozen
     assert AndroidAssembly.__dataclass_params__.frozen
+
+
+def test_backend_config_carriers_keep_runtime_options_on_the_shared_owner() -> None:
+    expected = ("backend", "retry", "transfers", "features", "shared_config")
+
+    assert tuple(field.name for field in fields(WebAssemblyConfig)) == expected
+    assert tuple(field.name for field in fields(AndroidAssemblyConfig)) == expected
+
+
+@pytest.mark.parametrize("backend", ["web", "android"])
+@pytest.mark.parametrize("value", [-1.0, float("inf"), float("nan")])
+def test_backend_dependencies_reject_invalid_refresh_retry_delay(
+    backend: str,
+    value: float,
+) -> None:
+    with pytest.raises(ValueError, match="refresh_retry_delay must be finite and >= 0"):
+        build_client_shell_for_tests(
+            auth=_make_auth(),
+            backend=backend,  # type: ignore[arg-type]
+            refresh_retry_delay=value,
+        )
 
 
 def test_compose_client_internals_returns_client_internals() -> None:

@@ -252,6 +252,7 @@ module = [
     "notebooklm.log",
     "notebooklm.migration",
     "notebooklm.outcomes",
+    "notebooklm.options",
     "notebooklm.paths",
     "notebooklm.research",
     "notebooklm.types",

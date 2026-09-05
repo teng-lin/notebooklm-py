@@ -29,6 +29,9 @@ INTERNAL_ARCHITECTURE_DOCS = {
 # Add names here only for explicit facade wrappers that must keep a public
 # monkeypatch seam while delegating implementation to a private _types module.
 ALLOWED_TYPES_WRAPPER_BODIES: set[str] = set()
+# Structural callback Protocols may live in the import-light ``_types`` leaf
+# without becoming value types on the long-standing ``notebooklm.types`` facade.
+PRIVATE_CALLBACK_PROTOCOLS = frozenset({"SaveCookiesToStorage"})
 PRIVATE_NOTEBOOKLM_IMPORT_RE = re.compile(
     r"\b(?:from\s+notebooklm(?:\._(?!_)\w+(?:\.\w+)*|\s+import\s+_(?!_)\w+)\b"
     r"|import\s+notebooklm\._(?!_)\w+(?:\.\w+)*\b)"
@@ -167,7 +170,11 @@ def _private_type_module_symbols() -> tuple[set[str], set[str]]:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in tree.body:
-            if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+            if (
+                isinstance(node, ast.ClassDef)
+                and not node.name.startswith("_")
+                and node.name not in PRIVATE_CALLBACK_PROTOCOLS
+            ):
                 public_type_names.add(node.name)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
                 "_"

@@ -257,6 +257,31 @@ DEPRECATION_SPECS: Mapping[str, DeprecationSpec] = MappingProxyType(
             removal="1.0",
             stacklevel=3,
         ),
+        "client_legacy_constructor_options": DeprecationSpec(
+            key="client_legacy_constructor_options",
+            message=(
+                "Non-default legacy NotebookLMClient tuning arguments are deprecated; "
+                "group them under config=ClientConfig(...). They will be removed in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.options.ClientConfig",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=3,
+        ),
+        "client_legacy_from_storage_options": DeprecationSpec(
+            key="client_legacy_from_storage_options",
+            message=(
+                "Non-default legacy NotebookLMClient.from_storage tuning arguments are "
+                "deprecated; group them under config=ClientConfig(...). They will be removed "
+                "in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.options.ClientConfig",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=3,
+        ),
     }
 )
 
@@ -329,7 +354,11 @@ def warn_deprecated(message: str, *, removal: str | None = None, stacklevel: int
     warnings.warn(text, DeprecationWarning, stacklevel=stacklevel)
 
 
-def warn_registered_deprecation(key: str) -> None:
-    """Emit one registered deprecation at its frozen public-boundary depth."""
+def warn_registered_deprecation(key: str, *, detail: str | None = None) -> None:
+    """Emit one registered deprecation with optional bounded non-sensitive detail."""
     spec = DEPRECATION_SPECS[key]
-    warn_deprecated(spec.message, removal=spec.removal, stacklevel=spec.stacklevel + 1)
+    message = spec.message
+    if detail:
+        bounded = " ".join(detail.split())[:300]
+        message = f"{message} {bounded}"
+    warn_deprecated(message, removal=spec.removal, stacklevel=spec.stacklevel + 1)

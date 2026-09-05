@@ -36,7 +36,9 @@ class Kernel(EpochFenced):
         # A composed client seeds this once from AuthTokens' bootstrap shadow;
         # after open, ``get_cookies`` resolves directly to the transport jar.
         self._cookies = self._bootstrap_cookies(auth) if auth is not None else None
-        self._timeout: float | None = None
+        self._read_timeout: float | None = None
+        self._write_timeout: float | None = None
+        self._pool_timeout: float | None = None
         self._connect_timeout: float | None = None
 
     def activate(self, epoch: int) -> None:
@@ -115,8 +117,10 @@ class Kernel(EpochFenced):
         self,
         *,
         auth: AuthTokens,
-        timeout: float,
-        connect_timeout: float,
+        read_timeout: float | None,
+        write_timeout: float | None,
+        pool_timeout: float | None,
+        connect_timeout: float | None,
         limits: ConnectionLimits,
         capture_cookie_snapshot: Callable[[httpx.Cookies], object],
         expected_epoch: int | None = None,
@@ -131,11 +135,13 @@ class Kernel(EpochFenced):
 
         http_timeout = httpx.Timeout(
             connect=connect_timeout,
-            read=timeout,
-            write=timeout,
-            pool=timeout,
+            read=read_timeout,
+            write=write_timeout,
+            pool=pool_timeout,
         )
-        self._timeout = timeout
+        self._read_timeout = read_timeout
+        self._write_timeout = write_timeout
+        self._pool_timeout = pool_timeout
         self._connect_timeout = connect_timeout
         # Direct Kernel callers seed here; composed clients already seeded at
         # construction so account identity can be resolved before open. This
@@ -199,8 +205,8 @@ class Kernel(EpochFenced):
             timeout_override = httpx.Timeout(
                 connect=self._connect_timeout,
                 read=read_timeout,
-                write=self._timeout,
-                pool=self._timeout,
+                write=self._write_timeout,
+                pool=self._pool_timeout,
             )
         headers_arg = dict(headers) if headers is not None else None
         stream_kwargs: dict[str, Any] = {}
@@ -228,7 +234,9 @@ class Kernel(EpochFenced):
             # the seed for a later reopen of this same client.
             self._cookies = client.cookies
             self._http_client = None
-            self._timeout = None
+            self._read_timeout = None
+            self._write_timeout = None
+            self._pool_timeout = None
             self._connect_timeout = None
             self.fence()
 

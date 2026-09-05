@@ -165,9 +165,7 @@ def compose_builtin_read_timeout(builtin_window: float, base_timeout: float | No
     return max(builtin_window, base_timeout)
 
 
-def resolve_chat_read_timeout(
-    chat_timeout: float | None, base_timeout: float | None
-) -> float | None:
+def resolve_chat_read_timeout(chat_timeout: Any, base_timeout: float | None) -> float | None:
     """Resolve ``chat_timeout`` against the client's base ``timeout=`` (#2205).
 
     An explicit value — including ``None``, which means "inherit ``timeout=``
@@ -176,7 +174,9 @@ def resolve_chat_read_timeout(
     the untouched default (:data:`AUTO_READ_TIMEOUT`) composes, and composing
     can only lengthen the window.
     """
-    if chat_timeout is AUTO_READ_TIMEOUT:
+    from ..options import AUTO
+
+    if chat_timeout is AUTO_READ_TIMEOUT or chat_timeout is AUTO:
         return compose_builtin_read_timeout(DEFAULT_CHAT_TIMEOUT, base_timeout)
     return chat_timeout
 
@@ -201,7 +201,9 @@ def resolve_import_research_read_timeout(
     the same batch-scaling and retry-budget semantics.
     """
     window: float | None
-    if override is AUTO_READ_TIMEOUT:
+    from ..options import AUTO
+
+    if override is AUTO_READ_TIMEOUT or override is AUTO:
         window = compose_builtin_read_timeout(
             min(
                 DEFAULT_IMPORT_RESEARCH_MAX_TIMEOUT,
@@ -230,7 +232,9 @@ def validate_read_timeout_kwarg(value: Any, *, name: str) -> float | None:
     ``None`` ("inherit ``timeout=``") and :data:`AUTO_READ_TIMEOUT` ("unset")
     pass through untouched; anything else must be a positive real number.
     """
-    if value is None or value is AUTO_READ_TIMEOUT:
+    from ..options import AUTO
+
+    if value is None or value is AUTO_READ_TIMEOUT or value is AUTO:
         return cast("float | None", value)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(
@@ -252,7 +256,9 @@ def assert_resolved_read_timeout(value: Any, *, name: str) -> None:
     away, as a ``TypeError`` inside the timeout *error formatter*. This turns
     that into an immediate, named failure at the boundary it crossed.
     """
-    if value is AUTO_READ_TIMEOUT:
+    from ..options import AUTO
+
+    if value is AUTO_READ_TIMEOUT or value is AUTO:
         raise TypeError(
             f"{name} received the unresolved AUTO_READ_TIMEOUT sentinel; it must "
             "be resolved (resolve_chat_read_timeout) before reaching this layer"

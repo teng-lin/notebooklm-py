@@ -2,14 +2,36 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from .research import ResearchSourceInput
 
 if TYPE_CHECKING:
     import httpx
+
+    from .._auth.storage import CookieSaveResult, CookieSnapshot
+
+
+class SaveCookiesToStorage(Protocol):
+    """Callable shape for the exact v0.x cookie-save callback invocation."""
+
+    def __call__(
+        self,
+        cookie_jar: httpx.Cookies,
+        path: Path,
+        /,
+        *,
+        original_snapshot: CookieSnapshot | None,
+        return_result: bool,
+    ) -> bool | CookieSaveResult: ...
+
+
+CookieSaver = SaveCookiesToStorage
+CookieRotator = Callable[..., Awaitable[None]]
 
 
 class UnknownTypeWarning(UserWarning):

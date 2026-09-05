@@ -189,6 +189,9 @@ class SourceUploadPipeline(EpochFenced):
         kernel: Kernel,
         auth: AuthMetadata,
         upload_timeout: httpx.Timeout | None = None,
+        start_timeout: httpx.Timeout | None = None,
+        finalize_timeout: httpx.Timeout | None = None,
+        drive_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         record_upload_queue_wait: QueueWaitRecorder | None = None,
         async_client_factory: AsyncClientFactory | None = None,
@@ -201,7 +204,11 @@ class SourceUploadPipeline(EpochFenced):
         self._supervisor = supervisor
         self._kernel = kernel
         self._auth = auth
-        self._upload_timeout = upload_timeout
+        self._start_timeout = start_timeout if start_timeout is not None else upload_timeout
+        self._finalize_timeout = (
+            finalize_timeout if finalize_timeout is not None else upload_timeout
+        )
+        self._drive_timeout = drive_timeout
         self._record_upload_queue_wait = record_upload_queue_wait
         self._async_client_factory = async_client_factory
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
@@ -243,9 +250,12 @@ class SourceUploadPipeline(EpochFenced):
         self._lister = lister
         self._poller = poller
 
-    def _resolve_upload_timeout(self, default: httpx.Timeout) -> httpx.Timeout:
-        """Return the configured upload timeout, or ``default`` if unset."""
-        return self._upload_timeout if self._upload_timeout is not None else default
+    @staticmethod
+    def _resolve_upload_timeout(
+        configured: httpx.Timeout | None, default: httpx.Timeout
+    ) -> httpx.Timeout:
+        """Return one phase's configured timeout, or its backend default."""
+        return configured if configured is not None else default
 
     def _client_factory(self) -> AsyncClientFactory:
         if self._async_client_factory is not None:
@@ -541,6 +551,7 @@ class SourceUploadPipeline(EpochFenced):
             download = await DriveFetcher(
                 cookies_provider=lambda: self.live_cookies(epoch),
                 authuser=self.authuser_value(),
+                timeout=self._drive_timeout,
             )(parse_drive_ref(document_id))
             try:
                 yield download.path, download.filename, download.content_type
@@ -980,7 +991,10 @@ class SourceUploadPipeline(EpochFenced):
         cookies = self._live_cookies(expected_epoch)
         self.assert_epoch(expected_epoch)
         client = self._client_factory()(
-            timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=60.0)),
+            timeout=self._resolve_upload_timeout(
+                self._start_timeout,
+                httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0),
+            ),
             cookies=cookies,
         )
         self._track_transport_client(client, expected_epoch)
@@ -1084,7 +1098,10 @@ class SourceUploadPipeline(EpochFenced):
                     cookies = self._live_cookies(expected_epoch)
                     self.assert_epoch(expected_epoch)
                     client = self._client_factory()(
-                        timeout=self._resolve_upload_timeout(httpx.Timeout(10.0, read=300.0)),
+                        timeout=self._resolve_upload_timeout(
+                            self._finalize_timeout,
+                            httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0),
+                        ),
                         cookies=cookies,
                     )
                     self._track_transport_client(client, expected_epoch)

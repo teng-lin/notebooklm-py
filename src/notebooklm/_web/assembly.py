@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
+
+import httpx
 
 from .._client_contracts import (
     FeatureNamespaces,
@@ -41,6 +43,18 @@ from .transport.seams import ClientSeams, resolve_client_seams
 
 if TYPE_CHECKING:
     from .._client_compat import CompatibilityDependencies, CompatibilitySpec
+    from ..options import TimeoutOptions
+
+
+def _http_timeout(options: TimeoutOptions | None) -> httpx.Timeout | None:
+    if options is None:
+        return None
+    return httpx.Timeout(
+        connect=options.connect,
+        read=options.read,
+        write=options.write,
+        pool=options.pool,
+    )
 
 
 def assemble_web_backend(
@@ -57,19 +71,28 @@ def assemble_web_backend(
         sleep=deps.sleep,
         is_auth_error=deps.is_auth_error,
     )
+    backend = config.backend
+    transport = backend.transport
+    session = backend.session
+    retry = config.retry
+    transfers = config.transfers
+    features = config.features
+    hooks = backend.hooks
     web_config, _ = validate_web_config(
-        timeout=config.timeout,
-        connect_timeout=config.connect_timeout,
+        read_timeout=transport.read_timeout,
+        write_timeout=transport.write_timeout,
+        pool_timeout=transport.pool_timeout,
+        connect_timeout=deps.connect_timeout,
         refresh_retry_delay=deps.refresh_retry_delay,
-        rate_limit_max_retries=config.rate_limit_max_retries,
-        server_error_max_retries=config.server_error_max_retries,
-        keepalive=config.keepalive,
-        keepalive_min_interval=config.keepalive_min_interval,
+        rate_limit_max_retries=retry.rate_limit_max_retries,
+        server_error_max_retries=retry.server_error_max_retries,
+        keepalive=session.keepalive_interval,
+        keepalive_min_interval=session.keepalive_min_interval,
         keepalive_storage_path=credentials.keepalive_storage_path,
         auth_storage_path=credentials.auth.storage_path,
-        limits=config.limits,
-        max_concurrent_uploads=config.max_concurrent_uploads,
-        max_concurrent_rpcs=config.max_concurrent_rpcs,
+        limits=transport.limits,
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
+        max_concurrent_rpcs=config.shared_config.max_concurrent_rpcs,
         decode_response=seams.decode_response,
         sleep=seams.sleep,
         is_auth_error=seams.is_auth_error,
@@ -82,10 +105,12 @@ def assemble_web_backend(
         refresh_callback=deps.refresh_callback,
         use_default_refresh_callback=deps.use_default_refresh_callback,
         shared=shared,
-        upload_timeout=config.upload_timeout,
-        max_concurrent_uploads=config.max_concurrent_uploads,
-        cookie_saver=deps.cookie_saver,
-        cookie_rotator=deps.cookie_rotator,
+        start_timeout=_http_timeout(transfers.start_timeout),
+        finalize_timeout=_http_timeout(transfers.finalize_timeout),
+        drive_timeout=_http_timeout(transfers.drive_timeout),
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
+        cookie_saver=hooks.cookie_saver if hooks is not None else None,
+        cookie_rotator=hooks.cookie_rotator if hooks is not None else None,
         seams=seams,
         composed=deps.composed,
     )
@@ -93,8 +118,7 @@ def assemble_web_backend(
         web.executor,
         supervisor=shared.call_supervisor,
         uploader=web.source_uploader,
-        upload_timeout=config.upload_timeout,
-        max_concurrent_uploads=config.max_concurrent_uploads,
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
     )
     notebooks = WebNotebooksAPI(
         web.executor,
@@ -117,8 +141,8 @@ def assemble_web_backend(
         reqid=web.reqid,
         loop_guard=shared.call_supervisor,
         supervisor=shared.call_supervisor,
-        chat_timeout=resolve_chat_read_timeout(config.chat_timeout, config.timeout),
-        chat_response_max_bytes=config.chat_response_max_bytes,
+        chat_timeout=resolve_chat_read_timeout(features.chat_timeout, transport.read_timeout),
+        chat_response_max_bytes=features.chat_response_max_bytes,
         notebooks=notebooks,
         created_chat_sessions=notebooks,
     )
@@ -138,8 +162,8 @@ def assemble_web_backend(
     research = WebResearchAPI(
         web.executor,
         supervisor=shared.call_supervisor,
-        base_timeout=config.timeout,
-        import_research_timeout=config.import_research_timeout,
+        base_timeout=transport.read_timeout,
+        import_research_timeout=cast(Any, features.import_research_timeout),
     )
     settings = WebSettingsAPI(web.executor, supervisor=shared.call_supervisor)
     sharing = WebSharingAPI(web.executor, supervisor=shared.call_supervisor)
@@ -200,7 +224,9 @@ def build_compatibility_runtime(
         is_auth_error=deps.seam_overrides.classify_auth_error,
     )
     web_config, _ = validate_web_config(
-        timeout=spec.timeout,
+        read_timeout=spec.read_timeout,
+        write_timeout=spec.write_timeout,
+        pool_timeout=spec.pool_timeout,
         connect_timeout=DEFAULT_CONNECT_TIMEOUT,
         refresh_retry_delay=spec.refresh_retry_delay,
         rate_limit_max_retries=spec.rate_limit_max_retries,
@@ -224,7 +250,9 @@ def build_compatibility_runtime(
         refresh_callback=deps.refresh_callback,
         use_default_refresh_callback=deps.use_default_refresh_callback,
         shared=shared,
-        upload_timeout=None,
+        start_timeout=None,
+        finalize_timeout=None,
+        drive_timeout=None,
         max_concurrent_uploads=DEFAULT_MAX_CONCURRENT_UPLOADS,
         cookie_saver=None,
         cookie_rotator=None,

@@ -492,6 +492,21 @@ effect.** Remove it from your environment / CI config. See
 
 ### Timeouts
 
+For Python construction, prefer the owner-grouped `ClientConfig` facade in
+`notebooklm.options`. `WebTransportOptions` owns independent read/write/pool
+timeouts (connect remains an internal fixed default), `AndroidBackendConfig`
+owns the aggregate logical-RPC timeout, and `TransferOptions` owns resumable
+start/finalize plus Drive HTTP phases. Legacy `timeout=` still maps to all three
+Web components or the Android RPC budget; legacy `upload_timeout=` maps to Web
+start/finalize and to all three Android transfer phases. These flat tuning
+keywords remain functional in v0.x but non-default uses warn for their v1
+removal.
+
+`TransferOptions.drive_timeout` affects only Drive metadata/media/staging HTTP
+legs. It never changes registration or readiness RPC budgets. A whole-field
+`None` preserves backend phase defaults; `TimeoutOptions(None, None, None,
+None)` explicitly disables local HTTP component timers.
+
 Most batchexecute RPCs issued by the client (whether through `NotebookLMClient`
 or any of the CLI commands) use a **30-second** HTTP request timeout by default,
 with a tighter **10-second** connection-establishment timeout. The shorter

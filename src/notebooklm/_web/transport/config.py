@@ -21,7 +21,9 @@ if TYPE_CHECKING:
 class WebSessionConfig:
     """Validated values read only by the Web runtime."""
 
-    timeout: float
+    read_timeout: float | None
+    write_timeout: float | None
+    pool_timeout: float | None
     connect_timeout: float
     limits: ConnectionLimits
     refresh_retry_delay: float
@@ -37,7 +39,9 @@ class WebSessionConfig:
 
 def validate_web_config(
     *,
-    timeout: float,
+    read_timeout: float | None,
+    write_timeout: float | None,
+    pool_timeout: float | None,
     connect_timeout: float,
     refresh_retry_delay: float,
     rate_limit_max_retries: int,
@@ -79,7 +83,9 @@ def validate_web_config(
     )
     return (
         WebSessionConfig(
-            timeout=timeout,
+            read_timeout=read_timeout,
+            write_timeout=write_timeout,
+            pool_timeout=pool_timeout,
             connect_timeout=connect_timeout,
             limits=resolved_limits,
             refresh_retry_delay=refresh_retry_delay,
