@@ -5,9 +5,11 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
-from .._idempotency import call_unconfirmed_on_transport_loss
+from .._idempotency import OperationJournal, attach_operation_journal
 from .._sharing import SharingAPI
 from .._types.enums import ShareAccess, SharePermission, ShareViewLevel
+from ..exceptions import NotebookLMError
+from ..outcomes import CommitState, RecoveryAction
 from ..rpc import RPCMethod
 from ..types import ShareStatus
 from .contracts import RpcCaller
@@ -74,21 +76,48 @@ class WebSharingAPI(SharingAPI):
         what: str,
     ) -> ShareStatus:
         """Apply one share mutation and include its status readback in the outcome boundary."""
-
-        async def mutate_and_readback() -> ShareStatus:
+        journal = OperationJournal("sharing.update")
+        invocation_id = journal.invocation_id()
+        mutation_entry = journal.new_entry(
+            method=RPCMethod.SHARE_NOTEBOOK.value,
+            phase="mutation",
+            invocation_id=invocation_id,
+        )
+        readback_entry = journal.new_entry(
+            method=RPCMethod.GET_SHARE_STATUS.value,
+            phase="readback",
+            invocation_id=invocation_id,
+        )
+        try:
             await self._rpc.rpc_call(
                 RPCMethod.SHARE_NOTEBOOK,
                 params,
                 source_path=f"/notebook/{notebook_id}",
                 allow_null=True,
+                journal_entry=mutation_entry,
             )
-            return await self.get_status(notebook_id)
-
-        return await call_unconfirmed_on_transport_loss(
-            mutate_and_readback,
-            method=RPCMethod.SHARE_NOTEBOOK,
-            what=what,
-        )
+        except NotebookLMError as exc:
+            attach_operation_journal(exc, journal, primary=mutation_entry)
+            raise
+        mutation_entry.record(CommitState.CONFIRMED, "decoded sharing mutation")
+        try:
+            result = await self._rpc.rpc_call(
+                RPCMethod.GET_SHARE_STATUS,
+                [notebook_id, [2]],
+                source_path=f"/notebook/{notebook_id}",
+                journal_entry=readback_entry,
+            )
+            status = decode_share_status(ShareStatus, result, notebook_id)
+            readback_entry.record(CommitState.CONFIRMED, "decoded sharing readback")
+            return status
+        except NotebookLMError as exc:
+            attach_operation_journal(
+                exc,
+                journal,
+                primary=mutation_entry,
+                recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+            )
+            raise
 
     async def set_public(
         self,

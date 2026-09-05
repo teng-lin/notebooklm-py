@@ -56,12 +56,14 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from ...outcomes import CommitState
 from .errors import raise_mapped_post_error
 from .middleware.context import (
     RPC_CONTEXT_AUTH_SNAPSHOT,
     RPC_CONTEXT_BUILD_REQUEST,
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES,
+    RPC_CONTEXT_JOURNAL,
     RPC_CONTEXT_LOG_LABEL,
     RPC_CONTEXT_MAX_RESPONSE_BYTES,
     RPC_CONTEXT_READ_TIMEOUT,
@@ -80,6 +82,7 @@ from .request_types import AuthSnapshot, BuildRequest
 
 if TYPE_CHECKING:
     from ..._deadline import RuntimeDeadline
+    from ..._idempotency import JournalEntry
     from ..._runtime.auth_refresh_retry import RefreshBudget
     from ..._runtime.call_supervisor import CallLease, CallSupervisor
     from .kernel import Kernel
@@ -236,8 +239,17 @@ class RuntimeTransport:
         if RPC_CONTEXT_MAX_RESPONSE_BYTES in context:
             post_kwargs["max_response_bytes"] = context[RPC_CONTEXT_MAX_RESPONSE_BYTES]
         start = time.perf_counter()
+        bound = context.get(RPC_CONTEXT_JOURNAL)
+        entries: tuple[JournalEntry, ...]
+        if bound is None:
+            entries = ()
+        elif isinstance(bound, tuple):
+            entries = bound
+        else:
+            entries = (bound,)
         try:
             expected_epoch = context.get(RPC_CONTEXT_RESOURCE_EPOCH)
+            attempts = tuple(entry.mark_dispatched() for entry in entries)
             response = await self._kernel.post(
                 request.url,
                 headers=request.headers,
@@ -247,6 +259,13 @@ class RuntimeTransport:
                 **post_kwargs,
             )
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+                for entry, attempt in zip(entries, attempts, strict=True):
+                    entry.record(
+                        CommitState.NOT_SENT,
+                        "verified transport failure before write",
+                        attempt=attempt,
+                    )
             raise_mapped_post_error(
                 log_label=log_label,
                 exc=exc,
@@ -269,6 +288,8 @@ class RuntimeTransport:
         disable_read_timeout_retries: bool = False,
         expected_epoch: int | None = None,
         epoch_observer: Callable[[int], None] | None = None,
+        journal_entry: JournalEntry | None = None,
+        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> httpx.Response:
         """Build one web request, then supervise the old outer-chain boundary."""
         return await self._perform_authed_post_admitted(
@@ -283,6 +304,8 @@ class RuntimeTransport:
             disable_read_timeout_retries=disable_read_timeout_retries,
             expected_epoch=expected_epoch,
             epoch_observer=epoch_observer,
+            journal_entry=journal_entry,
+            journal_entries=journal_entries,
         )
 
     async def _perform_authed_post_admitted(
@@ -299,6 +322,8 @@ class RuntimeTransport:
         disable_read_timeout_retries: bool = False,
         expected_epoch: int | None = None,
         epoch_observer: Callable[[int], None] | None = None,
+        journal_entry: JournalEntry | None = None,
+        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> httpx.Response:
         """Authed POST entry point — routes through the middleware chain.
 
@@ -347,12 +372,18 @@ class RuntimeTransport:
         # fixture); it raises only when the currently-running loop differs
         # from the one captured at ``open()``-time.
         self._bound_loop_check()
+        if journal_entry is not None and journal_entries is not None:
+            raise ValueError("journal_entry and journal_entries are mutually exclusive")
         context: dict[str, Any] = {
             RPC_CONTEXT_BUILD_REQUEST: build_request,
             RPC_CONTEXT_LOG_LABEL: log_label,
             RPC_CONTEXT_DISABLE_INTERNAL_RETRIES: disable_internal_retries,
             RPC_CONTEXT_RPC_METHOD: rpc_method,
         }
+        if journal_entry is not None:
+            context[RPC_CONTEXT_JOURNAL] = journal_entry
+        elif journal_entries is not None:
+            context[RPC_CONTEXT_JOURNAL] = journal_entries
         if read_timeout is not None:
             context[RPC_CONTEXT_READ_TIMEOUT] = read_timeout
         if max_response_bytes is not None:

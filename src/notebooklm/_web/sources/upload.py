@@ -17,7 +17,13 @@ import httpx
 from ..._auth.account import authuser_query, format_authuser_value
 from ..._callbacks import maybe_await_callback
 from ..._idempotency import (
+    JournalEntry,
+    OperationJournal,
+    attach_journal_entry,
+    attach_reconciliation_report,
     call_unconfirmed_on_transport_loss,
+    mark_commit_state,
+    reconciliation_report,
 )
 from ..._idempotency import mark_unconfirmed as _unconfirmed
 from ..._loop_bound import EpochFenced
@@ -29,10 +35,12 @@ from ..._source.polling import SourcePoller
 from ...exceptions import (
     AuthError,
     NetworkError,
+    NotebookLMError,
     RateLimitError,
     ServerError,
     ValidationError,
 )
+from ...outcomes import CommitState
 from ...rpc import RPCError, RPCMethod, get_upload_url
 from ...types import Source, SourceAddError
 from ..contracts import (
@@ -135,6 +143,8 @@ class RpcCallback(Protocol):
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
+        journal_entry: JournalEntry | None = None,
+        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> Any: ...
 
 
@@ -759,8 +769,10 @@ class SourceUploadPipeline(EpochFenced):
         list_sources = list_sources or self.list_sources
         logger = logger or module_logger
         get_source_limit = get_source_limit or self._get_source_limit
+        journal = OperationJournal("sources.add_file")
+        journal_entry = journal.new_entry(method=RPCMethod.ADD_SOURCE_FILE.value)
 
-        async def _inspect_candidates(exc: BaseException) -> None:
+        async def _inspect_candidates(exc: NotebookLMError) -> None:
             try:
                 sources = await list_sources(notebook_id)
             except Exception:
@@ -771,8 +783,15 @@ class SourceUploadPipeline(EpochFenced):
                 )
                 return
             matching_ids = [source.id for source in sources if source.title == filename]
-            exc.reconciliation_candidates = tuple(matching_ids[:20])  # type: ignore[attr-defined]
-            exc.unresolved_inputs = (filename[:200],)  # type: ignore[attr-defined]
+            attach_reconciliation_report(
+                exc,
+                reconciliation_report(
+                    matching_ids,
+                    [filename],
+                    reason="file registration response did not correlate a source id",
+                ),
+                operation="sources.add_file",
+            )
 
         async def _create() -> str:
             try:
@@ -782,6 +801,7 @@ class SourceUploadPipeline(EpochFenced):
                     source_path=f"/notebook/{notebook_id}",
                     allow_null=False,
                     disable_internal_retries=True,
+                    journal_entry=journal_entry,
                 )
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
@@ -804,13 +824,19 @@ class SourceUploadPipeline(EpochFenced):
                 )
                 state = getattr(exc, "commit_state", None)
                 if state is not None:
-                    error.commit_state = state  # type: ignore[attr-defined]
+                    mark_commit_state(error, state, operation="sources.add_file")
                 if getattr(exc, "unconfirmed", False):
                     _unconfirmed(error, operation="sources.add_file")
+                attach_journal_entry(error, journal_entry)
                 raise error from exc
 
             source_id = _extract_register_file_source_id(result, filename)
             if source_id:
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded file registration",
+                    known_resource_ids=(source_id,),
+                )
                 return source_id
 
             error = _unconfirmed(
@@ -825,7 +851,7 @@ class SourceUploadPipeline(EpochFenced):
                 operation="sources.add_file",
             )
             await _inspect_candidates(error)
-            raise error
+            raise attach_journal_entry(error, journal_entry)
 
         try:
             return await call_unconfirmed_on_transport_loss(
@@ -833,8 +859,9 @@ class SourceUploadPipeline(EpochFenced):
                 method=RPCMethod.ADD_SOURCE_FILE,
                 what="the file-source registration",
                 operation="sources.add_file",
+                journal_entry=journal_entry,
             )
-        except Exception as exc:
+        except NotebookLMError as exc:
             if getattr(exc, "unconfirmed", False) and not hasattr(exc, "reconciliation_candidates"):
                 await _inspect_candidates(exc)
             raise

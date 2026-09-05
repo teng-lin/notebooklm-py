@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins
 from typing import Any, Literal, cast
 
-from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
+from .._idempotency import JournalEntry, call_unconfirmed_on_transport_loss, mark_unconfirmed
 from ..exceptions import NotebookNotFoundError, RPCError
 from ..types import Collection, Label
 from .codecs.organization import decode_collections, decode_labels
@@ -104,6 +104,7 @@ async def create_manual(
     emoji: str,
     notebook_id: str | None,
     expected_epoch: int,
+    journal_entry: JournalEntry | None = None,
 ) -> Any:
     exact = _exact_proto()
     properties = exact.LabelProperties(name=name)
@@ -126,10 +127,12 @@ async def create_manual(
             replay_safe=False,
             response_type=exact.CreateLabelResponse,
             expected_epoch=expected_epoch,
+            journal_entry=journal_entry,
         ),
         method=CREATE_LABEL_METHOD,
         what="CreateLabel",
         chain=None,
+        journal_entry=journal_entry,
     )
 
 

@@ -95,6 +95,10 @@ class FakeSession:
             raise RuntimeError("retired fake epoch")
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.pop("journal_entry", None)
+        journal_entries = kwargs.pop("journal_entries", None)
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         result = self.handlers[method]
         if isinstance(result, deque):

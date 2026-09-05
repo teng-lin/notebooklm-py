@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import mark_unconfirmed
+from .._idempotency import JournalEntry, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
 from .._runtime.call_supervisor import OperationLease
@@ -22,6 +22,7 @@ from ..exceptions import (
     ServerError,
     ValidationError,
 )
+from ..outcomes import CommitState
 from ..types import NextStepSuggestion, Notebook, NotebookDescription, PromptSuggestion
 from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .session import AndroidSession
@@ -223,7 +224,9 @@ class AndroidNotebooksAPI(NotebooksAPI):
             )
         ]
 
-    async def _send_create(self, title: str) -> Notebook:
+    async def _send_create(
+        self, title: str, *, journal_entry: JournalEntry | None = None
+    ) -> Notebook:
         # evidence: docs/android/proto-evidence-ledger.md#notebook-method-ledger
         notebook_proto = _notebook_proto()
         read_proto = _read_proto()
@@ -232,11 +235,18 @@ class AndroidNotebooksAPI(NotebooksAPI):
             notebook_proto.CreateProjectRequest(name=title),
             replay_safe=False,
             response_type=read_proto.Project,
+            journal_entry=journal_entry,
         )
         try:
             notebook = _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)
         except DecodingError as error:
             raise mark_unconfirmed(error) from None
+        if journal_entry is not None:
+            journal_entry.record(
+                CommitState.CONFIRMED,
+                "decoded notebook create",
+                known_resource_ids=((notebook.id,) if notebook.id else ()),
+            )
         self._remember_created_chat_session(notebook)
         return notebook
 

@@ -789,6 +789,8 @@ async def test_base_ask_stops_at_authoritative_cumulative_final_without_concaten
     )
     assert request.request_context.client_type == 2
     stop_after = kwargs.pop("stop_after")
+    journal_entry = kwargs.pop("journal_entry")
+    assert journal_entry.identity.operation == "chat"
     assert callable(stop_after)
     assert stop_after(_frame("done", final=True)) is True
     assert stop_after(_frame("partial", final=False)) is False

@@ -5,6 +5,7 @@ import logging
 import reprlib
 from typing import Any
 
+from .._idempotency import JournalEntry, attach_journal_entry
 from .._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
@@ -23,6 +24,7 @@ from ..exceptions import (
     ServerError,
     ValidationError,
 )
+from ..outcomes import CommitState
 from ..rpc import RPCMethod, safe_index
 from ..types import (
     AccountLimits,
@@ -589,7 +591,9 @@ class WebNotebooksAPI(NotebooksAPI):
             method_id=RPCMethod.LIST_NOTEBOOKS.value,
         )
 
-    async def _send_create(self, title: str) -> Notebook:
+    async def _send_create(
+        self, title: str, *, journal_entry: JournalEntry | None = None
+    ) -> Notebook:
         """Send CREATE_NOTEBOOK and decode its web response."""
         params = build_create_notebook_params(title)
         try:
@@ -597,11 +601,18 @@ class WebNotebooksAPI(NotebooksAPI):
                 RPCMethod.CREATE_NOTEBOOK,
                 params,
                 disable_internal_retries=True,
+                journal_entry=journal_entry,
             )
         except RPCError as exc:
-            await self._raise_quota_error_if_detected(exc)
+            await self._raise_quota_error_if_detected(exc, journal_entry=journal_entry)
             raise
         notebook = decode_notebook(Notebook, result)
+        if journal_entry is not None:
+            journal_entry.record(
+                CommitState.CONFIRMED,
+                "decoded notebook create",
+                known_resource_ids=((notebook.id,) if notebook.id else ()),
+            )
         if notebook.id and notebook.chat_sessions:
             self._created_chat_session_ids[notebook.id] = notebook.chat_sessions[0].id
         logger.debug("Created notebook: %s", notebook.id)
@@ -630,7 +641,12 @@ class WebNotebooksAPI(NotebooksAPI):
             )
         return notebook
 
-    async def _raise_quota_error_if_detected(self, error: RPCError) -> None:
+    async def _raise_quota_error_if_detected(
+        self,
+        error: RPCError,
+        *,
+        journal_entry: JournalEntry | None = None,
+    ) -> None:
         """Convert CREATE_NOTEBOOK invalid-argument failures into quota errors."""
         if (
             error.method_id != RPCMethod.CREATE_NOTEBOOK.value
@@ -675,11 +691,14 @@ class WebNotebooksAPI(NotebooksAPI):
         if owned_count < max(notebook_limit - 1, 0):
             return
 
-        raise NotebookLimitError(
+        limit_error = NotebookLimitError(
             owned_count,
             limit=notebook_limit,
             original_error=error,
-        ) from error
+        )
+        if journal_entry is not None:
+            attach_journal_entry(limit_error, journal_entry)
+        raise limit_error from error
 
     async def _get_account_limits(self) -> AccountLimits:
         """Fetch NotebookLM account limits from user settings."""

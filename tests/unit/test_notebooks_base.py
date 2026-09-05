@@ -48,7 +48,7 @@ class _FakeNotebooksAPI(NotebooksAPI):
         self.sent_titles: list[str] = []
         self.sent_copies: list[tuple[str, str]] = []
 
-    async def _send_create(self, title: str) -> Notebook:
+    async def _send_create(self, title: str, *, journal_entry=None) -> Notebook:
         self.sent_titles.append(title)
         result = self._create_results.pop(0)
         if isinstance(result, Exception):
@@ -147,7 +147,7 @@ class _ConcurrentNotebooksAPI(_FakeNotebooksAPI):
     async def list(self) -> list[Notebook]:
         return await self._service.list()
 
-    async def _send_create(self, title: str) -> Notebook:
+    async def _send_create(self, title: str, *, journal_entry=None) -> Notebook:
         assert title == "Shared title"
         self.sent_titles.append(title)
         return await self._service.create(self._caller)
@@ -185,7 +185,7 @@ class _StaleNotebooksAPI(_FakeNotebooksAPI):
     async def list(self) -> list[Notebook]:
         return await self._service.list()
 
-    async def _send_create(self, title: str) -> Notebook:
+    async def _send_create(self, title: str, *, journal_entry=None) -> Notebook:
         assert title == "Stale title"
         self.sent_titles.append(title)
         return await self._service.create()
@@ -204,7 +204,7 @@ class _DrainingWebWorkflowAPI(_FakeNotebooksAPI):
         async with self._supervisor.call_scope("web.list", "ListNotebooks", None):
             return []
 
-    async def _send_create(self, title: str) -> Notebook:
+    async def _send_create(self, title: str, *, journal_entry=None) -> Notebook:
         self.between_calls.set()
         await self.resume_create.wait()
         async with self._supervisor.call_scope("web.create", "CreateNotebook", None):

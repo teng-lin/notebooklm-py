@@ -16,7 +16,7 @@ from .._chat import (
     _TurnRoleSnapshot,
 )
 from .._conversation_cache import ConversationCache
-from .._idempotency import mark_unconfirmed
+from .._idempotency import OperationJournal, attach_journal_entry, mark_unconfirmed
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.call_supervisor import OperationLease
 from .._runtime.config import (
@@ -372,6 +372,9 @@ class AndroidChatAPI(ChatAPI):
 
         final_response = None
         next_steps: list[NextStepSuggestion] = []
+        journal_entry = OperationJournal("chat").new_entry(
+            method=GENERATE_FREE_FORM_STREAMED_METHOD
+        )
         try:
             async for response in self._transport.stream(
                 GENERATE_FREE_FORM_STREAMED_METHOD,
@@ -382,6 +385,7 @@ class AndroidChatAPI(ChatAPI):
                 telemetry_method="chat.ask",
                 max_response_bytes=self._chat_response_max_bytes,
                 stop_after=_is_final_chat_response,
+                journal_entry=journal_entry,
             ):
                 if response.HasField("next_step_suggestions"):
                     decoded_next_steps = [
@@ -403,16 +407,18 @@ class AndroidChatAPI(ChatAPI):
             # conversation-history guidance.
             if getattr(exc, "unconfirmed", False):
                 mark_unconfirmed(exc, operation="chat")
+            attach_journal_entry(exc, journal_entry)
             raise
 
         if final_response is None:
-            raise mark_unconfirmed(
+            error = mark_unconfirmed(
                 ChatResponseParseError(
                     "Android GenerateFreeFormStreamed ended before response field 5 "
                     "declared a final snapshot."
                 ),
                 operation="chat",
             )
+            raise attach_journal_entry(error, journal_entry)
 
         answer = final_response.answer
         try:
@@ -420,14 +426,16 @@ class AndroidChatAPI(ChatAPI):
             references = decode_references(answer.response_doc, answer_document)
         except NotebookLMError as exc:
             mark_unconfirmed(exc, operation="chat")
+            attach_journal_entry(exc, journal_entry)
             raise
         except Exception as exc:
-            raise mark_unconfirmed(
+            error = mark_unconfirmed(
                 ChatResponseParseError(
                     f"Failed to decode Android chat response: {type(exc).__name__}"
                 ),
                 operation="chat",
-            ) from exc
+            )
+            raise attach_journal_entry(error, journal_entry) from exc
         from google.protobuf.json_format import MessageToJson
 
         return _PostedAsk(

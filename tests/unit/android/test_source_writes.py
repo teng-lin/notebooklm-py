@@ -59,6 +59,7 @@ from notebooklm.exceptions import (
     SourceTimeoutError,
     ValidationError,
 )
+from notebooklm.outcomes import CommitState
 from notebooklm.types import Source, SourceStatus
 
 NOTEBOOK_ID = "00000000-0000-4000-8000-000000000100"
@@ -101,6 +102,10 @@ class FakeTransport:
         yield _Lease()
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.pop("journal_entry", None)
+        journal_entries = kwargs.pop("journal_entries", None)
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
         self.timeline.append(method)
         self.calls.append((method, request, kwargs))
         if method == GET_PROJECT_METHOD and method not in self.handlers:
@@ -1743,7 +1748,7 @@ class TestPlayBooksAndroid:
         ]
 
     @pytest.mark.asyncio
-    async def test_internal_refusal_refreshes_after_tentative_readback(self) -> None:
+    async def test_internal_status_does_not_replay_after_tentative_readback(self) -> None:
         transport = _successful_transport()
         phenotype = FakePhenotype()
         transport.handlers[LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD] = _ei_response(
@@ -1764,17 +1769,18 @@ class TestPlayBooksAndroid:
             ]
         )
 
-        source = await _api(transport, phenotype=phenotype).add_play_book(
-            NOTEBOOK_ID,
-            "QhsZEAAAQBAJ",
-        )
+        with pytest.raises(SourceAddError) as raised:
+            await _api(transport, phenotype=phenotype).add_play_book(
+                NOTEBOOK_ID,
+                "QhsZEAAAQBAJ",
+            )
 
-        assert source.id == SOURCE_A
-        assert phenotype.calls == [("fake-bearer", False), ("fake-bearer", True)]
+        assert raised.value.commit_state is CommitState.UNKNOWN
+        assert phenotype.calls == [("fake-bearer", False)]
         methods = [method for method, _, _ in transport.calls]
         assert methods.count(ADD_TENTATIVE_SOURCES_METHOD) == 1
-        assert methods.count(ADD_SOURCES_METHOD) == 2
-        assert methods.count(GET_PROJECT_METHOD) == 2
+        assert methods.count(ADD_SOURCES_METHOD) == 1
+        assert methods.count(GET_PROJECT_METHOD) == 1
 
     @pytest.mark.asyncio
     async def test_internal_refusal_does_not_retry_after_commit_proof(self) -> None:

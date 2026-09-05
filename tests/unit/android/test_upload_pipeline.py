@@ -1243,7 +1243,7 @@ async def test_a_timeout_before_registration_reports_no_source_id(tmp_path: Path
     error = excinfo.value
     assert "failed during register: timed out" in str(error)
     assert error.stage == "register"
-    assert not hasattr(error, "source_id")
+    assert error.source_id is None
 
 
 @pytest.mark.asyncio

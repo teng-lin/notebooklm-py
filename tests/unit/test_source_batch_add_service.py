@@ -20,6 +20,7 @@ from notebooklm.exceptions import (
     ServerError,
     SourceAddError,
 )
+from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import SourceStatus
 from notebooklm.types import Source
@@ -48,7 +49,10 @@ class RecordingRpc:
         self.calls: list[dict[str, Any]] = []
 
     async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
+        journal_entries = kwargs.pop("journal_entries", ())
         self.calls.append({"method": method, "params": params, **kwargs})
+        for entry in journal_entries:
+            entry.mark_dispatched()
         if self.error is not None:
             raise self.error
         return self.result
@@ -377,7 +381,7 @@ async def test_transport_failure_preserves_type_is_unconfirmed_and_never_replaye
 
 
 @pytest.mark.asyncio
-async def test_auth_failure_preserves_typed_reauthentication_contract() -> None:
+async def test_post_dispatch_auth_failure_preserves_unknown_batch_contract() -> None:
     auth_error = AuthError("csrf token expired")
     rpc = RecordingRpc(error=auth_error)
     list_sources = AsyncMock()
@@ -393,7 +397,12 @@ async def test_auth_failure_preserves_typed_reauthentication_contract() -> None:
         )
 
     assert raised.value is auth_error
-    assert getattr(raised.value, "unconfirmed", False) is False
+    assert raised.value.commit_state is CommitState.UNKNOWN
+    assert raised.value.unconfirmed is True
+    assert [item.commit_state for item in raised.value.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
     assert len(rpc.calls) == 1
     list_sources.assert_not_awaited()
 

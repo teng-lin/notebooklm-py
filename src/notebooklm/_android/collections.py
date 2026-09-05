@@ -8,7 +8,12 @@ from contextlib import asynccontextmanager
 from typing import Literal, NoReturn
 
 from .._collections import CollectionsAPI, ListNotebooks
-from .._idempotency import mark_unconfirmed
+from .._idempotency import (
+    OperationJournal,
+    attach_journal_entry,
+    attach_operation_journal,
+    reconciliation_report,
+)
 from .._runtime.call_supervisor import OperationLease
 from ..exceptions import (
     CollectionError,
@@ -17,6 +22,7 @@ from ..exceptions import (
     NetworkError,
     RPCError,
 )
+from ..outcomes import CommitState, RecoveryAction
 from ..types import Collection
 from .codecs.organization import decode_created_collections
 from .epoch import bind_workflow_epoch, reset_workflow_epoch, workflow_epoch_for
@@ -85,18 +91,27 @@ class AndroidCollectionsAPI(CollectionsAPI):
             existing_ids = {
                 collection.id for collection in await self._list(expected_epoch=lease.epoch)
             }
-            response = await create_manual(
-                self._transport,
-                kind="collection",
-                name=name,
-                emoji="",
-                notebook_id=None,
-                expected_epoch=lease.epoch,
-            )
+            journal = OperationJournal("collections.create")
+            entry = journal.new_entry(method=CREATE_LABEL_METHOD)
+            try:
+                response = await create_manual(
+                    self._transport,
+                    kind="collection",
+                    name=name,
+                    emoji="",
+                    notebook_id=None,
+                    expected_epoch=lease.epoch,
+                    journal_entry=entry,
+                )
+            except RPCError as error:
+                attach_journal_entry(error, entry)
+                raise
             try:
                 created = decode_created_collections(response, method_id=CREATE_LABEL_METHOD)
             except DecodingError as error:
-                raise mark_unconfirmed(error) from None
+                attach_journal_entry(error, entry)
+                raise error from None
+            entry.record(CommitState.CONFIRMED, "decoded collection-set response")
             candidates = [collection for collection in created if collection.id not in existing_ids]
             matching = [
                 collection
@@ -109,11 +124,17 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 f"Android collection create for {name!r} returned no caller-correlated id. "
                 "Inspect the collection list before creating again."
             )
-            collection_error.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
-                collection.id for collection in matching[:20]
+            entry.reconciliation = reconciliation_report(
+                [collection.id for collection in matching],
+                [name],
+                reason="create response does not correlate a collection id",
             )
-            collection_error.unresolved_inputs = (name[:200],)  # type: ignore[attr-defined]
-            raise mark_unconfirmed(collection_error)
+            raise attach_operation_journal(
+                collection_error,
+                journal,
+                primary=entry,
+                recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+            )
 
     async def _send_update(
         self,

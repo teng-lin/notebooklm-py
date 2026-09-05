@@ -57,7 +57,12 @@ class FakeRpc:
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
         raise_on_null_status: bool = False,
+        journal_entry: Any = None,
+        journal_entries: Any = None,
     ) -> Any:
+        assert journal_entries is None
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         self.calls.append(
             SimpleNamespace(
                 method=method,

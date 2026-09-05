@@ -10,12 +10,17 @@ polling/status state lives here.
 from __future__ import annotations
 
 import builtins
+import hashlib
 import json as json_module
 import logging
 from typing import TYPE_CHECKING, Any
 
 from ..._env import get_default_language
-from ..._idempotency import call_unconfirmed_on_transport_loss
+from ..._idempotency import (
+    attach_journal_entry,
+    call_unconfirmed_on_transport_loss,
+    claim_generation_entry,
+)
 from ..._types.artifacts import _status_from_code
 from ..._types.enums import (
     AudioFormat,
@@ -35,8 +40,10 @@ from ..._types.research import MindMapResult
 from ...exceptions import (
     ArtifactFeatureUnavailableError,
     DecodingError,
+    NotebookLMError,
     ValidationError,
 )
+from ...outcomes import CommitState
 from ...rpc import (
     RPCMethod,
     safe_index,
@@ -564,6 +571,13 @@ class ArtifactGenerationService:
         if isinstance(descriptor, list) and descriptor[2:3]:
             (artifact_type,) = descriptor[2:3]
         logger.debug("Generating artifact type=%s in notebook %s", artifact_type, notebook_id)
+        fingerprint = hashlib.sha256(
+            repr((id(self._rpc), notebook_id, params)).encode("utf-8", errors="replace")
+        ).hexdigest()
+        journal_entry = claim_generation_entry(
+            method=RPCMethod.CREATE_ARTIFACT.value,
+            semantic_key=fingerprint,
+        )
         # CREATE_ARTIFACT is NON_IDEMPOTENT_NO_RETRY (``_web.policy``).
         # ``operation_variant=None`` marks this call site as the no-variant
         # default (a future-proofing marker; the registry resolves the same).
@@ -586,16 +600,32 @@ class ArtifactGenerationService:
                 # explicit INVALID_ARGUMENT that used to be reported as
                 # "Audio generation is unavailable" (#2188).
                 raise_on_null_status=True,
+                journal_entry=journal_entry,
             ),
             method=RPCMethod.CREATE_ARTIFACT,
             what="CreateArtifact",
+            journal_entry=journal_entry,
         )
         if result is None and null_result_artifact_type is not None:
-            raise ArtifactFeatureUnavailableError(
+            journal_entry.record(CommitState.REJECTED, "decoded null refusal")
+            error = ArtifactFeatureUnavailableError(
                 null_result_artifact_type,
                 method_id=RPCMethod.CREATE_ARTIFACT.value,
             )
-        return self._parse_generation_result(result, method_id=RPCMethod.CREATE_ARTIFACT.value)
+            raise attach_journal_entry(error, journal_entry)
+        try:
+            status = self._parse_generation_result(
+                result, method_id=RPCMethod.CREATE_ARTIFACT.value
+            )
+        except NotebookLMError as exc:
+            attach_journal_entry(exc, journal_entry)
+            raise
+        journal_entry.record(
+            CommitState.CONFIRMED,
+            "decoded artifact generation",
+            known_resource_ids=((status.task_id,) if status.task_id else ()),
+        )
+        return status
 
     def _parse_generation_result(
         self,
