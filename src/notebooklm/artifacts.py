@@ -15,6 +15,7 @@ import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from ._idempotency import ReplayGrant, replay_allowed
 from .exceptions import RateLimitError
 from .types import GenerationState, GenerationStatus
 
@@ -77,11 +78,11 @@ async def with_rate_limit_retry(
     """Run an artifact-generation callable with rate-limit retry.
 
     The callable is always invoked at least once. A retry is scheduled only
-    when an attempt raises :class:`~notebooklm.exceptions.RateLimitError` — the
-    ADR-0019 "async kickoff" contract where a synchronous rate-limit refusal
-    propagates as an exception (v0.8.0, #1342). A *returned* ``GenerationStatus``
-    — including one whose ``is_rate_limited`` property is true — is no longer a
-    retry signal and is returned immediately.
+    when an attempt raises :class:`~notebooklm.exceptions.RateLimitError` with
+    positive ``rejected`` or ``not_sent`` commit evidence. A bare rate-limit
+    exception, transport-status throttle, or unknown commit outcome is never
+    replayed. A *returned* ``GenerationStatus`` — including one whose
+    ``is_rate_limited`` property is true — is returned immediately.
 
     Successful statuses, non-rate-limit failures, returned rate-limited statuses,
     and ``None`` return immediately. Non-``RateLimitError`` exceptions propagate
@@ -131,21 +132,18 @@ async def with_rate_limit_retry(
         try:
             result = await generate_fn()
         except RateLimitError as exc:
-            if attempt >= max_retries:
+            if not replay_allowed(
+                exc,
+                grant=ReplayGrant.REFUSAL_RETRY_AUTHORIZED,
+                disabled=False,
+                remaining=float(max_retries - attempt),
+            ):
                 raise
-            # This branch is reached only because a ``RateLimitError`` was
-            # caught, so the synthesized status must read as rate-limited for
-            # ``on_retry`` consumers (``event.result.is_rate_limited``). Fall
-            # back to the ``USER_DISPLAYABLE_ERROR`` sentinel when the exception
-            # carries no ``rpc_code`` rather than dropping ``error_code`` to
-            # ``None`` (which would force brittle message-substring matching).
             event_result = GenerationStatus(
                 task_id="",
                 status=GenerationState.FAILED,
                 error=str(exc),
-                error_code=(
-                    str(exc.rpc_code) if exc.rpc_code is not None else "USER_DISPLAYABLE_ERROR"
-                ),
+                error_code=str(exc.rpc_code) if exc.rpc_code is not None else None,
             )
         else:
             # Any returned result (success, non-rate-limit failure, a returned

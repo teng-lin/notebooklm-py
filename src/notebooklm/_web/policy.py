@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
 
+from .._idempotency import ReplayGrant, replay_allowed
 from ..exceptions import IdempotencyVariantError
 from ..rpc.types import RPCMethod
 
@@ -17,7 +18,7 @@ logger = logging.getLogger("notebooklm._idempotency")
 class IdempotencyPolicy(str, Enum):
     """Classification axis for mutating-RPC retry safety.
 
-    Five policies — no more, no fewer. The axis was sized to cover all
+    Four policies — no more, no fewer. The axis was sized to cover all
     realistic NotebookLM RPC shapes without inventing per-method special
     cases. See ADR-0005 (``docs/adr/0005-idempotency-taxonomy.md``) for
     the derivation and the per-policy rationale.
@@ -32,10 +33,9 @@ class IdempotencyPolicy(str, Enum):
       semantics; WARN logged).
 
     * **NOT safe to retry inside the transport**:
-      :attr:`PROBE_THEN_CREATE` (callers own the probe loop; transport
-      retry would race the probe), :attr:`NON_IDEMPOTENT_NO_RETRY`
-      (e.g. ``add_text`` — no probe key, must surface the first
-      failure).
+      :attr:`NON_IDEMPOTENT_NO_RETRY` (creates and other mutations with no
+      verified client-token deduplication; candidate inspection may report
+      possible results but can never authorize replay).
 
     The ``str`` mixin keeps the enum JSON-serializable and consistent
     with :class:`~notebooklm.rpc.RPCMethod` (which also uses ``str,
@@ -43,7 +43,6 @@ class IdempotencyPolicy(str, Enum):
     """
 
     UNCLASSIFIED = "unclassified"
-    PROBE_THEN_CREATE = "probe_then_create"
     IDEMPOTENT_SET_OP = "idempotent_set_op"
     AT_LEAST_ONCE_ACCEPTED = "at_least_once_accepted"
     NON_IDEMPOTENT_NO_RETRY = "non_idempotent_no_retry"
@@ -52,15 +51,12 @@ class IdempotencyPolicy(str, Enum):
 # Policies that force ``effective_disable_internal_retries`` to True even
 # when the caller passed False. These RPCs cannot tolerate the transport's
 # inner retry loop because either (a) the caller owns a probe state
-# machine that races a blind retry (PROBE_THEN_CREATE), or (b) the write
-# has no server-side dedupe key and a retry would create a duplicate
-# (NON_IDEMPOTENT_NO_RETRY).
-_POLICIES_THAT_FORCE_DISABLE: frozenset[IdempotencyPolicy] = frozenset(
-    {
-        IdempotencyPolicy.PROBE_THEN_CREATE,
-        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-    }
-)
+# has no verified server-side dedupe key and a retry could duplicate a write.
+def replay_grant_for(policy: IdempotencyPolicy) -> ReplayGrant:
+    """Map the Web registry classification onto the shared replay decision."""
+    if policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY:
+        return ReplayGrant.NO_REPLAY
+    return ReplayGrant.REPLAY_SAFE
 
 
 @dataclass(frozen=True)
@@ -265,8 +261,7 @@ def resolve_effective_disable_internal_retries(
     1. ``caller_disable_internal_retries=True`` → returns True
        regardless of policy. Explicit caller intent dominates registry
        classification.
-    2. Policy is :attr:`IdempotencyPolicy.PROBE_THEN_CREATE` or
-       :attr:`IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY` → returns True.
+    2. Policy is :attr:`IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY` → returns True.
        These RPCs cannot tolerate the inner retry loop.
     3. Policy is :attr:`IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED` →
        emits a rate-limited WARN and returns ``caller_disable_internal_retries``
@@ -286,16 +281,15 @@ def resolve_effective_disable_internal_retries(
     entry = registry.get_entry(method, operation_variant=operation_variant)
     policy = entry.policy
 
-    if policy in _POLICIES_THAT_FORCE_DISABLE:
-        return True
-
     if policy is IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED:
         _maybe_log_at_least_once(method, operation_variant)
-        return caller_disable_internal_retries
 
-    # UNCLASSIFIED / IDEMPOTENT_SET_OP: silent, caller value passes
-    # through unchanged.
-    return caller_disable_internal_retries
+    return not replay_allowed(
+        None,
+        grant=replay_grant_for(policy),
+        disabled=False,
+        remaining=None,
+    )
 
 
 def register_default_policies(registry: IdempotencyRegistry) -> None:
@@ -543,11 +537,8 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # (``docs/adr/0005-idempotency-taxonomy.md``); the short version follows.
     #
     # CREATE_NOTEBOOK
-    #   Mutating create with an executable wrapper in ``NotebooksAPI.create``:
-    #   the caller captures a title/baseline probe before issuing the RPC and
-    #   retries only after probing for a committed notebook. Classification:
-    #   ``PROBE_THEN_CREATE`` so raw ``rpc_call(CREATE_NOTEBOOK, ...)`` disables
-    #   blind transport retries too.
+    #   No client token or authoritative negative commit evidence exists.
+    #   Candidate inspection after loss is reporting only and never permits replay.
     #
     # DELETE_NOTEBOOK / DELETE_SOURCE / DELETE_ARTIFACT
     #   Server-side delete is idempotent: replaying the request after a 5xx /
@@ -574,11 +565,10 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     #   transport loss as unconfirmed.
     registry.register(
         RPCMethod.CREATE_NOTEBOOK,
-        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=(
-            "notebook create has an executable title/baseline probe wrapper in "
-            "NotebooksAPI.create; raw rpc_call paths must also suppress blind "
-            "transport retries to avoid duplicate notebooks on commit-lost errors"
+            "notebook create has no client-token dedupe slot; same-title list rows "
+            "cannot prove ownership, so candidate inspection never authorizes replay"
         ),
     )
     registry.register(
@@ -623,36 +613,23 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     # content). Each variant has a different retry-safety profile because the
     # server-side dedupe key differs:
     #
-    # * ``"url"`` — probe by ``source.url == url`` on a notebook list, filtered
-    #   against a baseline of source ids captured before the create: a URL is
-    #   NOT unique within a notebook, so an unfiltered match could hand back a
-    #   pre-existing source and report a create that never landed (#2204). The
-    #   probe is a single GET_NOTEBOOK; the wrapper retries the create once if
-    #   the probe finds nothing. PROBE_THEN_CREATE.
-    # * ``"drive"`` — probe by ``source.drive_document_id == file_id``, the
-    #   Drive ``documentId`` echoed back in the source metadata, filtered
-    #   against the same kind of pre-create baseline (a ``documentId`` is not
-    #   unique within a notebook either; #2113). Drive rows carry no URL at
-    #   all, so the ``/d/<file_id>``-in-``source.url`` probe this replaced
-    #   could never match. Same wrapper as ``"url"``. PROBE_THEN_CREATE.
+    # * ``"url"`` / ``"drive"`` — URLs and Drive document ids are not unique
+    #   within a notebook, so a list match cannot prove which caller created it.
+    #   A post-loss inspection may report candidates but never permits replay.
     # * ``"text"`` — no reliable dedupe key (titles non-unique, body not
     #   exposed in the source list). NON_IDEMPOTENT_NO_RETRY: force-disable the
     #   inner transport retries and let the first failure surface so the caller
     #   can decide. See the ``add_text`` rationale in
-    #   ``tests/integration/concurrency/test_idempotency_create.py:17-19``.
+    #   ``tests/integration/test_side_effects_idempotency.py``.
     #
     # ADD_SOURCE_FILE is single-shape: it registers a file source by name.
     # Filenames are NOT identity-bearing (two uploads of ``report.pdf`` are
-    # legitimately two distinct sources), so the per-API wrapper captures a
-    # baseline of source IDs *before* the create attempt and filters probe
-    # matches to "new since the create started" sources only. Ambiguous
-    # matches (>1 new source with the same filename) raise rather than guess.
-    # PROBE_THEN_CREATE.
+    # legitimately two distinct sources), so list results are candidates only.
     #
     # These entries force-disable blind transport retries via
     # ``resolve_effective_disable_internal_retries``. The per-API call sites in
-    # ``_web/sources/add.py`` / ``_web/sources/upload.py`` own the executable probe loop for
-    # the URL, Drive, and file variants.
+    # ``_web/sources/add.py`` / ``_web/sources/upload.py`` send once and surface
+    # uncertain outcomes for manual inspection.
 
     _RAW_ADD_SOURCE_NOT_IDEMPOTENT_NOTE = (
         "raw ADD_SOURCE without an operation_variant has no proven dedupe/probe "
@@ -667,20 +644,20 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     )
     registry.register(
         RPCMethod.ADD_SOURCE,
-        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         variant="url",
         notes=(
-            "probe by source.url == url on notebook list (web + YouTube), "
-            "filtered against a pre-create source-id baseline"
+            "URL is not a dedupe key; list matches cannot prove caller provenance, "
+            "so blind retry is disabled and inspection is reporting only"
         ),
     )
     registry.register(
         RPCMethod.ADD_SOURCE,
-        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         variant="drive",
         notes=(
-            "probe by source.drive_document_id == file_id on notebook list, "
-            "filtered against a pre-create source-id baseline"
+            "Drive document id is not a dedupe key; list matches cannot prove caller "
+            "provenance, so blind retry is disabled and inspection is reporting only"
         ),
     )
     registry.register(
@@ -691,11 +668,10 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     )
     registry.register(
         RPCMethod.ADD_SOURCE_FILE,
-        IdempotencyPolicy.PROBE_THEN_CREATE,
+        IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
         notes=(
-            "baseline-diff probe by source.title == filename — filenames are not "
-            "identity-bearing, so the wrapper captures source-id baseline before "
-            "the create and filters probe matches to new sources only"
+            "filenames are not identity-bearing and list matches cannot prove caller "
+            "provenance, so blind retry is disabled and inspection is reporting only"
         ),
     )
 
@@ -965,5 +941,6 @@ __all__ = [
     "IdempotencyPolicy",
     "IdempotencyRegistry",
     "register_default_policies",
+    "replay_grant_for",
     "resolve_effective_disable_internal_retries",
 ]

@@ -65,9 +65,9 @@ other file under ``src/notebooklm/`` is scanned.
 :data:`REQUIRED_NARROW_RERAISE` is the minimum: the three ``RPCError``
 *subclasses* a broad clause would otherwise swallow. The sibling tuple also
 re-raises ``NetworkError``, which does **not** subclass ``RPCError`` (it can
-never reach the broad clause) but must propagate for ``idempotent_create``'s
-probe contract — the gate tolerates it (and any other extras) in the narrow
-clause without requiring it. ``test_required_narrow_set_matches_exception_taxonomy``
+never reach the broad clause) but must propagate so one-send wrappers preserve
+transport ambiguity — the gate tolerates it (and any other extras) in the
+narrow clause without requiring it. ``test_required_narrow_set_matches_exception_taxonomy``
 pins that derivation against the live exception tree.
 
 The :data:`ALLOWLIST` burndown idiom matches the other guardrails: it is
@@ -322,8 +322,8 @@ def test_required_narrow_set_matches_exception_taxonomy() -> None:
     Pins the derivation against the live exception tree: every required name
     must subclass ``RPCError`` (otherwise the broad clause could never swallow
     it and requiring it would be noise), and ``NetworkError`` — present in the
-    sibling re-raise tuple for ``idempotent_create``'s probe contract — must
-    NOT subclass ``RPCError``, which is exactly why the gate tolerates it
+    sibling re-raise tuple for the one-send ambiguity contract — must NOT
+    subclass ``RPCError``, which is exactly why the gate tolerates it
     without requiring it. If the taxonomy ever moves (e.g. ``NetworkError``
     re-parented under ``RPCError``), this fails and the required set must be
     re-derived.

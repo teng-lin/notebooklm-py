@@ -1,8 +1,8 @@
 """Research import helpers shared by CLI commands.
 
-The retry-with-verification logic that used to live here was moved to
-``ResearchAPI.import_sources_with_verification`` (issue #315) so Python API
-consumers get the same deep-research fix. This module now keeps the
+The one-send import and read-only inspection logic lives on
+``ResearchAPI.import_sources_with_verification`` so Python API consumers get
+the same safety contract. This module keeps the
 CLI-specific selection/display helpers and a thin :func:`import_with_retry`
 shim that delegates to the library method.
 """
@@ -46,13 +46,13 @@ async def import_with_retry(
 ) -> list[dict[str, str]]:
     """CLI delegate to :meth:`ResearchAPI.import_sources_with_verification`.
 
-    The retry-with-verification logic lives at the library layer as of #315
-    so Python API users get the same deep-research fix the CLI does. This
+    The one-send import and bounded read-only inspection logic lives at the
+    library layer so Python API users get the same safety contract as the CLI. This
     wrapper exists to preserve the CLI signature that the existing
     ``import_research_sources`` helper and unit-test mocks expect.
 
     ``json_output`` and ``output_console`` are accepted for back-compat but
-    no longer affect behavior — per-retry status messages are emitted via
+    no longer affect behavior — inspection diagnostics are emitted via
     ``logger.warning`` on the ``notebooklm._research`` logger. Configure
     that logger to surface them to the user as needed.
     """

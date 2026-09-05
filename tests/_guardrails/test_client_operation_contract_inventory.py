@@ -367,36 +367,9 @@ def _call_rows(
 
 RETRY_INVENTORY = (
     SymbolInventory(
-        "src/notebooklm/_notebooks.py",
-        "NotebooksAPI._create_with_probe",
-        Disposition("P1/P2", "Remove re-send and report uncorrelated candidates as unknown."),
-    ),
-    SymbolInventory(
-        "src/notebooklm/_web/sources/add.py",
-        "SourceAddService.add_url",
-        Disposition("P1/P2", "Remove probe-authorized re-send; journal create and inspection."),
-    ),
-    SymbolInventory(
-        "src/notebooklm/_web/sources/add.py",
-        "SourceAddService.add_drive",
-        Disposition("P1/P2", "Remove probe-authorized re-send; journal create and inspection."),
-    ),
-    SymbolInventory(
-        "src/notebooklm/_web/sources/upload.py",
-        "SourceUploadPipeline._register_file_source_result",
-        Disposition(
-            "P1/P2", "Remove probe-authorized re-send; journal registration and inspection."
-        ),
-    ),
-    SymbolInventory(
         "src/notebooklm/_research.py",
         "BaseResearchAPI._import_sources_with_verification",
         Disposition("P1/P2", "Demote re-send to bounded candidate inspection and journal results."),
-    ),
-    SymbolInventory(
-        "src/notebooklm/_web/research.py",
-        "WebResearchAPI._import_sources_with_verification",
-        Disposition("P1", "Delete duplicate retry loop and inherit the neutral implementation."),
     ),
     SymbolInventory(
         "src/notebooklm/artifacts.py",
@@ -456,20 +429,6 @@ RETRY_INVENTORY = (
 
 
 RETRY_CALL_INVENTORY = (
-    *_call_rows(
-        "idempotent_create",
-        (
-            ("src/notebooklm/_notebooks.py", "NotebooksAPI._create_with_probe", 1),
-            ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_drive", 1),
-            ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_url", 1),
-            (
-                "src/notebooklm/_web/sources/upload.py",
-                "SourceUploadPipeline._register_file_source_result",
-                1,
-            ),
-        ),
-        Disposition("P1/P2", "Remove probe-authorized re-send and retain inspection evidence."),
-    ),
     *_call_rows(
         "with_rate_limit_retry",
         (("src/notebooklm/_app/generate_retry.py", "generate_with_retry", 1),),
@@ -552,6 +511,7 @@ UNCERTAINTY_WRAPPER_CALL_INVENTORY = _call_rows(
             "ArtifactGenerationService.revise_slide",
             1,
         ),
+        ("src/notebooklm/_notebooks.py", "NotebooksAPI.create", 1),
         ("src/notebooklm/_web/artifacts.py", "WebArtifactsAPI._send_export", 1),
         ("src/notebooklm/_web/collections.py", "WebCollectionsAPI.create", 1),
         ("src/notebooklm/_web/labels.py", "WebLabelsAPI.create", 1),
@@ -564,6 +524,14 @@ UNCERTAINTY_WRAPPER_CALL_INVENTORY = _call_rows(
         ("src/notebooklm/_web/notes.py", "NoteService._create_note_admitted", 1),
         ("src/notebooklm/_web/research.py", "WebResearchAPI.start", 1),
         ("src/notebooklm/_web/sharing.py", "WebSharingAPI._share_and_readback", 1),
+        ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_drive", 1),
+        ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_text", 1),
+        ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_url", 1),
+        (
+            "src/notebooklm/_web/sources/upload.py",
+            "SourceUploadPipeline._register_file_source_result",
+            1,
+        ),
     ),
     Disposition(
         "P1/P2", "Preserve positive refusal evidence and force unknown for composite readback."
@@ -576,20 +544,12 @@ UNRESOLVED_COMMIT_CALL_INVENTORY = _call_rows(
     (
         ("src/notebooklm/_android/artifact_creation.py", "create_artifact_once", 1),
         ("src/notebooklm/_android/sources.py", "_unresolved_add_error", 1),
-        ("src/notebooklm/_notebooks.py", "NotebooksAPI._create_with_probe._probe", 1),
         ("src/notebooklm/_notebooks.py", "NotebooksAPI.copy", 1),
         ("src/notebooklm/_web/artifacts.py", "WebArtifactsAPI._send_copy", 1),
-        ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_drive._probe", 1),
-        ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_url._probe", 3),
         ("src/notebooklm/_web/sources/batch.py", "SourceBatchAddService.add_urls", 2),
         ("src/notebooklm/_web/sources/batch.py", "_unresolved_batch_error", 1),
         ("src/notebooklm/_web/sources/play_books.py", "_unconfirmed_add", 1),
         ("src/notebooklm/_web/sources/transfers.py", "_unconfirmed", 1),
-        (
-            "src/notebooklm/_web/sources/upload.py",
-            "SourceUploadPipeline._register_file_source_result._probe",
-            1,
-        ),
     ),
     Disposition(
         "P1/P2", "Preserve verified rejection/not-sent evidence and synthesize unknown only."
@@ -648,6 +608,11 @@ COMPOSITE_WRAPPER_INVENTORY = {
         "WebSharingAPI._share_and_readback",
         "WebSharingAPI._share_and_readback.mutate_and_readback",
     ): Disposition("P1/P2", "Force unknown in P1, then journal mutation and readback separately."),
+    (
+        "src/notebooklm/_web/sources/upload.py",
+        "SourceUploadPipeline._register_file_source_result",
+        "SourceUploadPipeline._register_file_source_result._create",
+    ): Disposition("P1/P2", "Force unknown around registration plus quota diagnostics in P1."),
 }
 
 

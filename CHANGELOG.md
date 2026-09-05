@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Public mutation-outcome evidence.** `notebooklm.outcomes.CommitState` lets callers
+  distinguish a request proven not sent, a decoded rejection, an unknown
+  commit outcome, and a caller-correlated confirmation. Unknown-outcome errors
+  retain the compatibility `unconfirmed` marker and may expose bounded
+  reconciliation candidates for manual inspection.
 - **Pre-merge live CI qualification.** The repository owner can dispatch RPC health or nightly
   E2E from the trusted `main` workflow against the immutable head SHA of an open, same-repository
   PR targeting `main`. Forks, non-owner dispatches, and direct feature-ref dispatches remain
@@ -19,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Retry-unsafe writes no longer replay after transmission.** Notebook and
+  source creates, file registration, research imports, collection creates, and
+  chat POSTs now require explicit commit evidence before any outer replay.
+  Web and Android collection adapters no longer attribute uncorrelated list
+  rows as successful creates, and staged Drive cleanup deletes only rows proven
+  to belong to the current operation.
 - **Nightly E2E and RPC health template validation.** The disposable-copy contract now matches
   the immutable public template title and its cross-backend copied artifact inventory, allowing
   provisioning to proceed in the scheduled Web and Android lanes. Legacy quiz/flashcard rows that
@@ -46,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Create and research-import recovery is diagnostic, not success-producing.**
+  The former probe-and-retry helper and `PROBE_THEN_CREATE` policy are retired.
+  Ambiguous mutations are sent once and surfaced unchanged; bounded read-only
+  inspection can attach candidates but cannot claim that a row belongs to the
+  failed call.
 - **Artifact download authentication failures now raise `AuthError`.** Public
   artifact download methods surface HTTP 401/403 responses from guarded asset
   transfers as `AuthError` instead of wrapping them in `ArtifactDownloadError`.

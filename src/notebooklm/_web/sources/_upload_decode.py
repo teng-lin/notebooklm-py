@@ -474,6 +474,7 @@ def _raise_from_upload_http_status(exc: httpx.HTTPStatusError, filename: str) ->
         exc.response,
         filename=f"uploading {filename!r}",
         chain=True,
+        mutation=True,
         cause=exc,
     )
     if status == 403:

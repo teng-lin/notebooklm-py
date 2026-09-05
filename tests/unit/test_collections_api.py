@@ -133,7 +133,7 @@ async def test_get_raises_not_found_with_method_id() -> None:
 # -- create (re-list diff) ---------------------------------------------------
 
 
-async def test_create_returns_the_new_id_via_relist() -> None:
+async def test_create_reports_new_row_as_candidate_without_attribution() -> None:
     api, rpc, _ = _api(
         sequences={
             RPCMethod.LIST_LABELS: [
@@ -143,9 +143,10 @@ async def test_create_returns_the_new_id_via_relist() -> None:
         },
         responses={RPCMethod.CREATE_LABEL: None},
     )
-    new = await api.create("New")
-    assert new.id == "c2"
-    assert new.name == "New"
+    with pytest.raises(CollectionError) as raised:
+        await api.create("New")
+    assert raised.value.reconciliation_candidates == ("c2",)  # type: ignore[attr-defined]
+    assert getattr(raised.value, "unconfirmed", False) is True
     assert rpc.methods() == [RPCMethod.LIST_LABELS, RPCMethod.CREATE_LABEL, RPCMethod.LIST_LABELS]
     create_call = next(c for c in rpc.calls if c.method == RPCMethod.CREATE_LABEL)
     assert create_call.source_path == "/"
@@ -181,10 +182,6 @@ async def test_create_multiple_new_raises_collection_error() -> None:
         await api.create("X")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="E5-class collection attribution: a foreign singleton list diff has no provenance",
-)
 async def test_collection_create_does_not_attribute_delayed_foreign_web_singleton() -> None:
     """The caller's row is delayed while an external writer becomes visible first."""
     foreign = _collection_tuple("External", "foreign-collection")

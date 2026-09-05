@@ -5102,15 +5102,15 @@
         <text data-detail="context" x="629" y="319" class="t-muted" font-size="9" text-anchor="middle">_web/sources/</text>
         </g>
 
-        <g id="node-addsvc" data-node-id="addsvc" data-node-label="SourceAddService" tabindex="0" role="button" aria-label="Focus SourceAddService, probe then create, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="probe then create" data-node-context="Architecture component">
-          <title>SourceAddService · probe then create · Architecture component</title>
+        <g id="node-addsvc" data-node-id="addsvc" data-node-label="SourceAddService" tabindex="0" role="button" aria-label="Focus SourceAddService, one send · inspect if unknown, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="one send · inspect if unknown" data-node-context="Architecture component">
+          <title>SourceAddService · one send · inspect if unknown · Architecture component</title>
           <rect x="806" y="260" width="165" height="90" rx="6" class="c-mask"/>
           <rect x="806" y="260" width="165" height="90" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(812 266) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="888.5" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">SourceAddService</text>
-        <text data-detail="context" x="888.5" y="319" class="t-muted" font-size="9" text-anchor="middle">probe then create</text>
+        <text data-detail="context" x="888.5" y="319" class="t-muted" font-size="9" text-anchor="middle">one send · inspect if unknown</text>
         </g>
 
         <g id="node-poller" data-node-id="poller" data-node-label="SourcePoller" tabindex="0" role="button" aria-label="Focus SourcePoller, shared readiness loop, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="shared readiness loop" data-node-context="Architecture component">
@@ -5447,7 +5447,7 @@
           <h3>Duplicate safety</h3>
         </div>
         <ul>
-          <li>&bull; SourceAddService wraps URL and Drive mutations in idempotent_create</li>
+          <li>&bull; SourceAddService sends each mutation once; callers inspect only after an unknown outcome</li>
           <li>&bull; Text adds stay non-idempotent unless the caller dedupes externally</li>
         </ul>
       </div>

@@ -122,6 +122,15 @@ _UNCONFIRMED_WRITE_NOTE = (
 )
 
 
+def _unconfirmed_write_note(exc: BaseException | None) -> str:
+    if getattr(exc, "operation", None) == "chat":
+        return (
+            "The chat turn may or may not have been recorded. Inspect conversation history "
+            "before trying again; replaying the question can record a duplicate turn."
+        )
+    return _UNCONFIRMED_WRITE_NOTE
+
+
 def _retained_source_note(source_id: str, stage: str) -> str:
     """Recovery line naming the source row a partial upload left behind.
 
@@ -316,11 +325,12 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
                 # Same reason: a stale ``retry_after`` is an instruction.
                 extra = {k: v for k, v in extra.items() if k != "retry_after"}
             if json_out:
-                extra = {**(extra or {}), "unconfirmed": True, "hint": _UNCONFIRMED_WRITE_NOTE}
+                note = _unconfirmed_write_note(exc)
+                extra = {**(extra or {}), "unconfirmed": True, "hint": note}
             else:
                 # Text mode prints ``hint`` after ``message``; JSON ignores it,
                 # which is why the JSON branch above carries it in ``extra``.
-                hint = _UNCONFIRMED_WRITE_NOTE
+                hint = _unconfirmed_write_note(exc)
         _output_error(message, code, json_out, exit_code, extra=extra, hint=hint)
 
     try:

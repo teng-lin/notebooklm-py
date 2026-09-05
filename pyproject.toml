@@ -251,6 +251,7 @@ module = [
     "notebooklm.io",
     "notebooklm.log",
     "notebooklm.migration",
+    "notebooklm.outcomes",
     "notebooklm.paths",
     "notebooklm.research",
     "notebooklm.types",

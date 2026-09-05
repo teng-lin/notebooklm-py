@@ -1,6 +1,6 @@
 {
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 50
+    "_DOCUMENTED_PUBLIC_IMPORTS": 52
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
@@ -73,7 +73,7 @@
   "tests/_guardrails/test_backend_abstract_contracts.py": {
     "BASE_ABSTRACT_CONTRACTS": 173,
     "_ANDROID_IMPLEMENTATIONS": 33,
-    "_ANDROID_INHERITED_WORKFLOWS": 103
+    "_ANDROID_INHERITED_WORKFLOWS": 102
   },
   "tests/_guardrails/test_backend_boundaries.py": {
     "LAZY_WEB_IMPORT_ALLOWLIST": 34
@@ -90,6 +90,19 @@
   "tests/_guardrails/test_client_composition.py": {
     "FEATURE_API_NAMES": 26,
     "WEB_ONLY_NAMESPACE_IMPORTS": 26
+  },
+  "tests/_guardrails/test_client_operation_contract_inventory.py": {
+    "CLEANUP_INVENTORY": 32,
+    "CONSTRUCTION_SIGNATURES": 197,
+    "GUARDRAIL_DISPOSITIONS": 105,
+    "PRESENTATION_INVENTORY": 168,
+    "PRIVATE_DEPENDENCY_DISPOSITIONS": 30,
+    "PUBLIC_OPTION_DISPOSITIONS": 63,
+    "RETRY_CALL_INVENTORY": 24,
+    "RETRY_INVENTORY": 36,
+    "WORKFLOW_ADDITIONAL_ENTRYPOINT_INVENTORY": 36,
+    "WORKFLOW_INVENTORY": 92,
+    "WORKFLOW_SCOPE_CALL_INVENTORY": 114
   },
   "tests/_guardrails/test_error_contract_catch_ordering.py": {
     "EXCLUDED_FROM_REQUIRED": 28

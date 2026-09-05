@@ -180,12 +180,12 @@ def _correlation_name() -> str:
 
 
 def _known_registration_error(subject: str, *, kind: str = "URL") -> SourceAddError:
-    return SourceAddError(
+    error = SourceAddError(
         subject,
-        message=(
-            f"Failed to register {kind} source {subject!r}: the backend omitted its registration."
-        ),
+        message=f"Failed to register {kind} source {subject!r}: the backend omitted its registration.",
     )
+    cast(Any, error).stage = "register"
+    return error
 
 
 def _unresolved_add_error(
@@ -868,7 +868,8 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 raise
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except AuthError:
+            except AuthError as exc:
+                cast(Any, exc).stage = "register"
                 raise
             except (RateLimitError, ServerError, NetworkError, DecodingError) as exc:
                 raise _unresolved_add_error(

@@ -7,6 +7,7 @@ import threading
 from enum import IntEnum
 from typing import Any
 
+from ..._idempotency import mark_commit_state
 from ..._logging import _truncate_response_preview
 from ..._types.enums import GrpcStatusCode
 
@@ -21,6 +22,7 @@ from ...exceptions import (
     ServerError,
     UnknownRPCMethodError,
 )
+from ...outcomes import CommitState
 from ...rpc.types import RPCMethod
 from .safe_index import safe_index
 
@@ -813,10 +815,13 @@ def extract_rpc_result(chunks: list[Any], rpc_id: str) -> Any:
                 if result_data is None and len(item) > 5:
                     error_info = safe_index(item, 5, method_id=rpc_id, source=source)
                     if error_info is not None and _contains_user_displayable_error(error_info):
-                        raise RateLimitError(
-                            _user_displayable_error_message(error_info),
-                            method_id=rpc_id,
-                            rpc_code="USER_DISPLAYABLE_ERROR",
+                        raise mark_commit_state(
+                            RateLimitError(
+                                _user_displayable_error_message(error_info),
+                                method_id=rpc_id,
+                                rpc_code="USER_DISPLAYABLE_ERROR",
+                            ),
+                            CommitState.REJECTED,
                         )
 
                 if isinstance(result_data, str):

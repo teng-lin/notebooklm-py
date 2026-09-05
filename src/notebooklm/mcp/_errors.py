@@ -38,10 +38,10 @@ from fastmcp.exceptions import ToolError
 from .._adapter_support import redact
 from .._app.errors import (
     CATEGORY_HINTS,
-    UNCONFIRMED_HINT,
     ErrorCategory,
     classify,
     did_you_mean_hint,
+    unconfirmed_hint,
 )
 from ..exceptions import NotebookLMError
 
@@ -128,7 +128,7 @@ def tool_error_payload(exc: BaseException) -> dict[str, Any]:
     # already exist. Surface the state structurally AND as the hint.
     if getattr(exc, "unconfirmed", False):
         payload["unconfirmed"] = True
-        hint = UNCONFIRMED_HINT
+        hint = unconfirmed_hint(exc)
     candidates = list(getattr(exc, "candidates", ()) or ())
     if candidates:
         payload["candidates"] = candidates

@@ -355,7 +355,7 @@ def _register_response_only(mock_core, response) -> None:
     response is decoded, and a probe failing for unrelated reasons was never
     what they meant to exercise.
     """
-    mock_core.rpc_executor.rpc_call.side_effect = [_EMPTY_NOTEBOOK, response, _EMPTY_NOTEBOOK]
+    mock_core.rpc_executor.rpc_call.side_effect = [response, _EMPTY_NOTEBOOK]
 
 
 class TestRegisterFileSource:
@@ -376,8 +376,7 @@ class TestRegisterFileSource:
         result = await sources_api._register_file_source("nb_123", "test.pdf")
 
         assert result == "source_id_abc"
-        # 2 calls: baseline GET_NOTEBOOK + ADD_SOURCE_FILE register.
-        assert mock_core.rpc_executor.rpc_call.call_count == 2
+        assert mock_core.rpc_executor.rpc_call.call_count == 1
         methods_called = [call.args[0] for call in mock_core.rpc_executor.rpc_call.await_args_list]
         assert RPCMethod.ADD_SOURCE_FILE in methods_called
 
@@ -466,10 +465,7 @@ class TestRegisterFileSource:
 
         The filename provides context for the SOURCE_ID (#474).
         """
-        mock_core.rpc_executor.rpc_call.side_effect = [
-            [["", []]],
-            response,
-        ]
+        mock_core.rpc_executor.rpc_call.side_effect = [response]
 
         result = await sources_api._register_file_source("nb_123", filename)
         assert result == expected
@@ -1001,8 +997,7 @@ class TestAddFile:
         assert result.id == "src_new_123"
         assert result.title == "test.pdf"
         assert result.kind == "unknown"
-        # 2 RPCs: GET_NOTEBOOK baseline + ADD_SOURCE_FILE register.
-        assert mock_core.rpc_executor.rpc_call.call_count == 2
+        assert mock_core.rpc_executor.rpc_call.call_count == 1
         mock_core.operation_scope.assert_called_once_with("upload:0")
 
     @pytest.mark.asyncio
@@ -1159,7 +1154,6 @@ class TestAddFile:
         #   [1] ADD_SOURCE_FILE register
         #   [2] UPDATE_SOURCE rename
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,  # baseline returns no useful list — empty notebook
             [[[["src_md"]]]],
             [[[["src_md"], "Real Intended Title", [None, None, None, None, 8]]]],
         ]
@@ -1190,9 +1184,8 @@ class TestAddFile:
 
         assert result.id == "src_md"
         assert result.title == "Real Intended Title"
-        # 1 baseline GET_NOTEBOOK + 1 register + 1 rename
-        assert mock_core.rpc_executor.rpc_call.call_count == 3
-        rename_params = mock_core.rpc_executor.rpc_call.call_args_list[2].args[1]
+        assert mock_core.rpc_executor.rpc_call.call_count == 2
+        rename_params = mock_core.rpc_executor.rpc_call.call_args_list[1].args[1]
         assert rename_params == [None, ["src_md"], [[["Real Intended Title"]]]]
         # Narrow wait uses the caller's wait_timeout (default 120s) — not the
         # full wait_until_ready. wait_until_registered returns on first
@@ -1213,10 +1206,8 @@ class TestAddFile:
         test_file = tmp_path / "boring-filename.md"
         test_file.write_bytes(b"# content\n")
 
-        # 3 rpc_call invocations: baseline + register + rename (see the
-        # earlier test for the same pattern).
+        # Two rpc_call invocations: registration, then rename.
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,
             [[[["src_md"]]]],
             [[[["src_md"], "Real Intended Title"]]],
         ]
@@ -1230,7 +1221,7 @@ class TestAddFile:
             # baseline GET_NOTEBOOK + ADD_SOURCE_FILE register RPCs have
             # fired (2 total — see register_file_source's probe-then-create
             # design for why the baseline call is required).
-            assert mock_core.rpc_executor.rpc_call.call_count == 2
+            assert mock_core.rpc_executor.rpc_call.call_count == 1
             return Source(id=source_id, title="boring-filename.md", _type_code=8)
 
         sources_api._uploader.wait_until_ready = AsyncMock(side_effect=wait_side_effect)
@@ -1259,8 +1250,7 @@ class TestAddFile:
         sources_api._uploader.wait_until_ready.assert_awaited_once_with(
             "nb_123", "src_md", timeout=120.0, transient_error_types=()
         )
-        # 3 RPCs in total: baseline + register + rename.
-        assert mock_core.rpc_executor.rpc_call.call_count == 3
+        assert mock_core.rpc_executor.rpc_call.call_count == 2
 
     @pytest.mark.asyncio
     async def test_add_file_with_title_forces_wait_when_wait_false(
@@ -1272,9 +1262,8 @@ class TestAddFile:
         test_file = tmp_path / "boring-filename.md"
         test_file.write_bytes(b"# content\n")
 
-        # 3 RPCs: baseline + register + rename.
+        # Two RPCs: registration, then rename.
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,
             [[[["src_md"]]]],
             [[[["src_md"], "Real Intended Title", [None, None, None, None, 8]]]],
         ]
@@ -1288,7 +1277,7 @@ class TestAddFile:
             # Wait runs BEFORE the rename: at this point only the baseline
             # GET_NOTEBOOK + ADD_SOURCE_FILE register RPCs have fired (2
             # total).
-            assert mock_core.rpc_executor.rpc_call.call_count == 2
+            assert mock_core.rpc_executor.rpc_call.call_count == 1
             return Source(id=source_id, title="boring-filename.md", _type_code=8)
 
         sources_api._uploader.wait_until_registered = AsyncMock(side_effect=wait_side_effect)
@@ -1332,9 +1321,8 @@ class TestAddFile:
         test_file = tmp_path / "podcast.mp3"
         test_file.write_bytes(b"fake audio")
 
-        # 3 RPCs: baseline + register + rename.
+        # Two RPCs: registration, then rename.
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,
             [[[["src_audio"]]]],
             [[[["src_audio"], "Episode 1", [None, None, None, None, 10]]]],
         ]
@@ -1478,9 +1466,7 @@ class TestAddFile:
 
         assert result.id == "src_pdf"
         assert result.title == "report.pdf"
-        # No rename happened (title matches filename) — but registration is
-        # still 2 RPCs: baseline GET_NOTEBOOK + ADD_SOURCE_FILE.
-        assert mock_core.rpc_executor.rpc_call.call_count == 2
+        assert mock_core.rpc_executor.rpc_call.call_count == 1
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -1505,9 +1491,8 @@ class TestAddFile:
         # Registration succeeds; rename raises a library-level expected error
         # (representative of what `self.rename` actually raises in the wild).
         # The forced wait between register and rename is mocked separately.
-        # 3 RPCs: baseline + register + rename (the rename raises).
+        # Two RPCs: registration, then rename (which raises).
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,
             [[[["src_doc"]]]],
             rename_error,
         ]
@@ -1564,10 +1549,8 @@ class TestAddFile:
         # First rpc_call serves file registration. Second serves rename() —
         # which returns a sparse Source (only id + new title) so we can verify
         # the merge preserves type_code/url/created_at from the waited source.
-        # 3 RPCs: baseline + register + rename (rename returns None to
-        # trigger the fallback).
+        # Two RPCs: registration, then rename (returns None for fallback).
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,
             [[[["src_audio"]]]],
             None,  # Triggers rename()'s Source(id=source_id, title=new_title) fallback
         ]
@@ -1616,9 +1599,8 @@ class TestAddFile:
         test_file = tmp_path / "long-audio.mp3"
         test_file.write_bytes(b"fake audio")
 
-        # 3 RPCs: baseline + register + rename.
+        # Two RPCs: registration, then rename.
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,
             [[[["src_audio"]]]],
             [[[["src_audio"], "My Title", [None, None, None, None, 10]]]],
         ]
@@ -1662,9 +1644,8 @@ class TestAddFile:
         test_file = tmp_path / "doc.txt"
         test_file.write_bytes(b"content")
 
-        # 3 RPCs: baseline + register + rename (rename raises).
+        # Two RPCs: registration, then rename (which raises).
         mock_core.rpc_executor.rpc_call.side_effect = [
-            None,
             [[[["src_doc"]]]],
             RPCError("rename rpc blew up"),
         ]
@@ -1676,7 +1657,7 @@ class TestAddFile:
             assert transient_error_types == ()
             # Wait runs BEFORE rename — baseline GET_NOTEBOOK + register
             # RPCs have fired (2 total), no rename yet.
-            assert mock_core.rpc_executor.rpc_call.call_count == 2
+            assert mock_core.rpc_executor.rpc_call.call_count == 1
             return Source(id=source_id, title="doc.txt", _type_code=4)
 
         sources_api._uploader.wait_until_ready = AsyncMock(side_effect=wait_side_effect)

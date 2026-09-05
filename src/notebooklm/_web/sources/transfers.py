@@ -1,7 +1,7 @@
 """Web ``batchexecute`` source transfer operations (#2283).
 
-Three RPCs that move or extend source content without the probe-then-create
-choreography of :mod:`notebooklm._web.sources.add`:
+Three RPCs that move or extend source content alongside the one-shot create
+operations in :mod:`notebooklm._web.sources.add`:
 
 * :meth:`SourceTransferService.add_urls_async` — ``AddSourcesAsync`` (``X1snv``),
   the non-blocking batch add that returns queued stub rows;

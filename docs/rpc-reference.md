@@ -534,8 +534,8 @@ while failed entries are silently omitted unless every entry fails (then the
 RPC raises). The adapters reconcile omissions with an ERROR-status source list
 and restore positional result rows. This true-batch path disables transport
 retries because a timeout leaves the committed subset unknown; the ordinary
-single-item `sources.add_url()` path still uses its dedicated probe-then-create
-recovery unchanged.
+single-item `sources.add_url()` path also sends its mutation once and surfaces
+an unknown outcome without automatic replay.
 
 ### RPC: ADD_SOURCE (izAoDd) - Text
 
@@ -626,10 +626,10 @@ await rpc_call(
 )
 ```
 
-Registration is mutating, so the upload pipeline uses the same
-probe-then-create idempotency pattern as URL and Drive sources. Because
-filenames are not unique, the probe records source IDs before the create and
-only trusts a same-title source if it is new since that baseline.
+Registration is mutating, so the upload pipeline sends it once. A correlated
+response ID is authoritative; a missing response ID or ambiguous transport
+failure is surfaced as an unknown outcome. Bounded list matches may be attached
+as reconciliation candidates but are never trusted as proof of success.
 
 ```python
 # Start resumable upload after SOURCE_ID registration:

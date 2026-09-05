@@ -248,10 +248,9 @@ def _print_failure_reason(reason_message: str | None, hint: str | None) -> None:
     default=_DEFAULT_IMPORT_TIMEOUT,
     type=int,
     help=(
-        "Seconds budget for the import retry loop (default: 1800). The command "
-        "never waits for the RUN to finish, but IMPORT_RESEARCH itself commonly "
-        "outlives a single client timeout on deep payloads and is retried with "
-        "reconciliation; this bounds that. Matches 'research wait --timeout'."
+        "Seconds budget for read-only candidate inspection after an unknown import "
+        "outcome (default: 1800). IMPORT_RESEARCH is sent once. The command never "
+        "waits for the RUN to finish. Matches 'research wait --timeout'."
     ),
 )
 @click.option(
@@ -289,8 +288,8 @@ def research_import(
 
     \b
     The import RPC itself is not instant — IMPORT_RESEARCH commonly outlives a
-    single client timeout on deep payloads and is retried with reconciliation,
-    bounded by --timeout.
+    single client timeout on deep payloads. It is sent once; bounded read-only
+    inspection may attach candidates after an unknown outcome.
 
     \b
     Idempotent when the pre-import snapshot succeeds: a source whose URL is
@@ -518,7 +517,8 @@ def research_cancel(ctx, run_id, notebook_id, json_output, client_auth):
     type=int,
     help=(
         "Per-phase seconds budget for (a) the research-completion poll loop "
-        "and (b) the --import-all retry loop (default: 1800). Each phase gets "
+        "and (b) read-only candidate inspection after an unknown --import-all "
+        "outcome (default: 1800). The import mutation is sent once. Each phase gets "
         "the full budget independently, so worst-case total wall time is up to "
         "2× this value. Matches 'source add-research --timeout' semantics."
     ),

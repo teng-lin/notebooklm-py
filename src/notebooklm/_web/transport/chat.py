@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING
 import httpx
 
 from ..._env import get_default_bl
-from ...exceptions import ChatError, NetworkError
+from ..._idempotency import mark_commit_state, mark_unconfirmed
+from ...exceptions import ChatError, NetworkError, RPCResponseTooLargeError
+from ...outcomes import CommitState
 from .errors import (
     TransportAuthExpired,
     TransportRateLimited,
@@ -33,6 +35,16 @@ from .errors import (
 if TYPE_CHECKING:
     from .request_types import BuildRequest
     from .runtime import RuntimeTransport
+
+
+_ZERO_SEND_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
+def _mark_chat_failure(error: Exception, original: Exception | None = None) -> Exception:
+    """Attach conservative chat-send evidence to the escaping public error."""
+    if isinstance(original, _ZERO_SEND_ERRORS):
+        return mark_commit_state(error, CommitState.NOT_SENT, operation="chat")
+    return mark_unconfirmed(error, operation="chat")
 
 
 def _format_chat_read_timeout_message(
@@ -104,20 +116,23 @@ async def chat_aware_authed_post(
             disable_read_timeout_retries=disable_read_timeout_retries,
         )
     except TransportAuthExpired as exc:
-        raise ChatError(
+        error = ChatError(
             f"{parse_label} failed: authentication expired and refresh did not recover"
-        ) from exc
+        )
+        raise _mark_chat_failure(error, exc.original) from exc
     except TransportRateLimited as exc:
-        raise ChatError(
+        error = ChatError(
             f"{parse_label} rate-limited (HTTP 429)."
             + (f" Retry after {exc.retry_after} seconds." if exc.retry_after is not None else "")
-        ) from exc
+        )
+        raise _mark_chat_failure(error, exc.original) from exc
     except TransportServerError as exc:
         if isinstance(exc.original, httpx.HTTPStatusError):
-            raise ChatError(
-                f"{parse_label} failed with HTTP {exc.original.response.status_code} "
-                f"after retries: {exc.original}"
-            ) from exc
+            error = ChatError(
+                f"{parse_label} failed with HTTP {exc.original.response.status_code}: "
+                f"{exc.original}"
+            )
+            raise _mark_chat_failure(error, exc.original) from exc
         # Network-layer failure (RequestError / Timeout).
         # ``RuntimeTransport.perform_authed_post`` only wraps
         # ``httpx.RequestError`` into ``TransportServerError`` on the network path; this guard keeps
@@ -137,30 +152,35 @@ async def chat_aware_authed_post(
         # response bytes arrived for the HTTPX read window, either before
         # the first byte or between chunks.
         if isinstance(exc.original, httpx.ReadTimeout):
-            raise NetworkError(
+            network_error = NetworkError(
                 _format_chat_read_timeout_message(
                     parse_label=parse_label,
                     read_timeout=read_timeout,
                     original=exc.original,
                 ),
                 original_error=exc.original,
-            ) from exc
+            )
+            raise _mark_chat_failure(network_error, exc.original) from exc
         if isinstance(exc.original, httpx.TimeoutException):
-            raise NetworkError(
-                f"{parse_label} timed out after retries: {exc.original}",
+            network_error = NetworkError(
+                f"{parse_label} timed out: {exc.original}",
                 original_error=exc.original,
-            ) from exc
-        raise NetworkError(
-            f"{parse_label} network error after retries: {exc.original}",
+            )
+            raise _mark_chat_failure(network_error, exc.original) from exc
+        network_error = NetworkError(
+            f"{parse_label} network error: {exc.original}",
             original_error=exc.original,
-        ) from exc
+        )
+        raise _mark_chat_failure(network_error, exc.original) from exc
     except httpx.HTTPStatusError as exc:
         # Non-5xx / non-401 / non-429 status errors fall through
         # ``RuntimeTransport.perform_authed_post``'s "Anything else"
         # branch (e.g. a 404 or unhandled 4xx).
-        raise ChatError(
-            f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}"
-        ) from exc
+        error = ChatError(f"{parse_label} failed with HTTP {exc.response.status_code}: {exc}")
+        raise _mark_chat_failure(error, exc) from exc
+    except RPCResponseTooLargeError as exc:
+        mark_unconfirmed(exc, operation="chat")
+        raise
     # NOTE: bare ``httpx.TimeoutException`` / ``httpx.RequestError``
     # handlers were removed here because the shared authed transport always
     # either retries those errors or wraps them in
