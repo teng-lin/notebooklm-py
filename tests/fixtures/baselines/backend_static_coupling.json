@@ -3,7 +3,7 @@
     {
       "callee": "import_module",
       "expression": "'grpc'",
-      "lineno": 204,
+      "lineno": 209,
       "scope": "_default_grpc_loader",
       "scope_kind": "function",
       "source": "notebooklm._android.session",
@@ -13,7 +13,7 @@
     {
       "callee": "import_module",
       "expression": "'google.protobuf.runtime_version'",
-      "lineno": 213,
+      "lineno": 218,
       "scope": "_default_protobuf_loader",
       "scope_kind": "function",
       "source": "notebooklm._android.session",
@@ -23,7 +23,7 @@
     {
       "callee": "import_module",
       "expression": "_ANDROID_NOTES_PROTO",
-      "lineno": 222,
+      "lineno": 227,
       "scope": "_default_protobuf_loader",
       "scope_kind": "function",
       "source": "notebooklm._android.session",
@@ -10311,7 +10311,7 @@
   ],
   "subsystems": {
     "android": {
-      "lines": 16280,
+      "lines": 16285,
       "modules": 52
     },
     "app": {
@@ -10356,7 +10356,7 @@
     }
   },
   "summary": {
-    "authored_lines": 144659,
+    "authored_lines": 144664,
     "authored_modules": 454,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1134,

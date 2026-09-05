@@ -892,13 +892,59 @@ async def test_unary_folds_decoded_rejection_into_the_active_attempt() -> None:
     ]
 
 
+@pytest.mark.asyncio
+async def test_unary_folds_whole_request_rejection_into_every_bound_attempt() -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [_RawRpcError(_Status.UNAUTHENTICATED)]
+    session, _, _, _, _ = await _open(channel=channel)
+    journal = OperationJournal("sources.add_urls")
+    invocation_id = journal.invocation_id()
+    entries = tuple(
+        journal.new_entry(
+            method=ADD_TENTATIVE_SOURCES_METHOD,
+            phase="registration",
+            member=index,
+            invocation_id=invocation_id,
+        )
+        for index in range(2)
+    )
+
+    with pytest.raises(AuthError) as raised:
+        await session.unary(
+            ADD_TENTATIVE_SOURCES_METHOD,
+            _Message(b"request"),
+            replay_safe=False,
+            response_type=_Message,
+            journal_entries=entries,
+        )
+
+    assert raised.value.commit_state is CommitState.REJECTED
+    assert [entry.commit_state for entry in entries] == [
+        CommitState.REJECTED,
+        CommitState.REJECTED,
+    ]
+    assert [attempt.commit_state for entry in entries for attempt in entry.attempts] == [
+        CommitState.REJECTED,
+        CommitState.REJECTED,
+    ]
+    assert raised.value.operation_metadata is not None
+    assert [entry.commit_state for entry in raised.value.operation_metadata.entries] == [
+        CommitState.REJECTED,
+        CommitState.REJECTED,
+    ]
+    assert [attempt.commit_state for attempt in raised.value.operation_metadata.attempts] == [
+        CommitState.REJECTED,
+        CommitState.REJECTED,
+    ]
+
+
 def test_session_failure_attachment_folds_verified_not_sent_into_active_attempt() -> None:
     journal = OperationJournal("sources.add_url")
     entry = journal.new_entry(method=ADD_TENTATIVE_SOURCES_METHOD)
     entry.mark_dispatched()
     error = mark_commit_state(NetworkError("verified zero send"), CommitState.NOT_SENT)
 
-    _attach_journal_failure(error, entry)
+    _attach_journal_failure(error, (entry,))
 
     assert entry.commit_state is CommitState.NOT_SENT
     assert [attempt.commit_state for attempt in entry.attempts] == [CommitState.NOT_SENT]

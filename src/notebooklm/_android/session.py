@@ -179,21 +179,26 @@ def _grpc_status_error(
         return error
 
 
-def _attach_journal_failure(error: NotebookLMError, entry: JournalEntry | None) -> None:
-    """Fold positive producer evidence into the active physical attempt."""
+def _attach_journal_failure(
+    error: NotebookLMError,
+    entries: tuple[JournalEntry, ...],
+) -> None:
+    """Fold positive producer evidence into every bound physical attempt."""
 
-    if entry is None:
+    if not entries:
         return
     if error.commit_state in (CommitState.NOT_SENT, CommitState.REJECTED):
-        entry.record(error.commit_state, "producer evidence")
+        for entry in entries:
+            entry.record(error.commit_state, "producer evidence")
     attach_journal_entry(
         error,
-        entry,
+        entries[0],
         recovery_action=(
             RecoveryAction.INSPECT_AND_RECONCILE
-            if entry.commit_state is CommitState.UNKNOWN
+            if any(entry.commit_state is CommitState.UNKNOWN for entry in entries)
             else RecoveryAction.NONE
         ),
+        workflow=len(entries) > 1,
     )
 
 
@@ -679,8 +684,8 @@ class AndroidSession(EpochFenced):
         finally:
             del self, session
         if failure is not None:
-            if isinstance(failure, NotebookLMError) and len(bound_entries) == 1:
-                _attach_journal_failure(failure, bound_entries[0])
+            if isinstance(failure, NotebookLMError):
+                _attach_journal_failure(failure, bound_entries)
             raise failure
         return cast(RespT, result)
 
@@ -912,7 +917,7 @@ class AndroidSession(EpochFenced):
             del self, session, iterator
         if failure is not None:
             if isinstance(failure, NotebookLMError) and journal_entry is not None:
-                _attach_journal_failure(failure, journal_entry)
+                _attach_journal_failure(failure, (journal_entry,))
             raise failure
 
     async def _stream_impl(

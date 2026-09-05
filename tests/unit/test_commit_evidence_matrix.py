@@ -34,7 +34,7 @@ from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._web.sources.batch import SourceBatchAddService
 from notebooklm.auth import AuthTokens
 from notebooklm.cli.error_handler import handle_errors
-from notebooklm.exceptions import NetworkError
+from notebooklm.exceptions import AuthError, NetworkError
 from notebooklm.mcp._errors import to_tool_error, tool_error_payload
 from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
@@ -151,11 +151,15 @@ def _web_client(case: str, requests: list[httpx.Request]):
 
 class _Status(Enum):
     UNKNOWN = (2, "unknown")
+    UNAUTHENTICATED = (16, "unauthenticated")
 
 
 class _RawRpcError(Exception):
+    def __init__(self, status: _Status = _Status.UNKNOWN) -> None:
+        self._status = status
+
     def code(self) -> _Status:
-        return _Status.UNKNOWN
+        return self._status
 
 
 def _android_source(
@@ -212,6 +216,8 @@ class _Channel:
             request_serializer(request)
             if self.case == "lost_response":
                 raise _RawRpcError()
+            if self.case == "whole_request_rejected":
+                raise _RawRpcError(_Status.UNAUTHENTICATED)
             if self.case == "decoder_failure_after_acceptance":
                 return response_deserializer(b"\x80")
             if self.case == "transport_deadline":
@@ -563,6 +569,40 @@ async def test_real_android_stream_cancellation_retains_unknown_attempt() -> Non
 
     assert entry.commit_state is CommitState.UNKNOWN
     assert len(entry.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_real_android_whole_request_rejection_settles_every_batch_member() -> None:
+    session, channel = await _android_session("whole_request_rejected")
+    try:
+        api = AndroidSourcesAPI(session, object.__new__(AndroidUploadPipeline))
+        with pytest.raises(AuthError) as raised:
+            await api._add_urls_batch("notebook-1", list(_URLS))
+    finally:
+        await session.close_resources()
+
+    error = raised.value
+    assert channel.methods == [ADD_TENTATIVE_SOURCES_METHOD]
+    assert getattr(error, "commit_state", None) is CommitState.REJECTED
+    metadata = getattr(error, "operation_metadata", None)
+    assert metadata is not None
+    assert metadata.commit_state is CommitState.REJECTED
+    assert metadata.recovery_action is RecoveryAction.NONE
+    assert [entry.commit_state for entry in metadata.entries] == [
+        CommitState.REJECTED,
+        CommitState.REJECTED,
+        CommitState.NOT_SENT,
+        CommitState.NOT_SENT,
+    ]
+    assert [attempt.commit_state for attempt in metadata.attempts] == [
+        CommitState.REJECTED,
+        CommitState.REJECTED,
+    ]
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.REJECTED,
+        CommitState.REJECTED,
+    ]
 
 
 @pytest.mark.asyncio
