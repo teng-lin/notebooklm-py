@@ -59,7 +59,7 @@ from notebooklm.exceptions import (
     SourceTimeoutError,
     ValidationError,
 )
-from notebooklm.outcomes import CommitState
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.types import Source, SourceStatus
 
 NOTEBOOK_ID = "00000000-0000-4000-8000-000000000100"
@@ -723,6 +723,7 @@ async def test_batch_pre_dispatch_failure_is_ordered_unattempted_evidence() -> N
         CommitState.NOT_SENT,
     ]
     assert failure.operation_metadata is not None
+    assert failure.operation_metadata.recovery_action is RecoveryAction.RETRY
     assert len(failure.operation_metadata.entries) == 4
     assert all(not entry.attempts for entry in failure.operation_metadata.entries)
 

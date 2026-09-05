@@ -2,27 +2,37 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, cast
+from enum import Enum
+from types import SimpleNamespace
+from typing import Any
 
+import httpx
 import pytest
 
+from notebooklm._android.auth import BearerCredential
+from notebooklm._android.chat import GENERATE_FREE_FORM_STREAMED_METHOD
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import sources_pb2
 from notebooklm._android.session import AndroidSession
-from notebooklm._android.sources import ADD_TENTATIVE_SOURCES_METHOD, AndroidSourcesAPI
+from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._app.errors import ErrorCategory, classify
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._idempotency import OperationJournal
+from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._web.sources.batch import SourceBatchAddService
+from notebooklm.auth import AuthTokens
 from notebooklm.cli.error_handler import handle_errors
-from notebooklm.exceptions import NetworkError, RPCError
+from notebooklm.exceptions import NetworkError
 from notebooklm.mcp._errors import to_tool_error, tool_error_payload
 from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from notebooklm.server._errors import error_response
+from tests._fixtures.rpc_error_frames import raw_batchexecute_body
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 _URLS = ("https://a.example.test", "https://b.example.test")
 
@@ -61,7 +71,7 @@ _REJECTED = _Expected(
 )
 _NOT_SENT = _Expected(
     CommitState.NOT_SENT,
-    RecoveryAction.NONE,
+    RecoveryAction.RETRY,
     ErrorCategory.NETWORK,
     True,
     False,
@@ -71,7 +81,7 @@ _NOT_SENT = _Expected(
 )
 _NOT_SENT_SOURCE = _Expected(
     CommitState.NOT_SENT,
-    RecoveryAction.NONE,
+    RecoveryAction.RETRY,
     ErrorCategory.SOURCE_ADD,
     False,
     False,
@@ -81,86 +91,193 @@ _NOT_SENT_SOURCE = _Expected(
 )
 
 
-class _WebTerminal:
-    """Minimal wire terminal used through the real Web batch workflow."""
+def _web_response(payload: Any) -> str:
+    return raw_batchexecute_body(
+        [["wrb.fr", RPCMethod.ADD_SOURCE.value, json.dumps(payload), None, None]]
+    )
 
+
+def _web_client(case: str, requests: list[httpx.Request]):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if case == "pre_dispatch":
+            raise httpx.ConnectError("connect failed", request=request)
+        if case == "unknown":
+            return httpx.Response(200, text="malformed accepted response", request=request)
+        if case == "lost_response":
+            raise httpx.ReadError("response lost", request=request)
+        if case == "rejected":
+            body = raw_batchexecute_body(
+                [["wrb.fr", RPCMethod.ADD_SOURCE.value, None, None, None, [9], "generic"]]
+            )
+            return httpx.Response(200, text=body, request=request)
+        if case == "expiry":
+            body = raw_batchexecute_body(
+                [["wrb.fr", RPCMethod.ADD_SOURCE.value, None, None, None, [16], "generic"]]
+            )
+            return httpx.Response(200, text=body, request=request)
+        rows = [
+            [["source-a"], _URLS[0], [None, None, None, None, 5, None, None, [_URLS[0]]]],
+            [["source-b"], _URLS[1], [None, None, None, None, 5, None, None, [_URLS[1]]]],
+        ]
+        return httpx.Response(200, text=_web_response(rows), request=request)
+
+    def factory(**kwargs: Any) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
+    return build_client_shell_for_tests(
+        AuthTokens(
+            csrf_token="csrf",
+            session_id="session",
+            cookies={"SID": "sid"},
+        ),
+        rate_limit_max_retries=0,
+        server_error_max_retries=0,
+        async_client_factory=factory,
+    )
+
+
+class _Status(Enum):
+    UNKNOWN = (2, "unknown")
+
+
+class _RawRpcError(Exception):
+    def code(self) -> _Status:
+        return _Status.UNKNOWN
+
+
+class _Bearer:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+
+    async def activate_for_epoch(self, epoch: int) -> None:
+        assert epoch == 1
+
+    async def get(self, expected_epoch: int) -> BearerCredential:
+        assert expected_epoch == 1
+        if self.fail:
+            raise NetworkError("credential acquisition failed")
+        return BearerCredential("bearer", 1)
+
+    def invalidate(self, generation: int) -> None:
+        del generation
+
+    async def prepare_close(self) -> None:
+        return None
+
+
+class _Channel:
     def __init__(self, case: str) -> None:
         self.case = case
+        self.invocations = 0
 
-    async def rpc_call(
-        self,
-        method: RPCMethod,
-        params: list[Any],
-        **kwargs: Any,
-    ) -> Any:
-        del method, params
-        entries = kwargs["journal_entries"]
-        if self.case != "pre_dispatch":
-            for entry in entries:
-                entry.mark_dispatched()
-        if self.case == "rejected":
-            raise RPCError("decoded refusal", method_id=RPCMethod.ADD_SOURCE.value, rpc_code=9)
-        raise NetworkError("transport failed")
+    def unary_unary(self, method: str, *, request_serializer: Any, response_deserializer: Any):
+        async def invoke(request: Any, *, metadata: Any, timeout: float | None) -> Any:
+            del metadata, timeout
+            self.invocations += 1
+            request_serializer(request)
+            if self.case == "unknown":
+                raise _RawRpcError()
+            return response_deserializer(
+                sources_pb2.AddTentativeSourcesResponse().SerializeToString()
+            )
+
+        return invoke
+
+    def unary_stream(self, method: str, *, request_serializer: Any, response_deserializer: Any):
+        del method, response_deserializer
+
+        def invoke(request: Any, *, metadata: Any, timeout: float | None) -> _BlockingStream:
+            del metadata, timeout
+            self.invocations += 1
+            request_serializer(request)
+            return _BlockingStream()
+
+        return invoke
+
+    async def close(self) -> None:
+        return None
 
 
-@dataclass(frozen=True)
-class _Lease:
-    epoch: int = 7
+class _Grpc:
+    def __init__(self, channel: _Channel) -> None:
+        self.aio = SimpleNamespace(secure_channel=lambda *_args, **_kwargs: channel)
+
+    def ssl_channel_credentials(self) -> object:
+        return object()
 
 
-class _AndroidTerminal:
-    """Terminal fake that opens attempts while the real Android owner settles them."""
+class _BlockingStream:
+    entered = asyncio.Event()
 
-    def __init__(self, case: str) -> None:
-        self.case = case
+    def __aiter__(self) -> _BlockingStream:
+        return self
 
-    @asynccontextmanager
-    async def operation_scope(self, label: str, **kwargs: Any) -> AsyncIterator[_Lease]:
-        del label, kwargs
-        yield _Lease()
+    async def __anext__(self) -> Any:
+        self.entered.set()
+        await asyncio.Event().wait()
+        raise StopAsyncIteration
 
-    async def spawn_child(self, label: str, factory: Any) -> Any:
-        del label
-        return factory()
+    def cancel(self) -> None:
+        return None
 
-    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        del request
-        entries: Sequence[Any] = kwargs.get("journal_entries") or ()
-        if self.case != "pre_dispatch":
-            for entry in entries:
-                entry.mark_dispatched()
-        if self.case in {"pre_dispatch", "unknown"}:
-            raise NetworkError("transport failed")
-        assert method == ADD_TENTATIVE_SOURCES_METHOD
-        return sources_pb2.AddTentativeSourcesResponse()
+
+async def _android_session(case: str) -> tuple[AndroidSession, _Channel]:
+    channel = _Channel(case)
+    supervisor = CallSupervisor(metrics=ClientMetrics(), max_concurrent_rpcs=None)
+    loop = asyncio.get_running_loop()
+    supervisor.set_bound_loop(loop)
+    supervisor.reset_after_open()
+    supervisor.prepare_generation(1)
+    supervisor.start_accepting(1)
+    session = AndroidSession(
+        _Bearer(fail=case == "pre_dispatch"),
+        supervisor,
+        timeout=1.0,
+        rate_limit_max_retries=0,
+        server_error_max_retries=0,
+        grpc_loader=lambda: _Grpc(channel),
+    )
+    session.set_bound_loop(loop)
+    session.reset_after_open()
+    await session.open(loop, 1)
+    return session, channel
 
 
 async def _produce(backend: str, case: str) -> tuple[BaseException, _Expected]:
     if backend == "web":
-        terminal = _WebTerminal(case)
+        requests: list[httpx.Request] = []
+        client = _web_client(case, requests)
 
         async def no_error_rows(*args: Any, **kwargs: Any) -> list[Any]:
             del args, kwargs
             return []
 
-        try:
-            outcomes = await SourceBatchAddService().add_urls(
-                "notebook-1",
-                _URLS,
-                rpc=terminal,
-                list_sources=no_error_rows,
-                extract_youtube_video_id=lambda _url: None,
-                logger=logging.getLogger(__name__),
-            )
-        except BaseException as error:
-            return error, _NOT_SENT if case == "pre_dispatch" else _UNKNOWN
+        async with client:
+            try:
+                outcomes = await SourceBatchAddService().add_urls(
+                    "notebook-1",
+                    _URLS,
+                    rpc=client._web_runtime.executor,
+                    list_sources=no_error_rows,
+                    extract_youtube_video_id=lambda _url: None,
+                    logger=logging.getLogger(__name__),
+                )
+            except BaseException as error:
+                assert len(requests) == 1
+                return error, _NOT_SENT if case == "pre_dispatch" else _UNKNOWN
     else:
-        terminal = _AndroidTerminal(case)
-        api = AndroidSourcesAPI(
-            cast(AndroidSession, terminal),
-            cast(AndroidUploadPipeline, object()),
-        )
-        outcomes = await api._add_urls_batch("notebook-1", list(_URLS))
+        session, channel = await _android_session(case)
+        try:
+            api = AndroidSourcesAPI(session, object.__new__(AndroidUploadPipeline))
+            try:
+                outcomes = await api._add_urls_batch("notebook-1", list(_URLS))
+            except BaseException as error:
+                assert channel.invocations == 1
+                return error, _UNKNOWN
+        finally:
+            await session.close_resources()
+        assert channel.invocations == (0 if case == "pre_dispatch" else 1)
 
     error = outcomes[0].error
     assert error is not None
@@ -175,8 +292,19 @@ async def _produce(backend: str, case: str) -> tuple[BaseException, _Expected]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("backend", ["web", "android"])
-@pytest.mark.parametrize("case", ["rejected", "unknown", "pre_dispatch"])
+@pytest.mark.parametrize(
+    ("backend", "case"),
+    [
+        ("web", "rejected"),
+        ("android", "rejected"),
+        ("web", "unknown"),
+        ("android", "unknown"),
+        ("web", "pre_dispatch"),
+        ("android", "pre_dispatch"),
+        ("web", "lost_response"),
+        ("web", "expiry"),
+    ],
+)
 async def test_commit_evidence_producer_consumer_matrix(
     backend: str,
     case: str,
@@ -222,3 +350,90 @@ async def test_commit_evidence_producer_consumer_matrix(
     assert rest_payload["category"] == expected.rest_category
     assert rest_payload["retriable"] is expected.retriable
     assert rest_payload["batch_outcome"] == cli_payload["batch_outcome"]
+
+
+@pytest.mark.asyncio
+async def test_real_web_transport_and_decoder_confirm_batch_success() -> None:
+    requests: list[httpx.Request] = []
+    client = _web_client("success", requests)
+
+    async with client:
+        outcomes = await SourceBatchAddService().add_urls(
+            "notebook-1",
+            _URLS,
+            rpc=client._web_runtime.executor,
+            list_sources=lambda *_args, **_kwargs: asyncio.sleep(0, result=[]),
+            extract_youtube_video_id=lambda _url: None,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert len(requests) == 1
+    assert [item.source.id for item in outcomes if item.source is not None] == [
+        "source-a",
+        "source-b",
+    ]
+    assert [item.outcome.commit_state for item in outcomes if item.outcome is not None] == [
+        CommitState.CONFIRMED,
+        CommitState.CONFIRMED,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_real_web_auth_refresh_reposts_replay_safe_read_once() -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(401, request=request)
+        body = raw_batchexecute_body(
+            [["wrb.fr", RPCMethod.LIST_NOTEBOOKS.value, json.dumps([]), None, None]]
+        )
+        return httpx.Response(200, text=body, request=request)
+
+    def factory(**kwargs: Any) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
+    async def refresh(_epoch: int) -> AuthTokens:
+        client.auth.csrf_token = "csrf-new"
+        client.auth.session_id = "session-new"
+        return client.auth
+
+    client = build_client_shell_for_tests(
+        AuthTokens(csrf_token="csrf-old", session_id="session-old", cookies={"SID": "sid-old"}),
+        refresh_callback=refresh,
+        refresh_retry_delay=0,
+        async_client_factory=factory,
+    )
+    async with client:
+        assert await client._web_runtime.executor.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) == []
+
+    assert len(requests) == 2
+    assert requests[0].content != requests[1].content
+
+
+@pytest.mark.asyncio
+async def test_real_android_stream_cancellation_retains_unknown_attempt() -> None:
+    _BlockingStream.entered = asyncio.Event()
+    session, _channel = await _android_session("stream")
+    journal = OperationJournal("chat")
+    entry = journal.new_entry(method=GENERATE_FREE_FORM_STREAMED_METHOD)
+
+    async def consume() -> None:
+        async for _ in session.stream(
+            GENERATE_FREE_FORM_STREAMED_METHOD,
+            sources_pb2.AddTentativeSourcesRequest(),
+            response_type=sources_pb2.AddTentativeSourcesResponse,
+            journal_entry=entry,
+        ):
+            pass
+
+    task = asyncio.create_task(consume())
+    await _BlockingStream.entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await session.close_resources()
+
+    assert entry.commit_state is CommitState.UNKNOWN
+    assert len(entry.attempts) == 1

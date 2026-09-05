@@ -183,15 +183,24 @@ def _attach_whole_batch_failure(
     entries: Sequence[JournalEntry],
     outcome: BatchOutcome,
 ) -> None:
+    recovery_action = (
+        RecoveryAction.RETRY
+        if outcome.items
+        and all(item.commit_state is CommitState.NOT_SENT for item in outcome.items)
+        else RecoveryAction.INSPECT_AND_RECONCILE
+        if any(item.commit_state is CommitState.UNKNOWN for item in outcome.items)
+        else None
+    )
+    if recovery_action is RecoveryAction.RETRY:
+        # A lower compatibility wrapper may already have synthesized UNKNOWN.
+        # Positive zero-send evidence is authoritative at this owner boundary.
+        primary = entries[0]
+        primary.recovery_action = RecoveryAction.RETRY
     attach_operation_journal(
         error,
         journal,
         primary=entries[0],
-        recovery_action=(
-            RecoveryAction.INSPECT_AND_RECONCILE
-            if any(item.commit_state is CommitState.UNKNOWN for item in outcome.items)
-            else None
-        ),
+        recovery_action=recovery_action,
     )
     attach_batch_outcome(error, outcome)
 
@@ -285,24 +294,26 @@ class SourceBatchAddService:
             # decoder/protocol failure is not that evidence: the write may have
             # committed, so fail closed instead of pretending every item failed.
             if normalize_rpc_code(exc.rpc_code) != GrpcStatusCode.FAILED_PRECONDITION.value:
-                original = str(exc)
-                exc.args = (
-                    "UNRESOLVED — do not blindly retry; check the notebook source list and "
-                    "reconcile the batch URLs first. The batch RPC failed without the "
-                    "documented all-rejected status, so its committed subset is unknown; "
-                    f"no automatic retry was attempted. {original}",
-                )
-                unresolved_commit_error(
-                    RPCMethod.ADD_SOURCE,
-                    "the batch URL add",
-                    exc,
-                    preserve_exception=True,
-                )
+                outcome = _batch_outcome(urls, journal_entries)
+                if any(item.commit_state is CommitState.UNKNOWN for item in outcome.items):
+                    original = str(exc)
+                    exc.args = (
+                        "UNRESOLVED — do not blindly retry; check the notebook source list and "
+                        "reconcile the batch URLs first. The batch RPC failed without the "
+                        "documented all-rejected status, so its committed subset is unknown; "
+                        f"no automatic retry was attempted. {original}",
+                    )
+                    unresolved_commit_error(
+                        RPCMethod.ADD_SOURCE,
+                        "the batch URL add",
+                        exc,
+                        preserve_exception=True,
+                    )
                 _attach_whole_batch_failure(
                     exc,
                     journal,
                     journal_entries,
-                    _batch_outcome(urls, journal_entries),
+                    outcome,
                 )
                 raise
             # Preserve the existing per-item adapter contract instead of

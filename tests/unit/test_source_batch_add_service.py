@@ -21,7 +21,7 @@ from notebooklm.exceptions import (
     ServerError,
     SourceAddError,
 )
-from notebooklm.outcomes import CommitState
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import SourceStatus
 from notebooklm.types import Source
@@ -433,8 +433,35 @@ async def test_pre_dispatch_transport_failure_stays_not_sent_without_inspect_gui
 
     assert raised.value is failure
     assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.operation_metadata.recovery_action is RecoveryAction.RETRY
     assert failure.unconfirmed is False
     assert failure.batch_outcome is not None
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.NOT_SENT,
+        CommitState.NOT_SENT,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pre_dispatch_generic_rpc_failure_stays_not_sent_and_retriable() -> None:
+    failure = RPCError("local RPC setup failed", method_id=RPCMethod.ADD_SOURCE.value)
+    rpc = PreDispatchFailureRpc(error=failure)
+
+    with pytest.raises(RPCError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            ["https://a.example.com", "https://b.example.com"],
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is failure
+    assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.operation_metadata.recovery_action is RecoveryAction.RETRY
+    assert failure.unconfirmed is False
+    assert "UNRESOLVED" not in str(failure)
     assert [item.commit_state for item in failure.batch_outcome.items] == [
         CommitState.NOT_SENT,
         CommitState.NOT_SENT,

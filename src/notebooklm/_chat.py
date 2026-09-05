@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from ._conversation_cache import ConversationCache
-from ._idempotency import mark_unconfirmed
+from ._idempotency import attach_operation_metadata
 from ._loop_bound import LoopBoundPrimitive
 from ._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from ._runtime.call_supervisor import OperationLease
@@ -21,6 +21,7 @@ from ._runtime.contracts import LoopGuard
 from ._types.documents import StructuredDocument, utf16_len
 from ._types.enums import ChatGoal, ChatResponseLength
 from .exceptions import ChatError, NotebookLMError, ValidationError
+from .outcomes import CommitState, OperationMetadata, RecoveryAction
 from .types import (
     AskResult,
     ChatMode,
@@ -386,6 +387,24 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             if resolved_id_override is not None:
                 resolved_conversation_id = resolved_id_override
             elif is_new_conversation:
+
+                def confirmed_readback_failure(exc: NotebookLMError) -> NotebookLMError:
+                    metadata = exc.operation_metadata or OperationMetadata()
+                    return attach_operation_metadata(
+                        exc,
+                        replace(
+                            metadata,
+                            commit_state=CommitState.CONFIRMED,
+                            operation="chat",
+                            recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                            known_resource_ids=(
+                                (posted.conversation_id,)
+                                if posted.conversation_id
+                                else metadata.known_resource_ids
+                            ),
+                        ),
+                    )
+
                 try:
                     resolved_conversation_id = await self.get_conversation_id(notebook_id)
                 except NotebookLMError as exc:
@@ -395,7 +414,7 @@ class ChatAPI(LoopBoundPrimitive, ABC):
                         len(posted.answer or ""),
                         (posted.answer or "")[:500],
                     )
-                    mark_unconfirmed(exc, force_unknown=True, operation="chat")
+                    confirmed_readback_failure(exc)
                     raise
                 if resolved_conversation_id is None:
                     if posted.answer:
@@ -405,14 +424,12 @@ class ChatAPI(LoopBoundPrimitive, ABC):
                             len(posted.answer),
                             posted.answer[:500],
                         )
-                    raise mark_unconfirmed(
+                    raise confirmed_readback_failure(
                         ChatError(
                             "Server returned an answer but its conversation id could not be "
-                            "resolved. The turn may have been recorded; inspect conversation "
+                            "resolved. The turn was recorded; inspect conversation "
                             "history before trying again."
-                        ),
-                        force_unknown=True,
-                        operation="chat",
+                        )
                     )
 
             assert resolved_conversation_id is not None

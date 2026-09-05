@@ -467,8 +467,7 @@ class DriveStagingTransfer:
         try:
             yield file_id
         except BaseException as error:
-            if isinstance(error, NotebookLMError):
-                attach_prerequisite_ids(error, file_id)
+            attach_prerequisite_ids(error, file_id)
             if _cleanup_allowed_after_import_error(error) and transfer._cleanup_fence_open(
                 expected_epoch, cleanup_deadline
             ):

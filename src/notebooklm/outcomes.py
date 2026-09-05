@@ -274,6 +274,12 @@ def format_operation_metadata(payload: dict[str, object]) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+def redact_operation_text(value: object) -> str:
+    """Return one bounded, redacted adapter-facing detail string."""
+
+    return _wire_text(value)
+
+
 __all__ = [
     "BatchItemOutcome",
     "BatchOutcome",

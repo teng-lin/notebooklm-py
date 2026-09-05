@@ -25,7 +25,7 @@ from ..exceptions import (
     RPCError,
     ValidationError,
 )
-from ..outcomes import operation_metadata_payload
+from ..outcomes import operation_metadata_payload, redact_operation_text
 from ._encoding import safe_echo
 
 logger = logging.getLogger(__name__)
@@ -282,24 +282,6 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         because several branches build their text from a literal rather than
         from ``str(e)`` and would silently drop it.
         """
-        operation_payload = operation_metadata_payload(exc)
-        if operation_payload:
-            if json_out:
-                extra = {**(extra or {}), **operation_payload}
-            else:
-                rendered_metadata = json.dumps(
-                    operation_payload,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-                message = f"{message}\nOperation metadata: {rendered_metadata}"
-        source_id = operation_payload.get("source_id")
-        stage = operation_payload.get("stage")
-        if isinstance(source_id, str) and isinstance(stage, str):
-            if json_out:
-                extra = {**(extra or {}), "source_id": source_id, "stage": stage}
-            else:
-                message = f"{message}\n{_retained_source_note(source_id, stage)}"
         if getattr(exc, "unconfirmed", False):
             # An idempotency probe could not determine whether a create
             # committed (#2220), so a write may be live. The branches below
@@ -326,7 +308,7 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
             # machine-readable guidance (``_output_error`` serializes ``extra``
             # but NOT ``hint``). ``str(exc)`` carries the underlying detail
             # without the advice.
-            detail = str(exc) if exc is not None else message
+            detail = redact_operation_text(exc if exc is not None else message)
             message = f"Error: this write could not be confirmed ({detail})"
             if extra:
                 # Same reason: a stale ``retry_after`` is an instruction.
@@ -338,6 +320,24 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
                 # Text mode prints ``hint`` after ``message``; JSON ignores it,
                 # which is why the JSON branch above carries it in ``extra``.
                 hint = _unconfirmed_write_note(exc)
+        operation_payload = operation_metadata_payload(exc)
+        if operation_payload:
+            if json_out:
+                extra = {**(extra or {}), **operation_payload}
+            else:
+                rendered_metadata = json.dumps(
+                    operation_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                message = f"{message}\nOperation metadata: {rendered_metadata}"
+        source_id = operation_payload.get("source_id")
+        stage = operation_payload.get("stage")
+        if isinstance(source_id, str) and isinstance(stage, str):
+            if json_out:
+                extra = {**(extra or {}), "source_id": source_id, "stage": stage}
+            else:
+                message = f"{message}\n{_retained_source_note(source_id, stage)}"
         _output_error(message, code, json_out, exit_code, extra=extra, hint=hint)
 
     try:

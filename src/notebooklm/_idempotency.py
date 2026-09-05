@@ -727,7 +727,11 @@ def attach_batch_outcome(
 def attach_prerequisite_ids(exc: _E, *resource_ids: str) -> _E:
     """Retain prerequisite recovery handles on a public error carrier."""
 
-    metadata = getattr(exc, "operation_metadata", None) or OperationMetadata()
+    metadata = (
+        getattr(exc, "operation_metadata", None)
+        or getattr(exc, "_operation_metadata", None)
+        or OperationMetadata()
+    )
     return attach_operation_metadata(
         exc,
         replace(

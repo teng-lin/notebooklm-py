@@ -862,7 +862,10 @@ class SourceUploadPipeline(EpochFenced):
                 journal_entry=journal_entry,
             )
         except NotebookLMError as exc:
-            if getattr(exc, "unconfirmed", False) and not hasattr(exc, "reconciliation_candidates"):
+            metadata = exc.operation_metadata
+            if getattr(exc, "unconfirmed", False) and (
+                metadata is None or metadata.reconciliation is None
+            ):
                 await _inspect_candidates(exc)
             raise
 

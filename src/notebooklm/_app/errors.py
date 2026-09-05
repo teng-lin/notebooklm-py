@@ -243,8 +243,13 @@ def unconfirmed_hint(exc: BaseException) -> str:
         and metadata is not None
         and metadata.commit_state is CommitState.CONFIRMED
     ):
+        conversation = (
+            f" (conversation id: {metadata.known_resource_ids[0]})"
+            if metadata.known_resource_ids
+            else ""
+        )
         return (
-            "The chat turn was recorded, but its identifier or required readback could not "
+            f"The chat turn was recorded{conversation}, but its identifier or required readback could not "
             "be resolved. Inspect the conversation history before continuing; replaying the "
             "question can record a duplicate turn."
         )

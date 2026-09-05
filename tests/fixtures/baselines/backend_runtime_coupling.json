@@ -44,7 +44,7 @@
             ]
           },
           "module_counts": {
-            "android": 47,
+            "android": 48,
             "auth": 32,
             "root": 59,
             "runtime": 9,
@@ -95,6 +95,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -266,7 +267,7 @@
             ]
           },
           "module_counts": {
-            "android": 47,
+            "android": 48,
             "auth": 32,
             "root": 59,
             "runtime": 9,
@@ -317,6 +318,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -505,7 +507,7 @@
             ]
           },
           "module_counts": {
-            "android": 72,
+            "android": 73,
             "auth": 32,
             "root": 59,
             "rpc": 3,
@@ -583,6 +585,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -1043,7 +1046,7 @@
             ]
           },
           "module_counts": {
-            "android": 72,
+            "android": 73,
             "auth": 32,
             "root": 59,
             "runtime": 9,
@@ -1119,6 +1122,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",
@@ -1346,7 +1350,7 @@
             ]
           },
           "module_counts": {
-            "android": 72,
+            "android": 73,
             "auth": 32,
             "root": 59,
             "runtime": 9,
@@ -1422,6 +1426,7 @@
             "notebooklm._android.session",
             "notebooklm._android.settings",
             "notebooklm._android.sharing",
+            "notebooklm._android.source_batch",
             "notebooklm._android.source_search",
             "notebooklm._android.source_transfers",
             "notebooklm._android.sources",

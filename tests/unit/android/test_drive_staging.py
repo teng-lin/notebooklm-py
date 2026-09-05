@@ -521,7 +521,8 @@ async def test_real_staging_scope_cleanup_allowlist_matrix(
     assert captured.value is error
     assert len(client.deletes) == delete_count
     if case in {"cancel", "runtime"}:
-        assert not hasattr(error, "_operation_metadata")
+        metadata = error._operation_metadata  # type: ignore[attr-defined]
+        assert metadata.prerequisite_ids == (FILE_ID,)
         assert not hasattr(error, "operation_metadata")
 
 

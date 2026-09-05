@@ -89,6 +89,9 @@ def test_shared_metadata_projection_is_full_bounded_and_redacted(
     with pytest.raises(SystemExit), handle_errors(json_output=True):
         raise error
     cli = json.loads(capsys.readouterr().out)
+    with pytest.raises(SystemExit), handle_errors(json_output=False):
+        raise error
+    cli_text = capsys.readouterr().err
     mcp = tool_error_payload(error)
     rest = json.loads(error_response(error).body)["error"]
 
@@ -100,9 +103,14 @@ def test_shared_metadata_projection_is_full_bounded_and_redacted(
     assert "known_resource_ids" in wire
     assert "batch_outcome" in wire
 
-    rendered = json.dumps({"metadata": expected, "mcp": mcp, "rest": rest, "wire": wire})
+    rendered = json.dumps(
+        {"metadata": expected, "cli": cli, "mcp": mcp, "rest": rest, "wire": wire}
+    )
     assert "this-must-not-leak" not in rendered
     assert "/Users/alice/" not in rendered
+    assert "Operation metadata:" in cli_text
+    assert "this-must-not-leak" not in cli_text
+    assert "/Users/alice/" not in cli_text
     assert len(expected["known_resource_ids"]) == 20  # type: ignore[arg-type]
     reconciliation = expected["reconciliation"]
     assert isinstance(reconciliation, dict)
@@ -114,7 +122,9 @@ def test_shared_metadata_projection_is_full_bounded_and_redacted(
     assert items[2]["reconciliation"]["unresolved_inputs"]  # type: ignore[index]
 
 
-def test_confirmed_chat_projection_says_recorded_but_readback_unresolved() -> None:
+def test_confirmed_chat_projection_says_recorded_but_readback_unresolved(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     error = attach_operation_metadata(
         RPCError("conversation id readback failed"),
         OperationMetadata(
@@ -127,6 +137,21 @@ def test_confirmed_chat_projection_says_recorded_but_readback_unresolved() -> No
 
     payload = tool_error_payload(error)
     assert "was recorded" in payload["hint"]
+    assert "conversation-1" in payload["hint"]
     assert "may or may not" not in payload["hint"]
     assert "was recorded" in str(to_tool_error(error))
     assert "was recorded" in json.loads(error_response(error).body)["error"]["hint"]
+
+    with pytest.raises(SystemExit), handle_errors(json_output=True):
+        raise error
+    cli_json = json.loads(capsys.readouterr().out)
+    assert "was recorded" in cli_json["hint"]
+    assert "conversation-1" in cli_json["hint"]
+    assert cli_json["known_resource_ids"] == ["conversation-1"]
+
+    with pytest.raises(SystemExit), handle_errors(json_output=False):
+        raise error
+    cli_text = capsys.readouterr().err
+    assert "was recorded" in cli_text
+    assert "conversation-1" in cli_text
+    assert "Operation metadata:" in cli_text
