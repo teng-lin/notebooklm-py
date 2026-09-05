@@ -1121,7 +1121,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/__init__.py",
         "src/notebooklm/_client_assembly.py",
         "src/notebooklm/_client_compat.py",
-        "src/notebooklm/_web/assembly.py",
+        "src/notebooklm/_client_contracts.py",
         "src/notebooklm/_web/transport/auth.py",
         "src/notebooklm/_web/transport/cookie_persistence.py",
         "src/notebooklm/_web/transport/init.py",
