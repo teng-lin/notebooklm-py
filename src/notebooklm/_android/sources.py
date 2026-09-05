@@ -1091,17 +1091,37 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         title: str | None,
         on_progress: Callable[[int, int], object] | None,
     ) -> Source:
-        adapter = self
-        pipeline = adapter._upload_pipeline
-        compat: AddFileCompat | None = None
-        result: Source | None = None
-        failure: BaseException | None = None
-        try:
-            canonical_path = await asyncio.to_thread(Path(file_path).resolve)
-            if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
-                compat = adapter._add_file_compat
-                if compat is not None:
-                    result = await compat(
+        async with self._operation_scope("source.add_file"):
+            adapter = self
+            pipeline = adapter._upload_pipeline
+            compat: AddFileCompat | None = None
+            result: Source | None = None
+            failure: BaseException | None = None
+            try:
+                canonical_path = await asyncio.to_thread(Path(file_path).resolve)
+                if canonical_path.suffix.lower() in _DRIVE_STAGED_UPLOAD_EXTENSIONS:
+                    compat = adapter._add_file_compat
+                    if compat is not None:
+                        result = await compat(
+                            notebook_id,
+                            canonical_path,
+                            mime_type,
+                            wait=wait,
+                            wait_timeout=wait_timeout,
+                            title=title,
+                            on_progress=on_progress,
+                        )
+                    else:
+                        result = await pipeline.add_file_via_drive_staging(
+                            notebook_id,
+                            canonical_path,
+                            mime_type,
+                            wait_timeout=wait_timeout,
+                            title=title,
+                            import_drive_file=adapter.add_drive,
+                        )
+                else:
+                    result = await pipeline.upload_file(
                         notebook_id,
                         canonical_path,
                         mime_type,
@@ -1109,40 +1129,21 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                         wait_timeout=wait_timeout,
                         title=title,
                         on_progress=on_progress,
+                        register_tentative=adapter._register_file_tentative,
+                        wait_until_registered=adapter._wait_uploaded_registered,
+                        wait_until_ready=adapter._wait_uploaded_ready,
+                        rename_uploaded=adapter._rename_uploaded,
+                        finalize_uploaded=SourcesAPI._finalize_uploaded_file,
                     )
-                else:
-                    result = await pipeline.add_file_via_drive_staging(
-                        notebook_id,
-                        canonical_path,
-                        mime_type,
-                        wait_timeout=wait_timeout,
-                        title=title,
-                        import_drive_file=adapter.add_drive,
-                    )
-            else:
-                result = await pipeline.upload_file(
-                    notebook_id,
-                    canonical_path,
-                    mime_type,
-                    wait=wait,
-                    wait_timeout=wait_timeout,
-                    title=title,
-                    on_progress=on_progress,
-                    register_tentative=adapter._register_file_tentative,
-                    wait_until_registered=adapter._wait_uploaded_registered,
-                    wait_until_ready=adapter._wait_uploaded_ready,
-                    rename_uploaded=adapter._rename_uploaded,
-                    finalize_uploaded=SourcesAPI._finalize_uploaded_file,
-                )
-        except BaseException as error:
-            from .errors import sanitize_escaping_exception
+            except BaseException as error:
+                from .errors import sanitize_escaping_exception
 
-            failure = sanitize_escaping_exception(error)
-        finally:
-            del self, adapter, pipeline, compat, file_path, title, on_progress
-        if failure is not None:
-            raise failure from None
-        return cast(Source, result)
+                failure = sanitize_escaping_exception(error)
+            finally:
+                del self, adapter, pipeline, compat, file_path, title, on_progress
+            if failure is not None:
+                raise failure from None
+            return cast(Source, result)
 
     async def add_drive(
         self,
@@ -1277,7 +1278,10 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             raise ConfigurationError(
                 "Android Drive-file import requires the native download pipeline."
             )
-        async with drive_download(document_id) as (path, filename, content_type):
+        async with (
+            self._operation_scope("source.add_drive_file"),
+            drive_download(document_id) as (path, filename, content_type),
+        ):
             return await self.add_file(
                 notebook_id,
                 path,

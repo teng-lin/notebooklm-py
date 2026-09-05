@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -17,6 +18,12 @@ from notebooklm.types import Source, SourceStatus
 
 
 class _DirectSession:
+    @asynccontextmanager
+    async def operation_scope(self, label: str) -> AsyncIterator[Any]:
+        """Declare transport-free workflow admission for the parity adapter."""
+        del label
+        yield SimpleNamespace(epoch=1)
+
     async def spawn_child(
         self,
         label: str,

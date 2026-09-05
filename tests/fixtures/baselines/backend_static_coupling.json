@@ -9789,7 +9789,7 @@
   ],
   "subsystems": {
     "android": {
-      "lines": 15463,
+      "lines": 15467,
       "modules": 51
     },
     "app": {
@@ -9829,12 +9829,12 @@
       "modules": 16
     },
     "web": {
-      "lines": 33315,
+      "lines": 33329,
       "modules": 95
     }
   },
   "summary": {
-    "authored_lines": 143195,
+    "authored_lines": 143213,
     "authored_modules": 452,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1076,

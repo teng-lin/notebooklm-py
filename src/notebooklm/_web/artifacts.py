@@ -259,9 +259,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download an Audio Overview to a file."""
-        return await self._downloads.download_audio(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_audio"):
+            return await self._downloads.download_audio(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_video(
         self,
@@ -272,9 +273,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a Video Overview to a file."""
-        return await self._downloads.download_video(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_video"):
+            return await self._downloads.download_video(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_infographic(
         self,
@@ -285,9 +287,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download an Infographic to a file."""
-        return await self._downloads.download_infographic(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_infographic"):
+            return await self._downloads.download_infographic(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_slide_deck(
         self,
@@ -299,9 +302,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a slide deck as PDF or PPTX."""
-        return await self._downloads.download_slide_deck(
-            notebook_id, output_path, artifact_id, output_format, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_slide_deck"):
+            return await self._downloads.download_slide_deck(
+                notebook_id, output_path, artifact_id, output_format, artifacts_data=artifacts_data
+            )
 
     async def _download_interactive_artifact(
         self,
@@ -327,9 +331,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a report artifact as markdown."""
-        return await self._downloads.download_report(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_report"):
+            return await self._downloads.download_report(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_mind_map(
         self,
@@ -341,13 +346,14 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a mind map as JSON."""
-        return await self._downloads.download_mind_map(
-            notebook_id,
-            output_path,
-            artifact_id,
-            mind_maps=mind_maps,
-            artifacts_data=artifacts_data,
-        )
+        async with self._operation_scope("artifacts.download_mind_map"):
+            return await self._downloads.download_mind_map(
+                notebook_id,
+                output_path,
+                artifact_id,
+                mind_maps=mind_maps,
+                artifacts_data=artifacts_data,
+            )
 
     async def download_data_table(
         self,
@@ -358,9 +364,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a data table as CSV."""
-        return await self._downloads.download_data_table(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_data_table"):
+            return await self._downloads.download_data_table(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_quiz(
         self,
@@ -372,9 +379,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts: builtins.list[Artifact] | None = None,
     ) -> str:
         """Download quiz questions."""
-        return await self._download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "quiz", artifacts=artifacts
-        )
+        async with self._operation_scope("artifacts.download_quiz"):
+            return await self._download_interactive_artifact(
+                notebook_id, output_path, artifact_id, output_format, "quiz", artifacts=artifacts
+            )
 
     async def download_flashcards(
         self,
@@ -386,9 +394,15 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts: builtins.list[Artifact] | None = None,
     ) -> str:
         """Download flashcard deck."""
-        return await self._download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "flashcards", artifacts=artifacts
-        )
+        async with self._operation_scope("artifacts.download_flashcards"):
+            return await self._download_interactive_artifact(
+                notebook_id,
+                output_path,
+                artifact_id,
+                output_format,
+                "flashcards",
+                artifacts=artifacts,
+            )
 
     # =========================================================================
     # Management Operations

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,6 +13,7 @@ import pytest
 
 from notebooklm._android.chat import AndroidChatAPI
 from notebooklm._android.notebooks import AndroidNotebooksAPI
+from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import AdmissionState, CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle
@@ -559,4 +563,210 @@ async def test_source_wait_fanout_registers_children_before_graceful_drain() -> 
     assert [source.id for source in results] == ["one", "two"]
     assert generation.in_flight == 0
     assert not generation.depths
+    await lifecycle.close(drain=False)
+
+
+class _StagedArtifactTransfer:
+    def __init__(self, supervisor: CallSupervisor) -> None:
+        self._supervisor = supervisor
+        self.first_call_started = asyncio.Event()
+        self.release_first_call = asyncio.Event()
+
+    async def run(self, *args: Any, **kwargs: Any) -> str:
+        del args, kwargs
+        async with self._supervisor.call_scope("test.transfer.resolve", "resolve", None):
+            self.first_call_started.set()
+            await self.release_first_call.wait()
+        async with self._supervisor.call_scope("test.transfer.settle", "settle", None):
+            return "settled-output"
+
+
+def _artifact_download_api(
+    supervisor: CallSupervisor,
+    transfer: _StagedArtifactTransfer,
+) -> WebArtifactsAPI:
+    api = object.__new__(WebArtifactsAPI)
+    api._supervisor = supervisor
+    api._downloads = SimpleNamespace(
+        download_audio=transfer.run,
+        download_video=transfer.run,
+        download_infographic=transfer.run,
+        download_slide_deck=transfer.run,
+        download_report=transfer.run,
+        download_mind_map=transfer.run,
+        download_data_table=transfer.run,
+        download_interactive_artifact=transfer.run,
+    )
+    return api
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "download_audio",
+        "download_video",
+        "download_infographic",
+        "download_slide_deck",
+        "download_report",
+        "download_mind_map",
+        "download_data_table",
+        "download_quiz",
+        "download_flashcards",
+    ],
+)
+@pytest.mark.asyncio
+async def test_web_artifact_download_keeps_settlement_admitted_after_drain(
+    method: str,
+) -> None:
+    lifecycle, supervisor = _lifecycle()
+    await lifecycle.open()
+    transfer = _StagedArtifactTransfer(supervisor)
+    api = _artifact_download_api(supervisor, transfer)
+
+    workflow = asyncio.create_task(getattr(api, method)("nb", "output"))
+    result = await _drain_after_first_stage(
+        lifecycle,
+        supervisor,
+        transfer.first_call_started,
+        transfer.release_first_call,
+        workflow,
+    )
+
+    assert result == "settled-output"
+
+
+@pytest.mark.asyncio
+async def test_web_artifact_download_cannot_cross_forced_close_and_reopen() -> None:
+    lifecycle, supervisor = _lifecycle()
+    await lifecycle.open()
+    transfer = _StagedArtifactTransfer(supervisor)
+    api = _artifact_download_api(supervisor, transfer)
+
+    workflow = asyncio.create_task(api.download_audio("nb", "output"))
+    await transfer.first_call_started.wait()
+    await lifecycle.close(drain=False)
+    await lifecycle.open()
+    reopened_epoch = lifecycle._epoch
+    transfer.release_first_call.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await workflow
+    assert lifecycle._epoch == reopened_epoch
+    assert supervisor._retired == {}
+    await lifecycle.close(drain=False)
+
+
+class _PausedUploadPipeline:
+    def __init__(self, supervisor: CallSupervisor) -> None:
+        self._supervisor = supervisor
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def upload_file(self, *args: Any, **kwargs: Any) -> Source:
+        del args, kwargs
+        self.entered.set()
+        await self.release.wait()
+        async with self._supervisor.call_scope("test.upload.settle", "upload", None):
+            return Source(id="source-1", status=SourceStatus.PROCESSING)
+
+
+def _android_upload_api(
+    supervisor: CallSupervisor,
+    pipeline: _PausedUploadPipeline,
+) -> AndroidSourcesAPI:
+    api = object.__new__(AndroidSourcesAPI)
+    api._transport = _StagedAndroidTransport(supervisor, None)
+    api._upload_pipeline = pipeline
+    api._add_file_compat = None
+    api._drive_download = None
+    return api
+
+
+@pytest.mark.asyncio
+async def test_android_add_file_keeps_pipeline_settlement_admitted_after_drain(
+    tmp_path: Path,
+) -> None:
+    lifecycle, supervisor = _lifecycle()
+    await lifecycle.open()
+    pipeline = _PausedUploadPipeline(supervisor)
+    api = _android_upload_api(supervisor, pipeline)
+    path = tmp_path / "source.pdf"
+    path.write_bytes(b"pdf")
+
+    workflow = asyncio.create_task(api.add_file("nb", path))
+    result = await _drain_after_first_stage(
+        lifecycle,
+        supervisor,
+        pipeline.entered,
+        pipeline.release,
+        workflow,
+    )
+
+    assert result.id == "source-1"
+
+
+class _StagedDriveDownload:
+    def __init__(self, supervisor: CallSupervisor, path: Path) -> None:
+        self._supervisor = supervisor
+        self._path = path
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    @asynccontextmanager
+    async def __call__(self, document_id: str) -> AsyncIterator[tuple[Path, str, str]]:
+        del document_id
+        async with self._supervisor.call_scope("test.drive.download", "download", None):
+            self.started.set()
+            await self.release.wait()
+        yield self._path, self._path.name, "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_android_drive_download_keeps_import_admitted_after_drain(
+    tmp_path: Path,
+) -> None:
+    lifecycle, supervisor = _lifecycle()
+    await lifecycle.open()
+    pipeline = _PausedUploadPipeline(supervisor)
+    pipeline.release.set()
+    api = _android_upload_api(supervisor, pipeline)
+    path = tmp_path / "drive.pdf"
+    path.write_bytes(b"pdf")
+    drive_download = _StagedDriveDownload(supervisor, path)
+    api._drive_download = drive_download
+
+    workflow = asyncio.create_task(api.add_drive_file("nb", "drive-id"))
+    result = await _drain_after_first_stage(
+        lifecycle,
+        supervisor,
+        drive_download.started,
+        drive_download.release,
+        workflow,
+    )
+
+    assert result.id == "source-1"
+
+
+@pytest.mark.asyncio
+async def test_android_add_file_cannot_cross_forced_close_and_reopen(
+    tmp_path: Path,
+) -> None:
+    lifecycle, supervisor = _lifecycle()
+    await lifecycle.open()
+    pipeline = _PausedUploadPipeline(supervisor)
+    api = _android_upload_api(supervisor, pipeline)
+    path = tmp_path / "source.pdf"
+    path.write_bytes(b"pdf")
+
+    workflow = asyncio.create_task(api.add_file("nb", path))
+    await pipeline.entered.wait()
+    await lifecycle.close(drain=False)
+    await lifecycle.open()
+    reopened_epoch = lifecycle._epoch
+    pipeline.release.set()
+
+    with pytest.raises(RuntimeError, match="retired resource generation"):
+        await workflow
+    assert lifecycle._epoch == reopened_epoch
+    assert supervisor._retired == {}
     await lifecycle.close(drain=False)
