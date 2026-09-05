@@ -249,7 +249,7 @@ async def test_close_delegates_hook_and_drain_policy_to_root_lifecycle() -> None
         order.append("close")
 
     client._collaborators.call_supervisor.run_drain_hooks = fake_run_drain_hooks  # type: ignore[method-assign]
-    client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
+    client._lifecycle.close = fake_close  # type: ignore[method-assign]
 
     await client.close()
 
@@ -271,7 +271,7 @@ async def test_client_close_default_drain_is_true() -> None:
     async def fake_close(**kwargs: object) -> None:
         close_kwargs.append(kwargs)
 
-    client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
+    client._lifecycle.close = fake_close  # type: ignore[method-assign]
 
     await client.close()
 
@@ -287,7 +287,7 @@ async def test_client_close_drain_false_skips_drain() -> None:
     async def fake_close(**kwargs: object) -> None:
         close_kwargs.append(kwargs)
 
-    client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
+    client._lifecycle.close = fake_close  # type: ignore[method-assign]
 
     await client.close(drain=False)
 
@@ -303,7 +303,7 @@ async def test_client_aexit_uses_drain_true_default() -> None:
     async def fake_close(**kwargs: object) -> None:
         close_kwargs.append(kwargs)
 
-    client._collaborators.lifecycle.close = fake_close  # type: ignore[method-assign]
+    client._lifecycle.close = fake_close  # type: ignore[method-assign]
 
     # Drive __aexit__ directly rather than `async with` so we can use the
     # patched core without going through ``open()``.

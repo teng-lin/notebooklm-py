@@ -61,8 +61,9 @@ The per-module index and the full tree are in [File map](#file-map) below.
 
 ## Library call flows
 
-`NotebookLMClient` is the composition root. It constructs the shared runtime
-collaborator graph, wires feature APIs to narrow runtime Protocols, and
+`_client_assembly` is the composition root that installs `NotebookLMClient`.
+It constructs the shared runtime collaborator graph once, asks the selected
+backend for a complete typed graph, wires feature APIs to narrow runtime Protocols, and
 injects stateful services such as `SourceUploadPipeline`, `NoteService`,
 `NoteBackedMindMapService`, and `ArtifactDownloadService`. Feature modules
 build NotebookLM params and parse domain rows; client-owned collaborators own
@@ -79,8 +80,8 @@ supported `client.raw` namespace is selected with the backend. The deprecated
 `client.rpc_call(...)` wrapper is deliberately different: its `RPCMethod`
 values are Web batchexecute IDs, so Android preserves it through a separate,
 lazy Web compatibility sidecar during the 0.x warning window. The root
-`_client_compat.py` module is the sole owner of that proxy and its lazy Web
-runtime installer; neither backend assembly owns the bridge.
+`_client_compat.py` module is the sole owner of that proxy and its pure lazy Web
+runtime factory; neither backend assembly owns the bridge.
 
 Use the [runtime and transport view](https://teng-lin.github.io/notebooklm-py/diagrams/03-client-runtime-and-transport.html)
 for ownership, the [RPC sequence](https://teng-lin.github.io/notebooklm-py/diagrams/07-rpc-call-path.html) for call order, and
@@ -543,8 +544,8 @@ the executor on direct collaborator dependencies.
                            sidecar overrides           artifacts/chat/...
         |
         v
-  _collaborators: SharedRuntime
-  metrics | call_supervisor | root lifecycle
+  _collaborators: SharedRuntime       _lifecycle: ClientLifecycle
+  metrics | call_supervisor           root resource-state owner
         |
         v
   ClientLifecycle orchestrates immutable transport/loop-participant tuples
@@ -575,14 +576,14 @@ the executor on direct collaborator dependencies.
 
 | Collaborator | Module | Responsibility |
 |--------------|--------|----------------|
-| `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface and composition root. Owns `_auth`, `_seams`, the neutral `_collaborators`, exactly one primary backend runtime, backend preference/reporting, the backend-selected `raw` adapter, and the eleven feature API attributes (`notebooks`, `sources`, `artifacts`, `chat`, `notes`, `mind_maps`, `research`, `settings`, `sharing`, `labels`, `collections`). An Android client also owns an inert `LazyWebSidecar` lifecycle proxy solely for the deprecated `rpc_call` warning window. Keep non-trivial additions in focused assembly/runtime/feature seams rather than accreting the composition root; the module-size ratchet in `tests/_guardrails/test_module_size_ratchet.py` is the enforceable ceiling, not a line count copied into this document. |
+| `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface installed once from a complete backend assembly. Owns `_auth`, `_seams`, the neutral `_collaborators`, a separate `_lifecycle`, exactly one primary backend runtime, backend preference/reporting, the backend-selected `raw` adapter, and the eleven feature API attributes (`notebooks`, `sources`, `artifacts`, `chat`, `notes`, `mind_maps`, `research`, `settings`, `sharing`, `labels`, `collections`). An Android client also owns an inert `LazyWebSidecar` lifecycle proxy solely for the deprecated `rpc_call` warning window. Keep non-trivial additions in focused assembly/runtime/feature seams rather than accreting the composition root; the module-size ratchet in `tests/_guardrails/test_module_size_ratchet.py` is the enforceable ceiling, not a line count copied into this document. |
 | `ClientSeams` | [`_web/transport/seams.py`](../src/notebooklm/_web/transport/seams.py) | Web-owned mutable holder for runtime callables that Web closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Android construction retains only unresolved test overrides in the root compatibility owner; defaults resolve if the deprecated Web sidecar materializes. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
-| `SharedRuntimeConfig` / `SharedRuntime` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Backend-neutral input containing only `max_concurrent_rpcs`, plus the resulting metrics, shared call supervisor, and root lifecycle after assembly. `on_rpc_event` remains a separate builder input and `RuntimeCollaborators` remains a private compatibility alias. |
+| `SharedRuntimeConfig` / `SharedRuntime` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Backend-neutral input containing only `max_concurrent_rpcs`, plus the resulting metrics and shared call supervisor. The lifecycle is deliberately client-held rather than installed by replacing this frozen bundle. `on_rpc_event` remains a separate builder input and `RuntimeCollaborators` remains a private compatibility alias. |
 | `WebSessionConfig` | [`_web/transport/config.py`](../src/notebooklm/_web/transport/config.py) | Web-owned validated connection, retry, keepalive, decoder/classifier, sleep, and HTTP-client-factory settings. Android construction creates none of this state; the deprecated sidecar creates it only on materialization. |
 | `WebRuntime` | [`_web/transport/init.py`](../src/notebooklm/_web/transport/init.py) | Web-only bundle containing request IDs, auth coordination, Kernel, cookie persistence, web lifecycle, composition holder, executor, and upload pipeline. |
 | `AndroidRuntime` | [`_android/runtime.py`](../src/notebooklm/_android/runtime.py) | Android-only bundle containing the bearer provider, gRPC session, upload/asset transports, and Phenotype token provider. |
-| `LazyWebSidecar` | [`_client_compat.py`](../src/notebooklm/_client_compat.py) | Sole root owner of the 0.x Android-to-Web bridge: `_install_android_web_compatibility` pre-registers the inert lifecycle proxy and retains the lazy full-Web-runtime builder; `_web/transport/sidecar.py` is only an identity-stable lazy compatibility path. The proxy is inert at construction/open, materialises once under a lock inside supervised admission, owns close/reopen and Web auth refresh, persists cookies after use, and never installs keepalive or a drain hook. |
-| `ClientComposed` | [`_web/transport/composed.py`](../src/notebooklm/_web/transport/composed.py) | Write-once holder for the Web/raw-RPC composition (`transport`, `executor`, `chain_host`, `chain_builder`, and `middlewares`) plus the shared `runtime_collaborators`. RPC admission/semaphore policy lives on `CallSupervisor`. Pre-binding access raises a clear `RuntimeError`; the holder deliberately does not expose a broad `.collaborators` alias. |
+| `LazyWebSidecar` | [`_client_compat.py`](../src/notebooklm/_client_compat.py) | Sole root owner of the 0.x Android-to-Web bridge: `build_compatibility_sidecar` is a pure factory over the shared runtime plus frozen spec/dependencies. The root includes the returned inert proxy in the final lifecycle tuples. The proxy materialises once under a lock inside supervised admission, owns close/reopen and Web auth refresh, persists cookies after use, and never installs keepalive or a drain hook. |
+| `ClientComposed` | [`_web/transport/composed.py`](../src/notebooklm/_web/transport/composed.py) | Write-once holder for the cyclic Web/raw-RPC composition slots (`transport`, `executor`, `chain_host`, `chain_builder`, and `middlewares`). It retains no back-edge to the final shared runtime; RPC admission/semaphore policy lives on `CallSupervisor`. Pre-binding access raises a clear `RuntimeError`. |
 | `CallSupervisor` | [`_runtime/call_supervisor.py`](../src/notebooklm/_runtime/call_supervisor.py) | Protocol-neutral `Admission -> Metrics -> Semaphore` policy, generation-bearing call/operation leases, cancellation-safe retained settlement, race-free admitted child spawning, and lifecycle admission transitions. Its generation counter is the single in-flight source. |
 | `RpcExecutor` | [`_web/transport/executor.py`](../src/notebooklm/_web/transport/executor.py) | Single logical batchexecute RPC dispatch path. Owns request-id/started-metric bracketing, idempotency policy lookup, method-ID resolution, request encoding, response decode, RPC error mapping, and decode-time auth refresh retry. Takes its `RuntimeTransport`, `AuthRefreshCoordinator`, `ClientMetrics`, and `CallSupervisor` collaborators directly via keyword-only constructor parameters (ADR-0014 Rule 5). Enters transport through `RuntimeTransport.perform_authed_post`. |
 | `RuntimeTransport` | [`_web/transport/runtime.py`](../src/notebooklm/_web/transport/runtime.py) | Authed POST collaborator. Holds an admission-only `CallSupervisor` operation lease before loop checking, auth snapshot, and request materialization; after preparation it enters the supervisor's terminal `Admission -> Metrics -> Semaphore` call scope and dispatches the four-middleware web chain. Owns `refresh_request_for_current_auth()` and `terminal()` (freshness rebuild + `Kernel.post`). Called directly by `RpcExecutor` and by `_web.transport.chat.chat_aware_authed_post`; the middleware chain leaf at `MiddlewareChainHost._authed_post_chain_terminal` continues to dispatch through `RuntimeTransport.terminal` per ADR-0014 Rule 4. |
@@ -937,8 +938,8 @@ Authed POST leaf             (RuntimeTransport.terminal → Kernel → httpx)
 
 ## Client as composition root
 
-`NotebookLMClient` is both the public surface and the composition root. It owns
-the shared collaborator bundle, one primary backend runtime, backend
+`NotebookLMClient` is the public surface installed by the private composition root. It owns
+the shared collaborator bundle, a separate lifecycle, one primary backend runtime, backend
 preference/reporting, the backend-selected raw adapter, and the feature API instances. The protocol-neutral `ClientLifecycle` owns resource state and
 open/drain/close wave orchestration across the installed transport participants.
 Web selection builds `WebRuntime`; `WebTransportLifecycle` owns the Kernel,
@@ -948,7 +949,7 @@ does not build that bundle: it installs `AndroidRuntime` with the bearer provide
 `AndroidSession`, Android upload/asset services, and Phenotype transport while
 replacing all eleven public namespace adapters. Its frozen lifecycle tuple also
 contains the inert `LazyWebSidecar` proxy required only by the deprecated root
-`rpc_call` compatibility window. The root `_client_compat.py` owner installs the
+`rpc_call` compatibility window. The root `_client_compat.py` pure factory returns the
 proxy and holds the sole lazy Web builder; `_android.assembly` has no knowledge
 of either. Android stored-auth assembly uses the name-only, read-only load
 policy: it retains the default 0.x homepage GET and its pre-open failure timing,
@@ -961,9 +962,10 @@ Concretely, the client-owned runtime retains:
 1. **Late-bound composition slots.** `ClientComposed.transport`, the chain
    metadata slots (`chain_builder` / `middlewares`), and
    `ClientComposed.executor` are bound exactly once by
-   `compose_client_internals(...)` through write-once binders. Pre-binding
-   access trips the `ClientComposed` guard. `ClientComposed` exposes
-   `runtime_collaborators`, not a broad `collaborators` alias.
+   `build_web_runtime(...)` through write-once binders. The retained
+   `compose_client_internals(...)` test helper delegates through the typed Web
+   assembly. Pre-binding access trips the `ClientComposed` guard, and the
+   holder exposes no shared-runtime alias.
    [`tests/_guardrails/test_client_composition.py`](../tests/_guardrails/test_client_composition.py)
    guards against inlining holder state back onto `NotebookLMClient`.
 2. **Middleware-chain seams.** The chain leaf
@@ -1117,12 +1119,12 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 |------|---------|
 | `client.py` | Main `NotebookLMClient` class |
 | `raw.py` | Public raw descriptors, replay policy, and backend-selected escape-hatch APIs. |
-| `_client_assembly.py` | Single private assembly seam (`_assemble_client`) that wires every constructor-set attribute; shared by `NotebookLMClient.__init__` and the canonical test factory (`tests/_helpers/client_factory.py`) so the two construction paths cannot drift. |
-| `_client_compat.py` | Sole root-owned 0.x Android-to-Web compatibility installer and inert `LazyWebSidecar`; imports `_web.assembly` only inside the first-use builder. |
-| `_client_contracts.py` | Neutral client-side collaborator protocols and construction-only contracts shared by the root, backend assemblers, and compatibility sidecar. |
+| `_client_assembly.py` | Single private composition root: builds shared services once, invokes one typed backend builder, constructs the sole lifecycle, and installs the complete graph. Its private handoff preserves a backend preference frozen before deferred auth loading plus exact loaded-store baseline identity. |
+| `_client_compat.py` | Pure 0.x Android-to-Web sidecar factory and inert `LazyWebSidecar`; imports `_web.assembly` only inside the first-use builder and never closes over a public client. |
+| `_client_contracts.py` | Complete frozen `FeatureNamespaces`, discriminated `WebAssembly`/`AndroidAssembly`, narrow lifecycle participants, and warning-free private P4 construction carriers. |
 | `_adapter_support.py` | Small transport-neutral support leaf for adapter error/response helpers; imported by MCP and REST adapters without importing a backend implementation. |
 | `_web/raw.py` | Thin Web raw adapter that preserves `RpcExecutor.rpc_call` behavior. |
-| `_web/transport/composed.py` | Web composition holder for transport, executor, chain host, middleware metadata, and the shared runtime bundle. |
+| `_web/transport/composed.py` | Web composition holder for the transport/executor/chain construction cycle; it has no shared-runtime back-edge. |
 | `_web/transport/seams.py` | Constructor-only injectable seams used by tests and collaborator construction. |
 | `_android/` | Android backend package. Its package marker and selected adapter imports are dependency-free; generated protobuf modules remain lazy. Explicit Android preference installs Android adapters for all eleven public namespaces. The installed namespace graph has no Web operation collaborators; native gRPC/Scotty/asset paths and local composition cover the public contract. |
 | `_android/auth.py` | Generation-fenced `BearerProvider` over explicit narrow `MasterTokenReader` / `OAuthMinter` capabilities: off-loop typed reads, shared mint waves, bounded expiry caching, compare-and-clear invalidation, and secret-safe teardown. It performs no path discovery and imports no `ProfileStore` or concrete `MintService`. |
@@ -1409,9 +1411,9 @@ src/notebooklm/
 ├── _backoff.py                  # Shared retry backoff calculation
 ├── _callbacks.py                # Sync/async callback invocation helper
 ├── _adapter_support.py          # Small transport-neutral adapter support leaf
-├── _client_assembly.py          # Shared client-assembly seam (constructor + test factory)
-├── _client_compat.py            # Root-owned 0.x Android-to-Web sidecar installer/proxy
-├── _client_contracts.py         # Neutral client collaborator protocols and contracts
+├── _client_assembly.py          # Typed graph composition + sole client installer
+├── _client_compat.py            # Pure 0.x Android-to-Web sidecar factory/proxy
+├── _client_contracts.py         # Frozen assembly graphs + private P4 carriers
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth/raw-call specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers

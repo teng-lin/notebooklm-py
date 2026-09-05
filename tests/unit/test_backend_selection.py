@@ -19,6 +19,7 @@ from pytest_httpx import HTTPXMock
 import notebooklm._android.auth as android_auth
 import notebooklm._auth.psidts_recovery as psidts_recovery
 import notebooklm._auth.refresh as auth_refresh
+import notebooklm.client as client_module
 from notebooklm._android.artifacts import AndroidArtifactsAPI
 from notebooklm._android.chat import AndroidChatAPI
 from notebooklm._android.collections import AndroidCollectionsAPI
@@ -33,6 +34,7 @@ from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.mint_service import MintedOAuthToken
 from notebooklm._auth.profile_store import ProfileStore
+from notebooklm._auth.tokens import InlineLoadedAuth
 from notebooklm._client_assembly import BackendPreference, resolve_backend_preference
 from notebooklm._web.transport.cookie_persistence import CookiePersistence
 from notebooklm._web.transport.kernel import Kernel
@@ -692,9 +694,7 @@ def test_android_assembly_accepts_only_narrow_primary_credentials() -> None:
     parameters = inspect.signature(assemble_android_backend).parameters
 
     assert "auth" not in parameters
-    assert "profile_path" in parameters
-    assert "master_token_reader" in parameters
-    assert "oauth_minter" in parameters
+    assert tuple(parameters) == ("shared", "config", "credentials", "deps")
 
 
 async def test_selected_android_open_binds_auth_and_session_without_eager_channel(
@@ -796,7 +796,7 @@ async def test_android_primary_auth_uses_only_explicit_reader_and_minter(
 
 def test_android_selection_extends_the_frozen_lifecycle_ownership_graph() -> None:
     client = NotebookLMClient(_auth(), backend="android")
-    lifecycle = client._collaborators.lifecycle
+    lifecycle = client._lifecycle
     assert client._android_runtime is not None
     android = client._android_runtime
     assert client._web_runtime is None
@@ -867,6 +867,31 @@ def test_from_storage_freezes_environment_preference_at_wrapper_construction(
     monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
 
     assert wrapper._kwargs["backend_preference"] == BackendPreference("android", "env")
+
+
+async def test_from_storage_handoff_skips_nested_client_in_subclass_constructor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class ClientWithNestedConstruction(NotebookLMClient):
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            self.nested = NotebookLMClient(_auth())
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    wrapper = ClientWithNestedConstruction.from_storage()
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    client = await wrapper._build()
+
+    assert isinstance(client, ClientWithNestedConstruction)
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert client.nested._backend_preference == BackendPreference("web", "env")
 
 
 async def test_from_storage_threads_explicit_backend(

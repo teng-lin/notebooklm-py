@@ -5,15 +5,36 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import httpx
 
-from ._client_compat import WebSeamOverrides, _install_android_web_compatibility
-from ._client_contracts import BackendAssembly, BackendName, CookieRotator, CookieSaver
+from ._auth.tokens import FileLoadedAuth, LoadedAuth
+from ._client_compat import (
+    CompatibilityDependencies,
+    CompatibilitySpec,
+    LazyWebSidecar,
+    WebSeamOverrides,
+    build_compatibility_sidecar,
+)
+from ._client_contracts import (
+    AndroidAssemblyConfig,
+    AndroidCredentials,
+    AndroidDependencies,
+    BackendAssembly,
+    BackendName,
+    CookieRotator,
+    CookieSaver,
+    WebAssembly,
+    WebAssemblyConfig,
+    WebCredentials,
+    WebDependencies,
+)
 from ._runtime.config import (
     AUTO_READ_TIMEOUT,
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
@@ -25,7 +46,7 @@ from ._runtime.config import (
     validate_read_timeout_kwarg,
 )
 from ._runtime.error_injection import _refuse_synthetic_error_outside_test_context
-from ._runtime.init import validate_shared_runtime_config
+from ._runtime.init import build_collaborators, validate_shared_runtime_config
 from ._runtime.lifecycle import ClientLifecycle
 from .auth import AuthTokens
 
@@ -43,6 +64,33 @@ class BackendPreference:
 
     preferred: BackendName
     reason: Literal["explicit", "env", "default"]
+
+
+@dataclass(frozen=True)
+class ConstructionHandoff:
+    """Private handoff for decisions frozen before deferred auth loading."""
+
+    backend_preference: BackendPreference
+    target_cls: type[object]
+    target_auth: AuthTokens
+    loaded_auth: LoadedAuth | None = None
+
+
+_ACTIVE_HANDOFF: ContextVar[ConstructionHandoff | None] = ContextVar(
+    "notebooklm_construction_handoff",
+    default=None,
+)
+
+
+@contextmanager
+def construction_handoff(context: ConstructionHandoff) -> Iterator[None]:
+    """Make one deferred construction handoff visible to a subclass call."""
+
+    token = _ACTIVE_HANDOFF.set(context)
+    try:
+        yield
+    finally:
+        _ACTIVE_HANDOFF.reset(token)
 
 
 def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
@@ -74,17 +122,63 @@ class _UnsetType:
 _UNSET = _UnsetType()
 
 
-def _install_lifecycle(client: NotebookLMClient, assembly: BackendAssembly) -> None:
+def _install_client(
+    client: NotebookLMClient,
+    *,
+    auth: AuthTokens,
+    preference: BackendPreference,
+    assembly: BackendAssembly,
+    sidecar: LazyWebSidecar | None,
+    android_seams: WebSeamOverrides | None,
+    loaded_auth: LoadedAuth | None,
+) -> None:
+    """Install one completed graph; this is the sole client mutation owner."""
+
+    transports = assembly.transports
+    loop_participants = assembly.loop_participants
+    if sidecar is not None:
+        transports = (*transports, sidecar)
+        loop_participants = (*loop_participants, sidecar)
     lifecycle = ClientLifecycle(
-        supervisor=assembly.collaborators.call_supervisor,
-        transports=assembly.transports,
-        loop_participants=assembly.loop_participants,
+        supervisor=assembly.shared.call_supervisor,
+        transports=transports,
+        loop_participants=loop_participants,
     )
-    client._collaborators = dataclasses.replace(assembly.collaborators, _lifecycle=lifecycle)
+    client._auth = auth
+    client._account_email_cache = None
+    client._account_email_cache_route = None
+    client._backend_preference = preference
+    client._collaborators = assembly.shared
+    client._lifecycle = lifecycle
     client._backends = assembly.backends
     client._rpc_call_deprecation_warned = False
-    if assembly.bind_collaborators is not None:
-        assembly.bind_collaborators(client._collaborators)
+    client._raw = assembly.raw
+    client.notebooks = assembly.namespaces.notebooks
+    client.sources = assembly.namespaces.sources
+    client.artifacts = assembly.namespaces.artifacts
+    client.chat = assembly.namespaces.chat
+    client.research = assembly.namespaces.research
+    client.notes = assembly.namespaces.notes
+    client.mind_maps = assembly.namespaces.mind_maps
+    client.settings = assembly.namespaces.settings
+    client.sharing = assembly.namespaces.sharing
+    client.labels = assembly.namespaces.labels
+    client.collections = assembly.namespaces.collections
+    if isinstance(assembly, WebAssembly):
+        client._web_runtime = assembly.runtime
+        client._android_runtime = None
+        client._web_sidecar = None
+        client._seams = assembly.seams
+        if isinstance(loaded_auth, FileLoadedAuth):
+            assembly.runtime.cookie_persistence.register_open_baseline(
+                loaded_auth.store,
+                loaded_auth.persistence_baseline,
+            )
+    else:
+        client._web_runtime = None
+        client._android_runtime = assembly.runtime
+        client._web_sidecar = sidecar
+        client._seams = android_seams
 
 
 def _assemble_client(
@@ -121,18 +215,29 @@ def _assemble_client(
 ) -> None:
     """Normalize root-owned inputs, select one backend, and freeze its lifecycle."""
 
-    client._backend_preference = resolve_backend_preference(
-        explicit=backend,
-        env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
+    active_handoff = _ACTIVE_HANDOFF.get()
+    if active_handoff is not None and not (
+        type(client) is active_handoff.target_cls and auth is active_handoff.target_auth
+    ):
+        active_handoff = None
+    elif active_handoff is not None:
+        # Consume the handoff at the exact target construction. A subclass may
+        # construct another client before calling ``super().__init__``; that
+        # nested client must resolve its own backend and auth provenance.
+        _ACTIVE_HANDOFF.set(None)
+    preference = (
+        active_handoff.backend_preference
+        if active_handoff is not None
+        else resolve_backend_preference(
+            explicit=backend,
+            env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
+        )
     )
+    loaded_auth = active_handoff.loaded_auth if active_handoff is not None else None
     if storage_path is not None:
         storage_path = Path(storage_path)
         if auth.storage_path != storage_path:
             auth = dataclasses.replace(auth, storage_path=storage_path)
-
-    client._auth = auth
-    client._account_email_cache = None
-    client._account_email_cache_route = None
 
     use_default_refresh_callback = isinstance(refresh_callback, _UnsetType)
     if use_default_refresh_callback:
@@ -149,7 +254,7 @@ def _assemble_client(
             derived_keepalive_path = Path(derived_keepalive_path).expanduser().resolve()
         keepalive_storage_path = derived_keepalive_path
 
-    if client._backend_preference.preferred == "web" and max_concurrent_rpcs is not None:
+    if preference.preferred == "web" and max_concurrent_rpcs is not None:
         from .types import ConnectionLimits
 
         effective_limits = limits if limits is not None else ConnectionLimits()
@@ -173,8 +278,9 @@ def _assemble_client(
 
     shared_config = validate_shared_runtime_config(max_concurrent_rpcs=max_concurrent_rpcs)
     _refuse_synthetic_error_outside_test_context()
+    shared = build_collaborators(shared_config, on_rpc_event=on_rpc_event)
 
-    if client._backend_preference.preferred == "android":
+    if preference.preferred == "android":
         ignored_web_options: list[str] = []
         if keepalive is not None:
             ignored_web_options.append("keepalive")
@@ -199,78 +305,112 @@ def _assemble_client(
             sleep=sleep,
             is_auth_error=is_auth_error,
         )
-        client._seams = seam_overrides
-
-        assembly = assemble_android_backend(
-            client,
-            profile_path=Path(auth.storage_path) if auth.storage_path is not None else None,
-            master_token_reader=(
-                None if isinstance(master_token_reader, _UnsetType) else master_token_reader
+        android_assembly = assemble_android_backend(
+            shared=shared,
+            config=AndroidAssemblyConfig(
+                timeout=timeout,
+                refresh_retry_delay=refresh_retry_delay,
+                rate_limit_max_retries=rate_limit_max_retries,
+                server_error_max_retries=server_error_max_retries,
+                max_concurrent_uploads=max_concurrent_uploads,
+                upload_timeout=upload_timeout,
+                chat_timeout=chat_timeout,
+                import_research_timeout=import_research_timeout,
+                chat_response_max_bytes=chat_response_max_bytes,
             ),
-            oauth_minter=None if isinstance(oauth_minter, _UnsetType) else oauth_minter,
-            timeout=timeout,
-            refresh_retry_delay=refresh_retry_delay,
-            rate_limit_max_retries=rate_limit_max_retries,
-            server_error_max_retries=server_error_max_retries,
-            max_concurrent_uploads=max_concurrent_uploads,
-            upload_timeout=upload_timeout,
-            chat_timeout=chat_timeout,
-            import_research_timeout=import_research_timeout,
-            chat_response_max_bytes=chat_response_max_bytes,
-            sleep=sleep,
-            shared_config=shared_config,
-            on_rpc_event=on_rpc_event,
+            credentials=AndroidCredentials(
+                profile_path=Path(auth.storage_path) if auth.storage_path is not None else None,
+            ),
+            deps=AndroidDependencies(
+                master_token_reader=(
+                    None if isinstance(master_token_reader, _UnsetType) else master_token_reader
+                ),
+                oauth_minter=None if isinstance(oauth_minter, _UnsetType) else oauth_minter,
+                sleep=sleep,
+            ),
         )
-        _install_android_web_compatibility(
+        sidecar = build_compatibility_sidecar(
+            shared,
+            CompatibilitySpec(
+                auth=auth,
+                shared_config=shared_config,
+                timeout=timeout,
+                refresh_retry_delay=refresh_retry_delay,
+                rate_limit_max_retries=rate_limit_max_retries,
+                server_error_max_retries=server_error_max_retries,
+                max_concurrent_uploads=max_concurrent_uploads,
+            ),
+            CompatibilityDependencies(
+                seam_overrides=seam_overrides,
+                refresh_callback=effective_refresh_callback,
+                use_default_refresh_callback=use_default_refresh_callback,
+                async_client_factory=async_client_factory,
+            ),
+        )
+        _install_client(
             client,
-            assembly,
             auth=auth,
-            shared_config=shared_config,
-            seam_overrides=seam_overrides,
-            refresh_callback=effective_refresh_callback,
-            use_default_refresh_callback=use_default_refresh_callback,
-            timeout=timeout,
-            refresh_retry_delay=refresh_retry_delay,
-            rate_limit_max_retries=rate_limit_max_retries,
-            server_error_max_retries=server_error_max_retries,
-            max_concurrent_uploads=max_concurrent_uploads,
-            async_client_factory=async_client_factory,
+            preference=preference,
+            assembly=android_assembly,
+            sidecar=sidecar,
+            android_seams=seam_overrides,
+            loaded_auth=loaded_auth,
         )
         return
 
     from ._web.assembly import assemble_web_backend
 
-    assembly = assemble_web_backend(
+    web_assembly = assemble_web_backend(
+        shared=shared,
+        config=WebAssemblyConfig(
+            timeout=timeout,
+            connect_timeout=connect_timeout,
+            keepalive=keepalive,
+            keepalive_min_interval=keepalive_min_interval,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
+            limits=limits,
+            max_concurrent_uploads=max_concurrent_uploads,
+            max_concurrent_rpcs=max_concurrent_rpcs,
+            upload_timeout=upload_timeout,
+            chat_timeout=chat_timeout,
+            import_research_timeout=import_research_timeout,
+            chat_response_max_bytes=chat_response_max_bytes,
+            shared_config=shared_config,
+        ),
+        credentials=WebCredentials(
+            auth=auth,
+            storage_path=storage_path,
+            keepalive_storage_path=keepalive_storage_path,
+        ),
+        deps=WebDependencies(
+            refresh_callback=effective_refresh_callback,
+            use_default_refresh_callback=use_default_refresh_callback,
+            refresh_retry_delay=refresh_retry_delay,
+            cookie_saver=cookie_saver,
+            cookie_rotator=cookie_rotator,
+            async_client_factory=async_client_factory,
+            decode_response=decode_response,
+            sleep=sleep,
+            is_auth_error=is_auth_error,
+        ),
+    )
+    _install_client(
         client,
         auth=auth,
-        timeout=timeout,
-        storage_path=storage_path,
-        keepalive=keepalive,
-        keepalive_min_interval=keepalive_min_interval,
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
-        limits=limits,
-        max_concurrent_uploads=max_concurrent_uploads,
-        max_concurrent_rpcs=max_concurrent_rpcs,
-        upload_timeout=upload_timeout,
-        on_rpc_event=on_rpc_event,
-        cookie_saver=cookie_saver,
-        cookie_rotator=cookie_rotator,
-        chat_timeout=chat_timeout,
-        import_research_timeout=import_research_timeout,
-        chat_response_max_bytes=chat_response_max_bytes,
-        refresh_callback=effective_refresh_callback,
-        use_default_refresh_callback=use_default_refresh_callback,
-        refresh_retry_delay=refresh_retry_delay,
-        connect_timeout=connect_timeout,
-        keepalive_storage_path=keepalive_storage_path,
-        async_client_factory=async_client_factory,
-        decode_response=decode_response,
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-        shared_config=shared_config,
+        preference=preference,
+        assembly=web_assembly,
+        sidecar=None,
+        android_seams=None,
+        loaded_auth=loaded_auth,
     )
-    _install_lifecycle(client, assembly)
 
 
-__all__ = ["BackendName", "BackendPreference", "_assemble_client", "resolve_backend_preference"]
+__all__ = [
+    "BackendName",
+    "BackendPreference",
+    "ConstructionHandoff",
+    "_assemble_client",
+    "construction_handoff",
+    "resolve_backend_preference",
+]

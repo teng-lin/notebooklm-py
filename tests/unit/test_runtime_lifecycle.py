@@ -545,7 +545,7 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     client = build_client_shell_for_tests(auth)
     collaborators = client._collaborators
     web = client._web_runtime
-    lifecycle = collaborators.lifecycle
+    lifecycle = client._lifecycle
 
     assert lifecycle._supervisor is collaborators.call_supervisor
     assert lifecycle._transports == (
@@ -564,5 +564,3 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     assert web.source_uploader._supervisor is collaborators.call_supervisor
     assert web.source_uploader._rpc is web.executor
     assert web.source_uploader._kernel is web.kernel
-    assert web.composed.runtime_collaborators is collaborators
-    assert web.composed.runtime_collaborators.lifecycle is lifecycle

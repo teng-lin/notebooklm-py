@@ -16,7 +16,6 @@ import pytest
 import notebooklm._android.auth as android_auth
 import notebooklm._web.assembly as web_assembly
 from notebooklm._auth.master_token_types import MasterToken
-from notebooklm._web.transport.seams import ClientSeams
 from notebooklm._web.transport.sidecar import LazyWebSidecar
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -70,7 +69,6 @@ def _runtime(*, result: object = None) -> SimpleNamespace:
         web_transport=_Transport(),
         source_uploader=_Transport(),
         executor=SimpleNamespace(rpc_call=AsyncMock(return_value=result)),
-        composed=SimpleNamespace(bind_runtime_collaborators=MagicMock()),
     )
 
 
@@ -389,7 +387,9 @@ async def test_android_sidecar_uses_own_refresh_ladder_and_persists_cookies(
         assert client._web_sidecar is not None
         runtime = client._web_sidecar.runtime
         assert runtime is not None
-        assert isinstance(client._seams, ClientSeams)
+        assert callable(client._seams.decode_response)
+        assert callable(client._seams.sleep)
+        assert callable(client._seams.is_auth_error)
         assert runtime.web_transport._keepalive_task is None
         assert calls == 2
         refresh.assert_awaited_once()
@@ -399,6 +399,55 @@ async def test_android_sidecar_uses_own_refresh_ladder_and_persists_cookies(
     saved = json.loads(storage.read_text(encoding="utf-8"))
     sid = next(row for row in saved["cookies"] if row["name"] == "SID")
     assert sid["value"] == "fresh"
+
+
+async def test_android_sidecar_keeps_client_seam_rebindings_live_after_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    auth = AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="decoded by injected seam", request=request)
+
+    def client_factory(**kwargs: object) -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(
+        web_assembly,
+        "_resolve_async_client_factory",
+        lambda _factory: client_factory,
+    )
+    monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
+    initial_decoder = MagicMock(return_value=["initial"])
+    client = build_client_shell_for_tests(
+        auth,
+        backend="android",
+        decode_response=initial_decoder,
+    )
+    assert client._android_runtime is not None
+    client._android_runtime.bearer_provider._master_token_reader.read_master_token = MagicMock(
+        return_value=MasterToken(email="test@example.com", android_id="1234", secret="secret")
+    )
+    client._android_runtime.session._grpc_loader = lambda: object()
+    client._android_runtime.session._protobuf_loader = lambda: object()
+
+    await client.__aenter__()
+    try:
+        with pytest.warns(DeprecationWarning, match="crosses from Android"):
+            assert await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) == ["initial"]
+        assert client._web_sidecar is not None
+        materialized = client._web_sidecar.runtime
+        assert materialized is not None
+
+        rebound_decoder = MagicMock(return_value=["rebound"])
+        client._seams.decode_response = rebound_decoder
+        assert await client.rpc_call(RPCMethod.LIST_NOTEBOOKS, []) == ["rebound"]
+
+        assert client._web_sidecar.runtime is materialized
+        initial_decoder.assert_called_once()
+        rebound_decoder.assert_called_once()
+    finally:
+        await client.close()
 
 
 async def test_android_deprecated_rpc_call_builds_once_warns_once_and_refuses_drain(

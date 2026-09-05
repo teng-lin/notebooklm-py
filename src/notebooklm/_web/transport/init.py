@@ -11,20 +11,33 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from ..._auth.profile_store import ProfileStore
+from ..._client_contracts import (
+    WebAssemblyConfig,
+    WebCredentials,
+    WebDependencies,
+)
 from ..._runtime.config import (
+    AUTO_READ_TIMEOUT,
+    DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     DEFAULT_TIMEOUT,
+    normalize_max_concurrent_uploads,
 )
 from ..._runtime.error_injection import _refuse_synthetic_error_outside_test_context
-from ..._runtime.init import SharedRuntime, SharedRuntimeConfig, build_collaborators
+from ..._runtime.init import (
+    SharedRuntime,
+    SharedRuntimeConfig,
+    build_collaborators,
+    validate_shared_runtime_config,
+)
 from ...auth import AuthTokens
 from ..sources.upload import SourceUploadPipeline
 from .auth import AuthRefreshCoordinator
 from .composed import ClientComposed
-from .config import WebSessionConfig, validate_web_config
+from .config import WebSessionConfig
 from .cookie_persistence import CookiePersistence
 from .executor import RpcExecutor
 from .kernel import Kernel
@@ -39,7 +52,7 @@ from .middleware.chain_host import MiddlewareChainHost
 from .middleware.core import Middleware, NextCall, build_chain
 from .reqid_counter import ReqidCounter
 from .runtime import RuntimeTransport
-from .seams import ClientSeams, resolve_client_seams
+from .seams import ClientSeams
 from .session_auth import WebSessionAuth
 
 if TYPE_CHECKING:
@@ -275,53 +288,64 @@ def compose_client_internals(
     composed: ClientComposed | None = None,
     shared_config: SharedRuntimeConfig | None = None,
 ) -> ClientInternals:
-    """Build the shared runtime and the complete web runtime bundle."""
+    """Delegate legacy test callers to the complete typed Web builder."""
     # MUST stay first — preserves the earliest-opportunity refusal that
     # ``test_synthetic_error_transport_guard`` pins.
     _refuse_synthetic_error_outside_test_context()
 
-    seams = seams or resolve_client_seams(
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-        decode_response=decode_response,
+    if rate_limit_max_retries < 0:
+        raise ValueError(f"rate_limit_max_retries must be >= 0, got {rate_limit_max_retries}")
+    if server_error_max_retries < 0:
+        raise ValueError(f"server_error_max_retries must be >= 0, got {server_error_max_retries}")
+    normalize_max_concurrent_uploads(max_concurrent_uploads)
+    resolved_shared_config = shared_config or validate_shared_runtime_config(
+        max_concurrent_rpcs=max_concurrent_rpcs
     )
-    composed = composed or ClientComposed()
-    async_client_factory = _resolve_async_client_factory(async_client_factory)
+    shared = build_collaborators(resolved_shared_config, on_rpc_event=on_rpc_event)
+    from ..assembly import assemble_web_backend
 
-    config, shared_config = validate_web_config(
-        timeout=timeout,
-        connect_timeout=connect_timeout,
-        refresh_retry_delay=refresh_retry_delay,
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
-        keepalive=keepalive,
-        keepalive_min_interval=keepalive_min_interval,
-        keepalive_storage_path=keepalive_storage_path,
-        auth_storage_path=auth.storage_path,
-        limits=limits,
-        max_concurrent_uploads=max_concurrent_uploads,
-        max_concurrent_rpcs=max_concurrent_rpcs,
-        decode_response=seams.decode_response,
-        sleep=seams.sleep,
-        is_auth_error=seams.is_auth_error,
-        async_client_factory=async_client_factory,
-        shared_config=shared_config,
-    )
-    shared = build_collaborators(shared_config, on_rpc_event=on_rpc_event)
-    web_runtime = build_web_runtime(
-        config=config,
-        auth=auth,
-        refresh_callback=refresh_callback,
-        use_default_refresh_callback=use_default_refresh_callback,
+    assembly = assemble_web_backend(
         shared=shared,
-        upload_timeout=upload_timeout,
-        max_concurrent_uploads=max_concurrent_uploads,
-        cookie_saver=cookie_saver,
-        cookie_rotator=cookie_rotator,
-        seams=seams,
-        composed=composed,
+        config=WebAssemblyConfig(
+            timeout=timeout,
+            connect_timeout=connect_timeout,
+            keepalive=keepalive,
+            keepalive_min_interval=keepalive_min_interval,
+            rate_limit_max_retries=rate_limit_max_retries,
+            server_error_max_retries=server_error_max_retries,
+            limits=limits,
+            max_concurrent_uploads=max_concurrent_uploads,
+            max_concurrent_rpcs=max_concurrent_rpcs,
+            upload_timeout=upload_timeout,
+            chat_timeout=AUTO_READ_TIMEOUT,
+            import_research_timeout=AUTO_READ_TIMEOUT,
+            chat_response_max_bytes=DEFAULT_CHAT_RESPONSE_MAX_BYTES,
+            shared_config=resolved_shared_config,
+        ),
+        credentials=WebCredentials(
+            auth=auth,
+            storage_path=auth.storage_path,
+            keepalive_storage_path=keepalive_storage_path,
+        ),
+        deps=WebDependencies(
+            refresh_callback=refresh_callback,
+            use_default_refresh_callback=use_default_refresh_callback,
+            refresh_retry_delay=refresh_retry_delay,
+            cookie_saver=cookie_saver,
+            cookie_rotator=cookie_rotator,
+            async_client_factory=async_client_factory,
+            decode_response=decode_response,
+            sleep=sleep,
+            is_auth_error=is_auth_error,
+            seams=seams,
+            composed=composed,
+        ),
     )
-    return ClientInternals(collaborators=shared, web_runtime=web_runtime, seams=seams)
+    return ClientInternals(
+        collaborators=assembly.shared,
+        web_runtime=assembly.runtime,
+        seams=assembly.seams,
+    )
 
 
 def build_web_runtime(
