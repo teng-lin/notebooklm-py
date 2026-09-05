@@ -65,6 +65,7 @@ def test_capture_missing_browser_extra_preserves_explicit_cause_and_scrubs(monke
 
 
 def test_capture_timeout_preserves_active_context_and_scrubs_resources(monkeypatch):
+    """Timeout cleanup preserves the caller's exception context and scrubs resources."""
     page = Mock()
     context = Mock()
     context.new_page.return_value = page
@@ -200,6 +201,7 @@ def test_capture_passes_valid_cdp_unchanged_and_preserves_connector_error(monkey
 def test_capture_cdp_preserves_external_ownership_and_closes_created_resources(
     monkeypatch, existing_context
 ):
+    """CDP capture closes only the resources it creates in the attached browser."""
     page = Mock()
     context = Mock()
     context.new_page.return_value = page
@@ -232,6 +234,7 @@ def test_capture_cdp_preserves_external_ownership_and_closes_created_resources(
 
 
 def test_capture_local_launch_closes_owned_page_context_and_browser(monkeypatch):
+    """Successful local capture releases its owned page, context, and browser."""
     page = Mock()
     context = Mock()
     context.new_page.return_value = page
@@ -259,6 +262,7 @@ def test_capture_local_launch_closes_owned_page_context_and_browser(monkeypatch)
 
 
 def test_capture_cleanup_failure_preserves_parent_precedence(monkeypatch):
+    """A page cleanup failure retains its existing exception and cleanup precedence."""
     cleanup_failure = RuntimeError("page close")
     page = Mock()
     page.close.side_effect = cleanup_failure
@@ -285,9 +289,11 @@ def test_capture_cleanup_failure_preserves_parent_precedence(monkeypatch):
 
 @pytest.mark.parametrize("poll_duration", [0.0, 2.0], ids=["empty-polls", "slow-poll"])
 def test_capture_timeout_uses_host_clock_and_bounds_sleep(monkeypatch, poll_duration):
+    """Empty or slow cookie polls expire without relying on a live login page."""
     clock = SimpleNamespace(now=1000.0)
 
     def sleep(seconds):
+        """Advance simulated time and reject negative waits."""
         assert seconds >= 0
         clock.now += seconds
 
@@ -301,6 +307,7 @@ def test_capture_timeout_uses_host_clock_and_bounds_sleep(monkeypatch, poll_dura
     context.new_page.return_value = page
 
     def cookies():
+        """Model a cookie read that consumes time without finding a token."""
         clock.now += poll_duration
         return []
 
@@ -311,6 +318,7 @@ def test_capture_timeout_uses_host_clock_and_bounds_sleep(monkeypatch, poll_dura
 
     @contextmanager
     def playwright_context():
+        """Supply the fake browser while retaining the real capture loop."""
         yield SimpleNamespace(chromium=chromium)
 
     monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)
@@ -342,6 +350,7 @@ def test_capture_reads_cookie_after_login_page_closes_in_real_chromium(monkeypat
             closed_pages = []
 
             def cookies():
+                """Set a dummy token and close the tab after the first cookie snapshot."""
                 snapshot = read_cookies()
                 if not closed_pages:
                     # Complete sign-in just after the first cookie snapshot,
@@ -368,6 +377,7 @@ def test_capture_reads_cookie_after_login_page_closes_in_real_chromium(monkeypat
 
             @contextmanager
             def playwright_context():
+                """Expose real browser objects through either capture ownership path."""
                 yield SimpleNamespace(chromium=chromium)
 
             monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)

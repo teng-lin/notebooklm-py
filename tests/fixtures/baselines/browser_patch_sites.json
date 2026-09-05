@@ -21,7 +21,7 @@
       "path": "tests/unit/test_auth_session_refresh_cmd.py"
     },
     {
-      "count": 7,
+      "count": 10,
       "path": "tests/unit/test_browser_oauth_token.py"
     }
   ],
@@ -212,6 +212,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
+      "owner_qualname": "test_capture_reads_cookie_after_login_page_closes_in_real_chromium",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
       "owner_qualname": "test_capture_rejected_cdp_scrubs_retained_frame_and_exception_chain",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
@@ -233,6 +243,26 @@
       "module": "oauth_token",
       "owner_kind": "test",
       "owner_qualname": "test_capture_timeout_preserves_active_context_and_scrubs_resources",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "time",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
     }
@@ -349,6 +379,12 @@
     {
       "count": 1,
       "owner_kind": "test",
+      "owner_qualname": "test_capture_reads_cookie_after_login_page_closes_in_real_chromium",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
       "owner_qualname": "test_capture_rejected_cdp_scrubs_retained_frame_and_exception_chain",
       "path": "tests/unit/test_browser_oauth_token.py"
     },
@@ -362,6 +398,12 @@
       "count": 1,
       "owner_kind": "test",
       "owner_qualname": "test_capture_timeout_preserves_active_context_and_scrubs_resources",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
       "path": "tests/unit/test_browser_oauth_token.py"
     }
   ],
@@ -399,7 +441,13 @@
     },
     {
       "attribute": "sync_playwright_context",
-      "count": 7,
+      "count": 9,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token"
+    },
+    {
+      "attribute": "time",
+      "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token"
     }
@@ -407,8 +455,8 @@
   "summary": {
     "TOTAL": {
       "private": 0,
-      "public": 21,
-      "total": 21
+      "public": 24,
+      "total": 24
     },
     "browser_capture": {
       "private": 0,
@@ -422,8 +470,8 @@
     },
     "oauth_token": {
       "private": 0,
-      "public": 8,
-      "total": 8
+      "public": 11,
+      "total": 11
     }
   },
   "version": 2
