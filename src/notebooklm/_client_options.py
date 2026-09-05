@@ -78,12 +78,15 @@ class NormalizedClientOptions:
 
 
 @dataclass(frozen=True)
-class _ConstructionContext:
+class _StorageConstructionContext:
+    """Exact stored-auth class call whose frozen preference may be adopted."""
+
     preference: BackendPreference
-    suppress_legacy_warning: bool
+    target_type: type[Any]
+    target_auth: object
 
 
-_CONSTRUCTION_CONTEXT: ContextVar[_ConstructionContext | None] = ContextVar(
+_CONSTRUCTION_CONTEXT: ContextVar[_StorageConstructionContext | None] = ContextVar(
     "notebooklm_client_construction_context", default=None
 )
 
@@ -92,12 +95,13 @@ _CONSTRUCTION_CONTEXT: ContextVar[_ConstructionContext | None] = ContextVar(
 def client_construction_context(
     preference: BackendPreference,
     *,
-    suppress_legacy_warning: bool,
+    target_type: type[Any],
+    target_auth: object,
 ) -> Iterator[None]:
-    """Carry a frozen stored-auth preference through a subclass constructor call."""
+    """Carry a frozen preference for one stored-auth class call."""
 
-    token: Token[_ConstructionContext | None] = _CONSTRUCTION_CONTEXT.set(
-        _ConstructionContext(preference, suppress_legacy_warning)
+    token: Token[_StorageConstructionContext | None] = _CONSTRUCTION_CONTEXT.set(
+        _StorageConstructionContext(preference, target_type, target_auth)
     )
     try:
         yield
@@ -105,11 +109,35 @@ def client_construction_context(
         _CONSTRUCTION_CONTEXT.reset(token)
 
 
-def construction_warning_suppressed() -> bool:
-    """Whether the current constructor is nested under a warning-owning factory call."""
+def storage_construction_preference(
+    client: object,
+    auth: object,
+) -> BackendPreference | None:
+    """Return the handoff only for the target using ordinary inherited allocation.
+
+    Exact class and auth identity keep unrelated clients constructed by a subclass
+    from inheriting either the frozen selection or its warning suppression. Classes
+    with custom ``__new__`` retain the post-call provenance finalizer because the
+    target instance cannot be identified safely until their class call returns.
+    """
 
     context = _CONSTRUCTION_CONTEXT.get()
-    return bool(context is not None and context.suppress_legacy_warning)
+    if context is None:
+        return None
+    if type(client) is not context.target_type or auth is not context.target_auth:
+        return None
+    if context.target_type.__new__ is not object.__new__:
+        return None
+    return context.preference
+
+
+def storage_construction_warning_suppressed(client: object, auth: object) -> bool:
+    """Suppress the duplicate warning only for the stored-auth class call."""
+
+    context = _CONSTRUCTION_CONTEXT.get()
+    return bool(
+        context is not None and type(client) is context.target_type and auth is context.target_auth
+    )
 
 
 def _legacy_argument_names(
@@ -374,8 +402,9 @@ __all__ = [
     "BackendPreference",
     "NormalizedClientOptions",
     "client_construction_context",
-    "construction_warning_suppressed",
     "legacy_client_option_names",
     "normalize_legacy_client_options",
     "resolve_backend_preference",
+    "storage_construction_preference",
+    "storage_construction_warning_suppressed",
 ]

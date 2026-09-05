@@ -11,6 +11,7 @@ import pytest
 
 from notebooklm import client as client_module
 from notebooklm._auth.tokens import InlineLoadedAuth
+from notebooklm._client_assembly import BackendPreference
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.options import (
@@ -28,6 +29,7 @@ from notebooklm.options import (
     WebSessionOptions,
     WebTransportOptions,
 )
+from notebooklm.types import ConnectionLimits
 
 
 @pytest.fixture()
@@ -273,3 +275,167 @@ async def test_typed_from_storage_freezes_env_and_preserves_real_class_construct
     assert calls[0][0] is auth
     assert isinstance(calls[0][1], ClientConfig)
     assert isinstance(calls[0][1].backend, AndroidBackendConfig)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("usage", ["context", "await"])
+async def test_legacy_from_storage_warns_once_at_each_public_surface_and_freezes_preference(
+    usage: str,
+    auth: AuthTokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    load_calls = 0
+    opened: list[NotebookLMClient] = []
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        nonlocal load_calls
+        load_calls += 1
+        return InlineLoadedAuth(auth)
+
+    async def fake_open(client: NotebookLMClient) -> NotebookLMClient:
+        opened.append(client)
+        return client
+
+    async def fake_close(
+        _client: NotebookLMClient,
+        _exc_type: object,
+        _exc: object,
+        _traceback: object,
+    ) -> None:
+        return None
+
+    class ObservingClient(NotebookLMClient):
+        def __init__(self, auth: AuthTokens, *args: object, **kwargs: object) -> None:
+            super().__init__(auth, *args, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setattr(NotebookLMClient, "__aenter__", fake_open)
+    monkeypatch.setattr(NotebookLMClient, "__aexit__", fake_close)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        from_storage_line = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
+        wrapper = ObservingClient.from_storage(timeout=60.0)
+        monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+        await_line: int | None = None
+        if usage == "context":
+            async with wrapper as built:
+                assert built in opened
+        else:
+            await_line = inspect.currentframe().f_lineno + 1  # type: ignore[union-attr]
+            built = await wrapper
+
+    assert load_calls == 1
+    assert built._backend_preference == BackendPreference("android", "env")
+    assert built.preference_after_super == BackendPreference("android", "env")
+    assert caught[0].filename == __file__
+    assert caught[0].lineno == from_storage_line
+    assert "legacy NotebookLMClient.from_storage tuning arguments" in str(caught[0].message)
+    if usage == "context":
+        assert len(caught) == 1
+    else:
+        assert len(caught) == 2
+        assert caught[1].filename == __file__
+        assert caught[1].lineno == await_line
+        assert "Awaiting NotebookLMClient.from_storage" in str(caught[1].message)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["direct", "from_storage"])
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        pytest.param(
+            {
+                "limits": ConnectionLimits(max_connections=1),
+                "max_concurrent_rpcs": 2,
+                "chat_response_max_bytes": 0,
+            },
+            "max_concurrent_rpcs must be <= limits.max_connections",
+            id="pool-before-response-cap",
+        ),
+        pytest.param(
+            {"chat_response_max_bytes": 0, "chat_timeout": 0},
+            "chat_response_max_bytes must be >= 1",
+            id="response-cap-before-chat",
+        ),
+        pytest.param(
+            {"chat_timeout": 0, "import_research_timeout": 0},
+            "chat_timeout must be a positive, finite number",
+            id="chat-before-research",
+        ),
+        pytest.param(
+            {"import_research_timeout": 0, "max_concurrent_rpcs": 0},
+            "import_research_timeout must be a positive, finite number",
+            id="research-before-shared",
+        ),
+        pytest.param(
+            {"max_concurrent_rpcs": 0, "rate_limit_max_retries": -1},
+            "max_concurrent_rpcs must be >= 1",
+            id="shared-before-backend",
+        ),
+        pytest.param(
+            {"rate_limit_max_retries": -1, "server_error_max_retries": -1},
+            "rate_limit_max_retries must be >= 0",
+            id="rate-before-server",
+        ),
+        pytest.param(
+            {"server_error_max_retries": -1, "max_concurrent_uploads": 0},
+            "server_error_max_retries must be >= 0",
+            id="server-before-upload",
+        ),
+    ],
+)
+async def test_legacy_pairwise_invalid_validation_precedence_is_stable(
+    entrypoint: str,
+    kwargs: dict[str, object],
+    expected: str,
+    auth: AuthTokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(auth)
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        if entrypoint == "direct":
+            with pytest.raises(ValueError, match=expected):
+                NotebookLMClient(auth, **kwargs)  # type: ignore[arg-type]
+        else:
+            wrapper = NotebookLMClient.from_storage(**kwargs)  # type: ignore[arg-type]
+            with pytest.raises(ValueError, match=expected):
+                await wrapper._build()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["direct", "from_storage"])
+async def test_android_legacy_construction_ignores_invalid_web_only_knobs(
+    entrypoint: str,
+    auth: AuthTokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(auth)
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    kwargs: dict[str, object] = {
+        "backend": "android",
+        "keepalive": float("nan"),
+        "keepalive_min_interval": -1.0,
+        "limits": object(),
+    }
+    if entrypoint == "direct":
+        kwargs.update(cookie_saver=object(), cookie_rotator=object())
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        if entrypoint == "direct":
+            built = NotebookLMClient(auth, **kwargs)  # type: ignore[arg-type]
+        else:
+            built = await NotebookLMClient.from_storage(**kwargs)._build()  # type: ignore[arg-type]
+
+    assert built._backend_preference == BackendPreference("android", "explicit")
+    assert set(built.backends.values()) == {"android"}

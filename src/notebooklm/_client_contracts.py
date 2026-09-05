@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,6 @@ if TYPE_CHECKING:
         AndroidBackendConfig,
         FeatureOptions,
         RetryOptions,
-        RuntimeOptions,
         TransferOptions,
         WebBackendConfig,
     )
@@ -121,7 +121,6 @@ class WebAssemblyConfig:
     """Owner-grouped settings consumed by the Web builder."""
 
     backend: WebBackendConfig
-    runtime: RuntimeOptions
     retry: RetryOptions
     transfers: TransferOptions
     features: FeatureOptions
@@ -152,16 +151,19 @@ class WebDependencies:
     seams: ClientSeams | None = None
     composed: ClientComposed | None = None
 
+    def __post_init__(self) -> None:
+        _validate_refresh_retry_delay(self.refresh_retry_delay)
+
 
 @dataclass(frozen=True)
 class AndroidAssemblyConfig:
     """Owner-grouped settings consumed by the Android builder."""
 
     backend: AndroidBackendConfig
-    runtime: RuntimeOptions
     retry: RetryOptions
     transfers: TransferOptions
     features: FeatureOptions
+    shared_config: SharedRuntimeConfig
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,18 @@ class AndroidDependencies:
     oauth_minter: OAuthMinter | None
     sleep: Callable[[float], Awaitable[Any]] | None
     refresh_retry_delay: float
+
+    def __post_init__(self) -> None:
+        _validate_refresh_retry_delay(self.refresh_retry_delay)
+
+
+def _validate_refresh_retry_delay(value: float) -> None:
+    """Validate the private retry-delay seam at its dependency boundary."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"refresh_retry_delay must be finite and >= 0, got {value!r}")
+    if value < 0:
+        raise ValueError(f"refresh_retry_delay must be finite and >= 0, got {value!r}")
 
 
 __all__ = [

@@ -8,6 +8,7 @@ import logging
 import os
 import subprocess
 import sys
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -879,19 +880,26 @@ async def test_from_storage_handoff_skips_nested_client_in_subclass_constructor(
 
     class ClientWithNestedConstruction(NotebookLMClient):
         def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
-            self.nested = NotebookLMClient(_auth())
+            self.nested = NotebookLMClient(_auth(), timeout=31.0)
             super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
 
     monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
     monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
     wrapper = ClientWithNestedConstruction.from_storage()
     monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
 
-    client = await wrapper._build()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await wrapper._build()
 
     assert isinstance(client, ClientWithNestedConstruction)
     assert client._backend_preference == BackendPreference("android", "env")
+    assert client.preference_after_super == BackendPreference("android", "env")
     assert client.nested._backend_preference == BackendPreference("web", "env")
+    assert len(caught) == 1
+    assert "legacy NotebookLMClient tuning arguments" in str(caught[0].message)
+    assert caught[0].filename == __file__
 
 
 async def test_from_storage_handoff_supports_non_cooperative_subclass_new(

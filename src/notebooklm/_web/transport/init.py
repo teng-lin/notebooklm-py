@@ -326,7 +326,6 @@ def compose_client_internals(
         shared=shared,
         config=WebAssemblyConfig(
             backend=backend_config,
-            runtime=normalized.config.runtime,
             retry=normalized.config.retry,
             transfers=normalized.config.transfers,
             features=normalized.config.features,

@@ -92,7 +92,7 @@ def assemble_web_backend(
         auth_storage_path=credentials.auth.storage_path,
         limits=transport.limits,
         max_concurrent_uploads=transfers.max_concurrent_uploads,
-        max_concurrent_rpcs=config.runtime.max_concurrent_rpcs,
+        max_concurrent_rpcs=config.shared_config.max_concurrent_rpcs,
         decode_response=seams.decode_response,
         sleep=seams.sleep,
         is_auth_error=seams.is_auth_error,

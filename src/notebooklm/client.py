@@ -52,10 +52,11 @@ from ._client_assembly import (
 )
 from ._client_options import (
     client_construction_context,
-    construction_warning_suppressed,
     legacy_client_option_names,
     normalize_legacy_client_options,
     resolve_backend_preference,
+    storage_construction_preference,
+    storage_construction_warning_suppressed,
 )
 from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated, warn_registered_deprecation
@@ -379,6 +380,7 @@ class NotebookLMClient:
         # otherwise. The test-only seam kwargs (``decode_response`` /
         # ``sleep`` / ``is_auth_error`` / ``async_client_factory``) stay
         # off this public constructor by design.
+        storage_preference = storage_construction_preference(self, auth)
         normalized = normalize_legacy_client_options(
             timeout=timeout,
             keepalive=keepalive,
@@ -397,8 +399,9 @@ class NotebookLMClient:
             chat_response_max_bytes=chat_response_max_bytes,
             backend=backend,
             config=config,
+            preference=storage_preference,
         )
-        if normalized.legacy_arguments and not construction_warning_suppressed():
+        if normalized.legacy_arguments and not storage_construction_warning_suppressed(self, auth):
             detail = f"Offending arguments: {', '.join(normalized.legacy_arguments)}."
             warn_registered_deprecation("client_legacy_constructor_options", detail=detail)
         _assemble_client(
@@ -1108,7 +1111,11 @@ class _FromStorageContext:
 
         preference = kwargs["backend_preference"]
         normalized_options = kwargs.get("normalized_options")
-        with client_construction_context(preference, suppress_legacy_warning=True):
+        with client_construction_context(
+            preference,
+            target_type=self._cls,
+            target_auth=auth,
+        ):
             if normalized_options is not None:
                 client = self._cls(
                     auth,

@@ -39,7 +39,7 @@ from ._runtime.config import (
     validate_read_timeout_kwarg,
 )
 from ._runtime.error_injection import _refuse_synthetic_error_outside_test_context
-from ._runtime.init import build_collaborators, validate_shared_runtime_config
+from ._runtime.init import SharedRuntimeConfig, build_collaborators, validate_shared_runtime_config
 from ._runtime.lifecycle import ClientLifecycle
 from .auth import AuthTokens
 
@@ -176,16 +176,20 @@ def _assemble_client(
             derived_keepalive_path = Path(derived_keepalive_path).expanduser().resolve()
         keepalive_storage_path = derived_keepalive_path
 
-    if preference.preferred == "web" and runtime_options.max_concurrent_rpcs is not None:
+    shared_config = SharedRuntimeConfig(
+        max_concurrent_rpcs=runtime_options.max_concurrent_rpcs,
+        operation_timeout=runtime_options.operation_timeout,
+    )
+    if preference.preferred == "web" and shared_config.max_concurrent_rpcs is not None:
         from .options import WebBackendConfig
 
         if not isinstance(selected_backend, WebBackendConfig):
             raise ValueError("Web preference requires WebBackendConfig")
         effective_limits = selected_backend.transport.limits
-        if runtime_options.max_concurrent_rpcs > effective_limits.max_connections:
+        if shared_config.max_concurrent_rpcs > effective_limits.max_connections:
             raise ValueError(
                 "max_concurrent_rpcs must be <= limits.max_connections "
-                f"(got max_concurrent_rpcs={runtime_options.max_concurrent_rpcs}, "
+                f"(got max_concurrent_rpcs={shared_config.max_concurrent_rpcs}, "
                 f"max_connections={effective_limits.max_connections}). "
                 "A semaphore wider than the connection pool surfaces "
                 "saturation as opaque httpx.PoolTimeout instead of clean back-pressure."
@@ -205,8 +209,8 @@ def _assemble_client(
     )
 
     shared_config = validate_shared_runtime_config(
-        max_concurrent_rpcs=runtime_options.max_concurrent_rpcs,
-        operation_timeout=runtime_options.operation_timeout,
+        max_concurrent_rpcs=shared_config.max_concurrent_rpcs,
+        operation_timeout=shared_config.operation_timeout,
     )
     _refuse_synthetic_error_outside_test_context()
     shared = build_collaborators(shared_config, on_rpc_event=config.on_rpc_event)
@@ -233,10 +237,10 @@ def _assemble_client(
             shared=shared,
             config=AndroidAssemblyConfig(
                 backend=selected_backend,
-                runtime=runtime_options,
                 retry=retry_options,
                 transfers=transfer_options,
                 features=feature_options,
+                shared_config=shared_config,
             ),
             credentials=AndroidCredentials(
                 profile_path=Path(auth.storage_path) if auth.storage_path is not None else None,
@@ -291,7 +295,6 @@ def _assemble_client(
         shared=shared,
         config=WebAssemblyConfig(
             backend=selected_backend,
-            runtime=runtime_options,
             retry=retry_options,
             transfers=transfer_options,
             features=feature_options,

@@ -73,7 +73,7 @@
     {
       "callee": "importlib.import_module",
       "expression": "module_name",
-      "lineno": 121,
+      "lineno": 122,
       "scope": "__getattr__",
       "scope_kind": "function",
       "source": "notebooklm.client",
@@ -3074,7 +3074,7 @@
     },
     {
       "kind": "from",
-      "lineno": 225,
+      "lineno": 229,
       "scope": "_assemble_client",
       "scope_kind": "function",
       "source": "notebooklm._client_assembly",
@@ -3083,7 +3083,7 @@
     },
     {
       "kind": "from",
-      "lineno": 284,
+      "lineno": 288,
       "scope": "_assemble_client",
       "scope_kind": "function",
       "source": "notebooklm._client_assembly",
@@ -3119,7 +3119,7 @@
     },
     {
       "kind": "from",
-      "lineno": 13,
+      "lineno": 14,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3128,7 +3128,7 @@
     },
     {
       "kind": "from",
-      "lineno": 14,
+      "lineno": 15,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3137,7 +3137,7 @@
     },
     {
       "kind": "from",
-      "lineno": 17,
+      "lineno": 18,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3146,7 +3146,7 @@
     },
     {
       "kind": "from",
-      "lineno": 18,
+      "lineno": 19,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3155,7 +3155,7 @@
     },
     {
       "kind": "from",
-      "lineno": 19,
+      "lineno": 20,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3164,7 +3164,7 @@
     },
     {
       "kind": "from",
-      "lineno": 28,
+      "lineno": 29,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3173,7 +3173,7 @@
     },
     {
       "kind": "from",
-      "lineno": 32,
+      "lineno": 33,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3182,7 +3182,7 @@
     },
     {
       "kind": "from",
-      "lineno": 33,
+      "lineno": 34,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3191,7 +3191,7 @@
     },
     {
       "kind": "from",
-      "lineno": 34,
+      "lineno": 35,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -3200,7 +3200,7 @@
     },
     {
       "kind": "from",
-      "lineno": 35,
+      "lineno": 36,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._client_contracts",
@@ -8330,7 +8330,7 @@
     },
     {
       "kind": "from",
-      "lineno": 68,
+      "lineno": 69,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8339,7 +8339,7 @@
     },
     {
       "kind": "from",
-      "lineno": 76,
+      "lineno": 77,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8348,7 +8348,7 @@
     },
     {
       "kind": "from",
-      "lineno": 77,
+      "lineno": 78,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8357,7 +8357,7 @@
     },
     {
       "kind": "from",
-      "lineno": 81,
+      "lineno": 82,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -10115,7 +10115,7 @@
       "modules": 37
     },
     "root": {
-      "lines": 23322,
+      "lines": 23375,
       "modules": 79
     },
     "rpc": {
@@ -10135,12 +10135,12 @@
       "modules": 16
     },
     "web": {
-      "lines": 32558,
+      "lines": 32557,
       "modules": 95
     }
   },
   "summary": {
-    "authored_lines": 143128,
+    "authored_lines": 143180,
     "authored_modules": 456,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1110,
