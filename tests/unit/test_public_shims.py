@@ -38,7 +38,9 @@ def test_research_base_web_split_preserves_logger_and_web_only_alias() -> None:
         async def rpc_call(self, *_args, **_kwargs):
             raise AssertionError("constructor compatibility must not dispatch")
 
-    direct = implementation.ResearchAPI(_Rpc())
+    from tests._fixtures.fake_core import make_fake_core
+
+    direct = implementation.ResearchAPI(_Rpc(), supervisor=make_fake_core())
     assert isinstance(direct, implementation.WebResearchAPI)
 
 

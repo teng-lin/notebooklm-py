@@ -115,15 +115,17 @@ class TestChatTimeoutRouting:
     @pytest.mark.asyncio
     async def test_ask_passes_chat_read_timeout_response_cap_and_disables_timeout_retry(self):
         """``ask`` uses the chat-specific read window without retrying timed-out streams."""
-        transport = SimpleNamespace(
-            perform_authed_post=AsyncMock(
-                return_value=httpx.Response(
-                    200,
-                    request=httpx.Request("POST", "https://example.test/chat"),
-                    content=_make_answer_response_body(),
-                )
+
+        async def successful_post(*args: Any, **kwargs: Any) -> httpx.Response:
+            del args
+            kwargs["journal_entry"].mark_dispatched()
+            return httpx.Response(
+                200,
+                request=httpx.Request("POST", "https://example.test/chat"),
+                content=_make_answer_response_body(),
             )
-        )
+
+        transport = SimpleNamespace(perform_authed_post=AsyncMock(side_effect=successful_post))
         chat = WebChatAPI(
             rpc=SimpleNamespace(rpc_call=AsyncMock(return_value=[[]])),
             supervisor=make_fake_core(),
@@ -584,6 +586,7 @@ class TestChatNewConversationLocks:
                 return [[[None, None, 1, "Existing question?"]]]
 
         async def fake_perform_authed_post(*args: Any, **kwargs: Any) -> httpx.Response:
+            kwargs["journal_entry"].mark_dispatched()
             return httpx.Response(
                 200,
                 request=httpx.Request("POST", "https://notebooklm.google.com/_/LabsTailwindUi"),

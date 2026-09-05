@@ -37,6 +37,13 @@ def _sources(supervisor: CallSupervisor) -> WebSourcesAPI:
     )
 
 
+async def _accepted_source_result(*_args: object, **kwargs: Any) -> list[object]:
+    journal_entry = kwargs.get("journal_entry")
+    if journal_entry is not None:
+        journal_entry.mark_dispatched()
+    return [[[["src_1"], "Upstream title", [None, 0], [None, 2]]]]
+
+
 @pytest.mark.asyncio
 async def test_drain_after_url_admission_allows_full_workflow_to_finish() -> None:
     supervisor = _supervisor()
@@ -48,7 +55,10 @@ async def test_drain_after_url_admission_allows_full_workflow_to_finish() -> Non
     async def _list_sources(*_args: object, **_kwargs: object) -> list[Source]:
         return []
 
-    async def _create(*_args: object, **_kwargs: object) -> list[object]:
+    async def _create(*_args: object, **kwargs: Any) -> list[object]:
+        journal_entry = kwargs.get("journal_entry")
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         async with supervisor.call_scope("create", None, None):
             workflow_admitted.set()
             await continue_workflow.wait()
@@ -217,9 +227,7 @@ async def test_timeout_before_title_never_emits_rename() -> None:
     rename = AsyncMock()
 
     api.list = AsyncMock(return_value=[])  # type: ignore[method-assign]
-    api._add_url_source = AsyncMock(  # type: ignore[method-assign]
-        return_value=[[[["src_1"], "Upstream title", [None, 0], [None, 2]]]]
-    )
+    api._add_url_source = AsyncMock(side_effect=_accepted_source_result)  # type: ignore[method-assign]
     api.wait_until_ready = AsyncMock(  # type: ignore[method-assign]
         side_effect=TimeoutError("readiness timed out")
     )
@@ -251,9 +259,7 @@ async def test_cancellation_before_title_never_emits_rename() -> None:
         return Source(id="src_1", title="Upstream title")
 
     api.list = AsyncMock(return_value=[])  # type: ignore[method-assign]
-    api._add_url_source = AsyncMock(  # type: ignore[method-assign]
-        return_value=[[[["src_1"], "Upstream title", [None, 0], [None, 2]]]]
-    )
+    api._add_url_source = AsyncMock(side_effect=_accepted_source_result)  # type: ignore[method-assign]
     api.wait_until_ready = _wait  # type: ignore[method-assign]
     api.rename = rename  # type: ignore[method-assign]
 

@@ -74,6 +74,10 @@ class _Transport:
         yield _Lease(17)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        journal_entry = kwargs.pop("journal_entry", None)
+        journal_entries = kwargs.pop("journal_entries", None)
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         value = self.responses[method].popleft()
         if isinstance(value, BaseException):

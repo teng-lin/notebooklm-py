@@ -251,7 +251,14 @@
     "migrate_to_profiles"
   ],
   "notebooklm.outcomes": [
-    "CommitState"
+    "BatchItemOutcome",
+    "BatchOutcome",
+    "CommitState",
+    "LookupSuggestion",
+    "OperationMetadata",
+    "ReconciliationCandidate",
+    "ReconciliationReport",
+    "RecoveryAction"
   ],
   "notebooklm.paths": [
     "get_active_profile",

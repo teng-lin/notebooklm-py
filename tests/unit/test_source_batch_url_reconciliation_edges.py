@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from notebooklm._idempotency import OperationJournal
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.sources.batch import (
     SourceBatchAddService,
@@ -56,6 +57,8 @@ class _RecordingRpc:
         self.calls = 0
 
     async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
+        for entry in kwargs.get("journal_entries", ()):
+            entry.mark_dispatched()
         del method, params, kwargs
         self.calls += 1
         return self.result
@@ -117,8 +120,20 @@ def test_url_identity_keeps_a_bare_username_without_appending_an_empty_password(
 def test_unresolved_batch_error_previews_three_urls_and_reports_the_total() -> None:
     """An operator reconciling by hand needs the count, not a wall of URLs."""
     urls = [f"https://u{index}.example.com" for index in range(5)]
+    journal = OperationJournal("sources.add_urls")
+    invocation_id = journal.invocation_id()
+    entries = tuple(
+        journal.new_entry(
+            method=RPCMethod.ADD_SOURCE.value,
+            member=index,
+            invocation_id=invocation_id,
+        )
+        for index in range(len(urls))
+    )
+    for entry in entries:
+        entry.mark_dispatched()
 
-    error = _unresolved_batch_error(urls, "boom.", RuntimeError("cause"))
+    error = _unresolved_batch_error(urls, "boom.", RuntimeError("cause"), entries)
 
     # Assert on the previewed SET, not substring containment. Besides being the
     # stronger check (it pins exactly which three are shown, and their order),

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -381,6 +381,7 @@ class TestCreateNotebookQuotaDetection:
             RPCMethod.CREATE_NOTEBOOK,
             build_create_notebook_params("Daily News"),
             disable_internal_retries=True,
+            journal_entry=ANY,
         )
 
     @pytest.mark.asyncio

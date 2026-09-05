@@ -541,7 +541,11 @@ def _build_rpc_executor() -> Any:
         read_timeout: float | None = None,
         expected_epoch: int | None = None,
         epoch_observer: Any = None,
+        journal_entry: Any = None,
+        journal_entries: Any = None,
     ) -> httpx.Response:
+        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+            entry.mark_dispatched()
         admitted_epoch = 1 if expected_epoch is None else expected_epoch
         if epoch_observer is not None:
             epoch_observer(admitted_epoch)

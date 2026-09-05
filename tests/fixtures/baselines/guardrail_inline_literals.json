@@ -1,6 +1,6 @@
 {
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 52
+    "_DOCUMENTED_PUBLIC_IMPORTS": 59
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
