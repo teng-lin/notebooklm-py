@@ -9747,7 +9747,7 @@
       "modules": 32
     },
     "cli": {
-      "lines": 21996,
+      "lines": 22050,
       "modules": 76
     },
     "mcp": {
@@ -9780,7 +9780,7 @@
     }
   },
   "summary": {
-    "authored_lines": 143001,
+    "authored_lines": 143055,
     "authored_modules": 453,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1070,

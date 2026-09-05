@@ -29,7 +29,7 @@ pytestmark = [
 @pytest.mark.parametrize("json_output", [False, True])
 def test_usage_snapshot(runner, mock_auth_for_vcr, cassette_name, json_output):
     """Real CLI/client decoding produces both windows without notebook context."""
-    args = ["usage", "--json"] if json_output else ["usage", "--actions"]
+    args = ["usage", "--json"] if json_output else ["usage", "--categories"]
     with notebooklm_vcr.use_cassette(cassette_name, record_mode="none") as cassette:
         result = runner.invoke(cli, args)
 
@@ -54,4 +54,4 @@ def test_usage_snapshot(runner, mock_auth_for_vcr, cassette_name, json_output):
     else:
         assert "Five-hour" in result.stdout
         assert "Weekly" in result.stdout
-        assert "Action availability" in result.stdout
+        assert "Usage categories" in result.stdout

@@ -376,7 +376,7 @@ processes with `NOTEBOOKLM_PROFILE=YOUR_STANDARD_PROFILE` and
 performs no generation and consumes no metered usage.
 
 The top-level `notebooklm usage` command projects this API in the `SectionedGroup` Session section.
-It shows both windows, optionally expands action details with `--actions`, and emits the full
+It shows both windows, optionally expands usage categories with `--categories` (alias `--actions`), and emits the full
 snapshot with `--json`, including explicit ISO 8601 reset timestamps. The CLI contract baseline,
 documentation, and JSON timestamp assertions cover this projection. MCP and REST usage projections
 remain additive follow-ups.

@@ -50,6 +50,21 @@ the response field identity. Live generation independently corroborates action 9
 action 10 as Quiz; current frontend behavior corroborates action 15 as Deep Research. The live
 first-party protobuf JSON response closes newer code 22 as `SUGGESTION_CHIPS`.
 
+### CLI display names
+
+Protocol enum names are not necessarily the names shown in the product. The recorded translator
+maps video format `3` to action `3`; `VideoFormat.CINEMATIC = 3` and the cinematic generation builder
+establish its CLI label as **Cinematic video**, despite the protocol name `BREAKDOWNS_VIDEO`.
+Other display labels expand abbreviations or match existing CLI features: `QNA` becomes **Chat
+Q&A**, `SUGGESTION_CHIPS` becomes **Suggested questions**, and `DOCUMENT_GUIDE` becomes **Source
+guide** (the source snippet/main-ideas response from `GenerateDocumentGuides`).
+
+`NOS` and `NOS_IMAGE_GENERATION` remain exact recovered protocol names. The adjacent Android
+`ClientCapability.NOTEBOOK_OS_AGENCY` and `SuggestionConfigId.SUGGESTION_CONFIG_NOS_APP` names suggest
+an internal Notebook OS connection, but do not establish the quota actions' public feature mapping.
+The CLI therefore retains `NOS` with an explicit uncertainty note. JSON `kind` preserves all exact
+enum names; these presentation labels do not rename protocol values.
+
 ## Android static and route recovery
 
 The official app contains an exact generated protobuf RPC binding with these properties:

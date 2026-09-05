@@ -123,7 +123,7 @@ def test_json_preserves_snapshot_and_unknown_fields(runner, usage_client):
 @pytest.mark.parametrize("actions", [False, True])
 def test_text_windows_and_optional_actions(runner, usage_client, actions):
     """Text shows both windows and only expands action rows on request."""
-    args = ["usage", "--actions"] if actions else ["usage"]
+    args = ["usage", "--categories"] if actions else ["usage"]
     result = runner.invoke(cli, args, obj=inject_client(usage_client), env={"COLUMNS": "140"})
 
     assert result.exit_code == 0, result.output
@@ -133,11 +133,54 @@ def test_text_windows_and_optional_actions(runner, usage_client, actions):
     assert "80.12%" in result.stdout
     assert "2026-09-05T18:30:01.123456+00:00" in result.stdout
     if actions:
-        for text in ("audio overview", "Sufficient", "Insufficient", "Unknown", "23", "0.00%"):
+        for text in (
+            "Audio overview",
+            "Sufficient",
+            "Insufficient",
+            "Unknown category (23)",
+            "0.00%",
+            "Est. cost*",
+            "five-hour budget in recorded tests",
+            "server does not name the window",
+        ):
             assert text in result.stdout
     else:
-        assert "--actions" in result.stdout
-        assert "audio overview" not in result.stdout
+        assert "--categories" in result.stdout
+        assert "Audio overview" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("kind", "label"),
+    [
+        (UsageActionKind.BREAKDOWNS_VIDEO, "Cinematic video"),
+        (UsageActionKind.SHORTS_VIDEO, "Short video"),
+        (UsageActionKind.SLIDES, "Slide deck"),
+        (UsageActionKind.TABLES, "Data table"),
+        (UsageActionKind.MINDMAP, "Mind map"),
+        (UsageActionKind.NOS, "Unmapped category (NOS)"),
+        (UsageActionKind.QNA, "Chat Q&A"),
+        (UsageActionKind.NOS_IMAGE_GENERATION, "Image generation (NOS)"),
+        (UsageActionKind.DOCUMENT_GUIDE, "Source guide"),
+        (UsageActionKind.SUGGESTION_CHIPS, "Suggested questions"),
+    ],
+)
+def test_readable_category_labels_preserve_protocol_json(
+    runner, usage_client, summary, kind, label
+):
+    """Text names features clearly while JSON keeps the exact server enum identity."""
+    action = replace(summary.actions[0], code=kind.value, kind=kind)
+    usage_client.settings.get_usage.return_value = replace(summary, actions=(action,))
+    result = runner.invoke(
+        cli, ["usage", "--categories"], obj=inject_client(usage_client), env={"COLUMNS": "140"}
+    )
+    assert result.exit_code == 0, result.output
+    assert label in result.stdout
+    if kind in (UsageActionKind.NOS, UsageActionKind.NOS_IMAGE_GENERATION):
+        assert "public feature mapping is unverified" in result.stdout
+
+    result = runner.invoke(cli, ["usage", "--json"], obj=inject_client(usage_client))
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["actions"][0]["kind"] == kind.name.lower()
 
 
 @pytest.mark.parametrize("status", [UsageSummaryStatus.DISABLED, UsageSummaryStatus.SKIPPED])
@@ -145,7 +188,7 @@ def test_text_windows_and_optional_actions(runner, usage_client, actions):
 def test_unavailable_meter_is_not_zero_usage(runner, usage_client, status, json_output):
     """Unavailable meters exit successfully without fabricated window data."""
     usage_client.settings.get_usage.return_value = UsageSummary(status=status)
-    args = ["usage", "--json"] if json_output else ["usage", "--actions"]
+    args = ["usage", "--json"] if json_output else ["usage", "--categories"]
     result = runner.invoke(cli, args, obj=inject_client(usage_client))
 
     assert result.exit_code == 0, result.output
@@ -188,15 +231,27 @@ def test_exhaustion_uses_public_active_window(runner, usage_client, summary, win
 def test_empty_actions(runner, usage_client, summary):
     """A ready meter can legitimately omit action details."""
     usage_client.settings.get_usage.return_value = replace(summary, actions=())
-    result = runner.invoke(cli, ["usage", "--actions"], obj=inject_client(usage_client))
+    result = runner.invoke(cli, ["usage", "--categories"], obj=inject_client(usage_client))
     assert result.exit_code == 0, result.output
-    assert "No action usage details" in result.stdout
+    assert "No usage category details" in result.stdout
+
+
+def test_actions_remains_an_alias_for_categories(runner, usage_client):
+    """Existing --actions invocations keep the same output as --categories."""
+    results = [
+        runner.invoke(cli, ["usage", flag], obj=inject_client(usage_client))
+        for flag in ("--categories", "--actions")
+    ]
+    assert all(result.exit_code == 0 for result in results)
+    assert results[0].stdout == results[1].stdout
+    assert "Usage categories" in results[0].stdout
+    assert "Category" in results[0].stdout
 
 
 @pytest.mark.parametrize("json_output", [False, True])
 def test_quiet_preserves_json(runner, usage_client, json_output):
     """Quiet suppresses prose while keeping machine-readable data."""
-    args = ["--quiet", "usage", "--actions"] + (["--json"] if json_output else [])
+    args = ["--quiet", "usage", "--categories"] + (["--json"] if json_output else [])
     result = runner.invoke(cli, args, obj=inject_client(usage_client))
     assert result.exit_code == 0, result.output
     assert result.stderr == ""

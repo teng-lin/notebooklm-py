@@ -12309,12 +12309,13 @@
           "default": false,
           "envvar": null,
           "has_custom_shell_complete": false,
-          "help": "Include action availability and advertised costs.",
+          "help": "Include usage categories, availability, and estimated costs.",
           "is_flag": true,
           "kind": "option",
           "multiple": false,
-          "name": "actions",
+          "name": "show_categories",
           "opts": [
+            "--categories",
             "--actions"
           ],
           "required": false,

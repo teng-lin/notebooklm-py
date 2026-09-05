@@ -64,7 +64,7 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `status --paths` | Show configuration paths | `notebooklm status --paths` |
 | `status --json` | Output status as JSON | `notebooklm status --json` |
 | `usage` | Show live account compute usage and reset times | `notebooklm usage` |
-| `usage --actions` | Include action availability and advertised costs | `notebooklm usage --actions` |
+| `usage --categories` | Include usage categories, availability, and estimated costs | `notebooklm usage --categories` |
 | `usage --json` | Output the full usage snapshot as JSON | `notebooklm -p work usage --json` |
 | `clear` | Clear current context | `notebooklm clear` |
 | `auth check` | Diagnose authentication issues | `notebooklm auth check` |
@@ -88,14 +88,29 @@ supplied by the server. It requires authentication but no active notebook. Globa
 
 ```bash
 notebooklm usage
-notebooklm usage --actions
+notebooklm usage --categories
 notebooklm -p work usage --json
 notebooklm --backend android usage --json
 ```
 
-`--actions` adds a table of action codes, names, quota sufficiency, relative cost tiers, estimated
-cost percentages, and remaining deferred artifact generations. JSON always includes these details.
+`--categories` (alias `--actions`) adds a table of category codes, names, quota sufficiency, relative
+cost tiers, estimated cost percentages, and remaining deferred artifact generations. JSON always
+includes these details.
 Text percentages are rounded to two decimal places; JSON preserves the returned precision.
+
+The category table uses readable feature names: for example, Cinematic video (code 3), Slide deck
+(6), Data table (8), Chat Q&A (18), Source guide (21), and Suggested questions (22). JSON retains the
+`actions` array and exact protocol enum names in `kind` for scripts. `NOS` (16) and
+`NOS_IMAGE_GENERATION` (19) are internal server names without a verified public feature mapping;
+the table marks that uncertainty instead of guessing a feature name. See the
+[protocol evidence](android/usage-quota-evidence.md).
+
+`Est. cost*` is the server's estimated percentage of budget. In the recorded Flashcards and Quiz
+generations it matched the initial reservation against the **five-hour** window; the weekly debit
+was a different percentage, and final usage settled lower. The response does not explicitly name
+the estimate's budget window, so the CLI describes the five-hour basis as observed behavior. The
+`Quota` column is the current account-level availability flag for that category, not a separate
+five-hour or weekly availability reading.
 
 The JSON object contains:
 
