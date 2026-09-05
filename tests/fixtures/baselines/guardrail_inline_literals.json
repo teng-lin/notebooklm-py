@@ -102,7 +102,7 @@
     "RETRY_CALL_INVENTORY": 24,
     "RETRY_INVENTORY": 36,
     "WORKFLOW_INVENTORY": 132,
-    "WORKFLOW_SCOPE_CALL_INVENTORY": 225
+    "WORKFLOW_SCOPE_CALL_INVENTORY": 222
   },
   "tests/_guardrails/test_error_contract_catch_ordering.py": {
     "EXCLUDED_FROM_REQUIRED": 28
