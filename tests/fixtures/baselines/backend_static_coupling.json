@@ -73,7 +73,7 @@
     {
       "callee": "importlib.import_module",
       "expression": "module_name",
-      "lineno": 115,
+      "lineno": 116,
       "scope": "__getattr__",
       "scope_kind": "function",
       "source": "notebooklm.client",
@@ -3065,7 +3065,7 @@
     },
     {
       "kind": "from",
-      "lineno": 325,
+      "lineno": 322,
       "scope": "_assemble_client",
       "scope_kind": "function",
       "source": "notebooklm._client_assembly",
@@ -3074,7 +3074,7 @@
     },
     {
       "kind": "from",
-      "lineno": 385,
+      "lineno": 382,
       "scope": "_assemble_client",
       "scope_kind": "function",
       "source": "notebooklm._client_assembly",
@@ -8231,7 +8231,7 @@
     },
     {
       "kind": "from",
-      "lineno": 64,
+      "lineno": 65,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8240,7 +8240,7 @@
     },
     {
       "kind": "from",
-      "lineno": 72,
+      "lineno": 73,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8249,7 +8249,7 @@
     },
     {
       "kind": "from",
-      "lineno": 73,
+      "lineno": 74,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -9998,7 +9998,7 @@
       "modules": 37
     },
     "root": {
-      "lines": 22693,
+      "lines": 22702,
       "modules": 77
     },
     "rpc": {
@@ -10023,7 +10023,7 @@
     }
   },
   "summary": {
-    "authored_lines": 142304,
+    "authored_lines": 142313,
     "authored_modules": 453,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1097,

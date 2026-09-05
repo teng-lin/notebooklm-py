@@ -580,7 +580,7 @@ async def test_file_loaded_client_registers_pair_inline_does_not_and_subclass_sk
 
 
 @pytest.mark.asyncio
-async def test_file_loaded_handoff_belongs_only_to_outer_reentrant_subclass_construction(
+async def test_file_loaded_handoff_belongs_to_outer_when_nested_forwards_all_kwargs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = tmp_path / "profile.json"
@@ -598,23 +598,22 @@ async def test_file_loaded_handoff_belongs_only_to_outer_reentrant_subclass_cons
             if not type(self).constructing_nested:
                 type(self).constructing_nested = True
                 try:
-                    self.nested = type(self)(auth)
+                    self.nested = type(self)(auth, **kwargs)
                 finally:
                     type(self).constructing_nested = False
             super().__init__(auth, **kwargs)
 
     monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_file)
-    monkeypatch.delenv("NOTEBOOKLM_BACKEND", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = ReentrantClient.from_storage(str(path))
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
 
-    client = cast(
-        ReentrantClient,
-        await ReentrantClient.from_storage(str(path), backend="web")._build(),
-    )
+    client = cast(ReentrantClient, await context._build())
 
     outer_persistence = client._web_runtime.cookie_persistence
     nested_persistence = client.nested._web_runtime.cookie_persistence
-    assert client._backend_preference == BackendPreference("web", "explicit")
-    assert client.nested._backend_preference == BackendPreference("web", "default")
+    assert client._backend_preference == BackendPreference("web", "env")
+    assert client.nested._backend_preference == BackendPreference("web", "explicit")
     assert outer_persistence._default_store is store
     assert nested_persistence._default_store is not store
     assert nested_persistence._states == {}

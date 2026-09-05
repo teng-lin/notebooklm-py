@@ -49,6 +49,7 @@ from ._client_assembly import (
     BackendPreference,
     ConstructionHandoff,
     _assemble_client,
+    _claim_construction_handoff,
     construction_handoff,
     resolve_backend_preference,
 )
@@ -390,6 +391,17 @@ class NotebookLMClient:
             chat_response_max_bytes=chat_response_max_bytes,
             backend=backend,
         )
+
+    def __new__(cls, *_args: Any, **_kwargs: Any) -> NotebookLMClient:
+        """Claim a deferred stored-auth handoff before subclass initialization."""
+
+        client = super().__new__(cls)
+        _claim_construction_handoff(client)
+        return client
+
+    # Keep class-call introspection identical to the public ``__init__``
+    # contract while the generic runtime shape above preserves subclass args.
+    __new__.__wrapped__ = __init__  # type: ignore[attr-defined]
 
     #: Per-client memo for the signed-in account email so a *successful* live probe
     #: (used only when neither the in-memory ``AuthTokens`` nor persisted storage
@@ -1043,7 +1055,7 @@ class _FromStorageContext:
                 import_research_timeout=kwargs["import_research_timeout"],
                 upload_timeout=kwargs["upload_timeout"],
                 on_rpc_event=kwargs["on_rpc_event"],
-                backend=handoff.backend_argument,
+                backend=kwargs["backend_preference"].preferred,
             )
         self._client = client
         return client
