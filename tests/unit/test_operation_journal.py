@@ -223,6 +223,83 @@ async def test_verified_terminal_not_sent_survives_unconfirmed_wrapper() -> None
 
 
 @pytest.mark.asyncio
+async def test_missing_fake_dispatch_handoff_defaults_transport_loss_to_unknown() -> None:
+    entry = _entry()
+    failure = NetworkError("response lost")
+
+    async def send() -> None:
+        raise failure
+
+    with pytest.raises(NetworkError) as raised:
+        await call_unconfirmed_on_transport_loss(
+            send,
+            method="ADD_SOURCE",
+            what="URL source",
+            journal_entry=entry,
+        )
+
+    assert raised.value is failure
+    assert entry.commit_state is CommitState.UNKNOWN
+    assert [attempt.commit_state for attempt in entry.attempts] == [CommitState.UNKNOWN]
+    assert failure.commit_state is CommitState.UNKNOWN
+    assert failure.unconfirmed is True
+    assert failure.operation_metadata is not None
+    assert failure.operation_metadata.recovery_action is RecoveryAction.INSPECT_AND_RECONCILE
+
+
+@pytest.mark.asyncio
+async def test_authoritative_predispatch_not_sent_survives_without_a_dispatch_record() -> None:
+    entry = _entry()
+    failure = mark_commit_state(
+        NetworkError("verified zero send"),
+        CommitState.NOT_SENT,
+        recovery_action=RecoveryAction.RETRY,
+    )
+
+    async def send() -> None:
+        raise failure
+
+    with pytest.raises(NetworkError) as raised:
+        await call_unconfirmed_on_transport_loss(
+            send,
+            method="ADD_SOURCE",
+            what="URL source",
+            journal_entry=entry,
+        )
+
+    assert raised.value is failure
+    assert entry.commit_state is CommitState.NOT_SENT
+    assert entry.attempts == ()
+    assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.unconfirmed is False
+    assert failure.operation_metadata is not None
+    assert failure.operation_metadata.recovery_action is RecoveryAction.RETRY
+
+
+@pytest.mark.asyncio
+async def test_journal_predispatch_not_sent_evidence_survives_an_unmarked_error() -> None:
+    entry = _entry()
+    entry.record(CommitState.NOT_SENT, "verified before dispatch")
+    failure = NetworkError("connection unavailable")
+
+    async def send() -> None:
+        raise failure
+
+    with pytest.raises(NetworkError):
+        await call_unconfirmed_on_transport_loss(
+            send,
+            method="ADD_SOURCE",
+            what="URL source",
+            journal_entry=entry,
+        )
+
+    assert entry.commit_state is CommitState.NOT_SENT
+    assert entry.attempts == ()
+    assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.unconfirmed is False
+
+
+@pytest.mark.asyncio
 async def test_real_web_terminal_records_verified_connect_failure_as_not_sent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
