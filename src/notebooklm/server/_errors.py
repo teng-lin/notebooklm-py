@@ -47,6 +47,7 @@ from .._app.errors import (
     unconfirmed_hint,
 )
 from ..exceptions import NotebookLMError
+from ..outcomes import operation_metadata_payload
 
 __all__ = [
     "CATEGORY_STATUS",
@@ -219,6 +220,7 @@ def _project_classified(exc: BaseException, classified: ClassifiedError) -> dict
         "message": message,
         "retriable": classified.retriable,
     }
+    body.update(operation_metadata_payload(exc))
     hint = CATEGORY_HINTS.get(category)
     # An UNCONFIRMED create (#2220) is forced to the RPC category (HTTP 502),
     # whose hint is None — so without this the caller gets an opaque message and

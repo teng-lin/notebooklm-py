@@ -18,7 +18,11 @@ from typing import Any, Literal, TypeVar, cast
 from .._deadline import RuntimeDeadline
 from .._idempotency import (
     JournalEntry,
+    OperationJournal,
+    attach_batch_outcome,
     attach_journal_entry,
+    attach_operation_journal,
+    reconciliation_report,
 )
 from .._runtime.call_supervisor import OperationLease
 from .._source.batch import SourceUrlBatchItem
@@ -40,7 +44,7 @@ from ..exceptions import (
     SourceAddError,
     SourceNotFoundError,
 )
-from ..outcomes import CommitState
+from ..outcomes import BatchItemOutcome, BatchOutcome, CommitState, RecoveryAction
 from ..types import PlayBook, RelevantChunk, Source, SourceFulltext, SourceStatus, SourceType
 from .codecs.documents import decode_document, tailwind_doc_markdown, tailwind_doc_plain_text
 from .codecs.notebooks import decode_project, map_get_project_error, validate_project_identity
@@ -177,6 +181,83 @@ class _Registration:
     source_id: str | None
     omitted: bool
     ambiguous: bool
+
+
+def _android_batch_outcome(
+    urls: Sequence[str],
+    registration_entries: Sequence[JournalEntry],
+    commit_entries: Sequence[JournalEntry],
+    *,
+    errors: Sequence[BaseException | None] | None = None,
+) -> BatchOutcome:
+    """Derive one closed positional result from both Android mutation phases."""
+
+    item_errors = errors or (None,) * len(urls)
+    items: list[BatchItemOutcome] = []
+    for index, (url, registration, commit, error) in enumerate(
+        zip(urls, registration_entries, commit_entries, item_errors, strict=True)
+    ):
+        state = (
+            registration.commit_state
+            if registration.commit_state is not CommitState.CONFIRMED
+            else commit.commit_state
+        )
+        known_ids = tuple(
+            dict.fromkeys((*registration.known_resource_ids, *commit.known_resource_ids))
+        )
+        report = None
+        if state is CommitState.UNKNOWN:
+            report = reconciliation_report(
+                list(known_ids),
+                [url],
+                reason="Android batch member commit could not be correlated",
+            )
+            selected = registration if registration.commit_state is state else commit
+            selected.reconciliation = report
+            selected.recovery_action = RecoveryAction.INSPECT_AND_RECONCILE
+        items.append(
+            BatchItemOutcome(
+                member=index,
+                input=url,
+                commit_state=state,
+                resource_id=(
+                    known_ids[0]
+                    if known_ids and state in (CommitState.CONFIRMED, CommitState.UNKNOWN)
+                    else None
+                ),
+                error=(None if state is CommitState.CONFIRMED else error),
+                reconciliation=report,
+            )
+        )
+    return BatchOutcome(tuple(items), whole_request_retriable=False)
+
+
+def _attach_android_batch_failure(
+    error: BaseException,
+    journal: OperationJournal,
+    registration_entries: tuple[JournalEntry, ...],
+    commit_entries: tuple[JournalEntry, ...],
+    urls: Sequence[str],
+    *,
+    primary: JournalEntry,
+) -> None:
+    outcome = _android_batch_outcome(
+        urls,
+        registration_entries,
+        commit_entries,
+        errors=(error,) * len(urls),
+    )
+    attach_operation_journal(
+        error,
+        journal,
+        primary=primary,
+        recovery_action=(
+            RecoveryAction.INSPECT_AND_RECONCILE
+            if any(item.commit_state is CommitState.UNKNOWN for item in outcome.items)
+            else None
+        ),
+    )
+    attach_batch_outcome(error, outcome)
 
 
 def _correlate_registrations(names: Sequence[str], response: Any) -> list[_Registration]:
@@ -970,8 +1051,24 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
         if not snapshot:
             return []
         correlations = [_correlation_name() for _ in snapshot]
-        registration_entries, commit_entries = new_source_send_entries(
-            "sources.add_urls", len(snapshot)
+        journal = OperationJournal("sources.add_urls")
+        invocation_id = journal.invocation_id()
+        registration_entries = tuple(
+            journal.new_entry(
+                method=ADD_TENTATIVE_SOURCES_METHOD,
+                phase="registration",
+                member=index,
+                invocation_id=invocation_id,
+            )
+            for index in range(len(snapshot))
+        )
+        commit_entries = tuple(
+            journal.new_entry(
+                method=ADD_SOURCES_METHOD,
+                member=index,
+                invocation_id=invocation_id,
+            )
+            for index in range(len(snapshot))
         )
 
         async with self._transport.operation_scope("source.add_urls_batch") as lease:
@@ -982,23 +1079,80 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                     expected_epoch=lease.epoch,
                     journal_entries=registration_entries,
                 )
-            except asyncio.CancelledError:
-                raise
-            except (KeyboardInterrupt, SystemExit):
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit, AuthError) as exc:
+                _attach_android_batch_failure(
+                    exc,
+                    journal,
+                    registration_entries,
+                    commit_entries,
+                    snapshot,
+                    primary=registration_entries[0],
+                )
                 raise
             except (RateLimitError, ServerError, NetworkError, DecodingError) as exc:
                 registration_outcomes: builtins.list[SourceUrlBatchItem] = []
+                registration_errors: builtins.list[SourceAddError] = []
                 for url, entry in zip(snapshot, registration_entries, strict=True):
-                    error = _unresolved_add_error(
-                        url,
-                        stage="tentative registration",
-                        cause=exc,
+                    entry.stage = "register"
+                    error = (
+                        SourceAddError(
+                            url,
+                            cause=exc,
+                            message=(
+                                f"Failed to add URL source {url!r}: tentative registration "
+                                "stopped before dispatch."
+                            ),
+                        )
+                        if entry.commit_state is CommitState.NOT_SENT
+                        else _unresolved_add_error(
+                            url,
+                            stage="tentative registration",
+                            cause=exc,
+                        )
                     )
-                    attach_journal_entry(error, entry)
+                    registration_errors.append(error)
+                batch = _android_batch_outcome(
+                    snapshot,
+                    registration_entries,
+                    commit_entries,
+                    errors=registration_errors,
+                )
+                for url, entry, error, item in zip(
+                    snapshot,
+                    registration_entries,
+                    registration_errors,
+                    batch.items,
+                    strict=True,
+                ):
+                    attach_journal_entry(
+                        error,
+                        entry,
+                        recovery_action=(
+                            RecoveryAction.INSPECT_AND_RECONCILE
+                            if item.commit_state is CommitState.UNKNOWN
+                            else None
+                        ),
+                    )
+                    attach_batch_outcome(error, batch, preserve_commit_state=True)
                     registration_outcomes.append(
-                        SourceUrlBatchItem(url=url, error=error, member=len(registration_outcomes))
+                        SourceUrlBatchItem(
+                            url=url,
+                            error=error,
+                            member=len(registration_outcomes),
+                            outcome=item,
+                        )
                     )
                 return registration_outcomes
+            except BaseException as exc:
+                _attach_android_batch_failure(
+                    exc,
+                    journal,
+                    registration_entries,
+                    commit_entries,
+                    snapshot,
+                    primary=registration_entries[0],
+                )
+                raise
 
             indexed_entries = [
                 (index, url, registration.source_id)
@@ -1012,19 +1166,34 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
             entries = [(url, source_id) for _, url, source_id in indexed_entries]
             proofs: dict[str, _CommitProof] = {}
             if entries:
-                proofs, _ = await self._commit_urls(
-                    notebook_id,
-                    cast(Sequence[tuple[str, str]], entries),
-                    expected_epoch=lease.epoch,
-                    journal_entries=tuple(commit_entries[index] for index, _, _ in indexed_entries),
-                )
+                try:
+                    proofs, _ = await self._commit_urls(
+                        notebook_id,
+                        cast(Sequence[tuple[str, str]], entries),
+                        expected_epoch=lease.epoch,
+                        journal_entries=tuple(
+                            commit_entries[index] for index, _, _ in indexed_entries
+                        ),
+                    )
+                except BaseException as exc:
+                    _attach_android_batch_failure(
+                        exc,
+                        journal,
+                        registration_entries,
+                        commit_entries,
+                        snapshot,
+                        primary=commit_entries[indexed_entries[0][0]],
+                    )
+                    raise
 
-            outcomes: builtins.list[SourceUrlBatchItem] = []
-            for url, registration in zip(snapshot, registrations, strict=True):
+            outcome_errors: builtins.list[SourceAddError | None] = []
+            sources: builtins.list[Source | None] = []
+            selected_entries: builtins.list[JournalEntry] = []
+            for index, (url, registration) in enumerate(zip(snapshot, registrations, strict=True)):
                 if registration.omitted:
-                    error = _known_registration_error(url)
-                    attach_journal_entry(error, registration_entries[len(outcomes)])
-                    outcomes.append(SourceUrlBatchItem(url=url, error=error, member=len(outcomes)))
+                    outcome_errors.append(_known_registration_error(url))
+                    sources.append(None)
+                    selected_entries.append(registration_entries[index])
                     continue
                 source_id = registration.source_id
                 proof = proofs.get(source_id or "")
@@ -1036,15 +1205,63 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                     )
                     error = _unresolved_add_error(url, stage=stage)
                     selected_entry = (
-                        registration_entries[len(outcomes)]
+                        registration_entries[index]
                         if registration.ambiguous or source_id is None
-                        else commit_entries[len(outcomes)]
+                        else commit_entries[index]
                     )
-                    attach_journal_entry(error, selected_entry)
-                    outcomes.append(SourceUrlBatchItem(url=url, error=error, member=len(outcomes)))
+                    outcome_errors.append(error)
+                    sources.append(None)
+                    selected_entries.append(selected_entry)
                 else:
+                    outcome_errors.append(None)
+                    sources.append(proof.source)
+                    selected_entries.append(commit_entries[index])
+
+            batch = _android_batch_outcome(
+                snapshot,
+                registration_entries,
+                commit_entries,
+                errors=outcome_errors,
+            )
+            outcomes: builtins.list[SourceUrlBatchItem] = []
+            for index, (url, source, outcome_error, selected_entry, item) in enumerate(
+                zip(
+                    snapshot,
+                    sources,
+                    outcome_errors,
+                    selected_entries,
+                    batch.items,
+                    strict=True,
+                )
+            ):
+                if outcome_error is not None:
+                    attach_journal_entry(
+                        outcome_error,
+                        selected_entry,
+                        recovery_action=(
+                            RecoveryAction.INSPECT_AND_RECONCILE
+                            if item.commit_state is CommitState.UNKNOWN
+                            else None
+                        ),
+                    )
+                    attach_batch_outcome(outcome_error, batch, preserve_commit_state=True)
                     outcomes.append(
-                        SourceUrlBatchItem(url=url, source=proof.source, member=len(outcomes))
+                        SourceUrlBatchItem(
+                            url=url,
+                            error=outcome_error,
+                            member=index,
+                            outcome=item,
+                        )
+                    )
+                else:
+                    assert source is not None
+                    outcomes.append(
+                        SourceUrlBatchItem(
+                            url=url,
+                            source=source,
+                            member=index,
+                            outcome=item,
+                        )
                     )
             return outcomes
 

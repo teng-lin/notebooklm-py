@@ -48,7 +48,9 @@ logger = logging.getLogger(__name__)
 
 def _cleanup_allowed_after_import_error(error: BaseException) -> bool:
     """Allow deletion only when canonical dependent-send evidence settles it."""
-    metadata = getattr(error, "operation_metadata", None)
+    if not isinstance(error, NotebookLMError):
+        return False
+    metadata = error.operation_metadata
     if metadata is None or metadata.commit_state is None:
         return False
     if metadata.commit_state in (CommitState.NOT_SENT, CommitState.REJECTED):
@@ -467,9 +469,6 @@ class DriveStagingTransfer:
         except BaseException as error:
             if isinstance(error, NotebookLMError):
                 attach_prerequisite_ids(error, file_id)
-            else:
-                attach_prerequisite_ids(error, file_id)
-                error.operation_metadata = error._operation_metadata  # type: ignore[attr-defined]
             if _cleanup_allowed_after_import_error(error) and transfer._cleanup_fence_open(
                 expected_epoch, cleanup_deadline
             ):

@@ -27,6 +27,7 @@ from notebooklm._android.session import (
 )
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._deadline import RuntimeDeadline, await_with_deadline
+from notebooklm._idempotency import OperationJournal
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm.exceptions import (
     AuthError,
@@ -38,6 +39,7 @@ from notebooklm.exceptions import (
     RPCTimeoutError,
     ServerError,
 )
+from notebooklm.outcomes import CommitState
 from notebooklm.raw import AndroidRawAPI, GrpcUnaryMethod, GrpcUnaryStreamMethod, ReplayPolicy
 
 METHOD = (
@@ -824,6 +826,41 @@ async def test_local_cancellation_is_unchanged_and_not_counted_failed() -> None:
     snapshot = supervisor._metrics.snapshot()
     assert snapshot.rpc_calls_started == 1
     assert snapshot.rpc_calls_failed == 0
+
+
+@pytest.mark.asyncio
+async def test_real_android_unary_cancellation_keeps_every_batch_attempt_unknown() -> None:
+    channel = _Channel()
+    pending: asyncio.Future[bytes] = asyncio.Future()
+    channel.unary_outcomes = [pending]
+    session, _, _, _, _ = await _open(channel=channel)
+    journal = OperationJournal("sources.add_urls")
+    invocation_id = journal.invocation_id()
+    entries = tuple(
+        journal.new_entry(method=MUTATION_METHOD, member=index, invocation_id=invocation_id)
+        for index in range(2)
+    )
+    call = asyncio.create_task(
+        session.unary(
+            MUTATION_METHOD,
+            _Message(b"request"),
+            replay_safe=False,
+            response_type=_Message,
+            journal_entries=entries,
+        )
+    )
+    while not channel.invocations:
+        await asyncio.sleep(0)
+    call.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await call
+
+    assert [entry.commit_state for entry in entries] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert [len(entry.attempts) for entry in entries] == [1, 1]
 
 
 @pytest.mark.asyncio

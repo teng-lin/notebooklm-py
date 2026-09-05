@@ -12,7 +12,7 @@ from typing import Any, NoReturn
 
 import click
 
-from .._app.errors import did_you_mean_hint
+from .._app.errors import did_you_mean_hint, unconfirmed_hint
 from ..exceptions import (
     ArtifactTimeoutError,
     AuthError,
@@ -25,6 +25,7 @@ from ..exceptions import (
     RPCError,
     ValidationError,
 )
+from ..outcomes import operation_metadata_payload
 from ._encoding import safe_echo
 
 logger = logging.getLogger(__name__)
@@ -123,12 +124,7 @@ _UNCONFIRMED_WRITE_NOTE = (
 
 
 def _unconfirmed_write_note(exc: BaseException | None) -> str:
-    if getattr(exc, "operation", None) == "chat":
-        return (
-            "The chat turn may or may not have been recorded. Inspect conversation history "
-            "before trying again; replaying the question can record a duplicate turn."
-        )
-    return _UNCONFIRMED_WRITE_NOTE
+    return _UNCONFIRMED_WRITE_NOTE if exc is None else unconfirmed_hint(exc)
 
 
 def _retained_source_note(source_id: str, stage: str) -> str:
@@ -286,9 +282,20 @@ def handle_errors(verbose: bool = False, json_output: bool = False) -> Generator
         because several branches build their text from a literal rather than
         from ``str(e)`` and would silently drop it.
         """
-        source_id = getattr(exc, "source_id", None)
-        stage = getattr(exc, "stage", None)
-        if source_id is not None and stage is not None:
+        operation_payload = operation_metadata_payload(exc)
+        if operation_payload:
+            if json_out:
+                extra = {**(extra or {}), **operation_payload}
+            else:
+                rendered_metadata = json.dumps(
+                    operation_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                message = f"{message}\nOperation metadata: {rendered_metadata}"
+        source_id = operation_payload.get("source_id")
+        stage = operation_payload.get("stage")
+        if isinstance(source_id, str) and isinstance(stage, str):
             if json_out:
                 extra = {**(extra or {}), "source_id": source_id, "stage": stage}
             else:

@@ -7,8 +7,25 @@ loss without relying on HTTP/gRPC status codes or exception classes.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
+
+from ._redact import redact
+
+_MAX_TEXT = 200
+_MAX_COLLECTION = 20
+_MAX_JOURNAL_RECORDS = 64
+
+
+def _safe(value: str | None) -> str | None:
+    return None if value is None else redact(value, max_length=_MAX_TEXT)
+
+
+def _safe_tuple(values: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(safe for value in values[:_MAX_COLLECTION] if (safe := _safe(value)))
+    )
 
 
 class CommitState(str, Enum):
@@ -36,6 +53,10 @@ class LookupSuggestion:
     id: str
     title: str
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "id", _safe(self.id) or "")
+        object.__setattr__(self, "title", _safe(self.title) or "")
+
 
 @dataclass(frozen=True)
 class ReconciliationCandidate:
@@ -44,6 +65,11 @@ class ReconciliationCandidate:
     id: str
     title: str | None = None
     role: str = "candidate"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "id", _safe(self.id) or "")
+        object.__setattr__(self, "title", _safe(self.title))
+        object.__setattr__(self, "role", _safe(self.role) or "candidate")
 
 
 @dataclass(frozen=True)
@@ -54,6 +80,15 @@ class ReconciliationReport:
     unresolved_inputs: tuple[str, ...] = ()
     reason: str = "outcome could not be correlated"
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "candidates", self.candidates[:_MAX_COLLECTION])
+        object.__setattr__(self, "unresolved_inputs", _safe_tuple(self.unresolved_inputs))
+        object.__setattr__(
+            self,
+            "reason",
+            _safe(self.reason) or "outcome could not be correlated",
+        )
+
 
 @dataclass(frozen=True)
 class _AttemptMetadata:
@@ -63,6 +98,12 @@ class _AttemptMetadata:
     commit_state: CommitState
     evidence: str | None = None
     known_resource_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.ordinal < 1:
+            raise ValueError("attempt ordinal must be positive")
+        object.__setattr__(self, "evidence", _safe(self.evidence))
+        object.__setattr__(self, "known_resource_ids", _safe_tuple(self.known_resource_ids))
 
 
 @dataclass(frozen=True)
@@ -79,8 +120,20 @@ class BatchItemOutcome:
     def __post_init__(self) -> None:
         if self.member < 0:
             raise ValueError("member must be non-negative")
+        object.__setattr__(self, "input", _safe(self.input) or "")
+        object.__setattr__(self, "resource_id", _safe(self.resource_id))
         if self.commit_state is CommitState.CONFIRMED and self.resource_id is None:
             raise ValueError("confirmed batch outcomes require resource_id")
+        if self.commit_state is CommitState.CONFIRMED and (
+            self.error is not None or self.reconciliation is not None
+        ):
+            raise ValueError("confirmed batch outcomes cannot carry failure evidence")
+        if self.commit_state is CommitState.UNKNOWN and self.reconciliation is None:
+            raise ValueError("unknown batch outcomes require a reconciliation report")
+        if self.commit_state in (CommitState.REJECTED, CommitState.NOT_SENT) and (
+            self.resource_id is not None or self.reconciliation is not None
+        ):
+            raise ValueError("rejected and unattempted outcomes cannot claim a resource")
 
 
 @dataclass(frozen=True)
@@ -91,6 +144,8 @@ class BatchOutcome:
     whole_request_retriable: bool = False
 
     def __post_init__(self) -> None:
+        if len(self.items) > _MAX_COLLECTION:
+            raise ValueError(f"batch outcomes are capped at {_MAX_COLLECTION} items")
         if tuple(item.member for item in self.items) != tuple(range(len(self.items))):
             raise ValueError("batch outcome members must be ordered occurrence indexes")
         if self.whole_request_retriable and any(
@@ -123,6 +178,100 @@ class OperationMetadata:
     attempts: tuple[_AttemptMetadata, ...] = ()
     prerequisite_ids: tuple[str, ...] = ()
     entries: tuple[OperationMetadata, ...] = ()
+
+    def __post_init__(self) -> None:
+        for name in ("operation", "invocation_id", "method", "phase", "source_id", "stage"):
+            object.__setattr__(self, name, _safe(getattr(self, name)))
+        object.__setattr__(self, "known_resource_ids", _safe_tuple(self.known_resource_ids))
+        object.__setattr__(self, "prerequisite_ids", _safe_tuple(self.prerequisite_ids))
+        object.__setattr__(self, "attempts", self.attempts[:_MAX_JOURNAL_RECORDS])
+        object.__setattr__(self, "entries", self.entries[:_MAX_JOURNAL_RECORDS])
+
+
+def _wire_text(value: object) -> str:
+    return redact(value, max_length=_MAX_TEXT)
+
+
+def _wire_report(report: ReconciliationReport) -> dict[str, object]:
+    return {
+        "candidates": [
+            {
+                "id": _wire_text(item.id),
+                **({"title": _wire_text(item.title)} if item.title is not None else {}),
+                "role": _wire_text(item.role),
+            }
+            for item in report.candidates[:_MAX_COLLECTION]
+        ],
+        "unresolved_inputs": [
+            _wire_text(item) for item in report.unresolved_inputs[:_MAX_COLLECTION]
+        ],
+        "reason": _wire_text(report.reason),
+    }
+
+
+def _wire_batch_item(item: BatchItemOutcome) -> dict[str, object]:
+    projected: dict[str, object] = {
+        "member": item.member,
+        "input": _wire_text(item.input),
+        "commit_state": item.commit_state.value,
+    }
+    if item.resource_id is not None:
+        projected["resource_id"] = _wire_text(item.resource_id)
+    if item.reconciliation is not None:
+        projected["reconciliation"] = _wire_report(item.reconciliation)
+    if item.error is not None:
+        projected["error"] = {
+            "type": type(item.error).__name__,
+            "message": _wire_text(item.error),
+        }
+    return projected
+
+
+def _wire_metadata(metadata: OperationMetadata) -> dict[str, object]:
+    projected: dict[str, object] = {"recovery_action": metadata.recovery_action.value}
+    if metadata.commit_state is not None:
+        projected["commit_state"] = metadata.commit_state.value
+    if metadata.operation is not None:
+        projected["operation"] = _wire_text(metadata.operation)
+    if metadata.known_resource_ids:
+        projected["known_resource_ids"] = [
+            _wire_text(item) for item in metadata.known_resource_ids[:_MAX_COLLECTION]
+        ]
+    if metadata.source_id is not None:
+        projected["source_id"] = _wire_text(metadata.source_id)
+    if metadata.stage is not None:
+        projected["stage"] = _wire_text(metadata.stage)
+    if metadata.prerequisite_ids:
+        projected["prerequisite_ids"] = [
+            _wire_text(item) for item in metadata.prerequisite_ids[:_MAX_COLLECTION]
+        ]
+    if metadata.reconciliation is not None:
+        projected["reconciliation"] = _wire_report(metadata.reconciliation)
+    if metadata.batch_outcome is not None:
+        projected["batch_outcome"] = {
+            "whole_request_retriable": metadata.batch_outcome.whole_request_retriable,
+            "items": [
+                _wire_batch_item(item) for item in metadata.batch_outcome.items[:_MAX_COLLECTION]
+            ],
+        }
+    return projected
+
+
+def operation_metadata_payload(exc: BaseException | None) -> dict[str, object]:
+    """Return the bounded adapter projection for a library exception carrier."""
+
+    from .exceptions import NotebookLMError
+
+    if not isinstance(exc, NotebookLMError):
+        return {}
+    metadata = exc.operation_metadata
+    return {} if metadata is None else _wire_metadata(metadata)
+
+
+def format_operation_metadata(payload: dict[str, object]) -> str:
+    """Flatten a projected payload without re-reading the exception carrier."""
+
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 __all__ = [

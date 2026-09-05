@@ -703,6 +703,76 @@ async def test_empty_url_batch_has_zero_io() -> None:
 
 
 @pytest.mark.asyncio
+async def test_batch_pre_dispatch_failure_is_ordered_unattempted_evidence() -> None:
+    transport = FakeTransport()
+    failure = AuthError("credential acquisition failed")
+
+    async def fail_before_dispatch(method: str, request: Any, **kwargs: Any) -> Any:
+        del method, request, kwargs
+        raise failure
+
+    transport.unary = fail_before_dispatch  # type: ignore[method-assign]
+
+    with pytest.raises(AuthError) as raised:
+        await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+
+    assert raised.value is failure
+    assert failure.batch_outcome is not None
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.NOT_SENT,
+        CommitState.NOT_SENT,
+    ]
+    assert failure.operation_metadata is not None
+    assert len(failure.operation_metadata.entries) == 4
+    assert all(not entry.attempts for entry in failure.operation_metadata.entries)
+
+
+@pytest.mark.asyncio
+async def test_batch_registration_auth_after_dispatch_is_unknown_with_reports() -> None:
+    transport = FakeTransport()
+    failure = AuthError("wire auth status")
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = failure
+
+    with pytest.raises(AuthError) as raised:
+        await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+
+    assert raised.value is failure
+    assert failure.batch_outcome is not None
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert all(item.reconciliation is not None for item in failure.batch_outcome.items)
+    assert failure.operation_metadata is not None
+    assert len(failure.operation_metadata.entries) == 4
+    assert [len(entry.attempts) for entry in failure.operation_metadata.entries] == [1, 1, 0, 0]
+
+
+@pytest.mark.asyncio
+async def test_batch_commit_cancellation_retains_registration_ids_and_all_entries() -> None:
+    transport = FakeTransport()
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A, SOURCE_B])
+    cancellation = asyncio.CancelledError()
+    transport.handlers[ADD_SOURCES_METHOD] = cancellation
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.known_resource_ids == (SOURCE_A, SOURCE_B)
+    assert len(metadata.entries) == 4
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert [item.resource_id for item in metadata.batch_outcome.items] == [SOURCE_A, SOURCE_B]
+    assert all(item.reconciliation is not None for item in metadata.batch_outcome.items)
+    assert not hasattr(cancellation, "operation")
+
+
+@pytest.mark.asyncio
 async def test_add_text_uses_registered_exact_content_and_rejects_idempotent_opt_in() -> None:
     transport = _successful_transport()
 

@@ -22,6 +22,8 @@ from ..._idempotency import (
     OperationJournal,
     attach_batch_outcome,
     attach_journal_entry,
+    attach_operation_journal,
+    reconciliation_report,
     unresolved_commit_error,
 )
 from ..._source.batch import SourceUrlBatchItem
@@ -33,7 +35,7 @@ from ...exceptions import (
     ServerError,
     SourceAddError,
 )
-from ...outcomes import BatchItemOutcome, BatchOutcome, CommitState
+from ...outcomes import BatchItemOutcome, BatchOutcome, CommitState, RecoveryAction
 from ...rpc import RPCError, RPCMethod
 from ...types import Source
 from ..contracts import RpcCaller
@@ -130,6 +132,15 @@ def _batch_outcome(
                     if entry.known_resource_ids
                     else None
                 ),
+                reconciliation=(
+                    reconciliation_report(
+                        list(entry.known_resource_ids),
+                        [url],
+                        reason="batch member commit could not be correlated",
+                    )
+                    if entry.commit_state is CommitState.UNKNOWN
+                    else None
+                ),
             )
             for index, (url, entry, source) in enumerate(zip(urls, entries, resolved, strict=True))
         )
@@ -141,6 +152,7 @@ def _unresolved_batch_error(
     message: str,
     cause: Exception,
     entries: Sequence[JournalEntry],
+    journal: OperationJournal,
 ) -> SourceAddError:
     preview = ", ".join(repr(url) for url in urls[:3])
     if len(urls) > 3:
@@ -161,8 +173,27 @@ def _unresolved_batch_error(
             preserve_exception=True,
         ),
     )
-    attach_batch_outcome(error, _batch_outcome(urls, entries))
+    _attach_whole_batch_failure(error, journal, entries, _batch_outcome(urls, entries))
     return error
+
+
+def _attach_whole_batch_failure(
+    error: BaseException,
+    journal: OperationJournal,
+    entries: Sequence[JournalEntry],
+    outcome: BatchOutcome,
+) -> None:
+    attach_operation_journal(
+        error,
+        journal,
+        primary=entries[0],
+        recovery_action=(
+            RecoveryAction.INSPECT_AND_RECONCILE
+            if any(item.commit_state is CommitState.UNKNOWN for item in outcome.items)
+            else None
+        ),
+    )
+    attach_batch_outcome(error, outcome)
 
 
 class SourceBatchAddService:
@@ -221,24 +252,32 @@ class SourceBatchAddService:
                 journal_entries=journal_entries,
             )
         except AuthError as exc:
-            attach_batch_outcome(exc, _batch_outcome(urls, journal_entries))
+            _attach_whole_batch_failure(
+                exc,
+                journal,
+                journal_entries,
+                _batch_outcome(urls, journal_entries),
+            )
             raise
         except (RateLimitError, ServerError, NetworkError) as exc:
             # Preserve the typed transport exception (ADR-0019) while making
             # the write-uncertainty dominate retry classification (#2220).
-            original = str(exc)
-            exc.args = (
-                "UNRESOLVED — do not blindly retry; check the notebook source list and "
-                "reconcile the batch URLs first. The batch transport failed and an "
-                f"unknown subset may have committed; no automatic retry was attempted. {original}",
-            )
-            unresolved_commit_error(
-                RPCMethod.ADD_SOURCE,
-                "the batch URL add",
-                exc,
-                preserve_exception=True,
-            )
-            attach_batch_outcome(exc, _batch_outcome(urls, journal_entries))
+            outcome = _batch_outcome(urls, journal_entries)
+            if any(item.commit_state is CommitState.UNKNOWN for item in outcome.items):
+                original = str(exc)
+                exc.args = (
+                    "UNRESOLVED — do not blindly retry; check the notebook source list and "
+                    "reconcile the batch URLs first. The batch transport failed and an "
+                    "unknown subset may have committed; no automatic retry was attempted. "
+                    f"{original}",
+                )
+                unresolved_commit_error(
+                    RPCMethod.ADD_SOURCE,
+                    "the batch URL add",
+                    exc,
+                    preserve_exception=True,
+                )
+            _attach_whole_batch_failure(exc, journal, journal_entries, outcome)
             raise
         except RPCError as exc:
             # Live-characterized all-failed URL batches use the same explicit
@@ -259,7 +298,12 @@ class SourceBatchAddService:
                     exc,
                     preserve_exception=True,
                 )
-                attach_batch_outcome(exc, _batch_outcome(urls, journal_entries))
+                _attach_whole_batch_failure(
+                    exc,
+                    journal,
+                    journal_entries,
+                    _batch_outcome(urls, journal_entries),
+                )
                 raise
             # Preserve the existing per-item adapter contract instead of
             # turning an all-bad input batch into a top-level failure.
@@ -267,6 +311,10 @@ class SourceBatchAddService:
             payload = []
             for entry in journal_entries:
                 entry.record(CommitState.REJECTED, "decoded batch refusal")
+        except BaseException as exc:
+            outcome = _batch_outcome(urls, journal_entries)
+            _attach_whole_batch_failure(exc, journal, journal_entries, outcome)
+            raise
 
         try:
             rows = [] if rpc_error is not None else unwrap_add_source_rows(payload)
@@ -280,6 +328,7 @@ class SourceBatchAddService:
                 "no automatic retry was attempted.",
                 exc,
                 journal_entries,
+                journal,
             ) from exc
 
         # ``Source.from_api_response`` is deliberately tolerant on listing
@@ -298,6 +347,7 @@ class SourceBatchAddService:
                 "committed subset is unknown; no automatic retry was attempted.",
                 error,
                 journal_entries,
+                journal,
             )
 
         if len(sources) > len(urls):
@@ -311,6 +361,7 @@ class SourceBatchAddService:
                 "outcomes cannot be trusted; no automatic retry was attempted.",
                 error,
                 journal_entries,
+                journal,
             )
 
         requested_identities = [
@@ -342,6 +393,7 @@ class SourceBatchAddService:
                         "outcomes cannot be trusted; no automatic retry was attempted.",
                         error,
                         journal_entries,
+                        journal,
                     )
             complete_outcomes = [
                 SourceUrlBatchItem(url=url, source=source, member=index)
@@ -378,6 +430,7 @@ class SourceBatchAddService:
                     "outcomes cannot be trusted; no automatic retry was attempted.",
                     error,
                     journal_entries,
+                    journal,
                 )
             sources_by_identity[identity].append(source)
 
@@ -395,6 +448,7 @@ class SourceBatchAddService:
                 "back to inputs; no automatic retry was attempted.",
                 error,
                 journal_entries,
+                journal,
             )
 
         # Equivalent URL identities are representable when all copies share one
@@ -414,6 +468,7 @@ class SourceBatchAddService:
                     "outcomes cannot be trusted; no automatic retry was attempted.",
                     error,
                     journal_entries,
+                    journal,
                 )
             if count > 1 and 0 < success_count < count:
                 error = RPCError(
@@ -421,12 +476,13 @@ class SourceBatchAddService:
                     method_id=RPCMethod.ADD_SOURCE.value,
                 )
                 raise _unresolved_batch_error(
-                    [url] * count,
+                    urls,
                     "The backend partially admitted identical URLs without returning request "
                     "positions, so the successful copies are ambiguous; no automatic retry "
                     "was attempted.",
                     error,
                     journal_entries,
+                    journal,
                 )
 
         missing_identities = [
@@ -496,6 +552,14 @@ class SourceBatchAddService:
                     member=len(outcomes),
                 )
             )
+        batch = _batch_outcome(
+            urls,
+            journal_entries,
+            resources=tuple(item.source for item in outcomes),
+        )
+        for item in outcomes:
+            if item.error is not None:
+                attach_batch_outcome(item.error, batch, preserve_commit_state=True)
         return outcomes
 
 

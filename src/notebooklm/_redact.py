@@ -61,6 +61,15 @@ _EXTRA_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
 )
 
+# Metadata can retain caller-supplied URLs for reconciliation.  Keep the URL
+# shape useful while ensuring ordinary credential-like query parameters do not
+# rely on the package-specific Google token registry above.
+_SENSITIVE_QUERY_VALUE = re.compile(
+    r"([?&](?:[^\s&#=]*(?:token|secret|password|passwd|signature|sig|key|code)[^\s&#=]*)=)"
+    r"[^\s&#]*",
+    re.IGNORECASE,
+)
+
 
 def redact(message: object, *, max_length: int = DEFAULT_MAX_MESSAGE) -> str:
     """Scrub secrets + local paths, collapse whitespace, and length-cap ``message``.
@@ -74,6 +83,7 @@ def redact(message: object, *, max_length: int = DEFAULT_MAX_MESSAGE) -> str:
     text = scrub_secrets(message)
     for pattern, replacement in _EXTRA_PATTERNS:
         text = pattern.sub(replacement, text)
+    text = _SENSITIVE_QUERY_VALUE.sub(r"\1***", text)
     text = " ".join(text.split())
     if len(text) > max_length:
         text = text[:max_length] + "…"

@@ -44,6 +44,7 @@ from .._app.errors import (
     unconfirmed_hint,
 )
 from ..exceptions import NotebookLMError
+from ..outcomes import format_operation_metadata, operation_metadata_payload
 
 __all__ = [
     "CATEGORY_TABLE",
@@ -118,6 +119,8 @@ def tool_error_payload(exc: BaseException) -> dict[str, Any]:
         "message": message,
         "retriable": classified.retriable,
     }
+    operation_payload = operation_metadata_payload(exc)
+    payload.update(operation_payload)
     # A failed *name* lookup may carry near-miss candidates (issue #1787). Surface
     # them structurally AND replace the generic NOT_FOUND hint with a "Did you
     # mean …" one that names the titles inline — the FastMCP wire flattens this
@@ -158,9 +161,15 @@ def to_tool_error(exc: BaseException) -> ToolError:
     payload = tool_error_payload(exc)
     suffix = f" hint: {payload['hint']}" if "hint" in payload else ""
     unconfirmed = " unconfirmed=true" if payload.get("unconfirmed") else ""
+    operation_payload = operation_metadata_payload(exc)
+    operation = (
+        f" operation_metadata={format_operation_metadata(operation_payload)}"
+        if operation_payload
+        else ""
+    )
     return ToolError(
         f"{payload['code']}: {payload['message']} "
-        f"(retriable={str(payload['retriable']).lower()}{unconfirmed}){suffix}"
+        f"(retriable={str(payload['retriable']).lower()}{unconfirmed}){suffix}{operation}"
     )
 
 

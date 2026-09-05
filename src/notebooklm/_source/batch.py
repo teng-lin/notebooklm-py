@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..exceptions import SourceAddError
-from ..outcomes import BatchItemOutcome, CommitState
+from ..outcomes import BatchItemOutcome, CommitState, ReconciliationReport
 from ..types import Source
 
 
@@ -50,7 +50,18 @@ class SourceUrlBatchItem:
                         else None
                     ),
                     error=self.error,
-                    reconciliation=(None if metadata is None else metadata.reconciliation),
+                    reconciliation=(
+                        (
+                            ReconciliationReport(
+                                unresolved_inputs=(self.url,),
+                                reason="batch member commit could not be correlated",
+                            )
+                            if metadata is None or metadata.reconciliation is None
+                            else metadata.reconciliation
+                        )
+                        if state is CommitState.UNKNOWN
+                        else None
+                    ),
                 ),
             )
 

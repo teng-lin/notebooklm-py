@@ -15,7 +15,7 @@ from notebooklm.artifacts import (
     with_rate_limit_retry,
 )
 from notebooklm.exceptions import RateLimitError, RPCError
-from notebooklm.outcomes import CommitState
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import GenerationStatus
 from tests._fixtures.rpc_error_frames import user_displayable_rejection_chunks
@@ -273,6 +273,10 @@ class TestWithRateLimitRetry:
         assert rpc.calls == 2
         assert captured.value.commit_state is CommitState.CONFIRMED
         assert captured.value.operation_metadata.known_resource_ids == ("artifact-a",)
+        assert (
+            captured.value.operation_metadata.recovery_action
+            is RecoveryAction.INSPECT_AND_RECONCILE
+        )
 
     @pytest.mark.asyncio
     async def test_inner_exhaustion_does_not_restart_from_outer_retry_budget(self) -> None:

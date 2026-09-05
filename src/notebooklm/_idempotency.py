@@ -12,8 +12,10 @@ from enum import Enum
 from typing import Literal, Protocol, TypeVar
 from uuid import uuid4
 
+from ._redact import redact
 from .exceptions import (
     NetworkError,
+    NotebookLMError,
     RateLimitError,
     RPCError,
     ServerError,
@@ -121,7 +123,7 @@ class OperationJournal:
     """Private journal of mutation evidence for one logical workflow."""
 
     def __init__(self, operation: str) -> None:
-        self.operation = operation
+        self.operation = redact(operation, max_length=200)
         self._entries: dict[SendIdentity, JournalEntry] = {}
 
     @staticmethod
@@ -149,8 +151,8 @@ class OperationJournal:
             SendIdentity(
                 invocation_id or self.invocation_id(),
                 self.operation,
-                method,
-                phase,
+                redact(method, max_length=200),
+                redact(phase, max_length=200),
                 member,
             )
         )
@@ -168,8 +170,9 @@ class OperationJournal:
     ) -> None:
         self._check_entry(entry)
         for resource_id in resource_ids:
-            if resource_id and resource_id not in entry._known_resource_ids:
-                entry._known_resource_ids.append(resource_id)
+            safe_id = redact(resource_id, max_length=200)
+            if safe_id and safe_id not in entry._known_resource_ids:
+                entry._known_resource_ids.append(safe_id)
 
     def record(
         self,
@@ -182,24 +185,30 @@ class OperationJournal:
     ) -> None:
         self._check_entry(entry)
         for resource_id in known_resource_ids:
-            if resource_id and resource_id not in entry._known_resource_ids:
-                entry._known_resource_ids.append(resource_id)
+            safe_id = redact(resource_id, max_length=200)
+            if safe_id and safe_id not in entry._known_resource_ids:
+                entry._known_resource_ids.append(safe_id)
         if attempt is None and entry._attempts:
             attempt = entry._attempts[-1]
         if attempt is None:
             if state is not CommitState.NOT_SENT:
                 raise ValueError("dispatch must be recorded before mutation settlement")
             entry._preflight_state = state
-            entry._preflight_evidence = evidence
+            entry._preflight_evidence = redact(evidence, max_length=200)
             return
         if attempt not in entry._attempts:
             raise ValueError("attempt does not belong to journal entry")
         if attempt.commit_state is not CommitState.UNKNOWN and attempt.commit_state is not state:
             raise ValueError("a settled attempt cannot be overwritten")
         attempt.commit_state = state
-        attempt.evidence = evidence[:200]
+        attempt.evidence = redact(evidence, max_length=200)
         attempt.known_resource_ids = tuple(
-            dict.fromkeys((*attempt.known_resource_ids, *known_resource_ids))
+            dict.fromkeys(
+                (
+                    *attempt.known_resource_ids,
+                    *(redact(item, max_length=200) for item in known_resource_ids if item),
+                )
+            )
         )
 
     def snapshot(
@@ -299,9 +308,9 @@ def attach_operation_metadata(exc: _E, metadata: OperationMetadata) -> _E:
     exc._operation_metadata = metadata  # type: ignore[attr-defined]
     # ``operation`` existed as a temporary P1 projection. Keep it readable
     # through the migration without making it another metadata authority.
-    if metadata.operation is not None:
+    if isinstance(exc, NotebookLMError) and metadata.operation is not None:
         exc.operation = metadata.operation  # type: ignore[attr-defined]
-    if metadata.reconciliation is not None:
+    if isinstance(exc, NotebookLMError) and metadata.reconciliation is not None:
         exc.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
             candidate.id for candidate in metadata.reconciliation.candidates
         )
@@ -466,10 +475,17 @@ def settle_generation_failure(
     if not binding.entries and not binding.linked_entries:
         return exc
     entry = (binding.entries or binding.linked_entries)[0]
+    has_confirmed_descendant = any(
+        item.commit_state is CommitState.CONFIRMED
+        for item in (*binding.entries, *binding.linked_entries)
+    )
     attach_operation_journal(
         exc,
         binding.journal,
         primary=entry,
+        recovery_action=(
+            RecoveryAction.INSPECT_AND_RECONCILE if has_confirmed_descendant else None
+        ),
         extra_entries=tuple(binding.linked_entries),
     )
     if any(
@@ -650,7 +666,11 @@ def attach_reconciliation_report(
 ) -> _E:
     """Attach typed candidate evidence without promoting it to a known ID."""
 
-    metadata = getattr(exc, "operation_metadata", None) or OperationMetadata()
+    metadata = (
+        getattr(exc, "operation_metadata", None)
+        or getattr(exc, "_operation_metadata", None)
+        or OperationMetadata()
+    )
     return attach_operation_metadata(
         exc,
         replace(
@@ -663,10 +683,19 @@ def attach_reconciliation_report(
     )
 
 
-def attach_batch_outcome(exc: _E, outcome: BatchOutcome) -> _E:
+def attach_batch_outcome(
+    exc: _E,
+    outcome: BatchOutcome,
+    *,
+    preserve_commit_state: bool = False,
+) -> _E:
     """Retain ordered batch settlement on the original escaping exception."""
 
-    metadata = getattr(exc, "operation_metadata", None) or OperationMetadata()
+    metadata = (
+        getattr(exc, "operation_metadata", None)
+        or getattr(exc, "_operation_metadata", None)
+        or OperationMetadata()
+    )
     states = tuple(item.commit_state for item in outcome.items)
     state = (
         CommitState.UNKNOWN
@@ -677,16 +706,19 @@ def attach_batch_outcome(exc: _E, outcome: BatchOutcome) -> _E:
         if CommitState.REJECTED in states
         else CommitState.NOT_SENT
     )
+    recovery_action = (
+        RecoveryAction.INSPECT_AND_RECONCILE
+        if state is CommitState.UNKNOWN
+        else RecoveryAction.NONE
+        if metadata.commit_state is CommitState.UNKNOWN and not preserve_commit_state
+        else metadata.recovery_action
+    )
     return attach_operation_metadata(
         exc,
         replace(
             metadata,
-            commit_state=state,
-            recovery_action=(
-                RecoveryAction.INSPECT_AND_RECONCILE
-                if state is CommitState.UNKNOWN
-                else metadata.recovery_action
-            ),
+            commit_state=(metadata.commit_state if preserve_commit_state else state),
+            recovery_action=recovery_action,
             batch_outcome=outcome,
         ),
     )
@@ -787,7 +819,6 @@ async def call_unconfirmed_on_transport_loss(
     try:
         return await call()
     except AMBIGUOUS_WRITE_ERRORS as exc:
-        mark_unconfirmed(exc, force_unknown=force_unknown, operation=operation)
         if journal_entry is not None:
             attach_journal_entry(
                 exc,
@@ -798,6 +829,8 @@ async def call_unconfirmed_on_transport_loss(
                     else None
                 ),
             )
+        else:
+            mark_unconfirmed(exc, force_unknown=force_unknown, operation=operation)
         if chain == "exc":
             del call, method, what
             raise
@@ -805,13 +838,18 @@ async def call_unconfirmed_on_transport_loss(
     except RPCError as exc:
         if not force_unknown:
             raise
-        mark_unconfirmed(exc, force_unknown=True, operation=operation)
         if journal_entry is not None:
             attach_journal_entry(
                 exc,
                 journal_entry,
-                recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                recovery_action=(
+                    RecoveryAction.INSPECT_AND_RECONCILE
+                    if journal_entry.commit_state is CommitState.UNKNOWN
+                    else None
+                ),
             )
+        else:
+            mark_unconfirmed(exc, force_unknown=True, operation=operation)
         if chain == "exc":
             del call, method, what
             raise

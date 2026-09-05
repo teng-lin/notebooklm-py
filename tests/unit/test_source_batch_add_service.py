@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 from unittest.mock import AsyncMock
@@ -43,7 +44,7 @@ def _deep_bare_url_payload(source_id: str, url: str) -> list[Any]:
 
 
 class RecordingRpc:
-    def __init__(self, result: Any = None, *, error: Exception | None = None) -> None:
+    def __init__(self, result: Any = None, *, error: BaseException | None = None) -> None:
         self.result = result
         self.error = error
         self.calls: list[dict[str, Any]] = []
@@ -56,6 +57,13 @@ class RecordingRpc:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+class PreDispatchFailureRpc(RecordingRpc):
+    async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
+        self.calls.append({"method": method, "params": params, **kwargs})
+        assert self.error is not None
+        raise self.error
 
 
 @pytest.mark.parametrize(
@@ -403,8 +411,61 @@ async def test_post_dispatch_auth_failure_preserves_unknown_batch_contract() -> 
         CommitState.UNKNOWN,
         CommitState.UNKNOWN,
     ]
+    assert all(item.reconciliation is not None for item in raised.value.batch_outcome.items)
     assert len(rpc.calls) == 1
     list_sources.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pre_dispatch_transport_failure_stays_not_sent_without_inspect_guidance() -> None:
+    failure = NetworkError("connect failed before dispatch")
+    rpc = PreDispatchFailureRpc(error=failure)
+
+    with pytest.raises(NetworkError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            ["https://a.example.com", "https://b.example.com"],
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is failure
+    assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.unconfirmed is False
+    assert failure.batch_outcome is not None
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.NOT_SENT,
+        CommitState.NOT_SENT,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_post_dispatch_cancellation_keeps_web_batch_snapshot_and_propagates() -> None:
+    cancellation = asyncio.CancelledError()
+    rpc = RecordingRpc(error=cancellation)
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            ["https://a.example.com", "https://b.example.com"],
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is CommitState.UNKNOWN
+    assert len(metadata.entries) == 2
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert all(item.reconciliation is not None for item in metadata.batch_outcome.items)
 
 
 @pytest.mark.asyncio

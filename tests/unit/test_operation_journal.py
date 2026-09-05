@@ -1,15 +1,24 @@
 """Canonical typed outcome and private journal contracts (plan P2)."""
 
+import httpx
+import pytest
+
 from notebooklm._idempotency import (
     OperationJournal,
     attach_journal_entry,
     attach_reconciliation_report,
+    call_unconfirmed_on_transport_loss,
     mark_commit_state,
     mark_unconfirmed,
     reconciliation_report,
 )
-from notebooklm.exceptions import RPCError, SourceProcessingError, SourceTimeoutError
+from notebooklm._web.transport.errors import TransportServerError
+from notebooklm._web.transport.middleware.context import RPC_CONTEXT_JOURNAL
+from notebooklm._web.transport.middleware.core import RpcRequest
+from notebooklm.auth import AuthTokens
+from notebooklm.exceptions import NetworkError, RPCError, SourceProcessingError, SourceTimeoutError
 from notebooklm.outcomes import CommitState, RecoveryAction
+from tests._helpers.client_factory import build_client_shell_for_tests
 
 
 def _entry():
@@ -155,3 +164,59 @@ def test_legacy_source_identity_setters_create_evidence_free_metadata() -> None:
         assert error.unconfirmed is False
         assert error.source_id in {"source-1", "source-2"}
         assert error.operation_metadata.recovery_action is RecoveryAction.NONE
+
+
+@pytest.mark.asyncio
+async def test_verified_terminal_not_sent_survives_unconfirmed_wrapper() -> None:
+    entry = _entry()
+    attempt = entry.mark_dispatched()
+    entry.record(CommitState.NOT_SENT, "verified zero-send", attempt=attempt)
+    failure = NetworkError("connect failed before write")
+
+    async def send() -> None:
+        raise failure
+
+    with pytest.raises(NetworkError) as raised:
+        await call_unconfirmed_on_transport_loss(
+            send,
+            method="ADD_SOURCE",
+            what="URL source",
+            operation="sources.add_url",
+            journal_entry=entry,
+        )
+
+    assert raised.value is failure
+    assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.unconfirmed is False
+    assert failure.operation_metadata is not None
+    assert failure.operation_metadata.recovery_action is RecoveryAction.NONE
+
+
+@pytest.mark.asyncio
+async def test_real_web_terminal_records_verified_connect_failure_as_not_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = build_client_shell_for_tests(
+        auth=AuthTokens(csrf_token="csrf", session_id="session", cookies={})
+    )
+    terminal = client._web_runtime.composed.transport
+    entry = _entry()
+
+    async def connect_failure(*args: object, **kwargs: object) -> httpx.Response:
+        del args, kwargs
+        request = httpx.Request("POST", "https://example.test")
+        raise httpx.ConnectError("connect failed", request=request)
+
+    monkeypatch.setattr(terminal._kernel, "post", connect_failure)
+    request = RpcRequest(
+        "https://example.test",
+        {},
+        b"payload",
+        {RPC_CONTEXT_JOURNAL: entry},
+    )
+
+    with pytest.raises(TransportServerError):
+        await terminal.terminal(request)
+
+    assert entry.commit_state is CommitState.NOT_SENT
+    assert [attempt.commit_state for attempt in entry.attempts] == [CommitState.NOT_SENT]
