@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from notebooklm._idempotency import call_unconfirmed_on_transport_loss
 from notebooklm.artifacts import (
     RATE_LIMIT_RETRY_MAX_DELAY,
     RateLimitRetryEvent,
@@ -44,6 +45,38 @@ class TestCalculateBackoffDelay:
 
 
 class TestWithRateLimitRetry:
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=True,
+        reason="E4: the outer Smart Retry helper ignores lower-layer unknown-commit evidence",
+    )
+    async def test_e4_unconfirmed_rate_limit_is_not_replayed_by_outer_helper(self) -> None:
+        """A fake transport's unknown-commit verdict must survive outer orchestration."""
+        error = RateLimitError("response lost after artifact create dispatch")
+        transport_calls = 0
+
+        async def fake_transport() -> GenerationStatus:
+            nonlocal transport_calls
+            transport_calls += 1
+
+            async def dispatched_write() -> GenerationStatus:
+                raise error
+
+            return await call_unconfirmed_on_transport_loss(
+                dispatched_write,
+                method="fake.CreateArtifact",
+                what="the fake artifact create",
+            )
+
+        sleep = AsyncMock()
+        with pytest.raises(RateLimitError) as raised:
+            await with_rate_limit_retry(fake_transport, max_retries=1, sleep=sleep)
+
+        assert raised.value is error
+        assert getattr(error, "unconfirmed", False) is True
+        assert transport_calls == 1
+        sleep.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_returns_success_without_retry(self) -> None:
         success = GenerationStatus(task_id="task_123", status="pending")

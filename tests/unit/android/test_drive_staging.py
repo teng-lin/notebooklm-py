@@ -24,10 +24,12 @@ from notebooklm._android.drive_staging import (
     DriveStagingTransfer,
     map_staging_status,
 )
+from notebooklm._idempotency import mark_unconfirmed
 from notebooklm.exceptions import (
     AuthError,
     RateLimitError,
     ServerError,
+    SourceAddError,
     ValidationError,
 )
 
@@ -372,3 +374,30 @@ async def test_an_already_deleted_staged_file_is_not_reported_as_a_failure(
         await transfer.unstage(FILE_ID)
 
     assert caplog.text == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.xfail(
+    strict=True,
+    reason="E8: unknown dependent-import acceptance must retain its staged prerequisite",
+)
+async def test_e8_unconfirmed_import_keeps_staged_drive_file(tmp_path: Path) -> None:
+    """Drive scope must not DELETE a prerequisite an accepted import may still read."""
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+    transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
+    importer_calls: list[str] = []
+    error = SourceAddError("drive://staged", message="import response was lost")
+    mark_unconfirmed(error)
+
+    async def fake_importer(staged_id: str) -> None:
+        importer_calls.append(staged_id)
+        raise error
+
+    with pytest.raises(SourceAddError) as raised:
+        async with transfer.scope(path, path.name, "application/vnd.ms-word") as staged_id:
+            await fake_importer(staged_id)
+
+    assert raised.value is error
+    assert importer_calls == [FILE_ID]
+    assert client.deletes == []
