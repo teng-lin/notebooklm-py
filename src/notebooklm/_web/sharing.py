@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from collections.abc import Callable
@@ -124,6 +125,14 @@ class WebSharingAPI(SharingAPI):
                 status = decode_share_status(ShareStatus, result, notebook_id)
                 readback_entry.record(CommitState.CONFIRMED, "decoded sharing readback")
                 return status
+            except asyncio.CancelledError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                )
+                raise
             except NotebookLMError as exc:
                 attach_operation_journal(
                     exc,

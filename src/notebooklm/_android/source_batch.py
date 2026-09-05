@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
-from typing import Any, Protocol, cast
+from collections.abc import Awaitable, Sequence
+from typing import Any, Protocol, TypeVar, cast
 
 from .._idempotency import (
     JournalEntry,
@@ -33,6 +33,8 @@ from .source_transfers import (
     unresolved_add_error,
 )
 
+_ReadbackT = TypeVar("_ReadbackT")
+
 
 class _BatchOwner(Protocol):
     async def _register_tentative_sources(
@@ -52,6 +54,48 @@ class _BatchOwner(Protocol):
         expected_epoch: int,
         journal_entries: tuple[JournalEntry, ...],
     ) -> tuple[dict[str, Any], Any]: ...
+
+
+def record_commit_proofs(
+    entries: tuple[JournalEntry, ...] | None,
+    source_ids: Sequence[str],
+    proofs: dict[str, Any],
+    evidence: str = "decoded source commit response",
+) -> None:
+    """Settle exact decoded commit proofs before any later readback await."""
+
+    if entries is None:
+        return
+    for entry, source_id in zip(entries, source_ids, strict=True):
+        if source_id in proofs and entry.commit_state is not CommitState.CONFIRMED:
+            entry.record(
+                CommitState.CONFIRMED,
+                evidence,
+                known_resource_ids=(source_id,),
+            )
+
+
+async def preserve_readback(
+    awaitable: Awaitable[_ReadbackT],
+    entries: tuple[JournalEntry, ...] | None,
+) -> _ReadbackT:
+    """Attach the complete decoded-send journal if later readback is cancelled."""
+
+    try:
+        return await awaitable
+    except asyncio.CancelledError as error:
+        if entries:
+            attach_journal_entry(
+                error,
+                entries[0],
+                recovery_action=(
+                    RecoveryAction.INSPECT_AND_RECONCILE
+                    if any(entry.commit_state is CommitState.UNKNOWN for entry in entries)
+                    else RecoveryAction.NONE
+                ),
+                workflow=True,
+            )
+        raise
 
 
 def _batch_outcome(
@@ -352,4 +396,8 @@ class AndroidSourceBatchMixin:
             return outcomes
 
 
-__all__ = ["AndroidSourceBatchMixin"]
+__all__ = [
+    "AndroidSourceBatchMixin",
+    "preserve_readback",
+    "record_commit_proofs",
+]

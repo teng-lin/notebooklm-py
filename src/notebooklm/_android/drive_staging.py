@@ -32,11 +32,13 @@ from .._idempotency import (
     OperationJournal,
     attach_journal_entry,
     attach_prerequisite_ids,
+    mark_unconfirmed,
 )
 from .._runtime.helpers import map_google_http_status
 from ..exceptions import (
     NetworkError,
     NotebookLMError,
+    SourceAddError,
     SourceProcessingError,
     ValidationError,
 )
@@ -467,8 +469,29 @@ class DriveStagingTransfer:
         try:
             yield file_id
         except BaseException as error:
-            attach_prerequisite_ids(error, file_id)
-            if _cleanup_allowed_after_import_error(error) and transfer._cleanup_fence_open(
+            escaping: BaseException
+            if isinstance(error, (asyncio.CancelledError, NotebookLMError)):
+                escaping = attach_prerequisite_ids(error, file_id)
+            elif isinstance(error, Exception):
+                escaping = mark_unconfirmed(
+                    SourceAddError(
+                        filename,
+                        cause=error,
+                        message=(
+                            f"Failed to import the Drive-staged source {filename!r}; the "
+                            "dependent import outcome is unknown. Keep the staged file until "
+                            "the notebook source state is reconciled."
+                        ),
+                    ),
+                    operation="sources.add_file.drive_staging",
+                    stage="import",
+                )
+                attach_prerequisite_ids(escaping, file_id)
+            else:
+                # KeyboardInterrupt/SystemExit remain control-flow signals and
+                # are not turned into application exceptions or annotated.
+                escaping = error
+            if _cleanup_allowed_after_import_error(escaping) and transfer._cleanup_fence_open(
                 expected_epoch, cleanup_deadline
             ):
                 await transfer.unstage(file_id, journal_entry=cleanup_entry)
@@ -482,7 +505,9 @@ class DriveStagingTransfer:
                     "or has failed.",
                     file_id,
                 )
-            raise
+            if escaping is error:
+                raise
+            raise escaping from error
         else:
             if transfer._cleanup_fence_open(expected_epoch, cleanup_deadline):
                 await transfer.unstage(file_id, journal_entry=cleanup_entry)

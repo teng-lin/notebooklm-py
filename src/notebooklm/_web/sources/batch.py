@@ -9,6 +9,7 @@ per-item failures.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from collections import Counter, defaultdict, deque
@@ -500,10 +501,37 @@ class SourceBatchAddService:
             identity for identity in requested_identities if not sources_by_identity[identity]
         ]
 
+        # A decoded exact-URL row is already authoritative commit evidence.
+        # Settle it before the optional ERROR-row readback so cancellation of
+        # that later await cannot erase a committed sibling from the journal.
+        confirmation_rows = {
+            identity: deque(rows) for identity, rows in sources_by_identity.items()
+        }
+        confirmed_sources: list[Source | None] = []
+        for entry, identity in zip(journal_entries, requested_identities, strict=True):
+            confirmed_source = (
+                confirmation_rows[identity].popleft() if confirmation_rows[identity] else None
+            )
+            confirmed_sources.append(confirmed_source)
+            if confirmed_source is not None:
+                entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded batch member",
+                    known_resource_ids=(confirmed_source.id,),
+                )
+
         error_rows_by_identity: dict[tuple[str, str], list[Source]] = defaultdict(list)
         if missing_identities:
             try:
                 error_rows = await list_sources(notebook_id, statuses={SourceStatus.ERROR})
+            except asyncio.CancelledError as exc:
+                _attach_whole_batch_failure(
+                    exc,
+                    journal,
+                    journal_entries,
+                    _batch_outcome(urls, journal_entries, resources=confirmed_sources),
+                )
+                raise
             except Exception:
                 # The success response already proves which entries were
                 # admitted (or rpc_error proves none were).  Reconciliation only
@@ -531,11 +559,6 @@ class SourceBatchAddService:
             if sources_by_identity[identity]:
                 source = sources_by_identity[identity].popleft()
                 outcomes.append(SourceUrlBatchItem(url=url, source=source, member=len(outcomes)))
-                journal_entries[len(outcomes) - 1].record(
-                    CommitState.CONFIRMED,
-                    "decoded batch member",
-                    known_resource_ids=(source.id,),
-                )
                 continue
             ghosts = error_rows_by_identity[identity]
             ghost_text = ""

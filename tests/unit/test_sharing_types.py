@@ -1,5 +1,6 @@
 """Unit tests for sharing types and API."""
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -7,6 +8,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm.exceptions import UnknownRPCMethodError
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from notebooklm.types import SharedUser, ShareStatus
@@ -675,6 +677,29 @@ class TestSharingAPIValidation:
 
         assert mock_core.rpc_executor.rpc_call.call_count == 2
         assert status.shared_users[0].permission == SharePermission.VIEWER
+
+    @pytest.mark.asyncio
+    async def test_readback_cancellation_retains_confirmed_mutation_journal(self):
+        from unittest.mock import AsyncMock
+
+        from notebooklm._web.sharing import WebSharingAPI
+        from tests._fixtures.fake_core import make_fake_core
+
+        cancellation = asyncio.CancelledError("cancel sharing readback")
+        mock_core = make_fake_core(rpc_call=AsyncMock(side_effect=[[], cancellation]))
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
+
+        with pytest.raises(asyncio.CancelledError) as raised:
+            await api.set_public("nb_123", True)
+
+        assert raised.value is cancellation
+        metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+        assert metadata.commit_state is CommitState.CONFIRMED
+        assert metadata.recovery_action is RecoveryAction.INSPECT_AND_RECONCILE
+        assert [entry.commit_state for entry in metadata.entries] == [
+            CommitState.CONFIRMED,
+            CommitState.UNKNOWN,
+        ]
 
 
 class TestShareStatusDefaultValues:

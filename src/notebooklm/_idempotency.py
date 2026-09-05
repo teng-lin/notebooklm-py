@@ -707,10 +707,12 @@ def attach_batch_outcome(
         else CommitState.NOT_SENT
     )
     recovery_action = (
-        RecoveryAction.INSPECT_AND_RECONCILE
+        metadata.recovery_action
+        if preserve_commit_state
+        else RecoveryAction.INSPECT_AND_RECONCILE
         if state is CommitState.UNKNOWN
         else RecoveryAction.NONE
-        if metadata.commit_state is CommitState.UNKNOWN and not preserve_commit_state
+        if metadata.commit_state is CommitState.UNKNOWN
         else metadata.recovery_action
     )
     return attach_operation_metadata(

@@ -496,6 +496,38 @@ async def test_post_dispatch_cancellation_keeps_web_batch_snapshot_and_propagate
 
 
 @pytest.mark.asyncio
+async def test_sparse_readback_cancellation_preserves_decoded_committed_sibling() -> None:
+    urls = ["https://good.example.com", "https://missing.example.com"]
+    cancellation = asyncio.CancelledError("cancel sparse ERROR-row readback")
+    rpc = RecordingRpc([_url_row("src-good", urls[0])])
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            urls,
+            rpc=rpc,
+            list_sources=AsyncMock(side_effect=cancellation),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is CommitState.UNKNOWN
+    assert metadata.known_resource_ids == ("src-good",)
+    assert [entry.commit_state for entry in metadata.entries] == [
+        CommitState.CONFIRMED,
+        CommitState.UNKNOWN,
+    ]
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.CONFIRMED,
+        CommitState.UNKNOWN,
+    ]
+    assert metadata.batch_outcome.items[0].resource_id == "src-good"
+
+
+@pytest.mark.asyncio
 async def test_generic_rpc_failure_is_not_misreported_as_all_rejected() -> None:
     rpc = RecordingRpc(
         error=RPCError("response decode drift", method_id=RPCMethod.ADD_SOURCE.value)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +16,7 @@ from notebooklm.exceptions import (
     CollectionNotFoundError,
     UnknownRPCMethodError,
 )
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.fake_core import make_fake_core
 
@@ -75,9 +77,10 @@ class FakeRpc:
             )
         )
         queue = self.sequences.get(method)
-        if queue:
-            return queue.popleft()
-        return self.responses.get(method)
+        outcome = queue.popleft() if queue else self.responses.get(method)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
 
     def methods(self) -> list[RPCMethod]:
         return [c.method for c in self.calls]
@@ -208,6 +211,26 @@ async def test_collection_create_does_not_attribute_delayed_foreign_web_singleto
         await api.create("Requested")
 
     assert getattr(raised.value, "unconfirmed", False) is True
+
+
+async def test_collection_readback_cancellation_retains_confirmed_mutation_journal() -> None:
+    cancellation = asyncio.CancelledError("cancel collection readback")
+    api, _, _ = _api(
+        sequences={RPCMethod.LIST_LABELS: [_list_env(), cancellation]},
+        responses={RPCMethod.CREATE_LABEL: None},
+    )
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await api.create("Requested")
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is CommitState.CONFIRMED
+    assert metadata.recovery_action is RecoveryAction.INSPECT_AND_RECONCILE
+    assert [entry.commit_state for entry in metadata.entries] == [
+        CommitState.CONFIRMED,
+        CommitState.UNKNOWN,
+    ]
 
 
 # -- rename ------------------------------------------------------------------

@@ -50,7 +50,7 @@ def _rich_error() -> RPCError:
             ),
             BatchItemOutcome(
                 2,
-                f"https://unknown.test/path?access_token={secret}",
+                f"https://userinfo-secret:password-secret@unknown.test/path?access_token={secret}",
                 CommitState.UNKNOWN,
                 error=NetworkError(f"lost {secret}"),
                 reconciliation=report,
@@ -85,6 +85,8 @@ def test_shared_metadata_projection_is_full_bounded_and_redacted(
 ) -> None:
     error = _rich_error()
     expected = operation_metadata_payload(error)
+    assert error.batch_outcome is not None
+    assert error.batch_outcome.items[2].input.startswith("https://***@unknown.test/")
 
     with pytest.raises(SystemExit), handle_errors(json_output=True):
         raise error
@@ -107,9 +109,13 @@ def test_shared_metadata_projection_is_full_bounded_and_redacted(
         {"metadata": expected, "cli": cli, "mcp": mcp, "rest": rest, "wire": wire}
     )
     assert "this-must-not-leak" not in rendered
+    assert "userinfo-secret" not in rendered
+    assert "password-secret" not in rendered
     assert "/Users/alice/" not in rendered
     assert "Operation metadata:" in cli_text
     assert "this-must-not-leak" not in cli_text
+    assert "userinfo-secret" not in cli_text
+    assert "password-secret" not in cli_text
     assert "/Users/alice/" not in cli_text
     assert len(expected["known_resource_ids"]) == 20  # type: ignore[arg-type]
     reconciliation = expected["reconciliation"]

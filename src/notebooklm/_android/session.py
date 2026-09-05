@@ -28,7 +28,7 @@ from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
 from .._runtime.config import CORE_LOGGER_NAME, DEFAULT_CHAT_RESPONSE_MAX_BYTES
 from .._runtime.helpers import is_auth_error, resolve_sleep
 from ..exceptions import MissingDependencyError, NotebookLMError, RPCResponseTooLargeError
-from ..outcomes import CommitState
+from ..outcomes import CommitState, RecoveryAction
 from .auth import BearerCredential, BearerProvider
 from .epoch import workflow_epoch_for
 from .errors import (
@@ -177,6 +177,24 @@ def _grpc_status_error(
         raise_grpc_status(status, method=method, timeout_seconds=timeout_seconds)
     except Exception as error:
         return error
+
+
+def _attach_journal_failure(error: NotebookLMError, entry: JournalEntry | None) -> None:
+    """Fold positive producer evidence into the active physical attempt."""
+
+    if entry is None:
+        return
+    if error.commit_state in (CommitState.NOT_SENT, CommitState.REJECTED):
+        entry.record(error.commit_state, "producer evidence")
+    attach_journal_entry(
+        error,
+        entry,
+        recovery_action=(
+            RecoveryAction.INSPECT_AND_RECONCILE
+            if entry.commit_state is CommitState.UNKNOWN
+            else RecoveryAction.NONE
+        ),
+    )
 
 
 def _default_grpc_loader(
@@ -662,7 +680,7 @@ class AndroidSession(EpochFenced):
             del self, session
         if failure is not None:
             if isinstance(failure, NotebookLMError) and len(bound_entries) == 1:
-                attach_journal_entry(failure, bound_entries[0])
+                _attach_journal_failure(failure, bound_entries[0])
             raise failure
         return cast(RespT, result)
 
@@ -894,7 +912,7 @@ class AndroidSession(EpochFenced):
             del self, session, iterator
         if failure is not None:
             if isinstance(failure, NotebookLMError) and journal_entry is not None:
-                attach_journal_entry(failure, journal_entry)
+                _attach_journal_failure(failure, journal_entry)
             raise failure
 
     async def _stream_impl(

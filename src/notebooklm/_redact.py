@@ -5,8 +5,9 @@ Both adapter error projectors (:mod:`notebooklm.mcp._errors` and
 an exception message reaches a client: the package-wide credential shapes
 (bearer tokens / session cookies / Google credentials, via
 :func:`notebooklm._logging.scrub_secrets`) **plus** two surfaces the raw SDK
-string can carry — the signed ``/files/(dl|ul)/<token>`` side-channel token and
-local home-directory paths (the OS username is PII / host disclosure).
+string can carry — the signed ``/files/(dl|ul)/<token>`` side-channel token,
+URL userinfo, and local home-directory paths (the OS username is PII / host
+disclosure).
 
 Historically these two extra patterns lived only in the MCP projector, so a
 home-path in a REST error body leaked ``/home/<user>/…``. Lifting them into this
@@ -49,6 +50,8 @@ _HOME_USER = r"\w+(?:[.-]+\w+)*"
 #:    alternation is anchored on disjoint character classes (no overlapping
 #:    quantifiers), so there is no catastrophic-backtracking risk. Generic
 #:    absolute paths (``/var``/``/tmp``) are intentionally NOT redacted.
+#: 3. **URL userinfo.** Credentials before the final ``@`` in an authority are
+#:    replaced before typed outcome objects retain the caller-supplied URL.
 _EXTRA_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"(/files/(?:dl|ul)/)[A-Za-z0-9._-]+"), r"\1***"),
     (re.compile(rf"(/(?:home|Users)/)(?:{_HOME_USER} {_HOME_USER}(?=/)|{_HOME_USER})"), r"\1***"),
@@ -59,6 +62,7 @@ _EXTRA_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         ),
         r"\1***",
     ),
+    (re.compile(r"(\b[a-z][a-z0-9+.-]*://)[^/\s?#]+@", re.IGNORECASE), r"\1***@"),
 )
 
 # Metadata can retain caller-supplied URLs for reconciliation.  Keep the URL

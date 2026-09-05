@@ -55,7 +55,7 @@ from .play_books import (
     tentative_source_ids,
 )
 from .session import AndroidSession
-from .source_batch import AndroidSourceBatchMixin
+from .source_batch import AndroidSourceBatchMixin, preserve_readback, record_commit_proofs
 from .source_search import AndroidSourceSearchService
 from .source_transfers import (
     ADD_SOURCES_ASYNC_METHOD,
@@ -695,7 +695,6 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
         )
         response_proofs: dict[str, _CommitProof] = {}
         response_unresolved: set[str] = set()
-        commit_failure: ServerError | None = None
         try:
             response = await self._transport.unary(
                 ADD_SOURCES_METHOD,
@@ -710,9 +709,8 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
             raise
         except (KeyboardInterrupt, SystemExit):
             raise
-        except (NetworkError, RateLimitError, ServerError) as exc:
-            if isinstance(exc, ServerError):
-                commit_failure = exc
+        except (NetworkError, RateLimitError, ServerError):
+            pass
         else:
             try:
                 response_proofs, response_unresolved = _collect_commit_proofs(
@@ -727,10 +725,15 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 response_proofs = {}
                 response_unresolved = set()
 
-        read_proofs, read_unresolved, read_tentative = await self._read_commit_proofs(
-            notebook_id,
-            candidate_ids,
-            expected_epoch=expected_epoch,
+        record_commit_proofs(journal_entries, candidate_ids, response_proofs)
+
+        read_proofs, read_unresolved, read_tentative = await preserve_readback(
+            self._read_commit_proofs(
+                notebook_id,
+                candidate_ids,
+                expected_epoch=expected_epoch,
+            ),
+            journal_entries,
         )
         unresolved = response_unresolved | read_unresolved
         merged: dict[str, _CommitProof] = {}
@@ -745,19 +748,14 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
             elif first is not None and later is not None:
                 unresolved.add(source_id)
 
-        if journal_entries is not None:
-            for entry, source_id in zip(journal_entries, candidate_ids, strict=True):
-                if source_id in merged:
-                    entry.record(
-                        CommitState.CONFIRMED,
-                        "correlated source materialization",
-                        known_resource_ids=(source_id,),
-                    )
+        record_commit_proofs(
+            journal_entries, candidate_ids, merged, "correlated source materialization"
+        )
 
         # A post-dispatch INTERNAL status is not positive refusal evidence.
         # Candidate readback is reporting only; it never authorizes re-sending
         # the non-idempotent AddSources mutation with refreshed metadata.
-        del metadata_refresher, commit_failure, read_tentative
+        del metadata_refresher, read_tentative
         return merged, unresolved
 
     async def _commit_urls(

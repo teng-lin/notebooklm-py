@@ -5,6 +5,7 @@ import pytest
 
 from notebooklm._idempotency import (
     OperationJournal,
+    attach_batch_outcome,
     attach_journal_entry,
     attach_reconciliation_report,
     call_unconfirmed_on_transport_loss,
@@ -17,7 +18,7 @@ from notebooklm._web.transport.middleware.context import RPC_CONTEXT_JOURNAL
 from notebooklm._web.transport.middleware.core import RpcRequest
 from notebooklm.auth import AuthTokens
 from notebooklm.exceptions import NetworkError, RPCError, SourceProcessingError, SourceTimeoutError
-from notebooklm.outcomes import CommitState, RecoveryAction
+from notebooklm.outcomes import BatchItemOutcome, BatchOutcome, CommitState, RecoveryAction
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 
@@ -92,6 +93,35 @@ def test_positive_evidence_is_not_downgraded_by_outer_wrapper() -> None:
 
     assert error.commit_state is CommitState.REJECTED
     assert error.unconfirmed is False
+
+
+def test_member_batch_attachment_preserves_state_and_targeted_recovery() -> None:
+    error = mark_commit_state(
+        NetworkError("member never sent"),
+        CommitState.NOT_SENT,
+        recovery_action=RecoveryAction.RETRY,
+    )
+    unknown_report = reconciliation_report([], ["https://unknown.test"])
+    batch = BatchOutcome(
+        (
+            BatchItemOutcome(0, "https://not-sent.test", CommitState.NOT_SENT),
+            BatchItemOutcome(
+                1,
+                "https://unknown.test",
+                CommitState.UNKNOWN,
+                reconciliation=unknown_report,
+            ),
+        ),
+        whole_request_retriable=False,
+    )
+
+    attach_batch_outcome(error, batch, preserve_commit_state=True)
+
+    assert error.commit_state is CommitState.NOT_SENT
+    assert error.operation_metadata is not None
+    assert error.operation_metadata.recovery_action is RecoveryAction.RETRY
+    assert error.batch_outcome is batch
+    assert error.batch_outcome.whole_request_retriable is False
 
 
 def test_reconciliation_candidates_are_not_known_resource_ids() -> None:

@@ -202,6 +202,7 @@ class _Channel:
         self.case = case
         self.invocations = 0
         self.methods: list[str] = []
+        self.readback_cancellation: asyncio.CancelledError | None = None
 
     def unary_unary(self, method: str, *, request_serializer: Any, response_deserializer: Any):
         async def invoke(request: Any, *, metadata: Any, timeout: float | None) -> Any:
@@ -217,6 +218,9 @@ class _Channel:
                 assert timeout is not None and timeout > 0
                 await asyncio.Event().wait()
                 raise AssertionError("the AndroidSession deadline must cancel the wire await")
+            if self.case == "readback_cancellation" and method == GET_PROJECT_METHOD:
+                assert self.readback_cancellation is not None
+                raise self.readback_cancellation
             if method == ADD_TENTATIVE_SOURCES_METHOD:
                 response = sources_pb2.AddTentativeSourcesResponse()
                 if self.case != "rejected":
@@ -559,3 +563,32 @@ async def test_real_android_stream_cancellation_retains_unknown_attempt() -> Non
 
     assert entry.commit_state is CommitState.UNKNOWN
     assert len(entry.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_real_android_readback_cancellation_preserves_decoded_commit_batch() -> None:
+    cancellation = asyncio.CancelledError("cancel Android source readback")
+    session, channel = await _android_session("readback_cancellation")
+    channel.readback_cancellation = cancellation
+    try:
+        api = AndroidSourcesAPI(session, object.__new__(AndroidUploadPipeline))
+        with pytest.raises(asyncio.CancelledError) as raised:
+            await api._add_urls_batch("notebook-1", list(_URLS))
+    finally:
+        await session.close_resources()
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is CommitState.CONFIRMED
+    assert metadata.known_resource_ids == _SOURCE_IDS
+    assert [entry.commit_state for entry in metadata.entries] == [
+        CommitState.CONFIRMED,
+        CommitState.CONFIRMED,
+        CommitState.CONFIRMED,
+        CommitState.CONFIRMED,
+    ]
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.CONFIRMED,
+        CommitState.CONFIRMED,
+    ]

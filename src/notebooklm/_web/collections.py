@@ -16,6 +16,7 @@ Like ``WebLabelsAPI`` it takes a narrow ``list_notebooks`` callable
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 import contextlib
 import logging
@@ -200,6 +201,14 @@ class WebCollectionsAPI(CollectionsAPI):
                     index=1,
                 )
                 readback_entry.record(CommitState.CONFIRMED, "decoded collection readback")
+            except asyncio.CancelledError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                )
+                raise
             except NotebookLMError as exc:
                 attach_operation_journal(
                     exc,

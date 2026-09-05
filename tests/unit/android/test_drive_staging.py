@@ -514,16 +514,29 @@ async def test_real_staging_scope_cleanup_allowlist_matrix(
     transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
     error = _staging_matrix_error(case)
 
-    with pytest.raises(type(error)) as captured:
+    expected_type = SourceAddError if case == "runtime" else type(error)
+    with pytest.raises(expected_type) as captured:
         async with transfer.scope(path, path.name, "application/vnd.ms-word"):
             raise error
 
-    assert captured.value is error
     assert len(client.deletes) == delete_count
-    if case in {"cancel", "runtime"}:
+    if case == "cancel":
+        assert captured.value is error
         metadata = error._operation_metadata  # type: ignore[attr-defined]
         assert metadata.prerequisite_ids == (FILE_ID,)
         assert not hasattr(error, "operation_metadata")
+    elif case == "runtime":
+        wrapped = captured.value
+        assert wrapped is not error
+        assert wrapped.cause is error
+        assert wrapped.commit_state is CommitState.UNKNOWN
+        assert wrapped.stage == "import"
+        assert wrapped.operation_metadata is not None
+        assert wrapped.operation_metadata.prerequisite_ids == (FILE_ID,)
+        assert not hasattr(error, "_operation_metadata")
+        assert not hasattr(error, "operation_metadata")
+    else:
+        assert captured.value is error
 
 
 @pytest.mark.asyncio
