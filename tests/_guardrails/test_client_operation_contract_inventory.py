@@ -1078,9 +1078,7 @@ REQUIRED_WORKFLOW_ENTRYPOINT_INVENTORY = (
     SymbolInventory(
         "src/notebooklm/_research.py",
         "BaseResearchAPI._import_sources_with_verification",
-        Disposition(
-            "P3/P6", "Holds baseline, one import send, and bounded candidate inspection."
-        ),
+        Disposition("P3/P6", "Holds baseline, one import send, and bounded candidate inspection."),
     ),
     SymbolInventory(
         "src/notebooklm/_settings.py",
