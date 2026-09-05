@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Owner-grouped client configuration.** `notebooklm.options` adds frozen
+  `ClientConfig` groups for runtime capacity, retries, selected backend,
+  transfer phases, feature read windows, and Web session hooks. Both direct
+  construction and `from_storage` accept keyword-only `config=` while retaining
+  flat 0.x arguments through one compatibility normalizer.
 - **Public mutation-outcome evidence.** `notebooklm.outcomes.CommitState` lets callers
   distinguish a request proven not sent, a decoded rejection, an unknown
   commit outcome, and a caller-correlated confirmation. Unknown-outcome errors
@@ -57,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Legacy client tuning has a v1 runway.** A construction using non-default
+  flat tuning keywords now emits one caller-attributed `DeprecationWarning`
+  naming all arguments to migrate to `config=ClientConfig(...)`. Explicit old
+  defaults remain silent. Web read/write/pool timers and start/finalize/Drive
+  transfer timers now reach their owning transports independently without
+  changing legacy defaults.
 - **Create and research-import recovery is diagnostic, not success-producing.**
   The former probe-and-retry helper and `PROBE_THEN_CREATE` policy are retired.
   Ambiguous mutations are sent once and surfaced unchanged; bounded read-only

@@ -28,7 +28,9 @@ async def test_kernel_rejects_retired_epoch_before_wire_io() -> None:
     kernel.activate(1)
     await kernel.open(
         auth=auth,
-        timeout=1,
+        read_timeout=1,
+        write_timeout=1,
+        pool_timeout=1,
         connect_timeout=1,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=lambda cookies: None,
@@ -44,7 +46,9 @@ async def test_kernel_rejects_retired_epoch_before_wire_io() -> None:
     kernel.activate(2)
     await kernel.open(
         auth=auth,
-        timeout=1,
+        read_timeout=1,
+        write_timeout=1,
+        pool_timeout=1,
         connect_timeout=1,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=lambda cookies: None,

@@ -108,7 +108,7 @@ class RpcExecutor:
         decode_response: DecodeResponse,
         is_auth_error: Callable[[Exception], bool],
         sleep: Callable[[float], Awaitable[Any]],
-        timeout_provider: Callable[[], float],
+        timeout_provider: Callable[[], float | None],
         refresh_callback_enabled_provider: Callable[[], bool],
         refresh_retry_delay_provider: Callable[[], float],
     ):

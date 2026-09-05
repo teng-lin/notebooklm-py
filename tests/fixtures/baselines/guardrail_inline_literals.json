@@ -1,6 +1,6 @@
 {
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 52
+    "_DOCUMENTED_PUBLIC_IMPORTS": 68
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
@@ -55,7 +55,7 @@
   "tests/_guardrails/test_auth_storage_compatibility.py": {
     "EXPECTED_ALIAS_CALLERS": 61,
     "EXPECTED_DIRECT_CALLERS": 64,
-    "EXPECTED_SIGNATURES": 561,
+    "EXPECTED_SIGNATURES": 564,
     "FACADE_INVENTORY_IDENTITIES": 23,
     "LIVE_SIGNATURES": 61
   },
@@ -93,11 +93,11 @@
   },
   "tests/_guardrails/test_client_operation_contract_inventory.py": {
     "CLEANUP_INVENTORY": 32,
-    "CONSTRUCTION_SIGNATURES": 153,
-    "GUARDRAIL_DISPOSITIONS": 105,
+    "CONSTRUCTION_SIGNATURES": 140,
+    "GUARDRAIL_DISPOSITIONS": 114,
     "PRESENTATION_INVENTORY": 168,
-    "PRIVATE_DEPENDENCY_DISPOSITIONS": 30,
-    "PUBLIC_OPTION_DISPOSITIONS": 63,
+    "PRIVATE_DEPENDENCY_DISPOSITIONS": 33,
+    "PUBLIC_OPTION_DISPOSITIONS": 66,
     "REQUIRED_WORKFLOW_ENTRYPOINT_INVENTORY": 161,
     "RETRY_CALL_INVENTORY": 24,
     "RETRY_INVENTORY": 36,

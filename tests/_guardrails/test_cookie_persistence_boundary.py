@@ -1143,9 +1143,9 @@ def test_cookie_save_result_imports_and_consumers_are_exact() -> None:
             ("_auth/storage.py", "_cookie_save_return", "name:load"): 2,
             ("_auth/storage.py", "save_cookies_to_storage", "name:load"): 1,
             ("_auth/storage.py", "merge_cookie_delta", "name:load"): 4,
-            ("_client_contracts.py", "<module>", "import:direct"): 1,
+            ("_types/common.py", "<module>", "import:direct"): 1,
             (
-                "_client_contracts.py",
+                "_types/common.py",
                 "SaveCookiesToStorage.__call__",
                 "name:load",
             ): 1,

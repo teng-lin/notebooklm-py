@@ -237,13 +237,13 @@ async def test_unbounded_httpx_timeout_cannot_bypass_aggregate_stream_entry_dead
     # Keep the production resolution assertion above the short test-only
     # budget: httpx has no component timers, while the aggregate fence remains
     # independently finite (300 seconds in production).
-    assert pipeline._http_timeout == httpx.Timeout(None)
-    assert pipeline._upload_timeout == 300.0
+    assert pipeline._drive_http_timeout == httpx.Timeout(None)
+    assert pipeline._drive_timeout == 300.0
     # Give the metadata and temporary-file stages enough time to reach stream
     # entry on a loaded Windows xdist worker.  The old 10 ms budget could expire
     # before ``__aenter__`` was scheduled, so it tested the aggregate pre-entry
     # fence instead of the deliberately stalled header wait below.
-    pipeline._upload_timeout = 1.0
+    pipeline._drive_timeout = 1.0
 
     async def download() -> None:
         async with pipeline.drive_download_scope("abcdefghijklmnopqrstuvwxyz123456"):

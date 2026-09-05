@@ -49,9 +49,14 @@ from ._client_assembly import (
     BackendPreference,
     _assemble_client,
     _finalize_loaded_client,
+)
+from ._client_options import (
+    client_construction_context,
+    construction_warning_suppressed,
+    legacy_client_option_names,
+    normalize_legacy_client_options,
     resolve_backend_preference,
 )
-from ._client_contracts import CookieRotator, CookieSaver
 from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated, warn_registered_deprecation
 from ._env import get_base_url as get_base_url
@@ -73,9 +78,11 @@ from ._runtime.lifecycle import ClientLifecycle
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
+from ._types.common import CookieRotator, CookieSaver
 from ._url_utils import is_google_auth_redirect as is_google_auth_redirect
 from .auth import AuthTokens
 from .exceptions import AuthExtractionError as AuthExtractionError
+from .options import ClientConfig, ReadWindow, WebBackendConfig
 
 __all__ = ["NotebookLMClient"]
 
@@ -220,11 +227,12 @@ class NotebookLMClient:
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
-        chat_timeout: float | None = AUTO_READ_TIMEOUT,
+        chat_timeout: ReadWindow = AUTO_READ_TIMEOUT,
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
-        import_research_timeout: float | None = AUTO_READ_TIMEOUT,
+        import_research_timeout: ReadWindow = AUTO_READ_TIMEOUT,
         *,
         backend: Literal["web", "android"] | None = None,
+        config: ClientConfig | None = None,
     ):
         """Initialize the NotebookLM client.
 
@@ -356,6 +364,9 @@ class NotebookLMClient:
                 the selected profile's durable master token when the client is
                 opened. When omitted, ``NOTEBOOKLM_BACKEND`` is consulted, then
                 the default is web.
+            config: Frozen owner-grouped construction options. Pass this
+                keyword-only and leave every legacy tuning argument at its
+                historical default.
         """
         # The full assembly lives in ``notebooklm._client_assembly`` —
         # one private seam shared with the canonical test factory
@@ -368,11 +379,8 @@ class NotebookLMClient:
         # otherwise. The test-only seam kwargs (``decode_response`` /
         # ``sleep`` / ``is_auth_error`` / ``async_client_factory``) stay
         # off this public constructor by design.
-        _assemble_client(
-            self,
-            auth=auth,
+        normalized = normalize_legacy_client_options(
             timeout=timeout,
-            storage_path=storage_path,
             keepalive=keepalive,
             keepalive_min_interval=keepalive_min_interval,
             rate_limit_max_retries=rate_limit_max_retries,
@@ -388,6 +396,16 @@ class NotebookLMClient:
             import_research_timeout=import_research_timeout,
             chat_response_max_bytes=chat_response_max_bytes,
             backend=backend,
+            config=config,
+        )
+        if normalized.legacy_arguments and not construction_warning_suppressed():
+            detail = f"Offending arguments: {', '.join(normalized.legacy_arguments)}."
+            warn_registered_deprecation("client_legacy_constructor_options", detail=detail)
+        _assemble_client(
+            self,
+            auth=auth,
+            options=normalized,
+            storage_path=storage_path,
         )
 
     #: Per-client memo for the signed-in account email so a *successful* live probe
@@ -598,12 +616,13 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-        chat_timeout: float | None = AUTO_READ_TIMEOUT,
+        chat_timeout: ReadWindow = AUTO_READ_TIMEOUT,
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
-        import_research_timeout: float | None = AUTO_READ_TIMEOUT,
+        import_research_timeout: ReadWindow = AUTO_READ_TIMEOUT,
         *,
         allow_headless: bool = False,
         backend: Literal["web", "android"] | None = None,
+        config: ClientConfig | None = None,
     ) -> _FromStorageContext:
         """Create a client from Playwright storage state file.
 
@@ -677,6 +696,9 @@ class NotebookLMClient:
             backend: Preferred namespace backend. An explicit value takes
                 precedence over ``NOTEBOOKLM_BACKEND``; Android installs the
                 complete Android namespace graph and the default is web.
+            config: Frozen owner-grouped construction options. Stored-auth
+                credential inputs remain separate; Web cookie hooks are not
+                accepted on this entrypoint.
 
         Returns:
             ``_FromStorageContext`` — an awaitable async-context-manager
@@ -700,10 +722,74 @@ class NotebookLMClient:
             # Legacy form (deprecated, removed in v1.0):
             # async with await NotebookLMClient.from_storage() as client: ...
         """
-        backend_preference = resolve_backend_preference(
-            explicit=backend,
-            env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
+        if isinstance(timeout, ClientConfig):
+            raise TypeError(
+                "ClientConfig is keyword-only; pass it as config=ClientConfig(...) rather than "
+                "in the legacy timeout position."
+            )
+        if config is not None and not isinstance(config, ClientConfig):
+            raise TypeError("config must be a ClientConfig or None")
+        legacy_values = {
+            "timeout": timeout,
+            "keepalive": keepalive,
+            "keepalive_min_interval": keepalive_min_interval,
+            "rate_limit_max_retries": rate_limit_max_retries,
+            "server_error_max_retries": server_error_max_retries,
+            "limits": limits,
+            "max_concurrent_uploads": max_concurrent_uploads,
+            "max_concurrent_rpcs": max_concurrent_rpcs,
+            "upload_timeout": upload_timeout,
+            "on_rpc_event": on_rpc_event,
+            "cookie_saver": None,
+            "cookie_rotator": None,
+            "chat_timeout": chat_timeout,
+            "chat_response_max_bytes": chat_response_max_bytes,
+            "import_research_timeout": import_research_timeout,
+            "backend": backend,
+        }
+        legacy_arguments = legacy_client_option_names(**legacy_values)
+        if config is not None and legacy_arguments:
+            joined = ", ".join(legacy_arguments)
+            raise TypeError(
+                f"config= cannot be combined with non-default legacy tuning arguments: {joined}"
+            )
+        explicit_backend = (
+            config.backend.kind if config is not None and config.backend is not None else backend
         )
+        backend_preference = resolve_backend_preference(
+            explicit=explicit_backend,
+            env=None if explicit_backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
+        )
+        normalized_options = None
+        if config is not None:
+            if isinstance(config.backend, WebBackendConfig) and config.backend.hooks is not None:
+                raise ValueError(
+                    "NotebookLMClient.from_storage(config=...) does not accept WebSessionHooks; "
+                    "use the direct NotebookLMClient constructor for custom cookie hooks."
+                )
+            normalized_options = normalize_legacy_client_options(
+                timeout=timeout,
+                keepalive=keepalive,
+                keepalive_min_interval=keepalive_min_interval,
+                rate_limit_max_retries=rate_limit_max_retries,
+                server_error_max_retries=server_error_max_retries,
+                limits=limits,
+                max_concurrent_uploads=max_concurrent_uploads,
+                max_concurrent_rpcs=max_concurrent_rpcs,
+                upload_timeout=upload_timeout,
+                on_rpc_event=on_rpc_event,
+                cookie_saver=None,
+                cookie_rotator=None,
+                chat_timeout=chat_timeout,
+                chat_response_max_bytes=chat_response_max_bytes,
+                import_research_timeout=import_research_timeout,
+                backend=backend,
+                config=config,
+                preference=backend_preference,
+            )
+        elif legacy_arguments:
+            detail = f"Offending arguments: {', '.join(legacy_arguments)}."
+            warn_registered_deprecation("client_legacy_from_storage_options", detail=detail)
         return _FromStorageContext(
             cls,
             path=path,
@@ -723,6 +809,7 @@ class NotebookLMClient:
             on_rpc_event=on_rpc_event,
             allow_headless=allow_headless,
             backend_preference=backend_preference,
+            normalized_options=normalized_options,
         )
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:
@@ -1019,28 +1106,38 @@ class _FromStorageContext:
                 pass
         storage_path = auth.storage_path
 
-        client = self._cls(
-            auth,
-            timeout=kwargs["timeout"],
-            storage_path=storage_path,
-            keepalive=kwargs["keepalive"],
-            keepalive_min_interval=kwargs["keepalive_min_interval"],
-            rate_limit_max_retries=kwargs["rate_limit_max_retries"],
-            server_error_max_retries=kwargs["server_error_max_retries"],
-            limits=kwargs["limits"],
-            max_concurrent_uploads=kwargs["max_concurrent_uploads"],
-            max_concurrent_rpcs=kwargs["max_concurrent_rpcs"],
-            chat_timeout=kwargs["chat_timeout"],
-            chat_response_max_bytes=kwargs["chat_response_max_bytes"],
-            import_research_timeout=kwargs["import_research_timeout"],
-            upload_timeout=kwargs["upload_timeout"],
-            on_rpc_event=kwargs["on_rpc_event"],
-            backend=kwargs["backend_preference"].preferred,
-        )
+        preference = kwargs["backend_preference"]
+        normalized_options = kwargs.get("normalized_options")
+        with client_construction_context(preference, suppress_legacy_warning=True):
+            if normalized_options is not None:
+                client = self._cls(
+                    auth,
+                    storage_path=storage_path,
+                    config=normalized_options.config,
+                )
+            else:
+                client = self._cls(
+                    auth,
+                    timeout=kwargs["timeout"],
+                    storage_path=storage_path,
+                    keepalive=kwargs["keepalive"],
+                    keepalive_min_interval=kwargs["keepalive_min_interval"],
+                    rate_limit_max_retries=kwargs["rate_limit_max_retries"],
+                    server_error_max_retries=kwargs["server_error_max_retries"],
+                    limits=kwargs["limits"],
+                    max_concurrent_uploads=kwargs["max_concurrent_uploads"],
+                    max_concurrent_rpcs=kwargs["max_concurrent_rpcs"],
+                    chat_timeout=kwargs["chat_timeout"],
+                    chat_response_max_bytes=kwargs["chat_response_max_bytes"],
+                    import_research_timeout=kwargs["import_research_timeout"],
+                    upload_timeout=kwargs["upload_timeout"],
+                    on_rpc_event=kwargs["on_rpc_event"],
+                    backend=preference.preferred,
+                )
         if any(base is NotebookLMClient for base in type(client).__mro__):
             _finalize_loaded_client(
                 client,
-                preference=kwargs["backend_preference"],
+                preference=preference,
                 loaded_auth=loaded,
             )
         self._client = client

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, cast
+
+import httpx
+
 from .._auth.mint_service import MintService
 from .._auth.profile_store import ProfileStore
 from .._client_contracts import (
@@ -34,6 +38,20 @@ from .sharing import AndroidSharingAPI
 from .sources import AndroidSourcesAPI
 from .upload import AndroidUploadPipeline
 
+if TYPE_CHECKING:
+    from ..options import TimeoutOptions
+
+
+def _http_timeout(options: TimeoutOptions | None) -> httpx.Timeout | None:
+    if options is None:
+        return None
+    return httpx.Timeout(
+        connect=options.connect,
+        read=options.read,
+        write=options.write,
+        pool=options.pool,
+    )
+
 
 def _validate_android_settings(
     *,
@@ -59,10 +77,14 @@ def assemble_android_backend(
 ) -> AndroidAssembly:
     """Return a complete Android graph without reading or mutating a client."""
 
+    backend = config.backend
+    retry = config.retry
+    transfers = config.transfers
+    features = config.features
     _validate_android_settings(
-        rate_limit_max_retries=config.rate_limit_max_retries,
-        server_error_max_retries=config.server_error_max_retries,
-        max_concurrent_uploads=config.max_concurrent_uploads,
+        rate_limit_max_retries=retry.rate_limit_max_retries,
+        server_error_max_retries=retry.server_error_max_retries,
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
     )
     master_token_reader = deps.master_token_reader
     if master_token_reader is None:
@@ -78,10 +100,10 @@ def assemble_android_backend(
     session = AndroidSession(
         bearer_provider,
         shared.call_supervisor,
-        timeout=config.timeout,
-        rate_limit_max_retries=config.rate_limit_max_retries,
-        server_error_max_retries=config.server_error_max_retries,
-        refresh_retry_delay=config.refresh_retry_delay,
+        timeout=backend.rpc_timeout,
+        rate_limit_max_retries=retry.rate_limit_max_retries,
+        server_error_max_retries=retry.server_error_max_retries,
+        refresh_retry_delay=deps.refresh_retry_delay,
         metrics=shared.metrics,
         sleep=deps.sleep,
     )
@@ -92,8 +114,10 @@ def assemble_android_backend(
     upload_pipeline = AndroidUploadPipeline(
         session=session,
         bearer_provider=bearer_provider,
-        upload_timeout=config.upload_timeout,
-        max_concurrent_uploads=config.max_concurrent_uploads,
+        start_timeout=_http_timeout(transfers.start_timeout),
+        finalize_timeout=_http_timeout(transfers.finalize_timeout),
+        drive_timeout=_http_timeout(transfers.drive_timeout),
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
         record_upload_queue_wait=shared.metrics.record_upload_queue_wait,
     )
     phenotype = PhenotypeTokenProvider()
@@ -130,16 +154,16 @@ def assemble_android_backend(
     chat = AndroidChatAPI(
         session=session,
         loop_guard=shared.call_supervisor,
-        chat_timeout=resolve_chat_read_timeout(config.chat_timeout, config.timeout),
-        chat_response_max_bytes=config.chat_response_max_bytes,
+        chat_timeout=resolve_chat_read_timeout(features.chat_timeout, backend.rpc_timeout),
+        chat_response_max_bytes=features.chat_response_max_bytes,
         notebooks=notebooks,
         created_chat_sessions=notebooks,
     )
     research = AndroidResearchAPI(
         session,
         sources,
-        base_timeout=config.timeout,
-        import_research_timeout=config.import_research_timeout,
+        base_timeout=backend.rpc_timeout,
+        import_research_timeout=cast(Any, features.import_research_timeout),
     )
     settings = AndroidSettingsAPI(session)
     sharing = AndroidSharingAPI(session)

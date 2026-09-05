@@ -49,6 +49,55 @@ asyncio.run(main())
 
 ## Core Concepts
 
+### Typed client configuration
+
+New code can group construction values by their actual owner with the frozen,
+import-light types in `notebooklm.options`:
+
+```python
+from notebooklm import NotebookLMClient
+from notebooklm.options import (
+    ClientConfig,
+    RuntimeOptions,
+    TransferOptions,
+    WebBackendConfig,
+    WebSessionOptions,
+    WebTransportOptions,
+)
+
+config = ClientConfig(
+    backend=WebBackendConfig(
+        transport=WebTransportOptions(read_timeout=60.0),
+        session=WebSessionOptions(keepalive_interval=600.0),
+    ),
+    runtime=RuntimeOptions(max_concurrent_rpcs=16, operation_timeout=300.0),
+    transfers=TransferOptions(max_concurrent_uploads=4),
+)
+async with NotebookLMClient.from_storage(profile="work", config=config) as client:
+    notebooks = await client.notebooks.list()
+```
+
+`ClientConfig.backend=None` follows `NOTEBOOKLM_BACKEND` and then the Web
+default; an explicit `WebBackendConfig` or `AndroidBackendConfig` wins over the
+environment. The old flat tuning keywords remain compatible through v0.x but
+non-default values now emit one migration warning per construction. Do not mix
+`config=` with a non-default legacy tuning keyword. `auth`, `storage_path`,
+`path`, `profile`, and `allow_headless` remain credential inputs rather than
+configuration fields.
+
+`FeatureOptions.chat_timeout` and `import_research_timeout` accept `AUTO`
+(built-in scaling/floors), `None` (inherit the backend base), or a positive
+finite number. `TimeoutOptions` always names connect/read/write/pool explicitly;
+an all-`None` value disables those HTTP component timers while leaving any
+separate Android transfer aggregate intact. `notebooklm.config` remains the
+unrelated base-URL/host helper facade.
+
+The remaining exported vocabulary follows the same ownership split:
+`RetryOptions` owns retry ceilings, `WebSessionHooks` owns the advanced cookie
+callbacks, and `RpcEventCallback` names the neutral telemetry callback shape.
+`ReadWindow` is the public read-window type alias and `AutoReadWindow` is the
+enum type behind its exported `AUTO` member.
+
 ### Concurrency model
 
 `NotebookLMClient` is **async re-entrant on a single event loop**. You can freely await multiple operations concurrently via `asyncio.gather` or `asyncio.TaskGroup`:
@@ -957,11 +1006,13 @@ class NotebookLMClient:
         max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,        # 16
         upload_timeout: httpx.Timeout | None = None,
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-        chat_timeout: float | None = ...,      # unset -> max(180, timeout)
+        chat_timeout: ReadWindow = AUTO,       # AUTO -> max(180, timeout)
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES, # 256 MiB
-        import_research_timeout: float | None = ...,  # unset -> batch-scaled
+        import_research_timeout: ReadWindow = AUTO,  # AUTO -> batch-scaled
         *,
         allow_headless: bool = False,
+        backend: Literal["web", "android"] | None = None,
+        config: ClientConfig | None = None,
     ) -> "_FromStorageContext":
         # Returns an awaitable async-context-manager wrapper. Use as
         # `async with NotebookLMClient.from_storage(...) as client:`.
@@ -982,9 +1033,12 @@ class NotebookLMClient:
         on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
         cookie_saver: CookieSaver | None = None,
         cookie_rotator: CookieRotator | None = None,
-        chat_timeout: float | None = ...,      # unset -> max(180, timeout)
+        chat_timeout: ReadWindow = AUTO,       # AUTO -> max(180, timeout)
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES, # 256 MiB
-        import_research_timeout: float | None = ...,  # unset -> batch-scaled
+        import_research_timeout: ReadWindow = AUTO,  # AUTO -> batch-scaled
+        *,
+        backend: Literal["web", "android"] | None = None,
+        config: ClientConfig | None = None,
     ):
 
     async def refresh_auth(self, *, allow_headless: bool = False) -> AuthTokens:

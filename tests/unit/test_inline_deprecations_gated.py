@@ -33,6 +33,7 @@ import httpx
 import pytest
 
 from notebooklm._auth.storage import save_cookies_to_storage
+from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient, _FromStorageContext
 
 
@@ -44,10 +45,31 @@ def _from_storage_await_warns() -> None:
     gen.close()
 
 
+def _legacy_constructor_warns() -> None:
+    NotebookLMClient(
+        AuthTokens(cookies={"SID": "secret"}, csrf_token="csrf", session_id="session"),
+        timeout=31.0,
+    )
+
+
+def _legacy_from_storage_warns() -> None:
+    NotebookLMClient.from_storage(timeout=31.0)
+
+
 # (trigger, message-substring) for the surviving gated deprecation.
 DEPRECATION_SITES = [
     pytest.param(
         _from_storage_await_warns, "Awaiting NotebookLMClient.from_storage", id="from_storage_await"
+    ),
+    pytest.param(
+        _legacy_constructor_warns,
+        "legacy NotebookLMClient tuning arguments",
+        id="legacy_constructor_options",
+    ),
+    pytest.param(
+        _legacy_from_storage_warns,
+        "legacy NotebookLMClient.from_storage tuning arguments",
+        id="legacy_from_storage_options",
     ),
 ]
 

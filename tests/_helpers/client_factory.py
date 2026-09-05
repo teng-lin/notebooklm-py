@@ -10,6 +10,7 @@ import httpx
 
 from notebooklm._client_assembly import BackendName, _assemble_client
 from notebooklm._client_contracts import CookieRotator, CookieSaver
+from notebooklm._client_options import normalize_legacy_client_options
 from notebooklm._runtime.config import (
     DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CONNECT_TIMEOUT,
@@ -93,21 +94,10 @@ def build_client_shell_for_tests(
       ``open()`` time (via ``__aenter__``), exactly as in production.
     """
     client = NotebookLMClient.__new__(NotebookLMClient)
-    extra_android_credentials: dict[str, Any] = {}
-    if master_token_reader is not None:
-        extra_android_credentials["master_token_reader"] = master_token_reader
-    if oauth_minter is not None:
-        extra_android_credentials["oauth_minter"] = oauth_minter
-    _assemble_client(
-        client,
-        auth=auth,
+    normalized = normalize_legacy_client_options(
         timeout=timeout,
-        connect_timeout=connect_timeout,
-        refresh_callback=refresh_callback,
-        refresh_retry_delay=refresh_retry_delay,
         keepalive=keepalive,
         keepalive_min_interval=keepalive_min_interval,
-        keepalive_storage_path=keepalive_storage_path,
         rate_limit_max_retries=rate_limit_max_retries,
         server_error_max_retries=server_error_max_retries,
         limits=limits,
@@ -118,6 +108,20 @@ def build_client_shell_for_tests(
         cookie_rotator=cookie_rotator,
         chat_response_max_bytes=chat_response_max_bytes,
         backend=backend,
+    )
+    extra_android_credentials: dict[str, Any] = {}
+    if master_token_reader is not None:
+        extra_android_credentials["master_token_reader"] = master_token_reader
+    if oauth_minter is not None:
+        extra_android_credentials["oauth_minter"] = oauth_minter
+    _assemble_client(
+        client,
+        auth=auth,
+        options=normalized,
+        refresh_callback=refresh_callback,
+        refresh_retry_delay=refresh_retry_delay,
+        keepalive_storage_path=keepalive_storage_path,
+        connect_timeout=connect_timeout,
         decode_response=decode_response,
         sleep=sleep,
         is_auth_error=is_auth_error,

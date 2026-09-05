@@ -6,7 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
@@ -16,9 +16,8 @@ from ..._client_contracts import (
     WebCredentials,
     WebDependencies,
 )
+from ..._client_options import normalize_legacy_client_options
 from ..._runtime.config import (
-    AUTO_READ_TIMEOUT,
-    DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
     DEFAULT_MAX_CONCURRENT_RPCS,
@@ -56,6 +55,7 @@ from .seams import ClientSeams
 from .session_auth import WebSessionAuth
 
 if TYPE_CHECKING:
+    from ...options import WebBackendConfig
     from ...types import ConnectionLimits, RpcTelemetryEvent
 
 
@@ -163,7 +163,7 @@ def wire_middleware_chain(
     auth: AuthTokens,
     authed_post_chain_terminal: Callable[..., Awaitable[Any]],
     is_auth_error: Callable[[Exception], bool],
-    timeout: float,
+    timeout: float | None,
 ) -> WiredMiddleware:
     """Build and connect the four-middleware ADR-0009 web chain.
 
@@ -247,7 +247,9 @@ def _build_web_transport(
         auth_coord=auth_coord,
         cookie_persistence=cookie_persistence,
         kernel=kernel,
-        timeout=config.timeout,
+        read_timeout=config.read_timeout,
+        write_timeout=config.write_timeout,
+        pool_timeout=config.pool_timeout,
         connect_timeout=config.connect_timeout,
         limits=config.limits,
         keepalive_interval=config.keepalive_interval,
@@ -302,24 +304,32 @@ def compose_client_internals(
         max_concurrent_rpcs=max_concurrent_rpcs
     )
     shared = build_collaborators(resolved_shared_config, on_rpc_event=on_rpc_event)
+    normalized = normalize_legacy_client_options(
+        timeout=timeout,
+        keepalive=keepalive,
+        keepalive_min_interval=keepalive_min_interval,
+        rate_limit_max_retries=rate_limit_max_retries,
+        server_error_max_retries=server_error_max_retries,
+        limits=limits,
+        max_concurrent_uploads=max_concurrent_uploads,
+        max_concurrent_rpcs=max_concurrent_rpcs,
+        upload_timeout=upload_timeout,
+        on_rpc_event=on_rpc_event,
+        cookie_saver=cookie_saver,
+        cookie_rotator=cookie_rotator,
+        backend="web",
+    )
+    backend_config = cast("WebBackendConfig", normalized.config.backend)
     from ..assembly import assemble_web_backend
 
     assembly = assemble_web_backend(
         shared=shared,
         config=WebAssemblyConfig(
-            timeout=timeout,
-            connect_timeout=connect_timeout,
-            keepalive=keepalive,
-            keepalive_min_interval=keepalive_min_interval,
-            rate_limit_max_retries=rate_limit_max_retries,
-            server_error_max_retries=server_error_max_retries,
-            limits=limits,
-            max_concurrent_uploads=max_concurrent_uploads,
-            max_concurrent_rpcs=max_concurrent_rpcs,
-            upload_timeout=upload_timeout,
-            chat_timeout=AUTO_READ_TIMEOUT,
-            import_research_timeout=AUTO_READ_TIMEOUT,
-            chat_response_max_bytes=DEFAULT_CHAT_RESPONSE_MAX_BYTES,
+            backend=backend_config,
+            runtime=normalized.config.runtime,
+            retry=normalized.config.retry,
+            transfers=normalized.config.transfers,
+            features=normalized.config.features,
             shared_config=resolved_shared_config,
         ),
         credentials=WebCredentials(
@@ -331,8 +341,7 @@ def compose_client_internals(
             refresh_callback=refresh_callback,
             use_default_refresh_callback=use_default_refresh_callback,
             refresh_retry_delay=refresh_retry_delay,
-            cookie_saver=cookie_saver,
-            cookie_rotator=cookie_rotator,
+            connect_timeout=connect_timeout,
             async_client_factory=async_client_factory,
             decode_response=decode_response,
             sleep=sleep,
@@ -355,7 +364,9 @@ def build_web_runtime(
     refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None,
     use_default_refresh_callback: bool = False,
     shared: SharedRuntime,
-    upload_timeout: httpx.Timeout | None,
+    start_timeout: httpx.Timeout | None,
+    finalize_timeout: httpx.Timeout | None,
+    drive_timeout: httpx.Timeout | None,
     max_concurrent_uploads: int | None,
     cookie_saver: CookieSaver | None,
     cookie_rotator: CookieRotator | None,
@@ -415,7 +426,7 @@ def build_web_runtime(
         auth=auth,
         authed_post_chain_terminal=chain_host._authed_post_chain_terminal,
         is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
-        timeout=config.timeout,
+        timeout=config.read_timeout,
     )
     chain_host._authed_post_chain = wired.authed_post_chain
     composed.bind_chain_metadata(wired)
@@ -428,7 +439,7 @@ def build_web_runtime(
         decode_response=lambda *a, **kw: seams.decode_response(*a, **kw),
         is_auth_error=lambda *a, **kw: seams.is_auth_error(*a, **kw),
         sleep=lambda *a, **kw: seams.sleep(*a, **kw),
-        timeout_provider=lambda: config.timeout,
+        timeout_provider=lambda: config.read_timeout,
         refresh_callback_enabled_provider=lambda: auth_coord.has_refresh_callback,
         refresh_retry_delay_provider=lambda: chain_host._refresh_retry_delay,
     )
@@ -442,7 +453,9 @@ def build_web_runtime(
         supervisor=shared.call_supervisor,
         kernel=kernel,
         auth=auth,
-        upload_timeout=upload_timeout,
+        start_timeout=start_timeout,
+        finalize_timeout=finalize_timeout,
+        drive_timeout=drive_timeout,
         max_concurrent_uploads=max_concurrent_uploads,
         record_upload_queue_wait=shared.metrics.record_upload_queue_wait,
     )

@@ -253,6 +253,23 @@
   "notebooklm.outcomes": [
     "CommitState"
   ],
+  "notebooklm.options": [
+    "AndroidBackendConfig",
+    "AUTO",
+    "AutoReadWindow",
+    "ClientConfig",
+    "FeatureOptions",
+    "ReadWindow",
+    "RetryOptions",
+    "RpcEventCallback",
+    "RuntimeOptions",
+    "TimeoutOptions",
+    "TransferOptions",
+    "WebBackendConfig",
+    "WebSessionHooks",
+    "WebSessionOptions",
+    "WebTransportOptions"
+  ],
   "notebooklm.paths": [
     "get_active_profile",
     "get_browser_profile_dir",

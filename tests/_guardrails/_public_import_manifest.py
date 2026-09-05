@@ -61,6 +61,23 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
     "notebooklm.outcomes": [
         "CommitState",
     ],
+    "notebooklm.options": [
+        "AndroidBackendConfig",
+        "AUTO",
+        "AutoReadWindow",
+        "ClientConfig",
+        "FeatureOptions",
+        "ReadWindow",
+        "RetryOptions",
+        "RpcEventCallback",
+        "RuntimeOptions",
+        "TimeoutOptions",
+        "TransferOptions",
+        "WebBackendConfig",
+        "WebSessionHooks",
+        "WebSessionOptions",
+        "WebTransportOptions",
+    ],
     "notebooklm.research": [
         "extract_report_urls",
         "normalize_url",

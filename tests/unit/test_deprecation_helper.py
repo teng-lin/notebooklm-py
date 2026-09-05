@@ -74,6 +74,8 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
         "source_from_row",
         "client_rpc_call_web",
         "client_rpc_call_android",
+        "client_legacy_constructor_options",
+        "client_legacy_from_storage_options",
     )
     assert [field.name for field in fields(DeprecationSpec)] == [
         "key",
@@ -192,6 +194,20 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
             "0.9.0",
             3,
         ),
+        "client_legacy_constructor_options": (
+            "Non-default legacy NotebookLMClient tuning arguments are deprecated; group them "
+            "under config=ClientConfig(...). They will be removed in v1.0.",
+            "notebooklm.options.ClientConfig",
+            "0.9.0",
+            3,
+        ),
+        "client_legacy_from_storage_options": (
+            "Non-default legacy NotebookLMClient.from_storage tuning arguments are deprecated; "
+            "group them under config=ClientConfig(...). They will be removed in v1.0.",
+            "notebooklm.options.ClientConfig",
+            "0.9.0",
+            3,
+        ),
     }
     for key, spec in DEPRECATION_SPECS.items():
         message, replacement, since, stacklevel = expected[key]
@@ -284,6 +300,16 @@ def test_registered_emitter_rejects_unknown_key_without_warning() -> None:
         with pytest.raises(KeyError, match="not_registered"):
             warn_registered_deprecation("not_registered")
     assert caught == []
+
+
+def test_registered_emitter_appends_neutral_bounded_detail() -> None:
+    detail = "  follower timeout differs\n" + ("x" * 400)
+    with pytest.warns(DeprecationWarning) as caught:
+        warn_registered_deprecation("auth_tokens_from_storage", detail=detail)
+    message = str(caught[0].message)
+    assert "follower timeout differs " in message
+    assert "Offending arguments" not in message
+    assert len(message) <= len(DEPRECATION_SPECS["auth_tokens_from_storage"].message) + 301
 
 
 class TestWarnDeprecated:

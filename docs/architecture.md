@@ -1121,7 +1121,9 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `raw.py` | Public raw descriptors, replay policy, and backend-selected escape-hatch APIs. |
 | `_client_assembly.py` | Single private composition root: builds shared services once, invokes one typed backend builder, constructs the sole lifecycle, and installs the complete graph. Root-owned post-construction finalization preserves a backend preference frozen before deferred auth loading plus exact loaded-store baseline identity. |
 | `_client_compat.py` | Pure 0.x Android-to-Web sidecar factory and inert `LazyWebSidecar`; imports `_web.assembly` only inside the first-use builder and never closes over a public client. |
-| `_client_contracts.py` | Complete frozen `FeatureNamespaces`, discriminated `WebAssembly`/`AndroidAssembly`, narrow lifecycle participants, and warning-free private P4 construction carriers. |
+| `_client_contracts.py` | Complete frozen `FeatureNamespaces`, discriminated `WebAssembly`/`AndroidAssembly`, narrow lifecycle participants, and owner-grouped private builder carriers. |
+| `_client_options.py` | Sole compatibility normalizer from flat 0.x client tuning arguments to resolved typed owner options; also freezes stored-auth backend preference across subclass construction. |
+| `_android/upload_deadlines.py` | Android-only legacy upload-timeout normalization and owner-specific upload/Drive aggregate derivation. |
 | `_adapter_support.py` | Small transport-neutral support leaf for adapter error/response helpers; imported by MCP and REST adapters without importing a backend implementation. |
 | `_web/raw.py` | Thin Web raw adapter that preserves `RpcExecutor.rpc_call` behavior. |
 | `_web/transport/composed.py` | Web composition holder for the transport/executor/chain construction cycle; it has no shared-runtime back-edge. |
@@ -1261,6 +1263,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_runtime/contracts.py` | Transport-neutral `LoopGuard` Protocol |
 | `_web/contracts.py` | Web-only `Kernel` and `RpcCaller` Protocols |
 | `outcomes.py` | Public `CommitState` evidence enum used by callers and adapters to distinguish proven rejection from an unknown mutation outcome |
+| `options.py` | Import-light public frozen client construction options grouped by runtime, retry, backend, transfer, feature, and Web session ownership |
 | `_idempotency.py` | Transport-neutral private replay decision gate, one-shot mutation wrapper, and unconfirmed-write metadata helpers; imports neither `_web` nor `rpc` |
 | `_web/policy.py` | Web RPC idempotency types, declarative per-RPC classifications, resolution, and the one production `IDEMPOTENCY_REGISTRY` seed. Holds the load-bearing two-pass order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |

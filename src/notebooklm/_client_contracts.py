@@ -6,12 +6,12 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import httpx
 
-from ._auth.storage import CookieSaveResult, CookieSnapshot
 from ._runtime.lifecycle import LoopParticipant, TransportLifecycle
+from ._types.common import CookieRotator, CookieSaver, SaveCookiesToStorage
 
 if TYPE_CHECKING:
     from ._android.auth import MasterTokenReader, OAuthMinter
@@ -34,25 +34,15 @@ if TYPE_CHECKING:
     from ._web.transport.init import WebRuntime
     from ._web.transport.seams import ClientSeams
     from .auth import AuthTokens
-    from .types import ConnectionLimits
+    from .options import (
+        AndroidBackendConfig,
+        FeatureOptions,
+        RetryOptions,
+        RuntimeOptions,
+        TransferOptions,
+        WebBackendConfig,
+    )
 
-
-class SaveCookiesToStorage(Protocol):
-    """Callable shape for the exact v0.x cookie-save callback invocation."""
-
-    def __call__(
-        self,
-        cookie_jar: httpx.Cookies,
-        path: Path,
-        /,
-        *,
-        original_snapshot: CookieSnapshot | None,
-        return_result: bool,
-    ) -> bool | CookieSaveResult: ...
-
-
-CookieSaver = SaveCookiesToStorage
-CookieRotator = Callable[..., Awaitable[None]]
 
 BackendName = Literal["web", "android"]
 
@@ -128,21 +118,13 @@ BackendAssembly: TypeAlias = WebAssembly | AndroidAssembly
 
 @dataclass(frozen=True)
 class WebAssemblyConfig:
-    """Warning-free private carrier consumed by the Web builder in P4."""
+    """Owner-grouped settings consumed by the Web builder."""
 
-    timeout: float
-    connect_timeout: float
-    keepalive: float | None
-    keepalive_min_interval: float
-    rate_limit_max_retries: int
-    server_error_max_retries: int
-    limits: ConnectionLimits | None
-    max_concurrent_uploads: int | None
-    max_concurrent_rpcs: int | None
-    upload_timeout: httpx.Timeout | None
-    chat_timeout: float | None
-    import_research_timeout: float | None
-    chat_response_max_bytes: int | None
+    backend: WebBackendConfig
+    runtime: RuntimeOptions
+    retry: RetryOptions
+    transfers: TransferOptions
+    features: FeatureOptions
     shared_config: SharedRuntimeConfig
 
 
@@ -162,8 +144,7 @@ class WebDependencies:
     refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None
     use_default_refresh_callback: bool
     refresh_retry_delay: float
-    cookie_saver: CookieSaver | None
-    cookie_rotator: CookieRotator | None
+    connect_timeout: float
     async_client_factory: Callable[..., httpx.AsyncClient] | None
     decode_response: Callable[..., Any] | None
     sleep: Callable[[float], Awaitable[Any]] | None
@@ -174,17 +155,13 @@ class WebDependencies:
 
 @dataclass(frozen=True)
 class AndroidAssemblyConfig:
-    """Warning-free private carrier consumed by the Android builder in P4."""
+    """Owner-grouped settings consumed by the Android builder."""
 
-    timeout: float
-    refresh_retry_delay: float
-    rate_limit_max_retries: int
-    server_error_max_retries: int
-    max_concurrent_uploads: int | None
-    upload_timeout: httpx.Timeout | None
-    chat_timeout: float | None
-    import_research_timeout: float | None
-    chat_response_max_bytes: int | None
+    backend: AndroidBackendConfig
+    runtime: RuntimeOptions
+    retry: RetryOptions
+    transfers: TransferOptions
+    features: FeatureOptions
 
 
 @dataclass(frozen=True)
@@ -201,6 +178,7 @@ class AndroidDependencies:
     master_token_reader: MasterTokenReader | None
     oauth_minter: OAuthMinter | None
     sleep: Callable[[float], Awaitable[Any]] | None
+    refresh_retry_delay: float
 
 
 __all__ = [

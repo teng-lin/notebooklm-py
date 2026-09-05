@@ -61,13 +61,18 @@ def _make_auth() -> AuthTokens:
     )
 
 
-def test_shared_runtime_config_contains_only_the_rpc_admission_cap() -> None:
-    assert [field.name for field in fields(SharedRuntimeConfig)] == ["max_concurrent_rpcs"]
+def test_shared_runtime_config_retains_resolved_runtime_options() -> None:
+    assert [field.name for field in fields(SharedRuntimeConfig)] == [
+        "max_concurrent_rpcs",
+        "operation_timeout",
+    ]
 
 
 def test_web_session_config_owns_every_web_transport_setting() -> None:
     assert {field.name for field in fields(WebSessionConfig)} == {
-        "timeout",
+        "read_timeout",
+        "write_timeout",
+        "pool_timeout",
         "connect_timeout",
         "limits",
         "refresh_retry_delay",
@@ -92,6 +97,7 @@ def test_runtime_bundles_follow_backend_ownership_boundary() -> None:
     assert tuple(field.name for field in fields(SharedRuntime)) == (
         "metrics",
         "call_supervisor",
+        "config",
     )
     assert tuple(field.name for field in fields(WebRuntime)) == (
         "reqid",

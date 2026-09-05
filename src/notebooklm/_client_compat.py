@@ -63,7 +63,9 @@ class CompatibilitySpec:
 
     auth: AuthTokens
     shared_config: SharedRuntimeConfig
-    timeout: float
+    read_timeout: float | None
+    write_timeout: float | None
+    pool_timeout: float | None
     refresh_retry_delay: float
     rate_limit_max_retries: int
     server_error_max_retries: int

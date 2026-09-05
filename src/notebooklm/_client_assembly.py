@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import os
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
@@ -26,21 +24,18 @@ from ._client_contracts import (
     AndroidDependencies,
     BackendAssembly,
     BackendName,
-    CookieRotator,
-    CookieSaver,
     WebAssembly,
     WebAssemblyConfig,
     WebCredentials,
     WebDependencies,
 )
+from ._client_options import (
+    BackendPreference,
+    NormalizedClientOptions,
+    resolve_backend_preference,
+)
 from ._runtime.config import (
-    AUTO_READ_TIMEOUT,
-    DEFAULT_CHAT_RESPONSE_MAX_BYTES,
     DEFAULT_CONNECT_TIMEOUT,
-    DEFAULT_KEEPALIVE_MIN_INTERVAL,
-    DEFAULT_MAX_CONCURRENT_RPCS,
-    DEFAULT_MAX_CONCURRENT_UPLOADS,
-    DEFAULT_TIMEOUT,
     validate_read_timeout_kwarg,
 )
 from ._runtime.error_injection import _refuse_synthetic_error_outside_test_context
@@ -51,39 +46,8 @@ from .auth import AuthTokens
 if TYPE_CHECKING:
     from ._android.auth import MasterTokenReader, OAuthMinter
     from .client import NotebookLMClient
-    from .types import ConnectionLimits, RpcTelemetryEvent
 
 logger = logging.getLogger("notebooklm.backend")
-
-
-@dataclass(frozen=True)
-class BackendPreference:
-    """One construction-time backend preference and how it was selected."""
-
-    preferred: BackendName
-    reason: Literal["explicit", "env", "default"]
-
-
-def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
-    """Resolve and validate the backend preference without performing I/O."""
-
-    value: str
-    reason: Literal["explicit", "env", "default"]
-    if explicit is not None:
-        value = explicit
-        reason = "explicit"
-    elif env is not None:
-        value = env
-        reason = "env"
-    else:
-        value = "web"
-        reason = "default"
-    if value not in ("web", "android"):
-        raise ValueError(
-            f"Invalid NotebookLM backend {value!r}: expected 'web' or 'android'. "
-            "The aliases 'mobile' and 'auto' are not supported."
-        )
-    return BackendPreference(preferred=cast(BackendName, value), reason=reason)
 
 
 class _UnsetType:
@@ -168,23 +132,8 @@ def _assemble_client(
     client: NotebookLMClient,
     *,
     auth: AuthTokens,
-    timeout: float = DEFAULT_TIMEOUT,
+    options: NormalizedClientOptions,
     storage_path: Path | None = None,
-    keepalive: float | None = None,
-    keepalive_min_interval: float = DEFAULT_KEEPALIVE_MIN_INTERVAL,
-    rate_limit_max_retries: int = 3,
-    server_error_max_retries: int = 3,
-    limits: ConnectionLimits | None = None,
-    max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
-    max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
-    upload_timeout: httpx.Timeout | None = None,
-    on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
-    cookie_saver: CookieSaver | None = None,
-    cookie_rotator: CookieRotator | None = None,
-    chat_timeout: float | None = AUTO_READ_TIMEOUT,
-    import_research_timeout: float | None = AUTO_READ_TIMEOUT,
-    chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
-    backend: BackendName | None = None,
     refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None | _UnsetType = _UNSET,
     refresh_retry_delay: float = 0.2,
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
@@ -198,10 +147,15 @@ def _assemble_client(
 ) -> None:
     """Normalize root-owned inputs, select one backend, and freeze its lifecycle."""
 
-    preference = resolve_backend_preference(
-        explicit=backend,
-        env=None if backend is not None else os.environ.get("NOTEBOOKLM_BACKEND"),
-    )
+    preference = options.preference
+    config = options.config
+    selected_backend = config.backend
+    if selected_backend is None:  # pragma: no cover - normalizer invariant
+        raise AssertionError("normalized ClientConfig must select a backend")
+    runtime_options = config.runtime
+    retry_options = config.retry
+    transfer_options = config.transfers
+    feature_options = config.features
     if storage_path is not None:
         storage_path = Path(storage_path)
         if auth.storage_path != storage_path:
@@ -222,48 +176,50 @@ def _assemble_client(
             derived_keepalive_path = Path(derived_keepalive_path).expanduser().resolve()
         keepalive_storage_path = derived_keepalive_path
 
-    if preference.preferred == "web" and max_concurrent_rpcs is not None:
-        from .types import ConnectionLimits
+    if preference.preferred == "web" and runtime_options.max_concurrent_rpcs is not None:
+        from .options import WebBackendConfig
 
-        effective_limits = limits if limits is not None else ConnectionLimits()
-        if max_concurrent_rpcs > effective_limits.max_connections:
+        if not isinstance(selected_backend, WebBackendConfig):
+            raise ValueError("Web preference requires WebBackendConfig")
+        effective_limits = selected_backend.transport.limits
+        if runtime_options.max_concurrent_rpcs > effective_limits.max_connections:
             raise ValueError(
                 "max_concurrent_rpcs must be <= limits.max_connections "
-                f"(got max_concurrent_rpcs={max_concurrent_rpcs}, "
+                f"(got max_concurrent_rpcs={runtime_options.max_concurrent_rpcs}, "
                 f"max_connections={effective_limits.max_connections}). "
                 "A semaphore wider than the connection pool surfaces "
                 "saturation as opaque httpx.PoolTimeout instead of clean back-pressure."
             )
-    if chat_response_max_bytes is not None and chat_response_max_bytes < 1:
+    if (
+        feature_options.chat_response_max_bytes is not None
+        and feature_options.chat_response_max_bytes < 1
+    ):
         raise ValueError(
-            f"chat_response_max_bytes must be >= 1 when supplied (got {chat_response_max_bytes!r})"
+            "chat_response_max_bytes must be >= 1 when supplied "
+            f"(got {feature_options.chat_response_max_bytes!r})"
         )
-    chat_timeout = validate_read_timeout_kwarg(chat_timeout, name="chat_timeout")
-    import_research_timeout = validate_read_timeout_kwarg(
-        import_research_timeout,
+    validate_read_timeout_kwarg(feature_options.chat_timeout, name="chat_timeout")
+    validate_read_timeout_kwarg(
+        feature_options.import_research_timeout,
         name="import_research_timeout",
     )
 
-    shared_config = validate_shared_runtime_config(max_concurrent_rpcs=max_concurrent_rpcs)
+    shared_config = validate_shared_runtime_config(
+        max_concurrent_rpcs=runtime_options.max_concurrent_rpcs,
+        operation_timeout=runtime_options.operation_timeout,
+    )
     _refuse_synthetic_error_outside_test_context()
-    shared = build_collaborators(shared_config, on_rpc_event=on_rpc_event)
+    shared = build_collaborators(shared_config, on_rpc_event=config.on_rpc_event)
 
     if preference.preferred == "android":
-        ignored_web_options: list[str] = []
-        if keepalive is not None:
-            ignored_web_options.append("keepalive")
-        if keepalive_min_interval != DEFAULT_KEEPALIVE_MIN_INTERVAL:
-            ignored_web_options.append("keepalive_min_interval")
-        if cookie_saver is not None:
-            ignored_web_options.append("cookie_saver")
-        if cookie_rotator is not None:
-            ignored_web_options.append("cookie_rotator")
-        if limits is not None:
-            ignored_web_options.append("limits")
-        if ignored_web_options:
+        from .options import AndroidBackendConfig
+
+        if not isinstance(selected_backend, AndroidBackendConfig):
+            raise ValueError("Android preference requires AndroidBackendConfig")
+        if options.ignored_web_arguments:
             logger.debug(
                 "Android backend ignores Web-only options: %s",
-                ", ".join(ignored_web_options),
+                ", ".join(options.ignored_web_arguments),
             )
 
         from ._android.assembly import assemble_android_backend
@@ -276,15 +232,11 @@ def _assemble_client(
         android_assembly = assemble_android_backend(
             shared=shared,
             config=AndroidAssemblyConfig(
-                timeout=timeout,
-                refresh_retry_delay=refresh_retry_delay,
-                rate_limit_max_retries=rate_limit_max_retries,
-                server_error_max_retries=server_error_max_retries,
-                max_concurrent_uploads=max_concurrent_uploads,
-                upload_timeout=upload_timeout,
-                chat_timeout=chat_timeout,
-                import_research_timeout=import_research_timeout,
-                chat_response_max_bytes=chat_response_max_bytes,
+                backend=selected_backend,
+                runtime=runtime_options,
+                retry=retry_options,
+                transfers=transfer_options,
+                features=feature_options,
             ),
             credentials=AndroidCredentials(
                 profile_path=Path(auth.storage_path) if auth.storage_path is not None else None,
@@ -295,18 +247,22 @@ def _assemble_client(
                 ),
                 oauth_minter=None if isinstance(oauth_minter, _UnsetType) else oauth_minter,
                 sleep=sleep,
+                refresh_retry_delay=refresh_retry_delay,
             ),
         )
+        sidecar_timeout = selected_backend.rpc_timeout if not options.typed_config else 30.0
         sidecar = build_compatibility_sidecar(
             shared,
             CompatibilitySpec(
                 auth=auth,
                 shared_config=shared_config,
-                timeout=timeout,
+                read_timeout=sidecar_timeout,
+                write_timeout=sidecar_timeout,
+                pool_timeout=sidecar_timeout,
                 refresh_retry_delay=refresh_retry_delay,
-                rate_limit_max_retries=rate_limit_max_retries,
-                server_error_max_retries=server_error_max_retries,
-                max_concurrent_uploads=max_concurrent_uploads,
+                rate_limit_max_retries=retry_options.rate_limit_max_retries,
+                server_error_max_retries=retry_options.server_error_max_retries,
+                max_concurrent_uploads=transfer_options.max_concurrent_uploads,
             ),
             CompatibilityDependencies(
                 seam_overrides=seam_overrides,
@@ -326,23 +282,19 @@ def _assemble_client(
         return
 
     from ._web.assembly import assemble_web_backend
+    from .options import WebBackendConfig
+
+    if not isinstance(selected_backend, WebBackendConfig):
+        raise ValueError("Web preference requires WebBackendConfig")
 
     web_assembly = assemble_web_backend(
         shared=shared,
         config=WebAssemblyConfig(
-            timeout=timeout,
-            connect_timeout=connect_timeout,
-            keepalive=keepalive,
-            keepalive_min_interval=keepalive_min_interval,
-            rate_limit_max_retries=rate_limit_max_retries,
-            server_error_max_retries=server_error_max_retries,
-            limits=limits,
-            max_concurrent_uploads=max_concurrent_uploads,
-            max_concurrent_rpcs=max_concurrent_rpcs,
-            upload_timeout=upload_timeout,
-            chat_timeout=chat_timeout,
-            import_research_timeout=import_research_timeout,
-            chat_response_max_bytes=chat_response_max_bytes,
+            backend=selected_backend,
+            runtime=runtime_options,
+            retry=retry_options,
+            transfers=transfer_options,
+            features=feature_options,
             shared_config=shared_config,
         ),
         credentials=WebCredentials(
@@ -354,8 +306,7 @@ def _assemble_client(
             refresh_callback=effective_refresh_callback,
             use_default_refresh_callback=use_default_refresh_callback,
             refresh_retry_delay=refresh_retry_delay,
-            cookie_saver=cookie_saver,
-            cookie_rotator=cookie_rotator,
+            connect_timeout=connect_timeout,
             async_client_factory=async_client_factory,
             decode_response=decode_response,
             sleep=sleep,
