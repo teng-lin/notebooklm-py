@@ -717,52 +717,102 @@ WORKFLOW_INVENTORY = (
     SymbolInventory(
         "src/notebooklm/_notebooks.py",
         "NotebooksAPI._operation_scope",
-        Disposition("P3", "Inject supervisor scope for create/copy and composite reads."),
+        Disposition("P3", "Require the concrete backend supervisor for neutral workflows."),
     ),
     SymbolInventory(
         "src/notebooklm/_chat.py",
         "ChatAPI._operation_scope",
-        Disposition("P3", "Scope locks, history, send, and cache publication."),
+        Disposition("P3", "Require the concrete backend supervisor across the chat workflow."),
     ),
     SymbolInventory(
         "src/notebooklm/_research.py",
         "BaseResearchAPI._operation_scope",
-        Disposition("P3", "Scope start/import/cancel and required readback."),
+        Disposition("P3", "Require the concrete backend supervisor across research workflows."),
     ),
     SymbolInventory(
         "src/notebooklm/_artifacts.py",
         "ArtifactsAPI._operation_scope",
-        Disposition("P3", "Scope source resolution, generation send, and result handling."),
+        Disposition("P3", "Require the concrete backend supervisor across artifact workflows."),
     ),
     SymbolInventory(
         "src/notebooklm/_notes.py",
         "NotesAPI._operation_scope",
-        Disposition("P3", "Scope note workflows including note-backed operations."),
+        Disposition("P3", "Require the concrete backend supervisor across note workflows."),
     ),
     SymbolInventory(
         "src/notebooklm/_mind_maps_api.py",
         "MindMapsAPI._operation_scope",
-        Disposition("P3", "Scope note-backed and interactive mind-map workflows."),
+        Disposition("P3", "Require the concrete backend supervisor across mind-map workflows."),
     ),
     SymbolInventory(
         "src/notebooklm/_settings.py",
         "SettingsAPI._operation_scope",
-        Disposition("P3", "Scope account eligibility plus conditional quota read."),
+        Disposition("P3", "Require one supervisor lease across both usage reads."),
     ),
     SymbolInventory(
         "src/notebooklm/_sharing.py",
         "SharingAPI._operation_scope",
-        Disposition("P3", "Scope mutations and required share-status readback."),
+        Disposition("P3", "Require the concrete backend supervisor through sharing readback."),
     ),
     SymbolInventory(
         "src/notebooklm/_labels.py",
         "LabelsAPI._operation_scope",
-        Disposition("P3", "Scope label mutation and verification workflows."),
+        Disposition("P3", "Require the concrete backend supervisor across label workflows."),
     ),
     SymbolInventory(
         "src/notebooklm/_collections.py",
         "CollectionsAPI._operation_scope",
-        Disposition("P3", "Scope collection mutation and verification workflows."),
+        Disposition("P3", "Require the concrete backend supervisor through reconciliation."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/notebooks.py",
+        "WebNotebooksAPI._operation_scope",
+        Disposition("P3", "Delegate Web notebook workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/chat.py",
+        "WebChatAPI._operation_scope",
+        Disposition("P3", "Delegate Web chat workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/research.py",
+        "WebResearchAPI._operation_scope",
+        Disposition("P3", "Delegate Web research workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/artifacts.py",
+        "WebArtifactsAPI._operation_scope",
+        Disposition("P3", "Delegate Web artifact workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/notes.py",
+        "WebNotesAPI._operation_scope",
+        Disposition("P3", "Delegate Web note workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/mind_maps.py",
+        "WebMindMapsAPI._operation_scope",
+        Disposition("P3", "Delegate Web mind-map workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/settings.py",
+        "WebSettingsAPI._operation_scope",
+        Disposition("P3", "Delegate Web settings workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/sharing.py",
+        "WebSharingAPI._operation_scope",
+        Disposition("P3", "Delegate Web sharing workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/labels.py",
+        "WebLabelsAPI._operation_scope",
+        Disposition("P3", "Delegate Web label workflows to the shared supervisor."),
+    ),
+    SymbolInventory(
+        "src/notebooklm/_web/collections.py",
+        "WebCollectionsAPI._operation_scope",
+        Disposition("P3", "Delegate Web collection workflows to the shared supervisor."),
     ),
     SymbolInventory(
         "src/notebooklm/_web/sources/__init__.py",
@@ -772,7 +822,7 @@ WORKFLOW_INVENTORY = (
     SymbolInventory(
         "src/notebooklm/_sources.py",
         "SourcesAPI._operation_scope",
-        Disposition("P3", "Preserve the source hook and require concrete supervised wiring."),
+        Disposition("P3", "Make the source hook abstract and preserve supervised wiring."),
     ),
     SymbolInventory(
         "src/notebooklm/_android/notebooks.py",
@@ -865,6 +915,9 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
             ("src/notebooklm/_mind_maps_api.py", "MindMapsAPI.list", 1),
             ("src/notebooklm/_mind_maps_api.py", "MindMapsAPI.rename", 1),
             ("src/notebooklm/_notebooks.py", "NotebooksAPI.create", 1),
+            ("src/notebooklm/_notebooks.py", "NotebooksAPI.copy", 1),
+            ("src/notebooklm/_artifacts.py", "ArtifactsAPI.copy", 1),
+            ("src/notebooklm/_chat.py", "ChatAPI.ask", 1),
             (
                 "src/notebooklm/_research.py",
                 "BaseResearchAPI._import_sources_with_verification",
@@ -873,7 +926,7 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
             ("src/notebooklm/_research.py", "BaseResearchAPI._wait_for_completion", 1),
             ("src/notebooklm/_settings.py", "SettingsAPI.get_usage", 1),
         ),
-        Disposition("P3", "Replace the Web no-op hook with shared supervisor admission."),
+        Disposition("P3", "Require shared supervisor admission for every neutral workflow."),
     ),
     *_call_rows(
         "_operation_scope",
@@ -886,8 +939,20 @@ WORKFLOW_SCOPE_CALL_INVENTORY = (
             ("src/notebooklm/_sources.py", "SourcesAPI.add_urls_async", 1),
             ("src/notebooklm/_sources.py", "SourcesAPI.append_text", 1),
             ("src/notebooklm/_sources.py", "SourcesAPI.copy", 1),
+            ("src/notebooklm/_web/collections.py", "WebCollectionsAPI.create", 1),
+            ("src/notebooklm/_web/notes.py", "WebNotesAPI.update", 1),
+            (
+                "src/notebooklm/_web/research.py",
+                "WebResearchAPI._import_sources_with_verification",
+                1,
+            ),
+            (
+                "src/notebooklm/_web/sharing.py",
+                "WebSharingAPI._share_and_readback",
+                1,
+            ),
         ),
-        Disposition("P3", "Preserve the already-supervised Android/source workflow scope."),
+        Disposition("P3", "Preserve existing scopes and cover Web-specific composites."),
     ),
 )
 
@@ -896,27 +961,27 @@ WORKFLOW_ADDITIONAL_ENTRYPOINT_INVENTORY = (
     SymbolInventory(
         "src/notebooklm/_notebooks.py",
         "NotebooksAPI.copy",
-        Disposition("P3", "Scope notebook source-read/copy send from its first await."),
+        Disposition("P3", "Holds notebook source-read/copy send from its first await."),
     ),
     SymbolInventory(
         "src/notebooklm/_chat.py",
         "ChatAPI.ask",
-        Disposition("P3", "Scope locks, history, send, and cache publication."),
+        Disposition("P3", "Holds locks, history, send, and cache publication."),
     ),
     SymbolInventory(
         "src/notebooklm/_artifacts.py",
         "ArtifactsAPI.copy",
-        Disposition("P3", "Scope artifact lookup and copy send."),
+        Disposition("P3", "Holds artifact lookup and copy send."),
     ),
     SymbolInventory(
         "src/notebooklm/_web/sharing.py",
         "WebSharingAPI._share_and_readback",
-        Disposition("P3", "Scope the sharing mutation and required readback."),
+        Disposition("P3", "Holds the sharing mutation and required readback."),
     ),
     SymbolInventory(
         "src/notebooklm/_web/collections.py",
         "WebCollectionsAPI.create",
-        Disposition("P3", "Scope baseline, create send, and collection readback."),
+        Disposition("P3", "Holds baseline, create send, and collection readback."),
     ),
     SymbolInventory(
         "src/notebooklm/_source/polling.py",

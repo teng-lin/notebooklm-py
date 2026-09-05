@@ -22,6 +22,7 @@ from notebooklm.types import (
     ConversationTurn,
     Note,
 )
+from tests._fixtures.fake_core import declared_noop_operation_scope
 
 # Normalized docstring fingerprints from the pre-split ChatAPI at de56890b.
 # ``inspect.getdoc`` keeps these stable across CPython's 3.13 docstring
@@ -93,6 +94,8 @@ _CHAT_DOCSTRING_SHA256 = {
 
 class _FakeChatAPI(ChatAPI):
     """Minimal backend proving shared workflows need only their declared seams."""
+
+    _operation_scope = staticmethod(declared_noop_operation_scope)
 
     def __init__(
         self,

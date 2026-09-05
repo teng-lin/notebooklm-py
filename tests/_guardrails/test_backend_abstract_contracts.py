@@ -16,6 +16,10 @@ from pathlib import Path
 
 import pytest
 
+from notebooklm._client_metrics import ClientMetrics
+from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._runtime.lifecycle import ClientLifecycle
+
 pytestmark = pytest.mark.repo_lint
 
 
@@ -411,8 +415,6 @@ _ANDROID_INHERITED_WORKFLOWS = {
 }
 
 _TEMPLATE_HOOKS = frozenset({"_operation_scope"})
-_WEB_SCOPE_OVERRIDES = frozenset({"SourcesAPI"})
-
 _WIRE_HOOK_PREFIXES = ("_send_",)
 _WIRE_HOOK_NAMES = frozenset(
     {
@@ -456,9 +458,10 @@ def test_backend_base_abstract_methods_and_wire_hooks_match_manifest() -> None:
             if name.startswith(_WIRE_HOOK_PREFIXES) or name in _WIRE_HOOK_NAMES
         )
 
-        assert actual == contract.abstract_methods, (
+        expected_abstract = contract.abstract_methods | _TEMPLATE_HOOKS
+        assert actual == expected_abstract, (
             f"{contract.class_name} abstract surface changed: "
-            f"expected {sorted(contract.abstract_methods)}, got {sorted(actual)}"
+            f"expected {sorted(expected_abstract)}, got {sorted(actual)}"
         )
         assert actual_wire_hooks == contract.wire_hooks, (
             f"{contract.class_name} wire hooks changed: "
@@ -466,8 +469,9 @@ def test_backend_base_abstract_methods_and_wire_hooks_match_manifest() -> None:
         )
 
 
-def test_namespace_bases_and_backends_preserve_the_scope_template_hook() -> None:
-    """Keep lifecycle policy separate from each workflow's one wire hook."""
+@pytest.mark.asyncio
+async def test_every_backend_scope_delegates_to_its_supervisor_capability() -> None:
+    """Every concrete namespace must acquire a real backend-owned scope."""
     assert (
         {contract.class_name for contract in BASE_ABSTRACT_CONTRACTS}
         == set(_ANDROID_IMPLEMENTATIONS)
@@ -483,14 +487,24 @@ def test_namespace_bases_and_backends_preserve_the_scope_template_hook() -> None
         android_module, android_name = _ANDROID_IMPLEMENTATIONS[contract.class_name]
         android = getattr(importlib.import_module(android_module), android_name)
 
-        actual_hooks = frozenset(name for name in _TEMPLATE_HOOKS if name in base.__dict__)
-        assert actual_hooks == _TEMPLATE_HOOKS
-        assert not getattr(base._operation_scope, "__isabstractmethod__", False)
-        if contract.class_name in _WEB_SCOPE_OVERRIDES:
-            assert web._operation_scope is not base._operation_scope
-        else:
-            assert web._operation_scope is base._operation_scope
-        assert android._operation_scope is not base._operation_scope
+        assert getattr(base._operation_scope, "__isabstractmethod__", False)
+
+        for implementation, owner_attr in ((web, "_supervisor"), (android, "_transport")):
+            supervisor = CallSupervisor(metrics=ClientMetrics(), max_concurrent_rpcs=None)
+            lifecycle = ClientLifecycle(
+                supervisor=supervisor,
+                transports=(),
+                loop_participants=(supervisor,),
+            )
+            await lifecycle.open()
+            instance = object.__new__(implementation)
+            setattr(instance, owner_attr, supervisor)
+            async with instance._operation_scope("contract.scope") as lease:
+                assert lease.epoch == 1
+                generation = supervisor._current
+                assert generation is not None
+                assert generation.in_flight == 1
+            await lifecycle.close(drain=False)
 
 
 def test_android_backends_inherit_manifested_neutral_workflow_bodies() -> None:
@@ -706,7 +720,7 @@ def test_chat_shared_workflows_call_only_their_single_wire_hook() -> None:
     )
     expected = {
         "_count_prior_server_turns": {"_list_turn_roles"},
-        "ask": {"_stream_answer"},
+        "_ask_in_scope": {"_stream_answer"},
         "configure": {"_send_configure"},
         "delete_conversation": {"_send_delete_conversation"},
         "get_settings": {"_read_settings"},
@@ -740,7 +754,7 @@ def test_artifact_shared_workflows_call_only_their_single_wire_hook() -> None:
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ArtifactsAPI"
     )
     expected = {
-        "copy": {"_send_copy"},
+        "_copy_in_scope": {"_send_copy"},
         "export": {"_send_export"},
     }
     for method_name, expected_hooks in expected.items():
@@ -763,7 +777,10 @@ def test_artifact_shared_workflows_call_only_their_single_wire_hook() -> None:
 def test_copy_workflows_share_the_neutral_mapping_reconciler() -> None:
     """Sources and artifacts keep one owner for post-decode copy policy."""
     root = Path(__file__).resolve().parents[2] / "src" / "notebooklm"
-    for filename, class_name in (("_sources.py", "SourcesAPI"), ("_artifacts.py", "ArtifactsAPI")):
+    for filename, class_name, method_name in (
+        ("_sources.py", "SourcesAPI", "copy"),
+        ("_artifacts.py", "ArtifactsAPI", "_copy_in_scope"),
+    ):
         tree = ast.parse((root / filename).read_text(encoding="utf-8"))
         owner = next(
             node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name
@@ -771,7 +788,7 @@ def test_copy_workflows_share_the_neutral_mapping_reconciler() -> None:
         method = next(
             node
             for node in owner.body
-            if isinstance(node, ast.AsyncFunctionDef) and node.name == "copy"
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == method_name
         )
         calls = [
             node

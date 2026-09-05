@@ -10,8 +10,9 @@ after ``SourcesAPI`` is built (mirrors ``NotebooksAPI``). No ``LabelService``, n
 from __future__ import annotations
 
 import builtins
+import contextlib
 import logging
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from .._idempotency import call_unconfirmed_on_transport_loss
 from .._labels import LabelsAPI, ListSources
@@ -27,6 +28,9 @@ from .params.labels import (
     build_update_label_params,
 )
 from .rows.labels import decode_label
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 # Preserve the historical logger key across the whole-module move.
 logger = logging.getLogger("notebooklm._labels")
@@ -52,13 +56,26 @@ class WebLabelsAPI(LabelsAPI):
     _property_readback_miss_method_id = RPCMethod.LIST_LABELS.value
     _delete_method_id = RPCMethod.DELETE_LABEL.value
 
-    def __init__(self, rpc: RpcCaller, *, list_sources: ListSources) -> None:
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral label workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
+    def __init__(
+        self,
+        rpc: RpcCaller,
+        *,
+        list_sources: ListSources,
+        supervisor: CallSupervisor,
+    ) -> None:
         """``list_sources`` is ``client.sources.list`` (wired in ``_client_assembly.py``
         after the ``SourcesAPI`` is constructed) — needed for the
         membership→Source join in ``sources()``. Same client/bound loop, so no
         loop-affinity concern (ADR-0004)."""
         super().__init__(list_sources=list_sources)
         self._rpc = rpc
+        self._supervisor = supervisor
 
     # -- internal -----------------------------------------------------------
 

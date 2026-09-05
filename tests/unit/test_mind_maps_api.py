@@ -21,6 +21,7 @@ from notebooklm.exceptions import (
 )
 from notebooklm.rpc.types import RPCMethod
 from notebooklm.types import Artifact, MindMapKind, MindMapResult
+from tests._fixtures.fake_core import make_fake_core
 
 
 def _interactive_artifact(artifact_id: str, title: str = "INT") -> Artifact:
@@ -56,6 +57,7 @@ def _make_api(*, note_rows=None, interactive=None):
     notes.delete_mind_map = AsyncMock()
     api = WebMindMapsAPI(
         rpc=rpc,
+        supervisor=make_fake_core(),
         mind_maps=mind_maps,
         artifacts=artifacts,
         notebooks=notebooks,
@@ -163,6 +165,7 @@ async def test_web_note_backed_rename_preserves_raw_content_and_call_count(
 
     api = WebMindMapsAPI(
         rpc=MagicMock(),
+        supervisor=make_fake_core(),
         mind_maps=NoteBackedMindMapService(note_service),
         artifacts=artifacts,
         notebooks=MagicMock(),

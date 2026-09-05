@@ -54,7 +54,7 @@ def _make_core(rpc_call: AsyncMock | None = None):
 
 def _make_api(rpc_call: AsyncMock | None = None) -> WebNotebooksAPI:
     core = _make_core(rpc_call)
-    return WebNotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+    return WebNotebooksAPI(core.rpc_executor, supervisor=core, sources_api=MagicMock())
 
 
 def _source_entry(
@@ -150,7 +150,7 @@ def test_build_get_notebook_params_matches_live_payload() -> None:
 
 def test_direct_web_notebooks_api_construction_remains_supported() -> None:
     core = _make_core()
-    api = WebNotebooksAPI(core.rpc_executor)
+    api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
     assert hasattr(api, "_sources")
     assert isinstance(api._sources, SourceLister)
@@ -166,7 +166,7 @@ async def test_direct_notebooks_api_get_metadata_uses_phase8_source_lister() -> 
             "nb_123",
         ]
     ]
-    api = WebNotebooksAPI(core.rpc_executor)
+    api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
     metadata = await api.get_metadata("nb_123")
 
@@ -180,7 +180,7 @@ async def test_direct_notebooks_api_get_metadata_uses_phase8_source_lister() -> 
 @pytest.mark.asyncio
 async def test_direct_notebooks_api_metadata_lister_uses_late_bound_rpc_executor_call() -> None:
     core = _make_core()
-    api = WebNotebooksAPI(core.rpc_executor)
+    api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
     replacement_rpc = AsyncMock(
         return_value=[
             [
@@ -233,7 +233,7 @@ async def test_get_metadata_uses_injected_source_lister_and_builds_summaries() -
             )
         ]
     )
-    api = WebNotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api = WebNotebooksAPI(core.rpc_executor, supervisor=core, sources_api=source_lister)
     api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Architecture", sources_count=1))
 
     metadata = await api.get_metadata("nb_123")
@@ -271,7 +271,7 @@ async def test_get_metadata_fetches_notebook_and_sources_concurrently() -> None:
         return [Source(id="src_1", title="Paper", _type_code=3)]  # SourceType.PDF
 
     source_lister.list = AsyncMock(side_effect=list_sources)
-    api = WebNotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api = WebNotebooksAPI(core.rpc_executor, supervisor=core, sources_api=source_lister)
     api.get = AsyncMock(side_effect=get_notebook)
 
     metadata_task = asyncio.create_task(api.get_metadata("nb_123"))
@@ -293,7 +293,7 @@ async def test_get_metadata_warns_when_notebook_reports_sources_but_listing_is_e
     core = _make_core()
     source_lister = MagicMock()
     source_lister.list = AsyncMock(return_value=[])
-    api = WebNotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api = WebNotebooksAPI(core.rpc_executor, supervisor=core, sources_api=source_lister)
     api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Sparse", sources_count=2))
 
     with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):
@@ -310,7 +310,7 @@ async def test_get_metadata_does_not_warn_when_empty_notebook_listing_is_empty(
     core = _make_core()
     source_lister = MagicMock()
     source_lister.list = AsyncMock(return_value=[])
-    api = WebNotebooksAPI(core.rpc_executor, sources_api=source_lister)
+    api = WebNotebooksAPI(core.rpc_executor, supervisor=core, sources_api=source_lister)
     api.get = AsyncMock(return_value=Notebook(id="nb_123", title="Empty", sources_count=0))
 
     with caplog.at_level(logging.WARNING, logger="notebooklm._notebooks"):

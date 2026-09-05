@@ -110,6 +110,10 @@ def _rpc(return_value: Any = None, side_effect: Any = None) -> MagicMock:
     )
 
 
+def _notebooks(rpc: RpcCaller) -> WebNotebooksAPI:
+    return WebNotebooksAPI(rpc, supervisor=make_fake_core())
+
+
 # ---------------------------------------------------------------------------
 # Param builders — the positional mirror of the live-pinned proto tags
 # ---------------------------------------------------------------------------
@@ -558,7 +562,7 @@ class TestSuggestNextSteps:
     @pytest.mark.asyncio
     async def test_decodes_rows_and_drops_malformed(self) -> None:
         rpc = _rpc(self.RESPONSE)
-        api = WebNotebooksAPI(rpc)
+        api = _notebooks(rpc)
         api.get_source_ids = AsyncMock()  # type: ignore[method-assign]
         result = await api.suggest_next_steps(NB)
         assert result == [
@@ -575,10 +579,10 @@ class TestSuggestNextSteps:
     @pytest.mark.asyncio
     async def test_source_scoping_and_empty_payload(self) -> None:
         rpc = _rpc(None)
-        assert await WebNotebooksAPI(rpc).suggest_next_steps(NB, source_ids=[SRC_A]) == []
+        assert await _notebooks(rpc).suggest_next_steps(NB, source_ids=[SRC_A]) == []
         assert rpc.rpc_call.await_args.args[1] == [None, NB, [[[SRC_A]]]]
         with pytest.raises(ValidationError):
-            await WebNotebooksAPI(rpc).suggest_next_steps("")
+            await _notebooks(rpc).suggest_next_steps("")
 
 
 # ---------------------------------------------------------------------------
@@ -674,16 +678,16 @@ class TestMalformedRowsAndGuards:
     @pytest.mark.asyncio
     async def test_next_step_rows_with_non_int_codes_are_dropped(self) -> None:
         rpc = _rpc([[["q", "9"], ["q2", True], ["ok", 9]]])
-        result = await WebNotebooksAPI(rpc).suggest_next_steps(NB)
+        result = await _notebooks(rpc).suggest_next_steps(NB)
         assert result == [NextStepSuggestion(question="ok", type_code=9)]
-        assert await WebNotebooksAPI(_rpc([None])).suggest_next_steps(NB) == []
+        assert await _notebooks(_rpc([None])).suggest_next_steps(NB) == []
 
     @pytest.mark.asyncio
     async def test_unknown_notebook_maps_to_notebook_not_found(self) -> None:
         rpc = _rpc(side_effect=RPCError("nope", method_id="OcvKNc", rpc_code=5))
         with pytest.raises(NotebookNotFoundError):
-            await WebNotebooksAPI(rpc).suggest_next_steps(NB)
+            await _notebooks(rpc).suggest_next_steps(NB)
         rpc = _rpc(side_effect=RPCError("other", method_id="OcvKNc", rpc_code=3))
         with pytest.raises(RPCError) as excinfo:
-            await WebNotebooksAPI(rpc).suggest_next_steps(NB)
+            await _notebooks(rpc).suggest_next_steps(NB)
         assert not isinstance(excinfo.value, NotebookNotFoundError)

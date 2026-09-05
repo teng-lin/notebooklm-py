@@ -43,6 +43,7 @@ from notebooklm.exceptions import (
     ServerError,
 )
 from notebooklm.types import Source
+from tests._fixtures.fake_core import declared_noop_operation_scope
 
 FAILED_PRECONDITION = 9
 
@@ -83,6 +84,8 @@ class _StubResearchAPI(BaseResearchAPI):
     the class is instantiable and blow up loudly if the orchestration ever
     reaches them.
     """
+
+    _operation_scope = staticmethod(declared_noop_operation_scope)
 
     def __init__(self, lister: _Lister, outcomes: list[Any]) -> None:
         super().__init__(source_lister=lister)  # type: ignore[arg-type]

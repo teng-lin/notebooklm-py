@@ -131,12 +131,12 @@ class SourcesAPI(ABC):
     over the abstract :meth:`list` operation.
     """
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(self) -> None:
         """Initialize transport-neutral source polling state."""

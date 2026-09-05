@@ -28,6 +28,7 @@ from notebooklm.exceptions import (
     RPCError,
     RPCTimeoutError,
 )
+from tests._fixtures.fake_core import make_fake_core
 
 
 class _RecordingRpc:
@@ -97,7 +98,11 @@ def _make_research() -> tuple[WebResearchAPI, MagicMock, MagicMock]:
     """
     mock_rpc = MagicMock()
     mock_source_lister = MagicMock()
-    research = WebResearchAPI(mock_rpc, source_lister=mock_source_lister)
+    research = WebResearchAPI(
+        mock_rpc,
+        supervisor=make_fake_core(),
+        source_lister=mock_source_lister,
+    )
     return research, mock_rpc, mock_source_lister
 
 
@@ -192,7 +197,11 @@ class TestImportSourcesWithVerification:
         )
         mock_source_lister = MagicMock()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research = WebResearchAPI(fake_rpc, source_lister=mock_source_lister)
+        research = WebResearchAPI(
+            fake_rpc,
+            supervisor=make_fake_core(),
+            source_lister=mock_source_lister,
+        )
 
         with (
             patch.object(_research_mod.time, "monotonic", side_effect=lambda: clock["now"]),
@@ -234,7 +243,11 @@ class TestImportSourcesWithVerification:
         )
         mock_source_lister = MagicMock()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research = WebResearchAPI(fake_rpc, source_lister=mock_source_lister)
+        research = WebResearchAPI(
+            fake_rpc,
+            supervisor=make_fake_core(),
+            source_lister=mock_source_lister,
+        )
 
         with (
             patch.object(_research_mod.time, "monotonic", side_effect=lambda: clock["now"]),
@@ -264,7 +277,11 @@ class TestImportSourcesWithVerification:
         fake_rpc = _RecordingRpc([[[["src_1"], "Source 1"]]])
         mock_source_lister = MagicMock()
         mock_source_lister.list = AsyncMock(return_value=[])
-        research = WebResearchAPI(fake_rpc, source_lister=mock_source_lister)
+        research = WebResearchAPI(
+            fake_rpc,
+            supervisor=make_fake_core(),
+            source_lister=mock_source_lister,
+        )
 
         imported = await research.import_sources_with_verification(
             "nb_123",

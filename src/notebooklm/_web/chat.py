@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import reprlib
 from typing import TYPE_CHECKING, Any
@@ -57,6 +58,7 @@ from .rows.notes import NoteRow
 from .transport.chat import chat_aware_authed_post
 
 if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
     from .transport.reqid_counter import ReqidCounter
     from .transport.request_types import AuthSnapshot
     from .transport.runtime import RuntimeTransport
@@ -145,6 +147,12 @@ class WebChatAPI(ChatAPI):
 
     _configure_attempt_log_policy: _ConfigureAttemptLogPolicy = "before_validation"
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral chat workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
     def __init__(
         self,
         *,
@@ -152,6 +160,7 @@ class WebChatAPI(ChatAPI):
         transport: RuntimeTransport,
         reqid: ReqidCounter,
         loop_guard: LoopGuard,
+        supervisor: CallSupervisor,
         notebooks: NotebookSourceIdProvider,
         chat_timeout: float | None = DEFAULT_CHAT_TIMEOUT,
         chat_response_max_bytes: int | None = DEFAULT_CHAT_RESPONSE_MAX_BYTES,
@@ -192,6 +201,7 @@ class WebChatAPI(ChatAPI):
         self._rpc = rpc
         self._transport = transport
         self._reqid = reqid
+        self._supervisor = supervisor
         assert_resolved_read_timeout(chat_timeout, name="chat_timeout")
         self._chat_timeout = chat_timeout
         self._chat_response_max_bytes = chat_response_max_bytes

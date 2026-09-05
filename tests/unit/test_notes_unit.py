@@ -34,6 +34,7 @@ def notes_api(mock_core):
     note_service = NoteService(mock_core, supervisor=mock_core)
     mind_maps = NoteBackedMindMapService(note_service)
     return WebNotesAPI(
+        supervisor=mock_core,
         notes=note_service,
         mind_maps=mind_maps,
     )

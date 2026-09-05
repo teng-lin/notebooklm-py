@@ -116,12 +116,12 @@ class BaseResearchAPI(ABC):
 
     _import_policy: _ResearchImportPolicy = _WEB_RESEARCH_IMPORT_POLICY
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(
         self,

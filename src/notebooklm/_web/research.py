@@ -7,6 +7,7 @@ and importing discovered sources into notebooks.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Sequence
@@ -63,6 +64,7 @@ from .rows.research import ImportedSourceRow, ResearchStartRow, unwrap_import_ro
 from .rows.research_task import parse_discover_task, parse_research_task_models
 
 if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
     from ..types import Source
 
 __all__ = [
@@ -118,10 +120,17 @@ class WebResearchAPI(BaseResearchAPI):
 
     _import_policy = _WEB_RESEARCH_IMPORT_POLICY
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral research workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
     def __init__(
         self,
         rpc: RpcCaller,
         *,
+        supervisor: CallSupervisor,
         source_lister: NotebookSourceLister | None = None,
         base_timeout: float | None = DEFAULT_TIMEOUT,
         import_research_timeout: float | None = AUTO_READ_TIMEOUT,
@@ -149,6 +158,7 @@ class WebResearchAPI(BaseResearchAPI):
                 dependency.
         """
         self._rpc = rpc
+        self._supervisor = supervisor
         super().__init__(
             source_lister=source_lister or create_default_source_lister(self._rpc),
             base_timeout=base_timeout,
@@ -546,6 +556,31 @@ class WebResearchAPI(BaseResearchAPI):
         return imported
 
     async def _import_sources_with_verification(
+        self,
+        notebook_id: str,
+        task_id: str,
+        sources: Sequence[ResearchSourceInput],
+        *,
+        max_elapsed: float = 1800,
+        initial_delay: float = 5,
+        backoff_factor: float = 2,
+        max_delay: float = 60,
+        allow_duplicate: bool = False,
+    ) -> list[dict[str, str]]:
+        """Hold Web import verification under one complete workflow admission."""
+        async with self._operation_scope("research.import_sources_with_verification"):
+            return await self._import_sources_with_verification_in_web_scope(
+                notebook_id,
+                task_id,
+                sources,
+                max_elapsed=max_elapsed,
+                initial_delay=initial_delay,
+                backoff_factor=backoff_factor,
+                max_delay=max_delay,
+                allow_duplicate=allow_duplicate,
+            )
+
+    async def _import_sources_with_verification_in_web_scope(
         self,
         notebook_id: str,
         task_id: str,

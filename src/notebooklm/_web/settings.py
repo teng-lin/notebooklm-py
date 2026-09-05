@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .._runtime.call_supervisor import OperationLease
 from .._settings import SettingsAPI
@@ -13,6 +14,9 @@ from ..rpc import RPCMethod, safe_index
 from ..types import AccountLimits, UserSettings
 from .contracts import RpcCaller
 from .usage import get_usage_account, list_quota_summary
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor
 
 logger = logging.getLogger("notebooklm._settings")
 
@@ -163,13 +167,20 @@ class WebSettingsAPI(SettingsAPI):
     _GET_SETTINGS_PREFIX = (0, 2)
     _GET_SETTINGS_TAIL = (4, 0)
 
-    def __init__(self, rpc: RpcCaller) -> None:
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral settings workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
+    def __init__(self, rpc: RpcCaller, *, supervisor: CallSupervisor) -> None:
         """Initialize the settings API.
 
         Args:
             rpc: RPC dispatch surface (typically the shared client session).
         """
         self._rpc = rpc
+        self._supervisor = supervisor
 
     async def _get_usage_account(self, *, lease: OperationLease | None) -> UsageAccount:
         """Fetch the account's server-owned compute-meter eligibility bit."""

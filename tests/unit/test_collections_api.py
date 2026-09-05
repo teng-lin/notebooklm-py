@@ -16,6 +16,7 @@ from notebooklm.exceptions import (
     UnknownRPCMethodError,
 )
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.fake_core import make_fake_core
 
 
 def _collection_tuple(
@@ -85,7 +86,15 @@ def _api(
 ):
     rpc = FakeRpc(responses, sequences)
     list_notebooks = AsyncMock(return_value=notebooks or [])
-    return WebCollectionsAPI(rpc, list_notebooks=list_notebooks), rpc, list_notebooks
+    return (
+        WebCollectionsAPI(
+            rpc,
+            supervisor=make_fake_core(),
+            list_notebooks=list_notebooks,
+        ),
+        rpc,
+        list_notebooks,
+    )
 
 
 # -- read --------------------------------------------------------------------
@@ -353,7 +362,11 @@ async def test_add_notebooks_is_not_atomic_partial_failure_propagates() -> None:
             return None
 
     rpc = _RaiseOnSecondUpdate()
-    api = WebCollectionsAPI(rpc, list_notebooks=AsyncMock(return_value=[]))
+    api = WebCollectionsAPI(
+        rpc,
+        supervisor=make_fake_core(),
+        list_notebooks=AsyncMock(return_value=[]),
+    )
     with pytest.raises(RuntimeError):
         await api.add_notebooks("c1", ["a", "b", "c"])
     updates = [c for c in rpc.calls if c.method == RPCMethod.UPDATE_LABEL]

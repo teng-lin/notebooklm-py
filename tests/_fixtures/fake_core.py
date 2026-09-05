@@ -59,6 +59,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -90,6 +91,20 @@ class FakeSession:
             setattr(self, name, value)
 
 
+@dataclass(frozen=True)
+class FakeOperationLease:
+    """Deliberate transport-free lease returned by the shared test supervisor."""
+
+    epoch: int = 1
+
+
+@asynccontextmanager
+async def declared_noop_operation_scope(label: str) -> AsyncIterator[FakeOperationLease]:
+    """Declare a transport-free scope for neutral workflow unit fakes."""
+    del label
+    yield FakeOperationLease()
+
+
 def make_fake_core(**overrides: Any) -> FakeSession:
     """Return a :class:`FakeSession` with benign defaults overridden.
 
@@ -107,17 +122,10 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     Example::
 
         fake = make_fake_core(rpc_call=AsyncMock(return_value=[payload]))
-        api = WebNotebooksAPI(fake.rpc_executor)
+        api = WebNotebooksAPI(fake.rpc_executor, supervisor=fake)
         result = await api.list()
         fake.rpc_executor.rpc_call.assert_awaited_once()
     """
-
-    def _operation_scope(_label: str):
-        @asynccontextmanager
-        async def scope() -> AsyncIterator[SimpleNamespace]:
-            yield SimpleNamespace(epoch=1)
-
-        return scope()
 
     async def _spawn_child(label: str, factory: Any) -> asyncio.Task[Any]:
         return asyncio.create_task(factory(), name=label)
@@ -158,7 +166,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         # used by source upload tests.
         "assert_bound_loop": MagicMock(return_value=None),
         "is_closing": MagicMock(return_value=False),
-        "operation_scope": MagicMock(side_effect=_operation_scope),
+        "operation_scope": MagicMock(side_effect=declared_noop_operation_scope),
         "spawn_child": _spawn_child,
         # CallSupervisor owns close-time artifact hook registration. Keep
         # ``_drain_hooks`` as a public attribute on the fake so test sites can

@@ -203,6 +203,7 @@ def _graph(
 def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     assert NotebooksAPI.__abstractmethods__ == frozenset(
         {
+            "_operation_scope",
             "_send_copy",
             "_send_create",
             "delete",
@@ -220,6 +221,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     )
     assert SourcesAPI.__abstractmethods__ == frozenset(
         {
+            "_operation_scope",
             "_send_add_urls_async",
             "_send_append_text",
             "_send_copy",

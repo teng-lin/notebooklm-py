@@ -1,9 +1,12 @@
 """Web backend for notebook operations."""
 
+from __future__ import annotations
+
 import builtins
+import contextlib
 import logging
 import reprlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .._notebook_metadata import (
     NotebookMetadataService,
@@ -53,6 +56,9 @@ from .rows.sources import SourceRow
 from .settings import build_get_user_settings_params, extract_account_limits
 from .sharing import ShareManager
 from .sources.listing import SourceLister
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 logger = logging.getLogger("notebooklm._notebooks")
 
@@ -215,11 +221,18 @@ class WebNotebooksAPI(NotebooksAPI):
     _copy_method_id = RPCMethod.COPY_NOTEBOOK.value
     _copy_failure_chain = "explicit"
 
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral notebook workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
     def __init__(
         self,
         rpc: RpcCaller,
         sources_api: NotebookSourceLister | None = None,
         *,
+        supervisor: CallSupervisor,
         metadata_service: NotebookMetadataService | None = None,
         share_manager: ShareManager | None = None,
     ) -> None:
@@ -232,6 +245,7 @@ class WebNotebooksAPI(NotebooksAPI):
             share_manager: Optional explicit legacy share manager for tests or advanced wiring.
         """
         self._rpc = rpc
+        self._supervisor = supervisor
         resolved_sources = sources_api or create_default_source_lister(self._rpc)
         super().__init__(resolved_sources, metadata_service=metadata_service)
 

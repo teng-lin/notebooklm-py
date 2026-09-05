@@ -68,6 +68,7 @@ class TestConfigureChat:
         core = make_fake_core(rpc_call=rpc_call)
         return WebChatAPI(
             rpc=core.rpc_executor,
+            supervisor=core,
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=MagicMock(spec=LoopGuard),
@@ -273,7 +274,11 @@ class TestGetNotebookDescription:
         ]
         rpc_call = AsyncMock(return_value=mock_response)
         core = make_fake_core(rpc_call=rpc_call)
-        notebooks = WebNotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+        notebooks = WebNotebooksAPI(
+            core.rpc_executor,
+            supervisor=core,
+            sources_api=MagicMock(),
+        )
 
         result = await notebooks.get_description("notebook_123")
 

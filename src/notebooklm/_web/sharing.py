@@ -1,9 +1,12 @@
 """Concrete batchexecute sharing backend."""
 
+from __future__ import annotations
+
+import contextlib
 import logging
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .._idempotency import call_unconfirmed_on_transport_loss
 from .._sharing import SharingAPI
@@ -12,6 +15,9 @@ from ..rpc import RPCMethod
 from ..types import ShareStatus
 from .contracts import RpcCaller
 from .rows.sharing import decode_share_status
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 logger = logging.getLogger("notebooklm._sharing")
 
@@ -40,13 +46,20 @@ class WebSharingAPI(SharingAPI):
             )
     """
 
-    def __init__(self, rpc: RpcCaller):
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral sharing workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
+    def __init__(self, rpc: RpcCaller, *, supervisor: CallSupervisor):
         """Initialize the sharing API.
 
         Args:
             rpc: RPC dispatch surface (typically the shared client session).
         """
         self._rpc = rpc
+        self._supervisor = supervisor
 
     async def get_status(self, notebook_id: str) -> ShareStatus:
         """Get current sharing configuration.
@@ -75,20 +88,22 @@ class WebSharingAPI(SharingAPI):
     ) -> ShareStatus:
         """Apply one share mutation and include its status readback in the outcome boundary."""
 
-        async def mutate_and_readback() -> ShareStatus:
-            await self._rpc.rpc_call(
-                RPCMethod.SHARE_NOTEBOOK,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-            )
-            return await self.get_status(notebook_id)
+        async with self._operation_scope("sharing.mutate_and_readback"):
 
-        return await call_unconfirmed_on_transport_loss(
-            mutate_and_readback,
-            method=RPCMethod.SHARE_NOTEBOOK,
-            what=what,
-        )
+            async def mutate_and_readback() -> ShareStatus:
+                await self._rpc.rpc_call(
+                    RPCMethod.SHARE_NOTEBOOK,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                    allow_null=True,
+                )
+                return await self.get_status(notebook_id)
+
+            return await call_unconfirmed_on_transport_loss(
+                mutate_and_readback,
+                method=RPCMethod.SHARE_NOTEBOOK,
+                what=what,
+            )
 
     async def set_public(
         self,

@@ -14,9 +14,12 @@ from notebooklm._sources import SourcesAPI, _TransferResult
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import DecodingError, RPCError, SourceNotFoundError, ValidationError
 from notebooklm.types import CopiedSource, Source, SourceStatus, SourceType
+from tests._fixtures.fake_core import declared_noop_operation_scope
 
 
 class _ConcreteSources(SourcesAPI):
+    _operation_scope = staticmethod(declared_noop_operation_scope)
+
     def __init__(
         self,
         sources: list[Source] | Exception,

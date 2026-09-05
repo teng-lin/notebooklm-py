@@ -29,6 +29,9 @@ from tests._helpers.client_factory import build_client_shell_for_tests
 class _Supervisor:
     events: list[str] = field(default_factory=list)
 
+    def assert_shutdown_allowed(self, action: str) -> None:
+        del action
+
     def set_bound_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.events.append("bind:supervisor")
 

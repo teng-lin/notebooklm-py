@@ -182,12 +182,12 @@ class ChatAPI(LoopBoundPrimitive, ABC):
 
     _configure_attempt_log_policy: _ConfigureAttemptLogPolicy = "silent"
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(
         self,
@@ -337,6 +337,22 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             last_conversation_id)`` — the server then has nothing to
             extend and the next ``ask()`` starts a new conversation.
         """
+        async with self._operation_scope("chat.ask"):
+            return await self._ask_in_scope(
+                notebook_id,
+                question,
+                source_ids=source_ids,
+                conversation_id=conversation_id,
+            )
+
+    async def _ask_in_scope(
+        self,
+        notebook_id: str,
+        question: str,
+        source_ids: list[str] | None = None,
+        conversation_id: str | None = None,
+    ) -> AskResult:
+        """Execute :meth:`ask` after its workflow admission has been acquired."""
         self._loop_guard.assert_bound_loop()
         logger.debug(
             "Asking question in notebook %s (conversation=%s)",

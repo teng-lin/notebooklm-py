@@ -27,6 +27,7 @@ from notebooklm._web.notes import NoteService, WebNotesAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.exceptions import ClientError, NotebookNotFoundError, RPCError
 from notebooklm.types import MindMap, MindMapKind, Source
+from tests._fixtures.fake_core import make_fake_core
 
 # ---------------------------------------------------------------------------
 # unwrap_or_raise helper (in isolation)
@@ -64,7 +65,7 @@ def _make_notebooks_api(rpc_call: AsyncMock) -> WebNotebooksAPI:
     from tests._fixtures.fake_core import make_fake_core
 
     core = make_fake_core(rpc_call=rpc_call)
-    return WebNotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+    return WebNotebooksAPI(core.rpc_executor, supervisor=core, sources_api=MagicMock())
 
 
 @pytest.fixture
@@ -97,7 +98,7 @@ def notes_api():
     core = make_fake_core(rpc_call=AsyncMock())
     note_service = NoteService(core, supervisor=core)
     mind_maps = NoteBackedMindMapService(note_service)
-    return WebNotesAPI(notes=note_service, mind_maps=mind_maps)
+    return WebNotesAPI(supervisor=core, notes=note_service, mind_maps=mind_maps)
 
 
 @pytest.fixture
@@ -111,6 +112,7 @@ def mind_maps_api():
     notebooks = MagicMock()
     return WebMindMapsAPI(
         rpc=rpc,
+        supervisor=make_fake_core(),
         mind_maps=mind_maps,
         artifacts=artifacts,
         notebooks=notebooks,

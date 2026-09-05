@@ -76,12 +76,12 @@ class NotebooksAPI(ABC):
     _copy_method_id: str
     _copy_failure_chain: _CopyFailureChain
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(
         self,
@@ -364,25 +364,26 @@ class NotebooksAPI(ABC):
         if not title or not title.strip():
             raise ValidationError("title must not be empty")
 
-        try:
-            return await self._send_copy(notebook_id, title)
-        except (NetworkError, RateLimitError, ServerError) as exc:
-            rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-            failure = unresolved_commit_error(
-                self._copy_method_id,
-                "CopyProject",
-                RPCError(
-                    "UNRESOLVED — CopyProject may have committed before its response was "
-                    "lost. Do not blindly retry; list notebooks and resolve copies "
-                    "manually first.",
-                    method_id=self._copy_method_id,
-                    rpc_code=rpc_code,
-                ),
-                preserve_exception=True,
-            )
-            if self._copy_failure_chain == "explicit":
-                raise failure from exc
-            raise failure from None
+        async with self._operation_scope("notebooks.copy"):
+            try:
+                return await self._send_copy(notebook_id, title)
+            except (NetworkError, RateLimitError, ServerError) as exc:
+                rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
+                failure = unresolved_commit_error(
+                    self._copy_method_id,
+                    "CopyProject",
+                    RPCError(
+                        "UNRESOLVED — CopyProject may have committed before its response was "
+                        "lost. Do not blindly retry; list notebooks and resolve copies "
+                        "manually first.",
+                        method_id=self._copy_method_id,
+                        rpc_code=rpc_code,
+                    ),
+                    preserve_exception=True,
+                )
+                if self._copy_failure_chain == "explicit":
+                    raise failure from exc
+                raise failure from None
 
     @abstractmethod
     async def _send_copy(self, notebook_id: str, title: str) -> Notebook:

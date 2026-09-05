@@ -6,6 +6,7 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 """
 
 import builtins
+import contextlib
 import logging
 import reprlib
 from pathlib import Path
@@ -55,7 +56,7 @@ from .rows.customization import unwrap_customization_choices
 from .rows.transfers import CopiedArtifactRow, unwrap_mapping_rows
 
 if TYPE_CHECKING:
-    from .._runtime.call_supervisor import CallSupervisor
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 logger = logging.getLogger("notebooklm._artifacts")
 
@@ -75,6 +76,12 @@ class WebArtifactsAPI(ArtifactsAPI):
             artifacts = await client.artifacts.list(notebook_id)
             await client.artifacts.rename(notebook_id, artifact_id, "New Title")
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager["OperationLease"]:
+        """Return the backend's scope for one multi-call workflow."""
+        return self._supervisor.operation_scope(label)
 
     def __init__(
         self,
