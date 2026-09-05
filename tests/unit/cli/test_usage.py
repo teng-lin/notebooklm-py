@@ -1,6 +1,7 @@
 """Usage CLI output, account scope, and failure contracts."""
 
 import json
+import logging
 from dataclasses import replace
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
@@ -22,6 +23,17 @@ from notebooklm.types import (
 )
 
 from .conftest import create_mock_client, inject_client
+
+
+@pytest.fixture(autouse=True)
+def _restore_logger_level():
+    """Keep --quiet invocations from suppressing later tests' warning logs."""
+    logger = logging.getLogger("notebooklm")
+    saved_level = logger.level
+    try:
+        yield
+    finally:
+        logger.setLevel(saved_level)
 
 
 @pytest.fixture

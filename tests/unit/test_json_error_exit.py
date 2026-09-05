@@ -208,6 +208,11 @@ def _fail_chat_ask(client: MagicMock) -> None:
     client.chat.ask = AsyncMock(side_effect=RuntimeError("network unreachable"))
 
 
+def _fail_usage(client: MagicMock) -> None:
+    """Exercise the usage command's structured unexpected-error envelope."""
+    client.settings.get_usage = AsyncMock(side_effect=RuntimeError("usage read failed"))
+
+
 def _fail_suggest_prompts(client: MagicMock) -> None:
     client.notebooks.suggest_prompts = AsyncMock(side_effect=RuntimeError("network unreachable"))
 
@@ -397,6 +402,7 @@ def _fail_notebook_copy(client: MagicMock) -> None:
 
 # (case_id, argv, customize_fn-or-None)
 JSON_ERROR_CASES: list[tuple[str, list[str], object]] = [
+    ("usage_failure", ["usage", "--json"], _fail_usage),
     # source group: client raises -> @with_client routes to json_error_response.
     ("source_list_unauthorized", ["source", "list", "-n", "abc", "--json"], _fail_source_list),
     (
