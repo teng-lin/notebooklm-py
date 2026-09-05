@@ -48,6 +48,7 @@ from ._client_assembly import (
     BackendName,
     BackendPreference,
     _assemble_client,
+    _finalize_loaded_client,
     resolve_backend_preference,
 )
 from ._client_contracts import CookieRotator, CookieSaver
@@ -68,6 +69,7 @@ from ._runtime.config import (
     DEFAULT_TIMEOUT,
 )
 from ._runtime.init import SharedRuntime
+from ._runtime.lifecycle import ClientLifecycle
 from ._settings import SettingsAPI
 from ._sharing import SharingAPI
 from ._sources import SourcesAPI
@@ -169,6 +171,7 @@ class NotebookLMClient:
     _auth: AuthTokens
     _seams: Any
     _collaborators: SharedRuntime
+    _lifecycle: ClientLifecycle
     _web_runtime: Any | None
     _web_sidecar: Any | None
     _android_runtime: Any | None
@@ -428,7 +431,7 @@ class NotebookLMClient:
             _ = self._require_web_runtime().composed.transport
         elif self._android_runtime is None:  # pragma: no cover - assembly invariant
             raise RuntimeError("The Android runtime is not available for this client.")
-        await self._collaborators.lifecycle.open()
+        await self._lifecycle.open()
         return self
 
     async def __aexit__(
@@ -466,7 +469,7 @@ class NotebookLMClient:
         Resource ownership and admission are separate: a successfully drained
         client remains connected, but rejects new top-level work until closed.
         """
-        await self._collaborators.lifecycle.drain(timeout=timeout)
+        await self._lifecycle.drain(timeout=timeout)
 
     async def close(
         self,
@@ -487,7 +490,7 @@ class NotebookLMClient:
         teardown; re-cancellation may detach the caller while the strongly
         retained wave finishes in the background.
         """
-        await self._collaborators.lifecycle.close(
+        await self._lifecycle.close(
             drain=drain,
             drain_timeout=drain_timeout,
         )
@@ -578,7 +581,7 @@ class NotebookLMClient:
     @property
     def is_connected(self) -> bool:
         """Check if the client is connected."""
-        return self._collaborators.lifecycle.is_open()
+        return self._lifecycle.is_open()
 
     @classmethod
     def from_storage(
@@ -1034,14 +1037,11 @@ class _FromStorageContext:
             on_rpc_event=kwargs["on_rpc_event"],
             backend=kwargs["backend_preference"].preferred,
         )
-        client._backend_preference = kwargs["backend_preference"]
-        if (
-            isinstance(loaded, _auth_tokens.FileLoadedAuth)
-            and hasattr(client, "_web_runtime")
-            and client._web_runtime is not None
-        ):
-            client._web_runtime.cookie_persistence.register_open_baseline(
-                loaded.store, loaded.persistence_baseline
+        if any(base is NotebookLMClient for base in type(client).__mro__):
+            _finalize_loaded_client(
+                client,
+                preference=kwargs["backend_preference"],
+                loaded_auth=loaded,
             )
         self._client = client
         return client

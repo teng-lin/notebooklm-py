@@ -486,7 +486,6 @@
             "notebooklm._web.transport.middleware.tracing.TracingMiddleware": 1,
             "notebooklm._web.transport.reqid_counter.ReqidCounter": 1,
             "notebooklm._web.transport.runtime.RuntimeTransport": 1,
-            "notebooklm._web.transport.seams.ClientSeams": 1,
             "notebooklm._web.transport.session_auth.WebSessionAuth": 1
           },
           "lifecycle": {

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, TypeVar
 _T = TypeVar("_T")
 
 if TYPE_CHECKING:
-    from ..._runtime.init import SharedRuntime
     from .executor import RpcExecutor
     from .init import WiredMiddleware
     from .middleware.chain import MiddlewareChainBuilder
@@ -25,10 +24,6 @@ class ClientComposed:
         self._chain_host: MiddlewareChainHost | None = None
         self._chain_builder: MiddlewareChainBuilder | None = None
         self._middlewares: list[Middleware] | None = None
-        # Avoid a plain `.collaborators` attribute here: the ADR-0014 lint
-        # reserves that bare name so feature APIs can't grab the whole
-        # bundle.
-        self._runtime_collaborators: SharedRuntime | None = None
 
     @staticmethod
     def _require_bound(attr_name: str, value: _T | None) -> _T:
@@ -56,10 +51,6 @@ class ClientComposed:
     def middlewares(self) -> list[Middleware]:
         return self._require_bound("_middlewares", self._middlewares)
 
-    @property
-    def runtime_collaborators(self) -> SharedRuntime:
-        return self._require_bound("_runtime_collaborators", self._runtime_collaborators)
-
     def bind_transport(self, transport: RuntimeTransport) -> None:
         if self._transport is not None:
             raise RuntimeError("ClientComposed._transport already bound")
@@ -80,11 +71,6 @@ class ClientComposed:
             raise RuntimeError("ClientComposed._chain_builder already bound")
         self._chain_builder = wired.chain_builder
         self._middlewares = wired.middlewares
-
-    def bind_runtime_collaborators(self, collaborators: SharedRuntime) -> None:
-        if self._runtime_collaborators is not None:
-            raise RuntimeError("ClientComposed._runtime_collaborators already bound")
-        self._runtime_collaborators = collaborators
 
 
 __all__ = ["ClientComposed"]

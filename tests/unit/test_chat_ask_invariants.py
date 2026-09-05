@@ -430,7 +430,7 @@ class TestChatRefreshRetry:
                 supervisor=core._collaborators.call_supervisor,
                 transport=core._web_runtime.composed.transport,
                 reqid=core._web_runtime.reqid,
-                loop_guard=core._collaborators.lifecycle,
+                loop_guard=core._lifecycle,
                 notebooks=SimpleNamespace(get_source_ids=AsyncMock(return_value=[])),
             )
             with pytest.raises(ChatError) as raised:

@@ -13,7 +13,7 @@ a dead loop.
 
 Post-fix: ``NotebookLMClient.__aenter__()`` calls ``ClientLifecycle.open()``,
 which captures ``asyncio.get_running_loop()`` on the lifecycle (read via
-``core._collaborators.lifecycle.get_bound_loop()``), and
+``core._lifecycle.get_bound_loop()``), and
 ``RuntimeTransport.perform_authed_post`` asserts the running loop matches
 via a cheap ``is`` comparison through ``assert_bound_loop``. On mismatch
 we raise an actionable ``RuntimeError`` at the call site instead of
@@ -32,7 +32,7 @@ The test exercises the surgical contract:
    ``is`` comparison).
 3. **No binding before open()** — a freshly-constructed ``NotebookLMClient``
    that has never entered its context has
-   ``core._collaborators.lifecycle.get_bound_loop() is None``.
+   ``core._lifecycle.get_bound_loop() is None``.
    ``RuntimeTransport.perform_authed_post``'s loop check is a no-op while
    unbound; the later kernel access raises the existing not-open error, not
    the loop guard.
@@ -88,7 +88,7 @@ async def _open_core_with_transport(transport: ConcurrentMockTransport) -> Noteb
     normally — which is the moment the loop affinity is captured —
     then close-and-replace the underlying client with one that routes
     through our recording transport. The replacement keeps
-    ``core._collaborators.lifecycle.get_bound_loop()`` unchanged because we
+    ``core._lifecycle.get_bound_loop()`` unchanged because we
     don't enter the client again.
     """
     core = build_client_shell_for_tests(auth=_make_auth())
@@ -645,13 +645,13 @@ async def test_bound_loop_captured_on_open(
     construction-time loop may not be the dispatch-time loop.
     """
     core = build_client_shell_for_tests(auth=_make_auth())
-    assert core._collaborators.lifecycle.get_bound_loop() is None, (
+    assert core._lifecycle.get_bound_loop() is None, (
         "NotebookLMClient must not bind to a loop at construction time — open() is the binding moment."
     )
 
     await core.__aenter__()
     try:
-        assert core._collaborators.lifecycle.get_bound_loop() is asyncio.get_running_loop(), (
+        assert core._lifecycle.get_bound_loop() is asyncio.get_running_loop(), (
             "open() must capture the *running* loop, not a stored or module-level reference."
         )
 

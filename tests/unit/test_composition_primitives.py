@@ -21,11 +21,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import typing
 from dataclasses import fields
 from typing import Any
 
 import pytest
 
+from notebooklm._client_contracts import (
+    AndroidAssembly,
+    BackendAssembly,
+    FeatureNamespaces,
+    WebAssembly,
+)
 from notebooklm._runtime.init import RuntimeCollaborators, SharedRuntime, SharedRuntimeConfig
 from notebooklm._web.transport.composed import ClientComposed
 from notebooklm._web.transport.config import WebSessionConfig
@@ -85,7 +92,6 @@ def test_runtime_bundles_follow_backend_ownership_boundary() -> None:
     assert tuple(field.name for field in fields(SharedRuntime)) == (
         "metrics",
         "call_supervisor",
-        "_lifecycle",
     )
     assert tuple(field.name for field in fields(WebRuntime)) == (
         "reqid",
@@ -100,6 +106,25 @@ def test_runtime_bundles_follow_backend_ownership_boundary() -> None:
     )
 
 
+def test_backend_assembly_is_complete_frozen_discriminated_graph() -> None:
+    assert set(typing.get_args(BackendAssembly)) == {WebAssembly, AndroidAssembly}
+    assert tuple(field.name for field in fields(FeatureNamespaces)) == (
+        "notebooks",
+        "sources",
+        "artifacts",
+        "chat",
+        "research",
+        "notes",
+        "mind_maps",
+        "settings",
+        "sharing",
+        "labels",
+        "collections",
+    )
+    assert WebAssembly.__dataclass_params__.frozen
+    assert AndroidAssembly.__dataclass_params__.frozen
+
+
 def test_compose_client_internals_returns_client_internals() -> None:
     """The helper returns collaborators + executor while binding ``ClientComposed``."""
     holder = ClientComposed()
@@ -107,9 +132,6 @@ def test_compose_client_internals_returns_client_internals() -> None:
 
     assert isinstance(internals, ClientInternals)
     assert holder.executor is internals.web_runtime.executor
-    with pytest.raises(RuntimeError, match="_runtime_collaborators is None"):
-        _ = holder.runtime_collaborators
-    assert internals.collaborators._lifecycle is None
     assert holder.transport is internals.web_runtime.executor._transport
     assert holder.chain_host._transport is holder.transport
     assert holder.chain_builder is not None
@@ -123,7 +145,6 @@ def test_shell_helpers_carry_client_holders() -> None:
     assert isinstance(client._seams, ClientSeams)
     assert isinstance(client._web_runtime.composed, ClientComposed)
     assert client._collaborators.call_supervisor._max_concurrent_rpcs == 3
-    assert client._web_runtime.composed.runtime_collaborators is client._collaborators
     assert client._web_runtime.composed.executor is client._web_runtime.executor
 
 
@@ -133,7 +154,6 @@ def test_notebooklm_client_initializes_client_holders() -> None:
 
     assert isinstance(client._seams, ClientSeams)
     assert isinstance(client._web_runtime.composed, ClientComposed)
-    assert client._web_runtime.composed.runtime_collaborators is client._collaborators
     assert client._collaborators.call_supervisor._max_concurrent_rpcs == 2
     assert client._web_runtime.composed.executor is client._web_runtime.executor
     assert client._web_runtime.composed.transport is client._web_runtime.executor._transport
@@ -373,15 +393,6 @@ def test_client_composed_chain_host_binder_raises_on_double_bind() -> None:
         holder.bind_chain_host(holder.chain_host)
 
 
-def test_client_composed_runtime_collaborators_binder_raises_on_double_bind() -> None:
-    holder = ClientComposed()
-    internals = compose_client_internals(auth=_make_auth(), composed=holder)
-    holder.bind_runtime_collaborators(internals.collaborators)
-
-    with pytest.raises(RuntimeError, match="_runtime_collaborators already bound"):
-        holder.bind_runtime_collaborators(internals.collaborators)
-
-
 # ---------------------------------------------------------------------------
 # ClientComposed required-property guards
 # ---------------------------------------------------------------------------
@@ -395,7 +406,6 @@ def test_client_composed_runtime_collaborators_binder_raises_on_double_bind() ->
         ("chain_host", "_chain_host"),
         ("chain_builder", "_chain_builder"),
         ("middlewares", "_middlewares"),
-        ("runtime_collaborators", "_runtime_collaborators"),
     ],
 )
 def test_client_composed_properties_raise_before_binding(attr_name: str, message: str) -> None:

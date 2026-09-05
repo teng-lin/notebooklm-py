@@ -130,34 +130,10 @@ CONSTRUCTION_SIGNATURES = (
         "src/notebooklm/_web/assembly.py",
         "assemble_web_backend",
         (
-            "client",
-            "auth",
-            "timeout",
-            "storage_path",
-            "keepalive",
-            "keepalive_min_interval",
-            "rate_limit_max_retries",
-            "server_error_max_retries",
-            "limits",
-            "max_concurrent_uploads",
-            "max_concurrent_rpcs",
-            "upload_timeout",
-            "on_rpc_event",
-            "cookie_saver",
-            "cookie_rotator",
-            "chat_timeout",
-            "import_research_timeout",
-            "chat_response_max_bytes",
-            "refresh_callback",
-            "use_default_refresh_callback",
-            "refresh_retry_delay",
-            "connect_timeout",
-            "keepalive_storage_path",
-            "async_client_factory",
-            "decode_response",
-            "sleep",
-            "is_auth_error",
-            "shared_config",
+            "shared",
+            "config",
+            "credentials",
+            "deps",
         ),
         Disposition("P4/P5", "Stop accepting a client; consume Web config and Web dependencies."),
     ),
@@ -165,18 +141,9 @@ CONSTRUCTION_SIGNATURES = (
         "src/notebooklm/_web/assembly.py",
         "build_compatibility_runtime",
         (
-            "auth",
-            "refresh_callback",
-            "use_default_refresh_callback",
             "shared",
-            "shared_config",
-            "seam_overrides",
-            "timeout",
-            "refresh_retry_delay",
-            "rate_limit_max_retries",
-            "server_error_max_retries",
-            "max_concurrent_uploads",
-            "async_client_factory",
+            "spec",
+            "deps",
         ),
         Disposition(
             "P4/P5/P8", "Use a typed sidecar spec and dependencies; remove the sidecar at v1."
@@ -186,22 +153,10 @@ CONSTRUCTION_SIGNATURES = (
         "src/notebooklm/_android/assembly.py",
         "assemble_android_backend",
         (
-            "client",
-            "profile_path",
-            "master_token_reader",
-            "oauth_minter",
-            "timeout",
-            "refresh_retry_delay",
-            "rate_limit_max_retries",
-            "server_error_max_retries",
-            "max_concurrent_uploads",
-            "upload_timeout",
-            "chat_timeout",
-            "import_research_timeout",
-            "chat_response_max_bytes",
-            "sleep",
-            "shared_config",
-            "on_rpc_event",
+            "shared",
+            "config",
+            "credentials",
+            "deps",
         ),
         Disposition(
             "P4/P5", "Stop accepting a client; consume Android config and Android dependencies."
@@ -243,27 +198,34 @@ CONSTRUCTION_SIGNATURES = (
     ),
     SignatureInventory(
         "src/notebooklm/_client_assembly.py",
-        "_install_lifecycle",
-        ("client", "assembly"),
+        "_install_client",
+        (
+            "client",
+            "auth",
+            "preference",
+            "assembly",
+            "sidecar",
+            "android_seams",
+        ),
         Disposition("P4", "Install the complete lifecycle graph once without backend rebinding."),
     ),
     SignatureInventory(
-        "src/notebooklm/_client_compat.py",
-        "_install_android_web_compatibility",
+        "src/notebooklm/_client_assembly.py",
+        "_finalize_loaded_client",
         (
             "client",
-            "assembly",
-            "auth",
-            "shared_config",
-            "seam_overrides",
-            "refresh_callback",
-            "use_default_refresh_callback",
-            "timeout",
-            "refresh_retry_delay",
-            "rate_limit_max_retries",
-            "server_error_max_retries",
-            "max_concurrent_uploads",
-            "async_client_factory",
+            "preference",
+            "loaded_auth",
+        ),
+        Disposition("P4", "Finalize frozen preference and loaded-auth persistence once."),
+    ),
+    SignatureInventory(
+        "src/notebooklm/_client_compat.py",
+        "build_compatibility_sidecar",
+        (
+            "shared",
+            "spec",
+            "deps",
         ),
         Disposition("P4/P8", "Install the inert compatibility sidecar once, then remove it at v1."),
     ),
@@ -1398,7 +1360,7 @@ def _parameters(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, ...]
 def _call_family_census(call_names: set[str]) -> Counter[tuple[str, str, str]]:
     found: Counter[tuple[str, str, str]] = Counter()
     for path in sorted(SRC.rglob("*.py")):
-        relative = str(path.relative_to(ROOT))
+        relative = path.relative_to(ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         class Visitor(ast.NodeVisitor):
@@ -1442,7 +1404,7 @@ def _inventory_census(rows: tuple[CallFamilyInventory, ...]) -> Counter[tuple[st
 
 def _symbol_census(symbol_name: str) -> set[tuple[str, str]]:
     return {
-        (str(path.relative_to(ROOT)), qualified)
+        (path.relative_to(ROOT).as_posix(), qualified)
         for path in sorted(SRC.rglob("*.py"))
         for qualified in _qualified_functions(path)
         if qualified.rsplit(".", 1)[-1] == symbol_name
@@ -1453,7 +1415,7 @@ def _composite_wrapper_census() -> set[tuple[str, str, str]]:
     """Find multi-await local callbacks passed to the uncertainty wrapper."""
     found: set[tuple[str, str, str]] = set()
     for path in sorted(SRC.rglob("*.py")):
-        relative = str(path.relative_to(ROOT))
+        relative = path.relative_to(ROOT).as_posix()
         functions = _qualified_functions(path)
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
@@ -1556,7 +1518,7 @@ def _presentation_hits(
     prohibited = {"json_output", "yes", "quiet", "exit_code", "confirmer"}
     hits: set[PresentationHit] = set()
     for path in sorted(app_root.rglob("*.py")):
-        relative = str(path.relative_to(source_root))
+        relative = path.relative_to(source_root).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         class Visitor(ast.NodeVisitor):

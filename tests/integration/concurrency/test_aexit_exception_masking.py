@@ -44,7 +44,7 @@ async def test_body_raises_and_close_raises_body_wins(
     await client.__aenter__()
     try:
         http_client_ref = client._web_runtime.kernel.get_http_client()
-        epoch = client._collaborators.lifecycle._epoch
+        epoch = client._lifecycle._epoch
         generation = client._collaborators.call_supervisor._current
         assert generation is not None and generation.epoch == epoch
         assert client._web_runtime.web_transport._active_epoch == epoch

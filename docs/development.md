@@ -126,8 +126,10 @@ src/notebooklm/
 #### Runtime seam modules
 
 The client runtime is split across `NotebookLMClient` (composition root),
+`_client_assembly.py` (typed root composition and sole client installation),
 `_runtime/init.py` (neutral validation/shared collaborators),
-`_web/transport/init.py` (web bundle construction),
+`_web/assembly.py` (complete Web graph construction),
+`_web/transport/init.py` (Web transport construction),
 `_web/transport/composed.py` (`ClientComposed` holder),
 `_web/transport/kernel.py` (HTTP client owner), and single-responsibility collaborator
 modules. (The legacy `_core.py` compatibility shim was deleted in v0.5.0;
@@ -136,11 +138,13 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 
 | Module | Class | Responsibility |
 |---|---|---|
-| `_runtime/init.py` | `SharedRuntime` helpers | Validates constructor args and builds the backend-neutral metrics/supervisor bundle. It imports no backend implementation. |
-| `_web/transport/init.py` | `WebRuntime` helpers | Builds request-id/auth/kernel/persistence/transport only for Web selection or first deprecated sidecar use, wires middleware, and returns the web bundle including executor and uploader. |
+| `_client_assembly.py` | typed composition root | Builds one backend-neutral `SharedRuntime`, invokes the selected branch builder, creates the sole `ClientLifecycle` over the branch's frozen participant tuples, and installs the complete result on the client once. |
+| `_runtime/init.py` | `SharedRuntime` helpers | Validates constructor args and builds only the backend-neutral metrics/supervisor pair. Lifecycle remains a separate root-owned object, and this module imports no backend implementation. |
+| `_web/assembly.py` | `WebAssembly` builder | Returns the complete typed Web graph from frozen config, credential, and dependency carriers without reading or mutating a client. |
+| `_web/transport/init.py` | `WebRuntime` helpers | Builds request-id/auth/kernel/persistence/transport only for Web selection or first deprecated sidecar use and wires middleware. Its legacy `compose_client_internals` entry point is a thin wrapper over the typed Web builder. |
 | `_android/runtime.py` | `AndroidRuntime` | Immutable owner bundle for the bearer provider, gRPC session, upload/asset transports, and Phenotype provider. |
-| `_client_compat.py` | `LazyWebSidecar`, `_install_android_web_compatibility` | Canonical root owner of the 0.x Android-to-Web bridge: installs one pre-registered inert lifecycle proxy and lazily builds the Web runtime for deprecated root `rpc_call`, with close-race serialization, reopen, and phase delegation but no drain hook or keepalive. `_web/transport/sidecar.py` is only the identity-stable compatibility re-export. |
-| `_web/transport/composed.py` | `ClientComposed` | Write-once holder for web transport, executor, chain host, middleware metadata, and the shared runtime bundle. It owns no loop primitive or RPC semaphore. |
+| `_client_compat.py` | `LazyWebSidecar`, compatibility factory | Pure factory over frozen shared/spec/dependency carriers for the 0.x Android-to-Web bridge. The composition root appends its pre-registered inert lifecycle proxy before constructing lifecycle; the proxy lazily builds the Web runtime for deprecated root `rpc_call`, with close-race serialization, reopen, and phase delegation but no drain hook or keepalive. `_web/transport/sidecar.py` is only the identity-stable compatibility re-export. |
+| `_web/transport/composed.py` | `ClientComposed` | Write-once holder for Web transport, executor, chain host, and middleware metadata. It has no back-edge to the shared runtime and owns no loop primitive or RPC semaphore. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_runtime/call_supervisor.py` | `CallSupervisor` | Concrete client-wide admission authority: generation-bearing call/operation leases, drain hooks, admitted child tasks, terminal RPC metrics, and the global RPC semaphore. |
 | `_web/transport/reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
