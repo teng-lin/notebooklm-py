@@ -850,7 +850,10 @@ async def test_finish_rate_limit_propagates_without_reconciliation_or_retry() ->
 
     with pytest.raises(RateLimitError) as caught:
         await api.import_sources_with_verification(
-            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=0,
         )
 
     assert caught.value is rate_limit
@@ -909,7 +912,10 @@ async def test_failed_probe_marks_timeout_unconfirmed_without_resending_finish()
 
     with pytest.raises(RPCTimeoutError) as caught:
         await api.import_sources_with_verification(
-            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=0,
         )
 
     assert caught.value is write_error
@@ -938,7 +944,10 @@ async def test_probe_typed_failure_marks_write_unconfirmed_and_non_retriable(
 
     with pytest.raises(RPCTimeoutError, match="lost") as caught:
         await api.import_sources_with_verification(
-            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=0,
         )
 
     assert caught.value is write_error
@@ -1017,6 +1026,7 @@ async def test_url_timeout_with_unrelated_concurrent_row_is_ambiguous_without_re
             "nb",
             RUN_ID,
             [ResearchSource("https://example.com/a", "A", research_task_id=RUN_ID)],
+            max_elapsed=0,
         )
     assert getattr(caught.value, "unconfirmed", False) is True
     assert caught.value.reconciliation_candidates == ()  # type: ignore[attr-defined]
@@ -1025,9 +1035,10 @@ async def test_url_timeout_with_unrelated_concurrent_row_is_ambiguous_without_re
 
 @pytest.mark.asyncio
 async def test_report_timeout_has_zero_resend_and_marks_outcome_unconfirmed() -> None:
+    lister = _Lister([[]])
     api, transport = _api(
         {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
-        _Lister([[]]),
+        lister,
     )
     with pytest.raises(RPCTimeoutError) as caught:
         await api.import_sources_with_verification(
@@ -1036,6 +1047,9 @@ async def test_report_timeout_has_zero_resend_and_marks_outcome_unconfirmed() ->
             [ResearchSource("", "Report", result_type=5, report_markdown="# Report")],
         )
     assert getattr(caught.value, "unconfirmed", False) is True
+    assert caught.value.reconciliation_candidates == ()  # type: ignore[attr-defined]
+    assert caught.value.unresolved_inputs == ("Report",)  # type: ignore[attr-defined]
+    assert lister.calls == [("nb", False)]
     assert [call[0] for call in transport.calls] == [FINISH_RUN_METHOD]
 
 

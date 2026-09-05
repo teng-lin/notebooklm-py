@@ -462,7 +462,7 @@ class BaseResearchAPI(ABC):
             }
             candidate_ids: list[str] = []
             visible_urls: set[str] = set()
-            while True:
+            while requested_urls:
                 try:
                     current = await self._source_lister.list(notebook_id, strict=False)
                 except (NetworkError, RPCError):
