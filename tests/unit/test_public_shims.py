@@ -28,6 +28,8 @@ pytestmark = pytest.mark.repo_lint
 def test_research_base_web_split_preserves_logger_and_web_only_alias() -> None:
     base = importlib.import_module("notebooklm._research")
     implementation = importlib.import_module("notebooklm._web.research")
+    metrics = importlib.import_module("notebooklm._client_metrics")
+    runtime = importlib.import_module("notebooklm._runtime.call_supervisor")
 
     assert issubclass(implementation.WebResearchAPI, base.BaseResearchAPI)
     assert not hasattr(base, "ResearchAPI")
@@ -38,7 +40,11 @@ def test_research_base_web_split_preserves_logger_and_web_only_alias() -> None:
         async def rpc_call(self, *_args, **_kwargs):
             raise AssertionError("constructor compatibility must not dispatch")
 
-    direct = implementation.ResearchAPI(_Rpc())
+    supervisor = runtime.CallSupervisor(
+        metrics=metrics.ClientMetrics(),
+        max_concurrent_rpcs=1,
+    )
+    direct = implementation.ResearchAPI(_Rpc(), supervisor=supervisor)
     assert isinstance(direct, implementation.WebResearchAPI)
 
 
