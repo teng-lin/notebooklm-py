@@ -1020,14 +1020,13 @@ class _FromStorageContext:
                 pass
         storage_path = auth.storage_path
 
-        with construction_handoff(
-            ConstructionHandoff(
-                backend_preference=kwargs["backend_preference"],
-                target_cls=self._cls,
-                target_auth=auth,
-                loaded_auth=loaded,
-            )
-        ):
+        handoff = ConstructionHandoff(
+            backend_preference=kwargs["backend_preference"],
+            target_cls=self._cls,
+            target_auth=auth,
+            loaded_auth=loaded,
+        )
+        with construction_handoff(handoff):
             client = self._cls(
                 auth,
                 timeout=kwargs["timeout"],
@@ -1044,7 +1043,7 @@ class _FromStorageContext:
                 import_research_timeout=kwargs["import_research_timeout"],
                 upload_timeout=kwargs["upload_timeout"],
                 on_rpc_event=kwargs["on_rpc_event"],
-                backend=kwargs["backend_preference"].preferred,
+                backend=handoff.backend_argument,
             )
         self._client = client
         return client

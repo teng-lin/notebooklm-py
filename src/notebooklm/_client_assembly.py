@@ -8,7 +8,7 @@ import os
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -66,6 +66,17 @@ class BackendPreference:
     reason: Literal["explicit", "env", "default"]
 
 
+class _ConstructionBackend(str):
+    """Backend spelling carrying ownership of one stored-auth construction."""
+
+    construction_token: object
+
+    def __new__(cls, value: BackendName, construction_token: object) -> _ConstructionBackend:
+        instance = super().__new__(cls, value)
+        instance.construction_token = construction_token
+        return instance
+
+
 @dataclass(frozen=True)
 class ConstructionHandoff:
     """Private handoff for decisions frozen before deferred auth loading."""
@@ -74,6 +85,16 @@ class ConstructionHandoff:
     target_cls: type[object]
     target_auth: AuthTokens
     loaded_auth: LoadedAuth | None = None
+    construction_token: object = field(default_factory=object, repr=False, compare=False)
+
+    @property
+    def backend_argument(self) -> BackendName:
+        """Return the exact backend spelling owned by this construction."""
+
+        return cast(
+            BackendName,
+            _ConstructionBackend(self.backend_preference.preferred, self.construction_token),
+        )
 
 
 _ACTIVE_HANDOFF: ContextVar[ConstructionHandoff | None] = ContextVar(
@@ -217,7 +238,10 @@ def _assemble_client(
 
     active_handoff = _ACTIVE_HANDOFF.get()
     if active_handoff is not None and not (
-        type(client) is active_handoff.target_cls and auth is active_handoff.target_auth
+        type(client) is active_handoff.target_cls
+        and auth is active_handoff.target_auth
+        and isinstance(backend, _ConstructionBackend)
+        and backend.construction_token is active_handoff.construction_token
     ):
         active_handoff = None
     elif active_handoff is not None:
