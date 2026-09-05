@@ -49,9 +49,9 @@ from ._client_assembly import (
     BackendPreference,
     ConstructionHandoff,
     _assemble_client,
-    _claim_construction_handoff,
     construction_handoff,
     resolve_backend_preference,
+    suspended_construction_handoff,
 )
 from ._client_contracts import CookieRotator, CookieSaver
 from ._collections import CollectionsAPI
@@ -391,17 +391,6 @@ class NotebookLMClient:
             chat_response_max_bytes=chat_response_max_bytes,
             backend=backend,
         )
-
-    def __new__(cls, *_args: Any, **_kwargs: Any) -> NotebookLMClient:
-        """Claim a deferred stored-auth handoff before subclass initialization."""
-
-        client = super().__new__(cls)
-        _claim_construction_handoff(client)
-        return client
-
-    # Keep class-call introspection identical to the public ``__init__``
-    # contract while the generic runtime shape above preserves subclass args.
-    __new__.__wrapped__ = __init__  # type: ignore[attr-defined]
 
     #: Per-client memo for the signed-in account email so a *successful* live probe
     #: (used only when neither the in-memory ``AuthTokens`` nor persisted storage
@@ -1032,31 +1021,46 @@ class _FromStorageContext:
                 pass
         storage_path = auth.storage_path
 
+        constructor_kwargs = {
+            "timeout": kwargs["timeout"],
+            "storage_path": storage_path,
+            "keepalive": kwargs["keepalive"],
+            "keepalive_min_interval": kwargs["keepalive_min_interval"],
+            "rate_limit_max_retries": kwargs["rate_limit_max_retries"],
+            "server_error_max_retries": kwargs["server_error_max_retries"],
+            "limits": kwargs["limits"],
+            "max_concurrent_uploads": kwargs["max_concurrent_uploads"],
+            "max_concurrent_rpcs": kwargs["max_concurrent_rpcs"],
+            "chat_timeout": kwargs["chat_timeout"],
+            "chat_response_max_bytes": kwargs["chat_response_max_bytes"],
+            "import_research_timeout": kwargs["import_research_timeout"],
+            "upload_timeout": kwargs["upload_timeout"],
+            "on_rpc_event": kwargs["on_rpc_event"],
+            "backend": kwargs["backend_preference"].preferred,
+        }
+        with suspended_construction_handoff():
+            new_method: Callable[..., object] = self._cls.__new__
+            if new_method is object.__new__:
+                candidate = new_method(self._cls)
+            else:
+                candidate = new_method(self._cls, auth, **constructor_kwargs)
+        if not isinstance(candidate, self._cls):
+            client = cast(NotebookLMClient, candidate)
+            self._client = client
+            return client
+
         handoff = ConstructionHandoff(
             backend_preference=kwargs["backend_preference"],
-            target_cls=self._cls,
+            target_client=candidate,
             target_auth=auth,
             loaded_auth=loaded,
         )
+        constructor_kwargs["backend"] = handoff.backend_argument
         with construction_handoff(handoff):
-            client = self._cls(
-                auth,
-                timeout=kwargs["timeout"],
-                storage_path=storage_path,
-                keepalive=kwargs["keepalive"],
-                keepalive_min_interval=kwargs["keepalive_min_interval"],
-                rate_limit_max_retries=kwargs["rate_limit_max_retries"],
-                server_error_max_retries=kwargs["server_error_max_retries"],
-                limits=kwargs["limits"],
-                max_concurrent_uploads=kwargs["max_concurrent_uploads"],
-                max_concurrent_rpcs=kwargs["max_concurrent_rpcs"],
-                chat_timeout=kwargs["chat_timeout"],
-                chat_response_max_bytes=kwargs["chat_response_max_bytes"],
-                import_research_timeout=kwargs["import_research_timeout"],
-                upload_timeout=kwargs["upload_timeout"],
-                on_rpc_event=kwargs["on_rpc_event"],
-                backend=kwargs["backend_preference"].preferred,
-            )
+            init_result = type(candidate).__init__(candidate, auth, **constructor_kwargs)
+        if init_result is not None:
+            raise TypeError(f"__init__() should return None, not '{type(init_result).__name__}'")
+        client = candidate
         self._client = client
         return client
 

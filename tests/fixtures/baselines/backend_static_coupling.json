@@ -3065,7 +3065,7 @@
     },
     {
       "kind": "from",
-      "lineno": 322,
+      "lineno": 340,
       "scope": "_assemble_client",
       "scope_kind": "function",
       "source": "notebooklm._client_assembly",
@@ -3074,7 +3074,7 @@
     },
     {
       "kind": "from",
-      "lineno": 382,
+      "lineno": 400,
       "scope": "_assemble_client",
       "scope_kind": "function",
       "source": "notebooklm._client_assembly",
@@ -9998,7 +9998,7 @@
       "modules": 37
     },
     "root": {
-      "lines": 22702,
+      "lines": 22725,
       "modules": 77
     },
     "rpc": {
@@ -10023,7 +10023,7 @@
     }
   },
   "summary": {
-    "authored_lines": 142313,
+    "authored_lines": 142336,
     "authored_modules": 453,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1097,

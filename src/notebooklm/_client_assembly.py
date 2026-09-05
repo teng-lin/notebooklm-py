@@ -8,7 +8,7 @@ import os
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -66,49 +66,63 @@ class BackendPreference:
     reason: Literal["explicit", "env", "default"]
 
 
+class _ConstructionBackend(str):
+    """Backend spelling carrying ownership of one stored-auth initialization."""
+
+    construction_token: object
+
+    def __new__(cls, value: BackendName, construction_token: object) -> _ConstructionBackend:
+        instance = super().__new__(cls, value)
+        instance.construction_token = construction_token
+        return instance
+
+
 @dataclass(frozen=True)
 class ConstructionHandoff:
     """Private handoff for decisions frozen before deferred auth loading."""
 
     backend_preference: BackendPreference
-    target_cls: type[object]
+    target_client: object
     target_auth: AuthTokens
     loaded_auth: LoadedAuth | None = None
+    construction_token: object = field(default_factory=object, repr=False, compare=False)
+
+    @property
+    def backend_argument(self) -> BackendName:
+        """Return the backend spelling owned by this target initialization."""
+
+        return cast(
+            BackendName,
+            _ConstructionBackend(self.backend_preference.preferred, self.construction_token),
+        )
 
 
 _ACTIVE_HANDOFF: ContextVar[ConstructionHandoff | None] = ContextVar(
     "notebooklm_construction_handoff",
     default=None,
 )
-_CLAIMED_HANDOFF_TARGET: ContextVar[object | None] = ContextVar(
-    "notebooklm_claimed_construction_handoff_target",
-    default=None,
-)
-
-
-def _claim_construction_handoff(client: object) -> None:
-    """Bind the active handoff to its first matching allocated instance."""
-
-    active_handoff = _ACTIVE_HANDOFF.get()
-    if (
-        active_handoff is not None
-        and type(client) is active_handoff.target_cls
-        and _CLAIMED_HANDOFF_TARGET.get() is None
-    ):
-        _CLAIMED_HANDOFF_TARGET.set(client)
 
 
 @contextmanager
 def construction_handoff(context: ConstructionHandoff) -> Iterator[None]:
-    """Make one deferred construction handoff visible to a subclass call."""
+    """Make one deferred handoff visible to its exact target initialization."""
 
-    claimed_token = _CLAIMED_HANDOFF_TARGET.set(None)
     token = _ACTIVE_HANDOFF.set(context)
     try:
         yield
     finally:
         _ACTIVE_HANDOFF.reset(token)
-        _CLAIMED_HANDOFF_TARGET.reset(claimed_token)
+
+
+@contextmanager
+def suspended_construction_handoff() -> Iterator[None]:
+    """Suspend an outer initialization handoff while allocating another client."""
+
+    token = _ACTIVE_HANDOFF.set(None)
+    try:
+        yield
+    finally:
+        _ACTIVE_HANDOFF.reset(token)
 
 
 def resolve_backend_preference(*, explicit: str | None, env: str | None) -> BackendPreference:
@@ -235,9 +249,10 @@ def _assemble_client(
 
     active_handoff = _ACTIVE_HANDOFF.get()
     if active_handoff is not None and not (
-        type(client) is active_handoff.target_cls
+        client is active_handoff.target_client
         and auth is active_handoff.target_auth
-        and client is _CLAIMED_HANDOFF_TARGET.get()
+        and isinstance(backend, _ConstructionBackend)
+        and backend.construction_token is active_handoff.construction_token
     ):
         active_handoff = None
     elif active_handoff is not None:
@@ -245,7 +260,10 @@ def _assemble_client(
         # construct another client before calling ``super().__init__``; that
         # nested client must resolve its own backend and auth provenance.
         _ACTIVE_HANDOFF.set(None)
-        _CLAIMED_HANDOFF_TARGET.set(None)
+    if isinstance(backend, _ConstructionBackend):
+        # A subclass may forward all of its kwargs into a nested construction.
+        # The marker conveys no preference authority away from its exact target.
+        backend = None
     preference = (
         active_handoff.backend_preference
         if active_handoff is not None
@@ -434,4 +452,5 @@ __all__ = [
     "_assemble_client",
     "construction_handoff",
     "resolve_backend_preference",
+    "suspended_construction_handoff",
 ]

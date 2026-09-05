@@ -611,12 +611,10 @@ async def test_file_loaded_handoff_belongs_to_outer_when_nested_forwards_all_kwa
     client = cast(ReentrantClient, await context._build())
 
     outer_persistence = client._web_runtime.cookie_persistence
-    nested_persistence = client.nested._web_runtime.cookie_persistence
     assert client._backend_preference == BackendPreference("web", "env")
-    assert client.nested._backend_preference == BackendPreference("web", "explicit")
+    assert client.nested._backend_preference == BackendPreference("android", "env")
     assert outer_persistence._default_store is store
-    assert nested_persistence._default_store is not store
-    assert nested_persistence._states == {}
+    assert client.nested._web_runtime is None
     assert isinstance(
         outer_persistence._states[store.ordering_key].baseline,
         persistence_module.ReadyBaseline,

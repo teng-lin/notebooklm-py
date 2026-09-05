@@ -894,6 +894,126 @@ async def test_from_storage_handoff_skips_nested_client_in_subclass_constructor(
     assert client.nested._backend_preference == BackendPreference("web", "env")
 
 
+async def test_from_storage_handoff_supports_non_cooperative_subclass_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class NonCooperativeNewClient(NotebookLMClient):
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> NonCooperativeNewClient:
+            instance = object.__new__(cls)
+            instance.allocated_auth = auth
+            instance.allocated_backend = kwargs["backend"]
+            return instance
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = NonCooperativeNewClient.from_storage()
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    client = await context._build()
+
+    assert isinstance(client, NonCooperativeNewClient)
+    assert client.allocated_auth is loaded_auth
+    assert client.allocated_backend == "web"
+    assert client._backend_preference == BackendPreference("web", "env")
+
+
+async def test_from_storage_handoff_survives_recursive_construction_inside_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class RecursiveNewClient(NotebookLMClient):
+        allocating_outer = False
+        nested: RecursiveNewClient
+
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> RecursiveNewClient:
+            if not cls.allocating_outer:
+                cls.allocating_outer = True
+                try:
+                    cls.nested = cls(auth, **kwargs)  # type: ignore[arg-type]
+                finally:
+                    cls.allocating_outer = False
+            return object.__new__(cls)
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = RecursiveNewClient.from_storage()
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    client = await context._build()
+
+    assert isinstance(client, RecursiveNewClient)
+    assert client._backend_preference == BackendPreference("web", "env")
+    assert RecursiveNewClient.nested._backend_preference == BackendPreference("web", "explicit")
+
+
+async def test_from_storage_passes_auth_and_options_to_mi_allocator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class RequiredArgsAllocator:
+        def __new__(
+            cls, auth: AuthTokens, timeout: float, **_kwargs: object
+        ) -> RequiredArgsAllocator:
+            instance = super().__new__(cls)
+            instance.allocator_auth = auth
+            instance.allocator_marker = timeout
+            return instance
+
+    class MultiInheritanceClient(NotebookLMClient, RequiredArgsAllocator):
+        pass
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = MultiInheritanceClient.from_storage(timeout=47.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    client = await context._build()
+
+    assert isinstance(client, MultiInheritanceClient)
+    assert client.allocator_auth is loaded_auth
+    assert client.allocator_marker == 47.0
+    assert client._backend_preference == BackendPreference("web", "env")
+
+
+async def test_from_storage_mirrors_non_instance_new_and_non_none_init_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+    sentinel = object()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class NonInstanceClient(NotebookLMClient):
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> object:
+            del cls, auth, kwargs
+            return sentinel
+
+    class NonNoneInitClient(NotebookLMClient):
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> int:
+            del self, auth, kwargs
+            return 1
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+
+    assert await NonInstanceClient.from_storage()._build() is sentinel
+    with pytest.raises(TypeError, match="__init__.*should return None, not 'int'"):
+        await NonNoneInitClient.from_storage()._build()
+
+
 async def test_from_storage_threads_explicit_backend(
     tmp_path: Path,
     httpx_mock: HTTPXMock,
