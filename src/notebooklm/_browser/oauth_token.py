@@ -8,6 +8,7 @@ code; callers receive only the captured token string or a canonical
 
 from __future__ import annotations
 
+import time
 from ipaddress import ip_address
 from urllib.parse import SplitResult, urlsplit
 
@@ -117,15 +118,18 @@ def capture_oauth_token(
 
                 page = context.new_page()
                 page.goto(_EMBEDDED_SETUP_URL)
-                deadline = page.evaluate("Date.now()") + timeout_s * 1000
-                while page.evaluate("Date.now()") < deadline:
+                # Cookies outlive the login tab. Keep polling independent of
+                # its JavaScript context, which can navigate or close during
+                # sign-in; each cookies() call pumps Playwright's sync loop.
+                deadline = time.monotonic() + timeout_s
+                while time.monotonic() < deadline:
                     for cookie in context.cookies():
                         if cookie.get("name") == "oauth_token" and cookie.get("value"):
                             token = cookie["value"]
                             break
                     if token:
                         break
-                    page.wait_for_timeout(1000)
+                    time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
             finally:
                 if page is not None:
                     page.close()
