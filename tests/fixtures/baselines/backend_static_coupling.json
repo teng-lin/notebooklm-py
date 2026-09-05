@@ -73,7 +73,7 @@
     {
       "callee": "importlib.import_module",
       "expression": "module_name",
-      "lineno": 122,
+      "lineno": 123,
       "scope": "__getattr__",
       "scope_kind": "function",
       "source": "notebooklm.client",
@@ -8285,7 +8285,7 @@
     },
     {
       "kind": "from",
-      "lineno": 36,
+      "lineno": 37,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8294,7 +8294,7 @@
     },
     {
       "kind": "from",
-      "lineno": 41,
+      "lineno": 42,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8303,7 +8303,7 @@
     },
     {
       "kind": "from",
-      "lineno": 42,
+      "lineno": 43,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8312,7 +8312,7 @@
     },
     {
       "kind": "from",
-      "lineno": 44,
+      "lineno": 45,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8321,7 +8321,7 @@
     },
     {
       "kind": "from",
-      "lineno": 45,
+      "lineno": 46,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8330,7 +8330,7 @@
     },
     {
       "kind": "from",
-      "lineno": 69,
+      "lineno": 70,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8339,7 +8339,7 @@
     },
     {
       "kind": "from",
-      "lineno": 77,
+      "lineno": 78,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8348,7 +8348,7 @@
     },
     {
       "kind": "from",
-      "lineno": 78,
+      "lineno": 79,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -8357,7 +8357,7 @@
     },
     {
       "kind": "from",
-      "lineno": 82,
+      "lineno": 83,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.client",
@@ -10115,7 +10115,7 @@
       "modules": 37
     },
     "root": {
-      "lines": 23396,
+      "lines": 23446,
       "modules": 79
     },
     "rpc": {
@@ -10140,7 +10140,7 @@
     }
   },
   "summary": {
-    "authored_lines": 143201,
+    "authored_lines": 143251,
     "authored_modules": 456,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1110,

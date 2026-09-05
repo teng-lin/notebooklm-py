@@ -26,6 +26,7 @@ import importlib
 import logging
 import os
 from collections.abc import Callable, Generator, Mapping
+from functools import wraps
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -51,12 +52,12 @@ from ._client_assembly import (
     _finalize_loaded_client,
 )
 from ._client_options import (
-    claim_storage_construction_instance,
     client_construction_context,
     consume_storage_construction_preference,
     legacy_client_option_names,
     normalize_legacy_client_options,
     resolve_backend_preference,
+    storage_construction_allocation,
 )
 from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated, warn_registered_deprecation
@@ -199,6 +200,30 @@ class NotebookLMClient:
     collections: CollectionsAPI
     _raw: Any
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Make a subclass allocator visible to the stored-auth class call."""
+
+        super().__init_subclass__(**kwargs)
+        descriptor = cls.__dict__.get("__new__")
+        if not isinstance(descriptor, staticmethod):
+            return
+        custom_new = descriptor.__func__
+        if getattr(custom_new, "__notebooklm_storage_allocation_wrapper__", False):
+            return
+
+        @wraps(custom_new)
+        def storage_aware_new(
+            subclass: type[NotebookLMClient], *args: Any, **new_kwargs: Any
+        ) -> Any:
+            auth = args[0] if args else new_kwargs.get("auth")
+            with storage_construction_allocation(subclass, auth) as claim:
+                instance = custom_new(subclass, *args, **new_kwargs)
+                claim(instance)
+                return instance
+
+        storage_aware_new.__notebooklm_storage_allocation_wrapper__ = True  # type: ignore[attr-defined]
+        type.__setattr__(cls, "__new__", staticmethod(storage_aware_new))
+
     def _require_web_runtime(self) -> Any:
         """Return the web bundle or fail before a web-only operation."""
         runtime = self._web_runtime
@@ -209,16 +234,15 @@ class NotebookLMClient:
     def __new__(cls, *args: Any, **kwargs: Any) -> NotebookLMClient:
         """Allocate normally while claiming the exact stored-auth target instance."""
 
-        mro_tail = cls.__mro__[cls.__mro__.index(NotebookLMClient) + 1 :]
-        next_allocator = next(base for base in mro_tail if "__new__" in base.__dict__)
-        if next_allocator is object:
-            instance = object.__new__(cls)
-        else:
-            instance = super().__new__(cls, *args, **kwargs)
-        if args:
-            claim_storage_construction_instance(cls, args[0], instance)
-        elif "auth" in kwargs:
-            claim_storage_construction_instance(cls, kwargs["auth"], instance)
+        auth = args[0] if args else kwargs.get("auth")
+        with storage_construction_allocation(cls, auth) as claim:
+            mro_tail = cls.__mro__[cls.__mro__.index(NotebookLMClient) + 1 :]
+            next_allocator = next(base for base in mro_tail if "__new__" in base.__dict__)
+            if next_allocator is object:
+                instance = object.__new__(cls)
+            else:
+                instance = super().__new__(cls, *args, **kwargs)
+            claim(instance)
         return instance
 
     @property

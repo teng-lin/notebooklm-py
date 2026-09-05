@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar, cast
@@ -86,6 +86,7 @@ class _StorageConstructionContext:
     target_auth: object
     target_instance: object | None = None
     consumed: bool = False
+    allocation_depth: int = 0
 
 
 _CONSTRUCTION_CONTEXT: ContextVar[_StorageConstructionContext | None] = ContextVar(
@@ -111,18 +112,44 @@ def client_construction_context(
         _CONSTRUCTION_CONTEXT.reset(token)
 
 
-def claim_storage_construction_instance(
+@contextlib.contextmanager
+def storage_construction_allocation(
     client_type: type[Any],
     auth: object,
-    instance: object,
-) -> None:
-    """Claim an allocation only for the exact stored-auth class call."""
+) -> Iterator[Callable[[object], None]]:
+    """Let only the outer target class call claim its returned allocation.
+
+    A subclass may define a cooperative or non-cooperative ``__new__`` and may
+    recursively construct the same class with the same auth object. Wrapping
+    each allocation scope lets the outer class call claim only after its own
+    ``__new__`` returns, while nested calls remain ordinary constructions.
+    """
 
     context = _CONSTRUCTION_CONTEXT.get()
-    if context is None or context.target_instance is not None:
+    if (
+        context is None
+        or context.target_instance is not None
+        or client_type is not context.target_type
+        or auth is not context.target_auth
+    ):
+        yield _ignore_storage_construction_instance
         return
-    if client_type is context.target_type and auth is context.target_auth:
-        context.target_instance = instance
+
+    is_outer_allocation = context.allocation_depth == 0
+    context.allocation_depth += 1
+    try:
+
+        def claim(instance: object) -> None:
+            if is_outer_allocation and context.target_instance is None:
+                context.target_instance = instance
+
+        yield claim
+    finally:
+        context.allocation_depth -= 1
+
+
+def _ignore_storage_construction_instance(_instance: object) -> None:
+    """Ignore an allocation outside the exact stored-auth target class call."""
 
 
 def consume_storage_construction_preference(
@@ -133,8 +160,7 @@ def consume_storage_construction_preference(
 
     The outer object is claimed before its subclass initializer runs, so nested
     same-class and same-auth construction cannot inherit the preference or warning
-    suppression. A custom ``__new__`` that bypasses the base allocator remains on
-    the post-class-call provenance finalizer.
+    suppression, including when a custom ``__new__`` recursively allocates.
     """
 
     context = _CONSTRUCTION_CONTEXT.get()
@@ -407,10 +433,10 @@ def normalize_legacy_client_options(
 __all__ = [
     "BackendPreference",
     "NormalizedClientOptions",
-    "claim_storage_construction_instance",
     "client_construction_context",
     "consume_storage_construction_preference",
     "legacy_client_option_names",
     "normalize_legacy_client_options",
     "resolve_backend_preference",
+    "storage_construction_allocation",
 ]
