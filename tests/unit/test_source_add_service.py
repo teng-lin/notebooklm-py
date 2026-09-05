@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app import source_add as cli_source_add
+from notebooklm._idempotency import mark_commit_state
 from notebooklm._sources import SourcesAPI, _validate_add_text_idempotency
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.sources import WebSourcesAPI
@@ -24,6 +25,7 @@ from notebooklm.exceptions import (
     ServerError,
     SourceAddError,
 )
+from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCError, RPCMethod
 from notebooklm.types import Source
 
@@ -69,6 +71,99 @@ def logger() -> logging.Logger:
 
 def source_response(source_id: str, title: str = "Source") -> list[Any]:
     return [[[["src_" + source_id], title, [None, 0], [None, 2]]]]
+
+
+async def _call_add_kind(
+    service: SourceAddService,
+    logger: logging.Logger,
+    kind: str,
+    *,
+    response: Any = None,
+    failure: Exception | None = None,
+) -> Source:
+    responder = (
+        AsyncMock(side_effect=failure) if failure is not None else AsyncMock(return_value=response)
+    )
+    if kind == "url":
+        return await service.add_url(
+            "nb_1",
+            "https://example.com",
+            add_youtube_source=AsyncMock(),
+            add_url_source=responder,
+            list_sources=AsyncMock(),
+            wait_until_ready=AsyncMock(),
+            extract_youtube_video_id=MagicMock(return_value=None),
+            is_youtube_url=MagicMock(return_value=False),
+            logger=logger,
+        )
+    if kind == "text":
+        return await service.add_text(
+            "nb_1",
+            "Title",
+            "content",
+            rpc=SimpleNamespace(rpc_call=responder),
+            wait_until_ready=AsyncMock(),
+            logger=logger,
+        )
+    return await service.add_drive(
+        "nb_1",
+        "drive-file",
+        "Drive title",
+        rpc=SimpleNamespace(rpc_call=responder),
+        list_sources=AsyncMock(),
+        wait_until_ready=AsyncMock(),
+        logger=logger,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["url", "text", "drive"])
+@pytest.mark.parametrize("state", [CommitState.REJECTED, CommitState.NOT_SENT])
+async def test_add_wrappers_preserve_positive_commit_evidence(
+    service: SourceAddService,
+    logger: logging.Logger,
+    kind: str,
+    state: CommitState,
+) -> None:
+    cause = mark_commit_state(
+        RPCError("producer evidence"),
+        state,
+        operation="wire.add_source",
+    )
+
+    with pytest.raises(SourceAddError) as captured:
+        await _call_add_kind(service, logger, kind, failure=cause)
+
+    error = captured.value
+    assert error.cause is cause
+    assert error.commit_state is state
+    assert error.operation == "wire.add_source"
+    assert getattr(error, "unconfirmed", False) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "response", "operation"),
+    [
+        pytest.param("url", None, "sources.add_url", id="url-null"),
+        pytest.param("text", object(), "sources.add_text", id="text-decode"),
+        pytest.param("drive", None, "sources.add_drive", id="drive-null"),
+    ],
+)
+async def test_add_wrappers_mark_post_dispatch_null_or_decode_unknown(
+    service: SourceAddService,
+    logger: logging.Logger,
+    kind: str,
+    response: Any,
+    operation: str,
+) -> None:
+    with pytest.raises(SourceAddError) as captured:
+        await _call_add_kind(service, logger, kind, response=response)
+
+    error = captured.value
+    assert error.commit_state is CommitState.UNKNOWN
+    assert error.unconfirmed is True
+    assert error.operation == operation
 
 
 @pytest.mark.asyncio
@@ -307,10 +402,8 @@ async def test_add_drive_uses_exact_rpc_shape_and_wait_hook(
     )
 
     assert result is ready
-    # add_drive now wraps with idempotent_create, which requires
-    # disable_internal_retries=True at the RPC layer (the wrapper owns
-    # probe-then-retry recovery). operation_variant="drive" routes the
-    # call through the registry's PROBE_THEN_CREATE entry.
+    # Drive create is one-send: the registry forces inner retries off and
+    # the service does not own a probe/replay loop.
     assert rpc.calls == [
         {
             "method": RPCMethod.ADD_SOURCE,
@@ -375,9 +468,8 @@ async def test_add_drive_preserves_rpc_error_propagation(
     service: SourceAddService,
     logger: logging.Logger,
 ) -> None:
-    # A non-transport RPCError (e.g. validation) must propagate through
-    # idempotent_create as a SourceAddError, just like add_url does. The
-    # cause chain preserves the original RPCError for callers that need it.
+    # A non-transport RPCError (e.g. validation) becomes SourceAddError,
+    # while its original cause remains available to callers.
     rpc_error = RPCError("drive add failed")
 
     with pytest.raises(SourceAddError) as exc_info:
@@ -912,7 +1004,7 @@ def _drive_source(source_id: str, file_id: str, title: str = "Drive Doc") -> Sou
 
     Copied from the live ``GET_NOTEBOOK`` capture in
     ``tests/cassettes/web/sources_check_freshness_drive.yaml`` (the same shape
-    ``tests/integration/test_sources_idempotency.py::_google_docs_source_row``
+    the Drive source row fixtures
     uses): the Drive block sits at ``metadata[0]`` and **no** URL slot is
     populated — which is exactly why the pre-#2113 URL-based probe could never
     match one. Decoding a real row rather than setting the property keeps this

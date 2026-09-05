@@ -525,6 +525,7 @@ UNCERTAINTY_WRAPPER_CALL_INVENTORY = _call_rows(
         ("src/notebooklm/_web/research.py", "WebResearchAPI.start", 1),
         ("src/notebooklm/_web/sharing.py", "WebSharingAPI._share_and_readback", 1),
         ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_drive", 1),
+        ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_text", 1),
         ("src/notebooklm/_web/sources/add.py", "SourceAddService.add_url", 1),
         (
             "src/notebooklm/_web/sources/upload.py",

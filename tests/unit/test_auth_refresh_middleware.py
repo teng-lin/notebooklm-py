@@ -404,6 +404,42 @@ async def test_refreshes_on_all_auth_status_codes(status: int) -> None:
     assert response.response.status_code == 200
 
 
+@pytest.mark.parametrize("status", [400, 401, 403])
+@pytest.mark.asyncio
+async def test_chat_auth_status_refreshes_once_without_repost_or_retry_telemetry(
+    status: int,
+) -> None:
+    boom = _auth_error(status=status)
+    terminal, calls = _scripted_terminal([boom, httpx.Response(200, content=b"must-not-run")])
+    refresh_calls: list[int] = []
+    sleep, slept = _recording_sleep()
+    metrics = ClientMetrics()
+
+    async def refresh(expected_epoch: int) -> None:
+        refresh_calls.append(expected_epoch)
+
+    middleware = _make_middleware(
+        refresh_callable=refresh,
+        refresh_retry_delay=3.0,
+        sleep=sleep,
+        metrics=metrics,
+    )
+    chain = build_chain([middleware], terminal)
+    request = _epoch_request(
+        context={"log_label": "chat.ask", "disable_read_timeout_retries": True}
+    )
+
+    with pytest.raises(httpx.HTTPStatusError) as captured:
+        await chain(request)
+
+    assert captured.value is boom
+    assert refresh_calls == [_TEST_EPOCH]
+    assert len(calls) == 1
+    assert slept == []
+    assert metrics.snapshot().rpc_auth_retries == 0
+    assert request.context["auth_refreshed"] is True
+
+
 @pytest.mark.asyncio
 async def test_refresh_retry_delay_honored() -> None:
     """``refresh_retry_delay > 0`` → sleep that duration before retry."""

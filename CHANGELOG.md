@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Public mutation-outcome evidence.** `notebooklm.CommitState` lets callers
+- **Public mutation-outcome evidence.** `notebooklm.outcomes.CommitState` lets callers
   distinguish a request proven not sent, a decoded rejection, an unknown
   commit outcome, and a caller-correlated confirmation. Unknown-outcome errors
   retain the compatibility `unconfirmed` marker and may expose bounded

@@ -16,7 +16,7 @@ import httpx
 from ..._auth.account import format_authuser_value
 from ..._deadline import RuntimeDeadline
 from ..._env import get_base_url, get_default_language
-from ..._idempotency import mark_unconfirmed
+from ..._idempotency import ReplayGrant, mark_unconfirmed
 from ..._logging import get_request_id, reset_request_id, set_request_id
 from ..._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from ...exceptions import DecodingError
@@ -35,7 +35,7 @@ from ...rpc import (
 )
 from ..policy import (
     IDEMPOTENCY_REGISTRY,
-    IdempotencyPolicy,
+    replay_grant_for,
     resolve_effective_disable_internal_retries,
 )
 from .errors import (
@@ -290,10 +290,10 @@ class RpcExecutor:
             caller_disable_internal_retries=disable_internal_retries,
             operation_variant=operation_variant,
         )
-        mutation_without_replay = (
+        replay_grant = replay_grant_for(
             IDEMPOTENCY_REGISTRY.get_entry(method, operation_variant=operation_variant).policy
-            is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY
         )
+        mutation_without_replay = replay_grant is ReplayGrant.NO_REPLAY
 
         # Resolve once per logical call so URL, body, and decode use the same
         # override-aware RPC id.

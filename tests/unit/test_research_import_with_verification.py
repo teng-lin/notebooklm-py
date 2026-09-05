@@ -1,7 +1,7 @@
 """Tests for ``WebResearchAPI.import_sources_with_verification``.
 
-The retry-with-verification logic for ``IMPORT_RESEARCH`` timeouts lives
-on ``WebResearchAPI`` as of issue #315. These tests were originally in
+The one-send import and bounded read-only inspection logic lives on
+``WebResearchAPI``. These tests were originally in
 ``tests/unit/cli/test_helpers.py::TestImportWithRetry`` (the logic used to
 live in ``cli/research_import.py``); they were moved here when the policy
 became a library-layer concern so Python API users get the same fix the
@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import notebooklm._research as research_module
 from notebooklm._web.research import WebResearchAPI
 from notebooklm.exceptions import (
     NetworkError,
@@ -129,6 +130,48 @@ class TestImportSourcesWithVerification:
         assert getattr(error, "unconfirmed", False) is True
         assert error.reconciliation_candidates == ("possible",)  # type: ignore[attr-defined]
         assert research.import_sources.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_candidate_inspection_reprobes_empty_and_failed_reads_with_capped_backoff(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        clock = {"now": 100.0}
+        delays: list[float] = []
+
+        async def advance(delay: float) -> None:
+            delays.append(delay)
+            clock["now"] += delay
+
+        monkeypatch.setattr(research_module.time, "monotonic", lambda: clock["now"])
+        monkeypatch.setattr(research_module.asyncio, "sleep", advance)
+        research, _, source_lister = _make_research()
+        error = NetworkError("response lost")
+        source_lister.list = AsyncMock(
+            side_effect=[
+                [],
+                [],
+                NetworkError("inspection unavailable"),
+                [MagicMock(id="possible", url="https://a.example", title="A")],
+            ]
+        )
+        research.import_sources = AsyncMock(side_effect=error)
+
+        with pytest.raises(NetworkError) as raised:
+            await research.import_sources_with_verification(
+                "nb",
+                "task",
+                [{"url": "https://a.example", "title": "A"}],
+                max_elapsed=10,
+                initial_delay=1,
+                backoff_factor=3,
+                max_delay=2,
+            )
+
+        assert raised.value is error
+        assert research.import_sources.await_count == 1
+        assert source_lister.list.await_count == 4
+        assert delays == [1, 2]
+        assert error.reconciliation_candidates == ("possible",)  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_decoded_success_returns_only_decoded_rows(self) -> None:

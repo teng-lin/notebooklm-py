@@ -37,17 +37,20 @@ from notebooklm._app.generate_retry import (
     generation_outcome_from_status,
     handle_generation_result,
 )
-from notebooklm._idempotency import mark_commit_state
+from notebooklm._web.wire.decoder import extract_rpc_result
 from notebooklm.exceptions import RateLimitError
-from notebooklm.outcomes import CommitState
+from notebooklm.rpc import RPCMethod
 from notebooklm.types import GenerationStatus
+from tests._fixtures.rpc_error_frames import user_displayable_rejection_chunks
 
 
 def _refused_rate_limit() -> RateLimitError:
-    return mark_commit_state(
-        RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
-        CommitState.REJECTED,
-    )
+    with pytest.raises(RateLimitError) as captured:
+        extract_rpc_result(
+            user_displayable_rejection_chunks(RPCMethod.CREATE_ARTIFACT.value),
+            RPCMethod.CREATE_ARTIFACT.value,
+        )
+    return captured.value
 
 
 # ---------------------------------------------------------------------------

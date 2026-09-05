@@ -29,6 +29,7 @@ from .._types.enums import ChatGoal, ChatResponseLength
 from ..exceptions import (
     ChatError,
     ChatResponseParseError,
+    NotebookLMError,
     UnknownRPCMethodError,
 )
 from ..types import (
@@ -371,29 +372,38 @@ class AndroidChatAPI(ChatAPI):
 
         final_response = None
         next_steps: list[NextStepSuggestion] = []
-        async for response in self._transport.stream(
-            GENERATE_FREE_FORM_STREAMED_METHOD,
-            request,
-            replay_safe=False,
-            timeout=self._chat_timeout,
-            response_type=proto.GenerateFreeFormStreamedResponse,
-            telemetry_method="chat.ask",
-            max_response_bytes=self._chat_response_max_bytes,
-            stop_after=_is_final_chat_response,
-        ):
-            if response.HasField("next_step_suggestions"):
-                decoded_next_steps = [
-                    NextStepSuggestion(
-                        question=next_step.suggestion,
-                        type_code=int(next_step.suggestion_type),
-                    )
-                    for next_step in response.next_step_suggestions.next_steps
-                    if next_step.suggestion
-                ]
-                if decoded_next_steps:
-                    next_steps = decoded_next_steps
-            if response.is_final_response:
-                final_response = response
+        try:
+            async for response in self._transport.stream(
+                GENERATE_FREE_FORM_STREAMED_METHOD,
+                request,
+                replay_safe=False,
+                timeout=self._chat_timeout,
+                response_type=proto.GenerateFreeFormStreamedResponse,
+                telemetry_method="chat.ask",
+                max_response_bytes=self._chat_response_max_bytes,
+                stop_after=_is_final_chat_response,
+            ):
+                if response.HasField("next_step_suggestions"):
+                    decoded_next_steps = [
+                        NextStepSuggestion(
+                            question=next_step.suggestion,
+                            type_code=int(next_step.suggestion_type),
+                        )
+                        for next_step in response.next_step_suggestions.next_steps
+                        if next_step.suggestion
+                    ]
+                    if decoded_next_steps:
+                        next_steps = decoded_next_steps
+                if response.is_final_response:
+                    final_response = response
+        except NotebookLMError as exc:
+            # Android status mapping already supplies UNKNOWN for this
+            # non-replayable stream. Add the feature identity at the boundary
+            # that knows it was a chat turn so every adapter gives the caller
+            # conversation-history guidance.
+            if getattr(exc, "unconfirmed", False):
+                mark_unconfirmed(exc, operation="chat")
+            raise
 
         if final_response is None:
             raise mark_unconfirmed(
@@ -405,8 +415,19 @@ class AndroidChatAPI(ChatAPI):
             )
 
         answer = final_response.answer
-        answer_document = decode_document(answer.response_doc)
-        references = decode_references(answer.response_doc, answer_document)
+        try:
+            answer_document = decode_document(answer.response_doc)
+            references = decode_references(answer.response_doc, answer_document)
+        except NotebookLMError as exc:
+            mark_unconfirmed(exc, operation="chat")
+            raise
+        except Exception as exc:
+            raise mark_unconfirmed(
+                ChatResponseParseError(
+                    f"Failed to decode Android chat response: {type(exc).__name__}"
+                ),
+                operation="chat",
+            ) from exc
         from google.protobuf.json_format import MessageToJson
 
         return _PostedAsk(

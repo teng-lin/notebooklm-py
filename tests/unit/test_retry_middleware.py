@@ -535,6 +535,86 @@ async def test_disable_read_timeout_retries_still_retries_connect_errors() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure_factory",
+    [
+        pytest.param(lambda: _rate_limited(log_label="chat.ask"), id="http-429"),
+        pytest.param(lambda: _server_error(log_label="chat.ask"), id="http-5xx"),
+        pytest.param(
+            lambda: TransportServerError(
+                "chat write failed",
+                original=httpx.WriteError(
+                    "partial write", request=httpx.Request("POST", "https://example.test/x")
+                ),
+            ),
+            id="write-error",
+        ),
+        pytest.param(
+            lambda: TransportServerError(
+                "chat write timed out",
+                original=httpx.WriteTimeout(
+                    "partial write", request=httpx.Request("POST", "https://example.test/x")
+                ),
+            ),
+            id="write-timeout",
+        ),
+    ],
+)
+async def test_chat_post_transmission_matrix_never_replays(
+    failure_factory: Callable[[], BaseException],
+) -> None:
+    failure = failure_factory()
+    sleep, slept = _recording_sleep()
+    terminal, calls = _scripted_terminal([failure, httpx.Response(200)])
+    chain = build_chain(
+        [RetryMiddleware(rate_limit_max_retries=2, server_error_max_retries=2, sleep=sleep)],
+        terminal,
+    )
+
+    with pytest.raises(type(failure)) as captured:
+        await chain(
+            make_request(context={"log_label": "chat.ask", "disable_read_timeout_retries": True})
+        )
+
+    assert captured.value is failure
+    assert len(calls) == 1
+    assert slept == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "original_factory",
+    [
+        pytest.param(httpx.ConnectError, id="connect-error"),
+        pytest.param(httpx.ConnectTimeout, id="connect-timeout"),
+        pytest.param(httpx.PoolTimeout, id="pool-timeout"),
+    ],
+)
+async def test_chat_zero_send_matrix_retains_replay(
+    original_factory: type[httpx.RequestError],
+) -> None:
+    request = httpx.Request("POST", "https://example.test/x")
+    failure = TransportServerError(
+        "chat zero-send failure",
+        original=original_factory("not sent", request=request),
+    )
+    sleep, slept = _recording_sleep()
+    terminal, calls = _scripted_terminal([failure, httpx.Response(200)])
+    chain = build_chain(
+        [RetryMiddleware(rate_limit_max_retries=2, server_error_max_retries=2, sleep=sleep)],
+        terminal,
+    )
+
+    response = await chain(
+        make_request(context={"log_label": "chat.ask", "disable_read_timeout_retries": True})
+    )
+
+    assert response.response.status_code == 200
+    assert len(calls) == 2
+    assert len(slept) == 1
+
+
+@pytest.mark.asyncio
 async def test_5xx_budget_exhausted_reraises_last_exception() -> None:
     """After ``server_error_max_retries`` exhausted, last ``TransportServerError`` propagates."""
     sleep, _slept = _recording_sleep()

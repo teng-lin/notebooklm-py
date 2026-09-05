@@ -954,7 +954,7 @@ not labeled `google.protobuf.Empty`.
 
 | Method | Generated web-derived populated wire | Runtime rule |
 |---|---|---|
-| `CreateLabel` | request `project_id #2`; `auto_create #5` with optional regenerate-all `#1`, or `manual_create #6` containing properties `#1`, sources `#2`, notebooks `#3`; collection discriminator `#7 = 3`; response labels `#2`, collections `#3` | non-replayed write; manual label and collection creates require exactly one canonical row in the direct response, avoiding a racy `GetLabels` diff; auto create uses canonical read-back for the complete post-write set |
+| `CreateLabel` | request `project_id #2`; `auto_create #5` with optional regenerate-all `#1`, or `manual_create #6` containing properties `#1`, sources `#2`, notebooks `#3`; collection discriminator `#7 = 3`; response labels `#2`, collections `#3` | non-replayed write; manual labels retain their canonical-row rule, while cumulative collection rows are only bounded reconciliation candidates on an unknown outcome; auto create uses canonical read-back for the complete post-write set |
 | `MutateLabel` | resource `#3`, repeated operation `#4`; label project `#2`; collection discriminator `#5 = 3`; property `#1`; member add/remove variants `#2`-`#5` | one member per non-replayed RPC, one final read-back, partial/non-atomic failure across members |
 | `DeleteLabels` | label project `#2`, repeated IDs `#3`; collection discriminator `#4 = 3` | preflight absent IDs as idempotent no-ops, one non-replayed batch delete, then absence read-back |
 

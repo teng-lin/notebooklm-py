@@ -487,8 +487,8 @@ def test_android_raw_dynamic_dispatch_exemption_is_exact() -> None:
         if isinstance(node, ast.Call) and node in _android_raw_dynamic_dispatches(path, tree)
     ]
     assert [(node.func.attr, node.lineno) for node in dispatches] == [
-        ("unary", 49),
-        ("stream", 106),
+        ("unary", 59),
+        ("stream", 121),
     ]
 
     # Similar-looking calls must not gain the exemption when their owner,

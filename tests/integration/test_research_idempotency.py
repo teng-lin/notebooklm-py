@@ -26,8 +26,8 @@ The commit-lost-response model used by these tests:
 3. Test asserts exactly ONE request landed on the wire (no naive
    duplicate POST).
 
-Mirrors the pattern in ``tests/integration/concurrency/test_idempotency_create.py``
-(audit item #2, sources/notebooks PROBE_THEN_CREATE family).
+Mirrors the full-transport one-send coverage in
+``tests/integration/test_side_effects_idempotency.py``.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ pytestmark = pytest.mark.allow_no_vcr
 
 
 # ---------------------------------------------------------------------------
-# Helpers (mirror the pattern from test_idempotency_create.py)
+# Helpers shared with the other full-transport containment tests
 # ---------------------------------------------------------------------------
 
 

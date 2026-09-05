@@ -47,7 +47,7 @@ pytestmark = pytest.mark.allow_no_vcr
 
 
 # ---------------------------------------------------------------------------
-# Helpers (mirror the pattern from test_idempotency_create.py)
+# Helpers shared with the other full-transport containment tests
 # ---------------------------------------------------------------------------
 
 

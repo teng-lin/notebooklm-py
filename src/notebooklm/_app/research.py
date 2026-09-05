@@ -376,10 +376,10 @@ async def import_research_sources(
     ``already_present`` split. The first three arguments are passed positionally
     to match the underlying method's call shape.
 
-    ``max_elapsed`` bounds the underlying **retry** loop (the IMPORT_RESEARCH RPC
-    commonly runs past the client timeout on deep payloads, so it is retried with
-    reconciliation). Forwarded only when given, so an adapter that does not expose
-    a knob keeps the library default rather than having one imposed here.
+    ``max_elapsed`` bounds only the read-only candidate-inspection cadence after
+    an unknown outcome. The IMPORT_RESEARCH mutation is sent once and is never
+    retried. Forwarded only when given, so an adapter that does not expose a knob
+    keeps the library default rather than having one imposed here.
     """
     bound = {} if max_elapsed is None else {"max_elapsed": max_elapsed}
     imported = await client.research.import_sources_with_verification(

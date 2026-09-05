@@ -868,8 +868,8 @@ async def test_register_file_source_uses_rpc_shape_and_wraps_rpc_error(
 ) -> None:
     # A non-transport RPCError must propagate as SourceAddError (the
     # wrapper preserves the original cause). The RPC layer is invoked with
-    # ``disable_internal_retries=True`` because register_file_source now
-    # owns probe-then-retry recovery via ``idempotent_create``.
+    # ``disable_internal_retries=True`` because registration is a one-send
+    # mutation; candidate inspection never grants a replay.
     rpc_error = RPCError("bad response")
     rpc = RecordingRpc(rpc_error)
 

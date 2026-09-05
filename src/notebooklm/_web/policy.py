@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
 
+from .._idempotency import ReplayGrant, replay_allowed
 from ..exceptions import IdempotencyVariantError
 from ..rpc.types import RPCMethod
 
@@ -51,9 +52,11 @@ class IdempotencyPolicy(str, Enum):
 # when the caller passed False. These RPCs cannot tolerate the transport's
 # inner retry loop because either (a) the caller owns a probe state
 # has no verified server-side dedupe key and a retry could duplicate a write.
-_POLICIES_THAT_FORCE_DISABLE: frozenset[IdempotencyPolicy] = frozenset(
-    {IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY}
-)
+def replay_grant_for(policy: IdempotencyPolicy) -> ReplayGrant:
+    """Map the Web registry classification onto the shared replay decision."""
+    if policy is IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY:
+        return ReplayGrant.NO_REPLAY
+    return ReplayGrant.REPLAY_SAFE
 
 
 @dataclass(frozen=True)
@@ -278,16 +281,15 @@ def resolve_effective_disable_internal_retries(
     entry = registry.get_entry(method, operation_variant=operation_variant)
     policy = entry.policy
 
-    if policy in _POLICIES_THAT_FORCE_DISABLE:
-        return True
-
     if policy is IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED:
         _maybe_log_at_least_once(method, operation_variant)
-        return caller_disable_internal_retries
 
-    # UNCLASSIFIED / IDEMPOTENT_SET_OP: silent, caller value passes
-    # through unchanged.
-    return caller_disable_internal_retries
+    return not replay_allowed(
+        None,
+        grant=replay_grant_for(policy),
+        disabled=False,
+        remaining=None,
+    )
 
 
 def register_default_policies(registry: IdempotencyRegistry) -> None:
@@ -618,7 +620,7 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
     #   exposed in the source list). NON_IDEMPOTENT_NO_RETRY: force-disable the
     #   inner transport retries and let the first failure surface so the caller
     #   can decide. See the ``add_text`` rationale in
-    #   ``tests/integration/concurrency/test_idempotency_create.py:17-19``.
+    #   ``tests/integration/test_side_effects_idempotency.py``.
     #
     # ADD_SOURCE_FILE is single-shape: it registers a file source by name.
     # Filenames are NOT identity-bearing (two uploads of ``report.pdf`` are
@@ -939,5 +941,6 @@ __all__ = [
     "IdempotencyPolicy",
     "IdempotencyRegistry",
     "register_default_policies",
+    "replay_grant_for",
     "resolve_effective_disable_internal_retries",
 ]

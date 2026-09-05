@@ -47,7 +47,7 @@ def _cleanup_allowed_after_import_error(error: BaseException) -> bool:
     if isinstance(error, (SourceProcessingError, ValidationError)):
         return True
     if isinstance(error, SourceAddError):
-        return True
+        return getattr(error, "stage", None) == "register"
     return isinstance(error, AuthError) and getattr(error, "stage", None) == "register"
 
 

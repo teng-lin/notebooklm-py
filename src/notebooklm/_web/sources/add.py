@@ -9,7 +9,11 @@ from dataclasses import replace
 from typing import Any
 from urllib.parse import parse_qs
 
-from ..._idempotency import call_unconfirmed_on_transport_loss
+from ..._idempotency import (
+    call_unconfirmed_on_transport_loss,
+    mark_commit_state,
+    mark_unconfirmed,
+)
 from ...exceptions import (
     AuthError,
     NetworkError,
@@ -18,6 +22,7 @@ from ...exceptions import (
     SourceAddError,
     ValidationError,
 )
+from ...outcomes import CommitState
 from ...rpc import RPCError, RPCMethod
 from ...types import Source
 from ..contracts import RpcCaller
@@ -32,6 +37,23 @@ ParseUrl = Callable[[str], Any]
 ExtractVideoId = Callable[[Any, str], str | None]
 ValidateVideoId = Callable[[str], bool]
 YoutubeDetector = Callable[[str], bool]
+
+
+def _source_add_failure(
+    subject: str,
+    *,
+    operation: str,
+    cause: Exception | None = None,
+    message: str | None = None,
+) -> SourceAddError:
+    """Wrap one post-dispatch failure without losing its commit evidence."""
+    failure = SourceAddError(subject, cause=cause, message=message)
+    inherited_operation = getattr(cause, "operation", None)
+    operation_name = inherited_operation if isinstance(inherited_operation, str) else operation
+    state = getattr(cause, "commit_state", None)
+    if state in (CommitState.NOT_SENT, CommitState.REJECTED, CommitState.CONFIRMED):
+        return mark_commit_state(failure, state, operation=operation_name)
+    return mark_unconfirmed(failure, operation=operation_name)
 
 
 def _validate_drive_file_id(file_id: str) -> None:
@@ -156,11 +178,27 @@ class SourceAddService:
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
-                raise SourceAddError(url, cause=e) from e
+                raise _source_add_failure(
+                    url,
+                    cause=e,
+                    operation="sources.add_url",
+                ) from e
 
             if result is None:
-                raise SourceAddError(url, message=f"API returned no data for URL: {url}")
-            return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                raise _source_add_failure(
+                    url,
+                    message=f"API returned no data for URL: {url}",
+                    operation="sources.add_url",
+                )
+            try:
+                return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+            except Exception as e:
+                raise _source_add_failure(
+                    url,
+                    cause=e,
+                    operation="sources.add_url",
+                    message=f"Failed to decode the added URL source: {url}",
+                ) from e
 
         source = await call_unconfirmed_on_transport_loss(
             _create,
@@ -200,31 +238,47 @@ class SourceAddService:
             notebook_id,
             build_template_block(),
         ]
-        try:
-            result = await rpc.rpc_call(
-                RPCMethod.ADD_SOURCE,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                operation_variant="text",
-            )
-        except (AuthError, RateLimitError, ServerError, NetworkError):
-            # Preserve transport-level signals so callers can act on the
-            # specific type (AuthError -> re-login, RateLimitError -> back-off
-            # with retry_after, ServerError -> transient retry) instead of
-            # receiving everything collapsed into SourceAddError — the same
-            # ADR-0019 catch ordering add_url and add_drive use.
-            raise
-        except RPCError as e:
-            raise SourceAddError(
-                title,
-                cause=e,
-                message=f"Failed to add text source '{title}'",
-            ) from e
 
-        if result is None:
-            raise SourceAddError(title, message=f"API returned no data for text source: {title}")
+        async def _create() -> Source:
+            try:
+                result = await rpc.rpc_call(
+                    RPCMethod.ADD_SOURCE,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                    operation_variant="text",
+                )
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                raise
+            except RPCError as e:
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_text",
+                    message=f"Failed to add text source '{title}'",
+                ) from e
 
-        source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+            if result is None:
+                raise _source_add_failure(
+                    title,
+                    message=f"API returned no data for text source: {title}",
+                    operation="sources.add_text",
+                )
+            try:
+                return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+            except Exception as e:
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_text",
+                    message=f"Failed to decode the added text source: {title}",
+                ) from e
+
+        source = await call_unconfirmed_on_transport_loss(
+            _create,
+            method=RPCMethod.ADD_SOURCE,
+            what="the text-source add",
+            operation="sources.add_text",
+        )
 
         if wait:
             return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
@@ -301,10 +355,14 @@ class SourceAddService:
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
-                raise SourceAddError(title, cause=e) from e
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_drive",
+                ) from e
 
             if result is None:
-                raise SourceAddError(
+                raise _source_add_failure(
                     title,
                     message=(
                         f"API returned no data for Drive source: {title} "
@@ -314,8 +372,17 @@ class SourceAddService:
                         "upload-only type (e.g. epub/docx/txt/md/rtf/odt/csv), "
                         "download it and add it as a `file` source instead."
                     ),
+                    operation="sources.add_drive",
                 )
-            return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+            try:
+                return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+            except Exception as e:
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_drive",
+                    message=f"Failed to decode the added Drive source: {title}",
+                ) from e
 
         source = await call_unconfirmed_on_transport_loss(
             _create,

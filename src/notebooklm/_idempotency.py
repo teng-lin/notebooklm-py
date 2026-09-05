@@ -27,7 +27,7 @@ class ReplayGrant(str, Enum):
 
 
 def replay_allowed(
-    exc: BaseException,
+    exc: BaseException | None,
     *,
     grant: ReplayGrant,
     disabled: bool,

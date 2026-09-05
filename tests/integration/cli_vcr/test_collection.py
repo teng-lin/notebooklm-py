@@ -39,10 +39,9 @@ method ids with a type-3 discriminator and ``source_path="/"`` (account-level):
   between the human-output and ``--json`` test methods with
   ``allow_playback_repeats=True`` like the other read-only commands.
 * ``create``    -> ``LIST_LABELS`` (the id-diff snapshot, BEFORE), ``CREATE_LABEL``
-  (``agX4Bc``), then a second ``LIST_LABELS`` (the id-diff re-list, AFTER) — unlike
-  ``label create``, this does NOT parse the create echo (the create-response shape
-  was never captured), so it genuinely needs two *sequential, distinct-content*
-  ``LIST_LABELS`` episodes.
+  (``agX4Bc``), then a second ``LIST_LABELS`` (the candidate inspection, AFTER).
+  The diff is diagnostic only: create always raises an unknown-outcome error
+  because no returned row is caller-correlated.
 * ``rename``    -> the resolver's ``LIST_LABELS``, ``rename()``'s own preflight
   ``LIST_LABELS`` (``get_or_none``, same content as the resolver's — no
   transition yet), ``UPDATE_LABEL``, then a post-write ``LIST_LABELS``
@@ -66,9 +65,8 @@ this work: vcrpy's default consumes matching recorded episodes in RECORDED
 ORDER (first matching request gets the first not-yet-played episode, second
 gets the next), so the "before" and "after" episodes are correctly served in
 sequence. ``allow_playback_repeats=True`` disables that consumption tracking —
-it would always replay the SAME (first) episode, which would either break the
-command's own control flow (``create``, which raises if the diff comes up
-empty) or silently mask a regression (``add``/``remove``/``rename``, which
+it would always replay the SAME (first) episode, which would erase create's
+recorded candidate evidence or silently mask a regression (``add``/``remove``/``rename``, which
 would still pass with stale content since post-mutation state is never
 actually observed).
 
@@ -156,7 +154,7 @@ COLLECTION_NOTEBOOKS_SCHEMA: dict[str, FieldSpec] = {
     "count": FieldSpec(int),
 }
 
-# ``collection create/rename --json`` envelope: ``_collection_payload()`` — no
+# Successful ``collection rename --json`` envelope: ``_collection_payload()`` — no
 # ``notebook_id``/``collection_id`` wrapper (unlike labels, collections carry no
 # notebook parent to echo).
 COLLECTION_MUTATION_SCHEMA: dict[str, FieldSpec] = {
@@ -257,24 +255,23 @@ class TestCollectionCreateCommand:
 
     @notebooklm_vcr.use_cassette("collection_create.yaml")
     def test_collection_create(self, runner, mock_auth_for_vcr):
-        """``collection create`` runs LIST_LABELS (before) + CREATE_LABEL + LIST_LABELS (after)."""
+        """Human output reports the inherently uncorrelated create as unknown."""
         result = runner.invoke(cli, ["collection", "create", "VCR Test Create"])
-        assert_command_success(result, allow_no_context=False)
+        assert result.exit_code == 1, result.output
+        assert "could not be confirmed" in result.output
+        assert "Inspect the collection list" in result.output
 
     @notebooklm_vcr.use_cassette("collection_create_json.yaml")
     def test_collection_create_json(self, runner, mock_auth_for_vcr):
-        """Tier 1 + 2: ``collection create --json`` schema + invariants."""
+        """JSON output preserves the unknown-commit projection."""
         result = runner.invoke(cli, ["collection", "create", "VCR Test Create JSON", "--json"])
-        assert_command_success(result, allow_no_context=False)
-
-        assert_json_envelope(result, schema=COLLECTION_MUTATION_SCHEMA)
+        assert result.exit_code == 1, result.output
 
         data = parse_json_dict(result.output)
-        # Tier 2 — the created collection's id is UUID-shaped and its name non-blank.
-        assert _UUID_RE.match(data.get("id", "")), (
-            f"collection id not UUID-shaped: {data.get('id')!r}"
-        )
-        assert data.get("name", "").strip(), "created collection name must be non-blank"
+        assert data.get("error") is True
+        assert data.get("code") == "UNCONFIRMED_WRITE"
+        assert data.get("unconfirmed") is True
+        assert "Inspect the collection list" in data.get("message", "")
 
 
 class TestCollectionRenameCommand:

@@ -7,6 +7,7 @@ tests/integration/concurrency/test_add_file_toctou.py::test_max_concurrent_uploa
 tests/integration/concurrency/test_aexit_exception_masking.py::test_body_raises_and_close_raises_body_wins # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_aexit_exception_masking.py::test_body_succeeds_and_close_raises_close_propagates # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_aexit_exception_masking.py::test_cancel_mid_close_does_not_leak_transport # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_aexit_exception_masking.py::test_close_process_exit_beats_body_exception # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_artifact_poll_dedupe.py::test_scenario_a_two_waiters_share_one_poll_loop # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_artifact_poll_dedupe.py::test_scenario_b_leader_cancel_does_not_kill_follower # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_artifact_poll_dedupe.py::test_scenario_c_pending_polls_empty_after_success # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -15,9 +16,19 @@ tests/integration/concurrency/test_artifact_poll_dedupe.py::test_scenario_e_orph
 tests/integration/concurrency/test_auth_snapshot_torn_read.py::test_concurrent_refresh_does_not_tear_auth_triple_across_fan_out # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_chat_history_race.py::test_concurrent_follow_ups_serialize_on_conversation_id # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_chat_history_race.py::test_different_conversation_ids_run_in_parallel # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_chat_history_race.py::test_different_notebook_new_conversation_asks_run_in_parallel # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_chat_history_race.py::test_new_conversation_cache_update_waits_for_resolved_conversation_lock # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_chat_history_race.py::test_null_ask_parallel_with_followup_on_other_conversation # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_chat_history_race.py::test_null_ask_recovers_when_current_conversation_deleted_mid_flight # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_chat_history_race.py::test_null_ask_serializes_with_explicit_current_conversation # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_chat_history_race.py::test_same_notebook_new_conversation_asks_serialize_until_id_exists # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_cross_loop_affinity.py::test_bound_loop_captured_on_open # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_cross_loop_affinity.py::test_capped_client_reopen_on_new_loop_rebinds_semaphore # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_cross_loop_affinity.py::test_chat_locks_reopen_on_new_loop_rebind # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_cross_loop_affinity.py::test_cross_loop_use_raises_actionable_runtime_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_cross_loop_affinity.py::test_reqid_and_auth_locks_reopen_on_new_loop_rebind # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_cross_loop_affinity.py::test_same_loop_use_unaffected # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_cross_loop_affinity.py::test_upload_pipeline_reopen_on_new_loop_rebinds_semaphore # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_download_blocks_loop.py::test_concurrent_downloads_both_offload_writes # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_download_blocks_loop.py::test_download_mind_map_runs_write_off_loop_thread # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_download_blocks_loop.py::test_download_report_runs_write_off_loop_thread # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -69,15 +80,16 @@ tests/integration/concurrency/test_rate_limit_default.py::test_default_retries_u
 tests/integration/concurrency/test_rate_limit_default.py::test_disable_internal_retries_skips_429_loop_under_new_default # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_refresh_cancellation_propagation.py::test_refresh_task_slot_not_cleared_on_waiter_cancellation # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_refresh_cancellation_propagation.py::test_waiter_cancellation_does_not_kill_shared_refresh # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/concurrency/test_refresh_cmd_race.py::test_cancel_before_register_with_warm_registry_no_phantom_bump # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/concurrency/test_refresh_cmd_race.py::test_cancel_before_subprocess_registers_no_phantom_bump # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_refresh_cmd_race.py::test_cancel_after_subprocess_starts_no_phantom_bump # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_refresh_cmd_race.py::test_cancel_after_subprocess_starts_with_warm_epoch_no_phantom_bump # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_refresh_cmd_race.py::test_cancel_settle_race_does_not_bump_on_failure # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_refresh_cmd_race.py::test_concurrent_refresh_failure_followup_sees_attempt # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_refresh_cmd_race.py::test_failed_refresh_does_not_skip_concurrent_waiter # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_refresh_cmd_race.py::test_sibling_success_between_epoch_read_and_claim_skips_subprocess # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_refresh_cmd_race.py::test_waiter_cancellation_does_not_kill_inflight_subprocess # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_research_task_crosswire.py::test_scenario_a_explicit_task_id_returns_matching_task # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_research_task_crosswire.py::test_scenario_b_no_task_id_single_in_flight_no_warning # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/concurrency/test_research_task_crosswire.py::test_scenario_c_no_task_id_multiple_in_flight_warns # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/concurrency/test_research_task_crosswire.py::test_scenario_c_no_task_id_multiple_in_flight_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_research_task_crosswire.py::test_scenario_d_import_sources_mismatched_research_task_id_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_upload_blocks_loop.py::test_add_file_open_runs_off_loop_thread # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_upload_blocks_loop.py::test_upload_file_streaming_fd_path_does_not_block_event_loop # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -90,9 +102,9 @@ tests/integration/concurrency/test_upload_timeout_config.py::test_default_upload
 tests/integration/concurrency/test_upload_timeout_config.py::test_default_upload_timeout_preserves_back_compat_start # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_upload_timeout_config.py::test_from_storage_accepts_upload_timeout # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_wait_for_sources_leak.py::test_wait_for_sources_cancels_sibling_on_first_failure # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_create_artifact_classified_as_probe_then_create # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_create_artifact_classified_as_non_idempotent_no_retry # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_create_artifact_variant_none_explicit # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_generate_mind_map_classified_as_probe_then_create # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_generate_mind_map_classified_as_non_idempotent_no_retry # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_generate_mind_map_variant_none_explicit # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifact_generation_idempotency.py::test_create_artifact_429_does_not_re_post # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifact_generation_idempotency.py::test_create_artifact_503_does_not_re_post # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -114,9 +126,10 @@ tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_export_a
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_generate_data_table # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_generate_flashcards # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_generate_infographic # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_generate_infographic_null_result_raises_feature_unavailable # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_generate_infographic_with_style # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_generate_study_guide # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_get_artifact_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_get_artifact_raises_when_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_get_uses_public_list_callback # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_artifacts # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_audio_artifacts # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -128,9 +141,24 @@ tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_raw
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_skips_mind_map_callback_for_non_mind_map_filter # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_slide_decks # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_unknown_artifacts_suppresses_unknown_type_warnings # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_uses_facade_list_raw_callback_and_mind_map_service # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_uses_rpc_listing_and_mind_map_service # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_list_video_artifacts # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_poll_status_uses_one_studio_rpc_and_zero_note_calls # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_audio-audio] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_cinematic_video-cinematic video] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_data_table-data table] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_flashcards-flashcards] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_infographic-infographic] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_quiz-quiz] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_report-report] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_slide_deck-slide deck] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_study_guide-report] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_public_create_artifact_null_result_raises_feature_unavailable[generate_video-video] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_rename_artifact # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_rename_artifact_missing_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_rename_artifact_note_backed_mind_map_id_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_rename_artifact_return_object_false_raises_on_miss # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestArtifactsAPI::test_rename_artifact_transport_error_not_rewrapped # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestCallGenerateErrorHandling::test_generate_audio_other_rpc_error_reraises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestCallGenerateErrorHandling::test_generate_audio_user_displayable_error_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDeleteStudioContent::test_delete_studio_content # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -145,9 +173,11 @@ tests/integration/test_artifacts_integration.py::TestDownloadMindMap::test_downl
 tests/integration/test_artifacts_integration.py::TestDownloadMindMap::test_download_mind_map_success # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadQuizFlashcardParsing::test_download_flashcards_html_without_app_data # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadQuizFlashcardParsing::test_download_flashcards_invalid_output_format_raises_validation_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestDownloadQuizFlashcardParsing::test_download_flashcards_null_interactive_html_raises_download_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadQuizFlashcardParsing::test_download_quiz_html_format_returns_raw_html # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadQuizFlashcardParsing::test_download_quiz_invalid_output_format_raises_validation_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadQuizFlashcardParsing::test_download_quiz_no_completed_raises_not_ready # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestDownloadQuizFlashcardParsing::test_download_quiz_null_interactive_html_raises_download_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadReport::test_download_report_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadReport::test_download_report_success # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestDownloadUrlValidation::test_download_url_non_https_raises_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -187,8 +217,8 @@ tests/integration/test_artifacts_integration.py::TestGenerateMindMapParsing::tes
 tests/integration/test_artifacts_integration.py::TestGenerateMindMapSourceIdsNone::test_generate_audio_source_ids_none_fetches_sources # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestGenerateMindMapSourceIdsNone::test_generate_data_table_source_ids_none_fetches_sources # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestGenerateQuiz::test_generate_quiz # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestGetArtifactReturnsNone::test_get_returns_artifact_when_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestGetArtifactReturnsNone::test_get_returns_none_when_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestGetArtifactRaisesWhenNotFound::test_get_raises_when_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestGetArtifactRaisesWhenNotFound::test_get_returns_artifact_when_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestGetArtifactTypeNameAndIsMediaReady::test_poll_status_data_table_completed_no_url_check # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestGetArtifactTypeNameAndIsMediaReady::test_poll_status_infographic_completed_without_url_downgrades # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestGetArtifactTypeNameAndIsMediaReady::test_poll_status_quiz_completed_no_url_check # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -199,16 +229,21 @@ tests/integration/test_artifacts_integration.py::TestGetArtifactTypeNameAndIsMed
 tests/integration/test_artifacts_integration.py::TestListMindMapErrorHandling::test_list_continues_when_mind_map_http_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestListMindMapErrorHandling::test_list_continues_when_mind_map_rpc_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestMindMap::test_generate_mind_map # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestParseGenerationResult::test_generate_returns_failed_status_when_no_artifact_id # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestParseGenerationResult::test_generate_returns_failed_status_when_result_is_none # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestParseGenerationResult::test_generate_null_result_raises_feature_unavailable # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestParseGenerationResult::test_generate_raises_on_empty_artifact_result # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestParseGenerationResult::test_generate_returns_status_from_artifact_data # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestPollStatusVariousPaths::test_poll_status_completed_audio_with_valid_url # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestPollStatusVariousPaths::test_poll_status_completed_audio_without_url_downgrades_to_processing # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestPollStatusVariousPaths::test_poll_status_completed_report_no_url_check # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestPollStatusVariousPaths::test_poll_status_empty_list_returns_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestPollStatusVariousPaths::test_poll_status_not_found_artifact_not_in_list # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestRetryFailedArtifact::test_retry_failed_accepted_returns_pending # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestRetryFailedArtifact::test_retry_failed_missing_id_row_raises_feature_unavailable # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestRetryFailedArtifact::test_retry_failed_null_result_raises_feature_unavailable # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestRetryFailedArtifact::test_retry_failed_other_rpc_error_propagates # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestRetryFailedArtifact::test_retry_failed_user_displayable_error_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_negative_index_raises_validation_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_null_result_returns_generation_status # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_null_result_raises_feature_unavailable # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_other_rpc_error_reraises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestReviseSlide::test_revise_slide_user_displayable_error_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_generate_audio # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -218,12 +253,27 @@ tests/integration/test_artifacts_integration.py::TestStudioContent::test_generat
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_generate_video_with_format_and_style # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_poll_studio_status # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py::TestStudioContent::test_revise_slide # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_artifacts_integration.py::TestWaitForCompletionDeprecated::test_wait_for_completion_deprecated_poll_interval_warning # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_artifacts_integration.py::TestWaitForCompletionPollIntervalRemoved::test_wait_for_completion_rejects_poll_interval # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_client_has_refresh_callback_wired # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_decoded_auth_retry_increments_auth_retry_metric # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_full_refresh_flow_http_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_full_refresh_flow_rpc_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_http_auth_error_does_not_replay_non_idempotent_write # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_no_retry_on_cookie_expiration # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_refresh_delay_is_applied # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_rpc_auth_error_does_not_replay_non_idempotent_write # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_auto_refresh.py::TestAutoRefreshIntegration::test_wire_401_then_decoded_auth_error_refreshes_once # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_cassette_conformance.py::test_conformance_guard_is_not_inert # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_cassette_conformance.py::test_get_download_decodes_identically[artifacts_customization_choices.yaml] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_cassette_conformance.py::test_gzip_recorded_body_decodes_identically[artifacts_customization_choices.yaml] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_cassette_conformance.py::test_gzip_recorded_body_decodes_identically[artifacts_delete.yaml] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_cassette_conformance.py::test_gzip_recorded_body_decodes_identically[artifacts_download_data_table.yaml] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_cassette_conformance.py::test_gzip_recorded_body_decodes_identically[artifacts_download_flashcards.yaml] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_cassette_conformance.py::test_request_carry_matches_httpx # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_transport_integration.py::test_env_var_selects_curl_cffi_and_round_trips # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_transport_integration.py::test_env_var_unset_resolves_to_httpx # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_transport_integration.py::test_stream_upload_over_resolved_curl_transport # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_curl_cffi_transport_integration.py::test_streaming_post_over_resolved_curl_transport # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestCreateNotebook::test_create_notebook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestCreateNotebook::test_create_notebook_request_contains_title # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestDeleteNotebook::test_delete_notebook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -243,20 +293,19 @@ tests/integration/test_notebooks_integration.py::TestListNotebooks::test_request
 tests/integration/test_notebooks_integration.py::TestListNotebooks::test_request_includes_csrf # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebookEdgeCases::test_get_description_empty_topics # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebookEdgeCases::test_get_description_malformed_topics # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_notebooks_integration.py::TestNotebookEdgeCases::test_get_summary_empty # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notebooks_integration.py::TestNotebookEdgeCases::test_get_summary_empty_response_returns_empty # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notebooks_integration.py::TestNotebookEdgeCases::test_get_summary_malformed_response_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebookEdgeCases::test_list_notebooks_empty # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebookEdgeCases::test_list_notebooks_nested_empty # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebooksAPIAdditional::test_get_description # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebooksAPIAdditional::test_get_raw # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebooksAPIAdditional::test_get_summary_additional # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestNotebooksAPIAdditional::test_remove_from_recent # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_notebooks_integration.py::TestNotebooksAPIAdditional::test_share_notebook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notebooks_integration.py::TestNotebooksAPIAdditional::test_share_method_removed # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestRenameNotebook::test_rename_notebook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestRenameNotebook::test_rename_notebook_request_format # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestShareEdgeCases::test_get_share_url_with_artifact # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestShareEdgeCases::test_get_share_url_without_artifact # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_notebooks_integration.py::TestShareEdgeCases::test_share_public_false_returns_none_url # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_notebooks_integration.py::TestShareEdgeCases::test_share_with_artifact_id # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notebooks_integration.py::TestSummary::test_get_summary # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_idempotency.py::test_create_note_default_variant_classified_non_idempotent # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_idempotency.py::test_create_note_happy_path_one_post # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -265,15 +314,25 @@ tests/integration/test_notes_idempotency.py::test_create_note_plain_variant_clas
 tests/integration/test_notes_idempotency.py::test_create_note_saved_from_chat_variant_classified_non_idempotent # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_idempotency.py::test_save_answer_as_note_no_inner_retry_on_5xx # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_create_note # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notes_integration.py::TestNotesAPI::test_create_note_populates_created_at # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notes_integration.py::TestNotesAPI::test_create_note_populates_created_at_flat_shape # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notes_integration.py::TestNotesAPI::test_create_note_raises_when_id_unparseable # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_delete_mind_map # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_delete_note # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_get_note # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_get_note_not_found # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notes_integration.py::TestNotesAPI::test_get_note_populates_created_at # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_list_mind_maps # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_list_notes # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_list_notes_empty # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_list_notes_excludes_mind_maps # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_notes_integration.py::TestNotesAPI::test_list_notes_populates_created_at # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_notes_integration.py::TestNotesAPI::test_update_note # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_play_books_integration.py::TestAddPlayBook::test_add_exportable # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_play_books_integration.py::TestAddPlayBook::test_not_in_library_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_play_books_integration.py::TestAddPlayBook::test_refuses_blocked_title_before_adding # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_play_books_integration.py::TestListPlayBooks::test_empty_library # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_play_books_integration.py::TestListPlayBooks::test_list # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_deep_poll_vcr.py::test_cassette_under_size_cap # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_idempotency.py::test_import_research_classified_non_idempotent # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_idempotency.py::test_import_research_no_inner_retry_on_5xx # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -282,6 +341,9 @@ tests/integration/test_research_idempotency.py::test_start_deep_research_no_inne
 tests/integration/test_research_idempotency.py::test_start_fast_research_classified_non_idempotent # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_idempotency.py::test_start_fast_research_happy_path_one_post # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_research_idempotency.py::test_start_fast_research_no_inner_retry_on_5xx # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_research_import_verification_vcr.py::test_cassette_under_size_cap # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_rpc_seam_matrix.py::test_notebooks_list_crosses_rpc_encode_decode_seam # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_rpc_seam_matrix.py::test_notebooks_list_surfaces_response_rpc_id_drift # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_save_chat_as_note_integration.py::test_save_answer_as_note_wire_round_trip # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestBuildUrlHL::test_build_url_defaults_hl_to_en # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestBuildUrlHL::test_build_url_empty_env_falls_back_to_en # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -308,6 +370,9 @@ tests/integration/test_session_integration.py::TestIsAuthError::test_returns_fal
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_network_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_plain_exception # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_rate_limit_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_rpc_error_with_auth_words_but_no_auth_signal[Authentication summary could not be generated] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_rpc_error_with_auth_words_but_no_auth_signal[Session expired while rendering an unrelated artifact] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_rpc_error_with_auth_words_but_no_auth_signal[Unauthorized access to this notebook] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_rpc_error_with_generic_message # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_rpc_timeout_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_false_for_server_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -315,7 +380,10 @@ tests/integration/test_session_integration.py::TestIsAuthError::test_returns_tru
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_401_http_status_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_403_http_status_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_auth_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_rpc_error_with_auth_message # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_rpc_error_with_auth_code[16] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_rpc_error_with_auth_code[401] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_rpc_error_with_auth_code[403] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_session_integration.py::TestIsAuthError::test_returns_true_for_rpc_error_with_auth_code[UNAUTHENTICATED] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestRPCCallAuthRetry::test_auth_retry_on_decode_rpc_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestRPCCallHTTPErrors::test_client_error_400 # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_session_integration.py::TestRPCCallHTTPErrors::test_connect_error_raises_network_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -329,7 +397,8 @@ tests/integration/test_session_integration.py::TestRPCCallHTTPErrors::test_serve
 tests/integration/test_settings_integration.py::TestLoginLanguageSync::test_login_syncs_server_language_to_config # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py::TestSettingsAPI::test_get_account_limits # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py::TestSettingsAPI::test_get_output_language # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_settings_integration.py::TestSettingsAPI::test_get_output_language_returns_none_on_malformed_response # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_settings_integration.py::TestSettingsAPI::test_get_output_language_raises_on_envelope_drift # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_settings_integration.py::TestSettingsAPI::test_get_output_language_returns_none_when_language_slot_absent # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py::TestSettingsAPI::test_get_output_language_returns_none_when_not_set # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py::TestSettingsAPI::test_set_output_language # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_settings_integration.py::TestSettingsAPI::test_set_output_language_english # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -346,17 +415,28 @@ tests/integration/test_sharing_integration.py::TestSetViewLevel::test_set_view_l
 tests/integration/test_sharing_integration.py::TestSetViewLevel::test_set_view_level_full_notebook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sharing_integration.py::TestSharingAPIIntegration::test_client_has_sharing_attribute # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sharing_integration.py::TestUpdateUser::test_update_user_permission # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_create_families_send_once_without_preflight_or_repost[drive] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_create_families_send_once_without_preflight_or_repost[file] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_create_families_send_once_without_preflight_or_repost[notebook] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_create_families_send_once_without_preflight_or_repost[url] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_create_families_send_once_without_preflight_or_repost[youtube] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_delete_artifact_classified_idempotent_set_op # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_delete_artifact_retries_remain_enabled # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_delete_notebook_classified_idempotent_set_op # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_delete_notebook_retries_remain_enabled # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_delete_source_classified_idempotent_set_op # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_delete_source_retries_remain_enabled # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_mutation_transport_evidence_never_reposts[connect] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_mutation_transport_evidence_never_reposts[http-429] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_mutation_transport_evidence_never_reposts[http-5xx] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_mutation_transport_evidence_never_reposts[http-auth] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_mutation_transport_evidence_never_reposts[pool] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_mutation_transport_evidence_never_reposts[write] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_notebooks_create_probe_propagates_network_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_notebooks_create_probe_propagates_non_network_exception # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_refresh_source_classified_at_least_once_accepted # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_refresh_source_emits_rate_limited_warn # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_side_effects_idempotency.py::test_share_notebook_classified_probe_then_create # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_side_effects_idempotency.py::test_share_notebook_classified_non_idempotent_no_retry # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py::test_share_notebook_does_not_retry_on_5xx # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestAddDriveWait::test_add_drive_wait_true # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestAddEpubFileSource::test_add_epub_file_upload # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -379,9 +459,9 @@ tests/integration/test_sources_integration.py::TestAddUrlErrorPaths::test_add_ur
 tests/integration/test_sources_integration.py::TestAddUrlErrorPaths::test_add_url_youtube_rpc_error_raises_source_add_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestAddYoutubeSourceDirect::test_add_url_youtube_video_success # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestCheckFreshnessEdgeCases::test_check_freshness_drive_nested_false_value # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestCheckFreshnessEdgeCases::test_check_freshness_drive_nested_list_too_short # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestCheckFreshnessEdgeCases::test_check_freshness_list_first_element_not_list # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestCheckFreshnessEdgeCases::test_check_freshness_none_result_returns_false # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestCheckFreshnessEdgeCases::test_check_freshness_drive_nested_list_too_short_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestCheckFreshnessEdgeCases::test_check_freshness_list_first_element_not_list_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestCheckFreshnessEdgeCases::test_check_freshness_none_result_raises_decoding_error # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestDeleteSource::test_delete_source # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestDeleteSource::test_delete_source_request_format # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestExtractAllText::test_extract_all_text_max_depth_zero_returns_empty # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -422,14 +502,19 @@ tests/integration/test_sources_integration.py::TestGetGuideEdgeCases::test_get_g
 tests/integration/test_sources_integration.py::TestGetSource::test_get_source # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestGetSource::test_get_source_uses_public_list_hook # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestGetSource::test_list_uses_current_rpc_executor_call # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_empty_response # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_nb_info_missing_index_1 # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_non_list_notebook_entry # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_sources_list_not_a_list # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_empty_response_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_nb_info_missing_index_1_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_non_list_notebook_entry_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_null_slot_is_empty_notebook_under_strict_decode # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_raises_by_default_under_strict_decode[rpc_result0-API response structure changed] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_raises_by_default_under_strict_decode[rpc_result1-API response structure changed] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_raises_by_default_under_strict_decode[rpc_result2-API response structure changed] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_raises_by_default_under_strict_decode[rpc_result3-sources data is str, not list] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_sources_list_not_a_list_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_strict_raises_for_malformed_response[rpc_result0-API response structure changed] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_strict_raises_for_malformed_response[rpc_result1-API response structure changed] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_strict_raises_for_malformed_response[rpc_result2-API response structure changed] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_strict_raises_for_malformed_response[rpc_result3-sources data is NoneType, not list] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestListSourcesMalformedResponse::test_list_sources_strict_raises_for_malformed_response[rpc_result3-sources data is str, not list] # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestListSourcesParsingEdgeCases::test_list_sources_invalid_status_code # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestListSourcesParsingEdgeCases::test_list_sources_src_id_not_nested # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestListSourcesParsingEdgeCases::test_list_sources_timestamp_invalid # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -453,7 +538,11 @@ tests/integration/test_sources_integration.py::TestSourcesAPI::test_list_sources
 tests/integration/test_sources_integration.py::TestSourcesAPI::test_list_sources_index_7_wins_over_5 # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestSourcesAPI::test_list_sources_youtube_url_at_index_5 # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestSourcesAPI::test_refresh_source # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_integration.py::TestSourcesAPI::test_rename_source # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestSourcesAPI::test_rename_source_falls_back_to_fetch_on_null_echo # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestSourcesAPI::test_rename_source_missing_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestSourcesAPI::test_rename_source_return_object_false_raises_on_miss # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestSourcesAPI::test_rename_source_transport_error_not_rewrapped # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/test_sources_integration.py::TestSourcesAPI::test_rename_source_uses_echo # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestStartResumableUploadError::test_start_resumable_upload_missing_url_header # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestWaitForSources::test_wait_for_sources_parallel # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py::TestWaitUntilReady::test_wait_until_ready_source_not_found_raises # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

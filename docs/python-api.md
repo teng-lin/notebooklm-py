@@ -2338,7 +2338,7 @@ label with a null notebook parent, so the same four label RPCs back it.
 | `get(collection_id)` | `str` | `Collection` | Get a collection by id; raises `CollectionNotFoundError` on a miss |
 | `get_or_none(collection_id)` | `str` | `Collection \| None` | Get a collection by id, returning `None` when absent |
 | `notebooks(collection_id)` | `str` | `list[Notebook]` | Expand a collection to its `Notebook` objects; raises `CollectionNotFoundError` if absent |
-| `create(name)` | `str` | `Collection` | Create an empty, named collection. Locates the new collection by id-diff; raises `CollectionError` on an ambiguous concurrent create |
+| `create(name)` | `str` | `Collection` | Send one empty collection create, then raise an unknown-outcome `CollectionError` with bounded candidate IDs. Current responses do not correlate any returned row to this caller; inspect `list()` before continuing. |
 | `rename(collection_id, name, *, return_object=True)` | `str, str, *, bool` | `Collection \| None` | Rename a collection (preserves the existing emoji). Raises `CollectionNotFoundError` if missing |
 | `add_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Add notebook(s) to a collection. **Appends** — existing members survive and a notebook may belong to multiple collections. One RPC per id (deduped); not atomic across ids. Raises `ValueError` on an empty list |
 | `remove_notebooks(collection_id, notebook_ids, *, return_object=True)` | `str, list[str], *, bool` | `Collection \| None` | Un-assign notebook(s) from a collection only — the notebooks are not deleted and stay in any other collection. One RPC per id (deduped). Raises `ValueError` on an empty list |
@@ -2357,20 +2357,27 @@ never turns into a cheaper existence-only check for `add_notebooks`/`remove_note
 
 **Example:**
 ```python
-from notebooklm import Collection
+from notebooklm import Collection, CollectionError
 
-# Create an account-level collection and group notebooks into it
-research = await client.collections.create("Research Q3")
-await client.collections.add_notebooks(research.id, [nb_id])
+# Send an account-level collection create. Current Web and Android responses do
+# not correlate a row to this call, so create raises with UNKNOWN evidence.
+try:
+    await client.collections.create("Research Q3")
+except CollectionError as error:
+    print(error.reconciliation_candidates)  # candidates only; inspect list()
+
+# Continue only with an independently verified collection id.
+research_id = "verified-collection-id"
+await client.collections.add_notebooks(research_id, [nb_id])
 
 # List collections and expand one to its member notebooks
 for coll in await client.collections.list():
     print(f"{coll.id}: {coll.emoji or ''}{coll.name} ({len(coll.notebook_ids)} notebooks)")
-members = await client.collections.notebooks(research.id)
+members = await client.collections.notebooks(research_id)
 
 # Un-assign a notebook (it is NOT deleted) then delete the collection
-await client.collections.remove_notebooks(research.id, [nb_id])
-await client.collections.delete(research.id)  # notebooks survive
+await client.collections.remove_notebooks(research_id, [nb_id])
+await client.collections.delete(research_id)  # notebooks survive
 ```
 
 ---

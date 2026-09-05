@@ -270,8 +270,8 @@ class BaseResearchAPI(ABC):
                 entry with 'report_markdown' and 'research_task_id'.
             _remaining_budget: Internal. What is left of
                 :meth:`import_sources_with_verification`'s ``max_elapsed``
-                when this attempt starts; clamps the per-attempt read timeout
-                so one attempt cannot outlive that loop's deadline (#2205).
+                when this one send starts; clamps the read timeout so the
+                mutation cannot outlive that workflow budget (#2205).
                 Not part of the public contract — direct callers leave it
                 unset and get the full batch-scaled window.
 
@@ -343,7 +343,11 @@ class BaseResearchAPI(ABC):
         max_delay: float = 60,
         allow_duplicate: bool = False,
     ) -> list[dict[str, str]]:
-        """Import with evidence-bound read-back and retry policy."""
+        """Import once, then inspect on an uncertain outcome.
+
+        The timing knobs bound only the read-only candidate-inspection cadence;
+        they never authorize another ``import_sources`` mutation.
+        """
         return await self._import_sources_with_verification(
             notebook_id,
             task_id,
@@ -367,12 +371,7 @@ class BaseResearchAPI(ABC):
         max_delay: float = 60,
         allow_duplicate: bool = False,
     ) -> list[dict[str, str]]:
-        """Import with exact-ID and normalized-URL reconciliation.
-
-        Reports are sent once. URL rows are retried only when baseline and
-        post-failure reads prove the exact missing subset and no concurrent row
-        makes attribution ambiguous.
-        """
+        """Import once and report bounded normalized-URL candidates after loss."""
         async with self._operation_scope("research.import_sources_with_verification"):
             return await self._import_sources_with_verification_in_scope(
                 notebook_id,
@@ -457,37 +456,38 @@ class BaseResearchAPI(ABC):
             mark_unconfirmed(failure, operation="research.import_sources")
 
             current: Sequence[Source] = ()
-            inspection_attempt = 0
             delay = max(0.0, initial_delay)
-            while True:
-                inspection_attempt += 1
-                try:
-                    current = await self._source_lister.list(notebook_id, strict=False)
-                    break
-                except (NetworkError, RPCError):
-                    remaining = max_elapsed - (time.monotonic() - started)
-                    if inspection_attempt >= 2 or remaining <= 0:
-                        break
-                    sleep_for = min(delay, max(0.0, max_delay), remaining)
-                    if sleep_for <= 0:
-                        break
-                    await asyncio.sleep(sleep_for)
-                    delay = min(delay * backoff_factor, max_delay)
-
             requested_urls = {
                 _normalize_import_verification_url(source.url) for source in models if source.url
             }
             candidate_ids: list[str] = []
             visible_urls: set[str] = set()
-            for current_source in current:
-                if (
-                    baseline_ids is not None and current_source.id in baseline_ids
-                ) or not current_source.url:
-                    continue
-                normalized = _normalize_import_verification_url(current_source.url)
-                if normalized in requested_urls:
-                    candidate_ids.append(current_source.id)
-                    visible_urls.add(normalized)
+            while True:
+                try:
+                    current = await self._source_lister.list(notebook_id, strict=False)
+                except (NetworkError, RPCError):
+                    current = ()
+                else:
+                    candidate_ids = []
+                    visible_urls = set()
+                    for current_source in current:
+                        if (
+                            baseline_ids is not None and current_source.id in baseline_ids
+                        ) or not current_source.url:
+                            continue
+                        normalized = _normalize_import_verification_url(current_source.url)
+                        if normalized in requested_urls:
+                            candidate_ids.append(current_source.id)
+                            visible_urls.add(normalized)
+                    if candidate_ids:
+                        break
+
+                remaining = max_elapsed - (time.monotonic() - started)
+                sleep_for = min(delay, max(0.0, max_delay), remaining)
+                if sleep_for <= 0:
+                    break
+                await asyncio.sleep(sleep_for)
+                delay = min(delay * backoff_factor, max_delay)
 
             unresolved = [
                 source.url[:200]

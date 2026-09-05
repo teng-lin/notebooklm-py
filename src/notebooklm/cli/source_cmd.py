@@ -731,7 +731,8 @@ def source_add_book(ctx, content_id, notebook_id, wait, json_output, client_auth
     type=int,
     help=(
         "Per-phase seconds budget for (a) the research-completion poll "
-        "loop and (b) the --import-all retry loop (default: 1800). Each "
+        "loop and (b) read-only candidate inspection after an unknown "
+        "--import-all outcome (default: 1800). The import mutation is sent once. Each "
         "phase gets the full budget independently, so worst-case total "
         "wall time is up to 2× this value. Matches 'research wait "
         "--timeout' semantics. Bumping this is required for deep "
