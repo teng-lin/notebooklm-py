@@ -704,6 +704,10 @@ def legacy_vcr_add_url_baseline(monkeypatch):
     ``tests/integration/test_sources_idempotency.py``, so nothing here is its
     only coverage. Mirrors :func:`legacy_vcr_follow_up_probe`.
     """
+    # Compatibility fixture for legacy test signatures. URL creation is now a
+    # single send and no longer performs the baseline read this fixture supplied.
+    return None
+
     from notebooklm._web.sources.add import SourceAddService
 
     original_add_url = SourceAddService.add_url

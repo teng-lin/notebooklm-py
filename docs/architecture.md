@@ -318,7 +318,7 @@ the visual counterparts to the detailed ownership table below.
 | Flow | Runtime shape |
 |------|---------------|
 | Source file upload | The backend-neutral `SourcesAPI.add_file()` normalizes the requested title and dispatches through one `_send_upload` hook. Web and Android hooks wrap their existing upload pipelines; those pipelines retain registration, byte transfer, admission, deadlines, and lifecycle fencing, then invoke the owner-neutral base finalizer before their operation scope exits. The finalizer chooses ready/registered/processing projection and applies the best-effort title rename without retaining backend owners. Web still takes its own upload semaphore and uses epoch-fenced live Kernel cookies for Scotty start/finalize; Android retains its aggregate control-plane deadline and workflow epoch through post-upload reads/mutation. |
-| Source URL/text/Drive add | `WebSourcesAPI` holds a `CallSupervisor.operation_scope` across URL workflows that combine create, optional wait, and optional rename. `SourceAddService` wraps URL and Drive mutating RPCs in `idempotent_create(...)` where those flows have stable probes. Text-source adds remain intentionally non-idempotent unless the caller handles dedupe externally. |
+| Source URL/text/Drive add | `WebSourcesAPI` holds a `CallSupervisor.operation_scope` across URL workflows that combine create, optional wait, and optional rename. URL, Drive, and file registration mutations are sent once. A correlated create response is authoritative; after an ambiguous failure, bounded list results may be attached as reconciliation candidates but are never promoted to success. Text-source adds remain intentionally non-idempotent unless the caller handles dedupe externally. |
 | Artifact generation | The backend-neutral `ArtifactsAPI` owns validation and source/language resolution for ten Studio creation methods over `_send_create_artifact`, Drive-export wrappers/target validation over `_send_export`, and artifact-copy validation/result policy over `_send_copy`. Customization choices remain an abstract typed read because the Web row and Android protobuf tables have no shared choreography. `generate_mind_map()` is the eleventh public `generate_*` method and has its own backend hook because it returns `MindMapResult` and may persist note-backed output. `WebArtifactsAPI` implements the shared creation hook with `ArtifactGenerationService` (`_web/artifact/generation.py`), whose positional `CREATE_ARTIFACT` builders live in `_web/params/artifacts.py`; Web revise, retry, and mind-map paths also use that service. When `backend="android"` is explicit, `AndroidArtifactsAPI` dispatches the evidence-admitted exact `CreateArtifact` families, including cinematic videos and data tables, plus live-proven `DeriveArtifact`. Retry and Drive export use web-derived mobile gRPC handlers; note-backed generation is native composition over current-bundle `ActOnSources` and exact `CreateNote`. `ArtifactPollingService` owns leader/follower polling over the abstract target-aware studio projection. |
 | Artifact download | Web `ArtifactDownloadService` (`_web/artifact/downloads.py`) selects artifacts and decodes raw rows/interactive HTML. The neutral `AssetDownloadService` (`_artifact/downloads.py`) owns byte transfer, rejection, staging, and atomic publication, while `_artifact/_guarded_transfer.py` owns the bounded redirect/content/signature plane shared by the Android adapter. Web supplies a storage-cookie jar. The publicly selected Android asset service validates canonical hosts, clears ambient cookies on every hop, re-acquires the APK-evidenced bearer for each eligible hop, uses `alr=yes` on the exact `lh3.googleusercontent.com` and slide `contribution.usercontent.google.com` entry hosts, strips credentials permanently once a chain leaves the allowlist, applies representation byte/signature limits, corrects verified WAV output to `.wav`, and is drained with the client lifecycle. These transfers do not go through `RpcExecutor` or `Kernel.post`. |
 | Notes and mind maps | `NoteService` owns Web note-row CRUD/classification through `RpcCaller`. `NoteBackedMindMapService` keeps Web row decoding and exact-content note-backed rename in `WebMindMapsAPI`; rename fetches the raw stored row and resends its content unchanged. The neutral `MindMapsAPI` composes unified list/lookup/rename/delete workflows over base-typed `ArtifactsAPI` and `NotesAPI` collaborators. For explicit Android selection, `AndroidMindMapsAPI` is publicly assembled over the Android artifact and note APIs: interactive generation/tree/mutation uses live artifact operations, while note-backed reads/rename/delete/tree and typed prefetch compose without fabricating Web rows. Note-backed generation uses the current-bundle `ActOnSources` request and persists its JSON through native `CreateNote`. |
@@ -386,31 +386,29 @@ easy to lose during refactors. The taxonomy makes retry safety a
 **property of the call site** (re-derived every time someone touches
 the code).
 
-**The classification.** Every active RPC is classified into one of five
+**The classification.** Every active RPC is classified into one of four
 retry-safety profiles by the `IdempotencyRegistry` in
 [`_web/policy.py`](../src/notebooklm/_web/policy.py):
 
 | Policy | Meaning | Effect on the inner retry loop |
 |--------|---------|--------------------------------|
 | `UNCLASSIFIED` | Placeholder for hand-built test/future registries; not used by the production registry for active RPCs | Silent, retries enabled (preserves pre-taxonomy behavior) |
-| `PROBE_THEN_CREATE` | Caller owns a probe loop; transport must not blind-retry | Force-disable inner retries |
 | `IDEMPOTENT_SET_OP` | Replay-safe read-only, delete, rename, or set-state RPC | Retries are safe; left enabled |
 | `AT_LEAST_ONCE_ACCEPTED` | Caller has explicitly accepted duplicate side-effect cost (emails / billing / notifications) | Retries enabled; rate-limited WARN emitted so operators can see the trade-off |
 | `NON_IDEMPOTENT_NO_RETRY` | No dedupe key and no probe; first failure must surface | Force-disable inner retries |
 
-The axis is *closed*. A sixth policy would need an ADR update and an
-executor change in lockstep — the five-policy cap is intentional so a
+The axis is *closed*. A fifth policy would need an ADR update and an
+executor change in lockstep — the four-policy cap is intentional so a
 reviewer can hold the whole taxonomy in mind during a code review.
 
 `RpcExecutor._execute_once` consults the registry once per call to
 resolve the effective `disable_internal_retries`. The caller's explicit
 `disable_internal_retries=True` always wins over the registry default.
 
-Every `PROBE_THEN_CREATE` entry must carry a documented `notes`
-rationale describing how that mutation recovers (a probe/recovery wrapper
-exists) or why inner retries stay disabled. The registry-audit test
+Every `NON_IDEMPOTENT_NO_RETRY` entry must carry a documented `notes`
+rationale describing why replay is unsafe. The registry-audit test
 `test_retry_disabled_entries_are_intentional_and_documented` fails if a
-new `PROBE_THEN_CREATE` policy is added without one.
+new retry-disabled policy is added without one.
 
 The production registry has explicit coverage for every active
 `RPCMethod`, including read-only RPCs. Read-only entries are registered
@@ -418,10 +416,10 @@ as replay-safe `IDEMPOTENT_SET_OP` rows rather than left as
 production-`UNCLASSIFIED`; `UNCLASSIFIED` is retained only as a
 placeholder for tests and future development.
 
-See [ADR-0005](./adr/0005-idempotency-taxonomy.md). Side-effect probing
-(`idempotent_create(...)`) is a separate mechanism not owned by the
-registry; see the upload/source-add row in the "Uploads, downloads, and
-polling" table above.
+See [ADR-0005](./adr/0005-idempotency-taxonomy.md). Public `CommitState`
+evidence and the private `ReplayGrant` gate decide whether an outer owner may
+replay: only proven `NOT_SENT` or `REJECTED` mutations qualify. `UNKNOWN` is
+surfaced unchanged, optionally with bounded reconciliation candidates.
 
 ### Schema validation (ADR-0011)
 
@@ -595,7 +593,7 @@ the executor on direct collaborator dependencies.
 | `ClientMetrics` | [`_client_metrics.py`](../src/notebooklm/_client_metrics.py) | Per-instance counters (`ClientMetricsSnapshot`) + the `on_rpc_event` user callback. |
 | `ReqidCounter` | [`_web/transport/reqid_counter.py`](../src/notebooklm/_web/transport/reqid_counter.py) | Monotonic `_reqid` for the chat backend; lock-protected `next_reqid(...)`. |
 | `CookiePersistence` | [`_web/transport/cookie_persistence.py`](../src/notebooklm/_web/transport/cookie_persistence.py) | Per-canonical-path typed baseline state, ordered `ProfileStore` cookie merges, `__Secure-1PSIDTS` rotation, and the concrete v0.x snapshot adapter. First-party `_from_store` instances retain no `AuthTokens`; public-constructor instances preserve legacy save compatibility. |
-| `IdempotencyRegistry` | [`_web/policy.py`](../src/notebooklm/_web/policy.py) | Web RPC policy/classification registry keyed by `(RPCMethod, operation_variant)`. The production registry explicitly covers every active `RPCMethod`; `UNCLASSIFIED` is retained only as a placeholder for hand-built test/future registries. `RpcExecutor._execute_once()` consults its single import-time-seeded singleton to resolve `effective_disable_internal_retries`. Transport-neutral side-effect probing (`_idempotency.idempotent_create(...)`) is separate. |
+| `IdempotencyRegistry` | [`_web/policy.py`](../src/notebooklm/_web/policy.py) | Web RPC policy/classification registry keyed by `(RPCMethod, operation_variant)`. The production registry explicitly covers every active `RPCMethod`; `UNCLASSIFIED` is retained only as a placeholder for hand-built test/future registries. `RpcExecutor._execute_once()` consults its single import-time-seeded singleton to resolve `effective_disable_internal_retries`; outer replay additionally requires an explicit private `ReplayGrant`. |
 | `_web/transport/request_types.py` | [`_web/transport/request_types.py`](../src/notebooklm/_web/transport/request_types.py) | Owns `AuthSnapshot`, `BuildRequest`, and request materialization shapes shared by RPC, chat, auth refresh, and the chain terminal. |
 | `_web/transport/errors.py` | [`_web/transport/errors.py`](../src/notebooklm/_web/transport/errors.py) | Owns transport-level exceptions, `Retry-After` parsing, and raw `Kernel.post` error mapping consumed by `RetryMiddleware` and `AuthRefreshMiddleware`. |
 | `_web/transport/streaming_post.py` | [`_web/transport/streaming_post.py`](../src/notebooklm/_web/transport/streaming_post.py) | Low-level streaming POST helper with the response-size cap used by `Kernel.post`. |
@@ -1092,7 +1090,8 @@ Vocabulary that recurs in this document and the surrounding code.
 | Capability Protocol | A narrow structural `Protocol` (e.g. `RpcCaller`, `LoopGuard`) a feature depends on instead of taking the deleted concrete `Session` class or a broad runtime facade. See [ADR-0013](./adr/0013-composable-session-capabilities.md). |
 | Chain / leaf / terminal | The middleware chain's ordering vocabulary. The chain wraps outermost-first; the **leaf** is the innermost middleware (`TracingMiddleware`); the **terminal** is the authed-POST function (`RuntimeTransport.terminal → Kernel.post`) that ends the chain. |
 | Drain | Graceful-shutdown waiting on admitted transport operations to complete. Policy, generation ownership, and in-flight accounting live in `CallSupervisor`. |
-| `idempotent_create(...)` | Caller-owned probe-then-create wrapper used by source-add / Drive-add flows. Distinct from the `IdempotencyRegistry` (which only classifies retry safety inside the executor). |
+| `CommitState` | Public evidence describing whether a mutation was not sent, rejected, has an unknown outcome, or was confirmed. Absence of evidence is treated conservatively as unknown. |
+| Reconciliation candidates | Bounded diagnostic rows attached after an ambiguous mutation. They help callers reconcile manually but never turn an uncorrelated row into success. |
 | `operation_variant` | Optional kwarg on `rpc_call(...)` that selects a method-variant-specific idempotency policy from the registry (e.g. `ADD_SOURCE` `"url"` vs `"drive"`). Unknown variants raise `IdempotencyVariantError`. |
 | RPC method id | A short obfuscated identifier (`rpcids=`) Google uses to route batchexecute calls. Source of truth: `RPCMethod` enum in `rpc/_identifiers.py`; `rpc/types.py` preserves the historical import and runtime identity. |
 | Snapshot | An `AuthSnapshot` (see [`_web/transport/request_types.py`](../src/notebooklm/_web/transport/request_types.py)) — an immutable, point-in-time view of session id, CSRF token, authuser, and account email. Taken inside the auth-snapshot lock so a refresh racing with a transport build cannot tear. |
@@ -1163,7 +1162,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_android/mind_maps.py` | Publicly selected Android mind-map composition over base-typed artifact/note collaborators. Interactive generation/tree reads and note-backed rename/delete/tree/prefetch compose through live typed operations; note-backed generation uses Android `ActOnSources` plus native `CreateNote`. |
 | `_android/organization.py` | Shared lazy-protobuf transport/building seam for exact `GetLabels` plus generated web-derived manual organization writes; every write is non-replayed and epoch-fenced by its adapter workflow. |
 | `_android/labels.py` | Selected label adapter with native manual CRUD/membership, exact create-response correlation, one-member writes, strict read-backs, and live-proven automatic generation through `CreateLabel.auto_create #5`. |
-| `_android/collections.py` | Complete implementation of all nine collection methods with exact create-response correlation, member-order joins, one-member non-atomic writes, and one outer lifecycle lease per workflow. Explicit `backend="android"` selects this namespace; default and Web selection remain Web. |
+| `_android/collections.py` | Complete implementation of all nine collection methods with strict create-response correlation, member-order joins, one-member non-atomic writes, and one outer lifecycle lease per workflow. Uncorrelated create rows are exposed only as reconciliation candidates on an unknown-outcome error, never attributed as success. Explicit `backend="android"` selects this namespace; default and Web selection remain Web. |
 | `_android/research.py` | Selected synchronous and async Research adapter with native Web/Drive fast starts, native deep starts, stateful non-replayed cancel/import, replay-safe polls, and epoch-fenced workflows. |
 | `_android/account.py` | Private account `GetOrCreateAccount` adapter: lazy protobuf import, one epoch lease, conservative non-replay, and no public client namespace. |
 | `_android/proto/` | Checked-in generated Python protobuf package. Files are regenerated only by `scripts/regenerate_android_protos.py` with the pinned toolchain and are never generated during installation. |
@@ -1248,7 +1247,8 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/transport/cookie_persistence.py` | Cookie-jar persistence + `__Secure-1PSIDTS` rotation |
 | `_runtime/contracts.py` | Transport-neutral `LoopGuard` Protocol |
 | `_web/contracts.py` | Web-only `Kernel` and `RpcCaller` Protocols |
-| `_idempotency.py` | Transport-neutral probe-then-retry workflow and unconfirmed-write marker; imports neither `_web` nor `rpc` |
+| `outcomes.py` | Public `CommitState` evidence enum used by callers and adapters to distinguish proven rejection from an unknown mutation outcome |
+| `_idempotency.py` | Transport-neutral private replay decision gate, one-shot mutation wrapper, and unconfirmed-write metadata helpers; imports neither `_web` nor `rpc` |
 | `_web/policy.py` | Web RPC idempotency types, declarative per-RPC classifications, resolution, and the one production `IDEMPOTENCY_REGISTRY` seed. Holds the load-bearing two-pass order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
 | `exceptions.py` | Public exception hierarchy plus safe diagnostic preview/redaction helpers |
@@ -1388,6 +1388,7 @@ src/notebooklm/
 ├── io.py                        # Public atomic-I/O facade for CLI boundary compliance
 ├── log.py                       # Public logging helper facade
 ├── migration.py                 # Legacy flat-layout to profile migration
+├── outcomes.py                  # Public mutation commit-state evidence
 ├── paths.py                     # Profile-aware path resolution
 ├── research.py                  # Public research citation/report helpers
 ├── raw.py                       # Public backend-selected raw wire APIs and gRPC descriptors
@@ -1403,7 +1404,7 @@ src/notebooklm/
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth/raw-call specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers
-├── _idempotency.py              # Transport-neutral create probe/retry helpers
+├── _idempotency.py              # Private replay gate and unknown-outcome helpers
 ├── _usage.py                    # Neutral live-usage bridge, validation, and projection
 ├── _logging.py                  # Redaction + correlation logging internals
 ├── _secrets.py                  # Canonical runtime secret registry (cookie names + secure/host umbrellas + token/API-key shapes) the redaction patterns derive from

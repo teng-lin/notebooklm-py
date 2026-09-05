@@ -347,8 +347,8 @@ class TestChatRefreshRetry:
     body."""
 
     @pytest.mark.asyncio
-    async def test_post_refresh_retry_uses_fresh_csrf_in_body(self, monkeypatch):
-        """401 → refresh callback rotates CSRF → retry body contains new token."""
+    async def test_post_send_auth_refreshes_without_reposting_turn(self, monkeypatch):
+        """401 refreshes credentials for later calls but never re-POSTs the turn."""
         auth = AuthTokens(
             cookies={"SID": "x"},
             csrf_token="OLD_CSRF",
@@ -428,19 +428,16 @@ class TestChatRefreshRetry:
                 loop_guard=core._collaborators.lifecycle,
                 notebooks=SimpleNamespace(get_source_ids=AsyncMock(return_value=[])),
             )
-            result = await api.ask("nb_x", "Q?", source_ids=["s1"])
+            with pytest.raises(ChatError) as raised:
+                await api.ask("nb_x", "Q?", source_ids=["s1"])
 
-            assert call_count["n"] == 2
-            assert "Refactor answer is long enough." in result.answer
+            assert call_count["n"] == 1
+            assert getattr(raised.value, "unconfirmed", False) is True
+            assert auth.csrf_token == "NEW_CSRF"
 
             # First attempt body carries OLD_CSRF (pre-refresh snapshot).
             assert "at=OLD_CSRF" in observed_bodies[0]
             assert "at=NEW_CSRF" not in observed_bodies[0]
-            # Second attempt body carries NEW_CSRF (post-refresh snapshot)
-            # — this is the snapshot-per-attempt contract surfacing
-            # through chat_aware_authed_post.
-            assert "at=NEW_CSRF" in observed_bodies[1]
-            assert "at=OLD_CSRF" not in observed_bodies[1]
         finally:
             await core.close()
 

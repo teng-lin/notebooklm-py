@@ -377,10 +377,6 @@ async def test_an_already_deleted_staged_file_is_not_reported_as_a_failure(
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason="E8: unknown dependent-import acceptance must retain its staged prerequisite",
-)
 async def test_e8_unconfirmed_import_keeps_staged_drive_file(tmp_path: Path) -> None:
     """Drive scope must not DELETE a prerequisite an accepted import may still read."""
     path = tmp_path / "report.docx"

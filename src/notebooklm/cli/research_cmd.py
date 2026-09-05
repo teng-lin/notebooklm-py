@@ -289,8 +289,8 @@ def research_import(
 
     \b
     The import RPC itself is not instant — IMPORT_RESEARCH commonly outlives a
-    single client timeout on deep payloads and is retried with reconciliation,
-    bounded by --timeout.
+    single client timeout on deep payloads. It is sent once; bounded read-only
+    inspection may attach candidates after an unknown outcome.
 
     \b
     Idempotent when the pre-import snapshot succeeds: a source whose URL is

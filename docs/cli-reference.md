@@ -1219,7 +1219,7 @@ notebooklm research import [OPTIONS]
 - `--allow-duplicate` - Re-add sources whose URL is already in the notebook
 - `--json` - Output as JSON
 
-**Never waits for the run.** This is the counterpart to `research wait --import-all`: if the run is still in progress (or failed, or found nothing), the command exits 1 with an explanation instead of polling. The import RPC itself is not instant — `IMPORT_RESEARCH` commonly outlives a single client timeout on deep payloads and is retried with reconciliation, bounded by `--timeout` (default 1800s, same vocabulary as `research wait --timeout`). That makes the fully composable flow expressible for the first time — you own the cadence:
+**Never waits for the run.** This is the counterpart to `research wait --import-all`: if the run is still in progress (or failed, or found nothing), the command exits 1 with an explanation instead of polling. The import RPC itself is not instant — `IMPORT_RESEARCH` commonly outlives a single client timeout on deep payloads. It is sent once; after an unknown outcome the command may perform bounded read-only reconciliation, but candidate rows are diagnostic and are not reported as successful imports. That makes the fully composable flow expressible — you own the cadence:
 
 ```bash
 notebooklm source add-research "AI safety" --mode deep --no-wait   # returns immediately

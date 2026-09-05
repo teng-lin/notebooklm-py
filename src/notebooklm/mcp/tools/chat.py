@@ -100,16 +100,19 @@ def _entry_status_payload(entry: Any) -> dict[str, Any]:
                 **timings,
                 "hint": "generation was cancelled; call chat_start to ask again",
             }
-        return {
+        error_payload = tool_error_payload(entry.error)
+        payload = {
             "status": "failed",
             "task_id": entry.task_id,
-            "error": tool_error_payload(entry.error),
+            "error": error_payload,
             **timings,
-            "hint": (
+        }
+        if error_payload["retriable"] and not error_payload.get("unconfirmed"):
+            payload["hint"] = (
                 "the ask failed — a retriable error is worth one chat_start "
                 "retry with the same question (a retry re-runs the generation)"
-            ),
-        }
+            )
+        return payload
     return {"status": "completed", "task_id": entry.task_id, **timings, **(entry.result or {})}
 
 

@@ -39,12 +39,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .._adapter_support import redact as _shared_redact
 from .._app.errors import (
     CATEGORY_HINTS,
-    UNCONFIRMED_HINT,
     ClassifiedError,
     ErrorCategory,
     classify,
     did_you_mean_hint,
     is_retriable,
+    unconfirmed_hint,
 )
 from ..exceptions import NotebookLMError
 
@@ -225,7 +225,7 @@ def _project_classified(exc: BaseException, classified: ClassifiedError) -> dict
     # ``retriable: false`` with nothing saying a source may already exist.
     if getattr(exc, "unconfirmed", False):
         body["unconfirmed"] = True
-        hint = UNCONFIRMED_HINT
+        hint = unconfirmed_hint(exc)
     # A failed *name* lookup may carry near-miss candidates (issue #1787); surface
     # them and swap the generic NOT_FOUND hint for a "Did you mean …" one.
     candidates = list(getattr(exc, "candidates", ()) or ())

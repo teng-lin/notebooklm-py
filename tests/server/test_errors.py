@@ -335,13 +335,14 @@ def test_unconfirmed_create_is_surfaced_in_the_rest_body() -> None:
     override the caller gets a bare message and ``retriable: false`` with
     nothing indicating a source may already exist.
     """
-    from notebooklm._app.errors import UNCONFIRMED_HINT
+    from notebooklm._app.errors import unconfirmed_hint
     from notebooklm._idempotency import mark_unconfirmed
     from notebooklm.server._errors import error_item
 
-    body = error_item(mark_unconfirmed(exc.NetworkError("connection reset")))
+    error = mark_unconfirmed(exc.NetworkError("connection reset"))
+    body = error_item(error)
 
     assert body["unconfirmed"] is True
     assert body["retriable"] is False
-    assert body["hint"] == UNCONFIRMED_HINT
+    assert body["hint"] == unconfirmed_hint(error)
     assert "unconfirmed" not in error_item(exc.NetworkError("connection reset"))

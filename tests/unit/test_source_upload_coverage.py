@@ -24,8 +24,6 @@ import pytest
 
 import notebooklm._web.sources._upload_decode as _upload_decode_mod
 import notebooklm._web.sources.drive_import as drive_import_mod
-from notebooklm._app.errors import ErrorCategory, classify
-from notebooklm._app.source_batch import batch_item_is_fatal
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
 from notebooklm._sources import SourcesAPI
 from notebooklm._types.enums import SourceStatus
@@ -44,7 +42,6 @@ from notebooklm._web.sources.upload import (
     module_logger,
 )
 from notebooklm.exceptions import (
-    AuthError,
     NetworkError,
     ValidationError,
 )
@@ -527,72 +524,23 @@ def test_get_download_semaphore_asserts_bound_loop_before_building(tmp_path) -> 
 # register_file_source() probe / create branches
 # =============================================================================
 class TestRegisterFileSourceBranches:
-    """Cover baseline-failure, probe, and missing-id recovery paths."""
+    """Cover one-shot registration and candidate-only inspection."""
 
     @pytest.mark.asyncio
-    async def test_baseline_list_failure_logs_and_makes_baseline_unavailable(self) -> None:
-        """A failing baseline list() leaves the baseline unavailable (772, 802-808).
-        With baseline unavailable, a same-titled probe match is treated as an
-        ambiguity rather than silently returned. We drive a create RPC failure
-        (NetworkError) so idempotent_create runs the probe, which then finds a
-        same-titled source and raises SourceAddError.
-        """
+    async def test_transport_loss_is_inspected_without_replay(self) -> None:
         pipeline = _make_pipeline()
-        logger = MagicMock()
-        list_calls = {"n": 0}
+        error = NetworkError("transport down")
+        rpc_calls = 0
 
         async def _list(_nb: str) -> list[Source]:
-            list_calls["n"] += 1
-            if list_calls["n"] == 1:
-                # Baseline call fails -> baseline unavailable.
-                raise RuntimeError("baseline boom")
-            # Probe call returns a same-titled source.
-            return [Source(id="pre_existing", title="report.pdf")]
+            return [Source(id="possible", title="report.pdf")]
 
         async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-            raise NetworkError("transport down")
+            nonlocal rpc_calls
+            rpc_calls += 1
+            raise error
 
-        with pytest.raises(SourceAddError, match="pre-create baseline snapshot failed") as exc_info:
-            await pipeline.register_file_source(
-                "nb_1",
-                "report.pdf",
-                list_sources=_list,
-                logger=logger,
-                rpc_call=_rpc_call,
-            )
-        # The marker is what keeps an unresolved create out of the non-fatal,
-        # per-item SOURCE_ADD bucket (#2220). Asserted here rather than only on
-        # the message, because message-only assertions are exactly why the
-        # sibling gap survived two review rounds.
-        assert getattr(exc_info.value, "unconfirmed", False) is True
-        assert classify(exc_info.value).category is ErrorCategory.RPC
-        assert classify(exc_info.value).retriable is False
-        # Parity with add_url/add_drive: the baseline's own failure is retained
-        # as the cause and named in the message, because the caller reads
-        # "baseline snapshot failed" long after that read happened.
-        assert isinstance(exc_info.value.cause, RuntimeError)
-        assert "RuntimeError" in str(exc_info.value)
-        # WARNING, not DEBUG (#2220): the ``notebooklm`` logger defaults to
-        # WARNING, so the old DEBUG record never reached a handler and the
-        # degraded baseline was invisible.
-        logger.warning.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_probe_returns_none_when_no_match(self) -> None:
-        """The probe returns None when no same-titled new source exists .
-        Baseline succeeds (empty), the create RPC fails transiently so the
-        probe runs, finds nothing, and idempotent_create exhausts retries and
-        re-raises the transport error.
-        """
-        pipeline = _make_pipeline()
-
-        async def _list(_nb: str) -> list[Source]:
-            return []
-
-        async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-            raise NetworkError("still down")
-
-        with pytest.raises(NetworkError):
+        with pytest.raises(NetworkError) as raised:
             await pipeline.register_file_source(
                 "nb_1",
                 "report.pdf",
@@ -601,65 +549,21 @@ class TestRegisterFileSourceBranches:
                 rpc_call=_rpc_call,
             )
 
+        assert raised.value is error
+        assert rpc_calls == 1
+        assert error.reconciliation_candidates == ("possible",)  # type: ignore[attr-defined]
+
     @pytest.mark.asyncio
-    async def test_missing_id_recovered_by_probe(self) -> None:
-        """A successful create with an untrustworthy id is recovered via probe (873, 890).
-        The create RPC returns a shape with no trustworthy SOURCE_ID, so
-        ``_create`` runs the probe which finds a freshly committed (not in
-        baseline) source and returns its id.
-        """
+    async def test_missing_id_reports_candidates_instead_of_recovering(self) -> None:
         pipeline = _make_pipeline()
-        logger = MagicMock()
-        list_calls = {"n": 0}
 
         async def _list(_nb: str) -> list[Source]:
-            list_calls["n"] += 1
-            if list_calls["n"] == 1:
-                return []  # baseline: empty
-            return [Source(id="fresh_src", title="report.pdf")]
+            return [Source(id="possible", title="report.pdf")]
 
         async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-            # Numeric-only response: no trustworthy SOURCE_ID extractable.
             return [[[1, 2, 3]]]
 
-        result = await pipeline.register_file_source(
-            "nb_1",
-            "report.pdf",
-            list_sources=_list,
-            logger=logger,
-            rpc_call=_rpc_call,
-        )
-        assert result == "fresh_src"
-        # The "probe found a freshly committed source" info line fired.
-        assert logger.info.called
-
-    @pytest.mark.asyncio
-    async def test_missing_id_probe_decode_failure_is_unconfirmed(self) -> None:
-        """The probe's *other* call site also refuses to guess (#2220).
-
-        ``_create`` calls ``_probe()`` directly when the register RPC returns
-        200 but carries no trustworthy SOURCE_ID — there, the probe is the only
-        way to learn the id at all. A decode failure there used to fall through
-        to "probe found no unambiguous new source", which reads as *"nothing was
-        created"*; in fact the register RPC succeeded and a row may well exist.
-        Only ONE register may be issued, and the error must be marked
-        unconfirmed so adapters do not advertise a retry.
-        """
-        pipeline = _make_pipeline()
-        rpc_calls = {"n": 0}
-        list_calls = {"n": 0}
-
-        async def _list(_nb: str) -> list[Source]:
-            list_calls["n"] += 1
-            if list_calls["n"] == 1:
-                return []  # baseline ok
-            raise RPCError("probe decode failed")
-
-        async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-            rpc_calls["n"] += 1
-            return [[[1, 2, 3]]]  # 200, but no usable id
-
-        with pytest.raises(SourceAddError, match="Cannot confirm file source") as exc_info:
+        with pytest.raises(SourceAddError) as raised:
             await pipeline.register_file_source(
                 "nb_1",
                 "report.pdf",
@@ -668,142 +572,22 @@ class TestRegisterFileSourceBranches:
                 rpc_call=_rpc_call,
             )
 
-        assert rpc_calls["n"] == 1, "the register must not be re-issued"
-        assert getattr(exc_info.value, "unconfirmed", False) is True
-        # The wording must not claim the registration failed — it returned 200.
-        assert "may or may not have committed" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_missing_id_probe_transport_failure_wrapped(self) -> None:
-        """A probe transport failure after a successful create wraps to SourceAddError (around 876-889).
-        The create RPC succeeds (no usable id), then the probe list() raises a
-        transport error. Because the create already committed, this must NOT be
-        re-POSTed; it is wrapped into SourceAddError.
-        """
-        pipeline = _make_pipeline()
-        list_calls = {"n": 0}
-
-        async def _list(_nb: str) -> list[Source]:
-            list_calls["n"] += 1
-            if list_calls["n"] == 1:
-                return []  # baseline ok
-            raise AuthError("probe auth failed")
-
-        async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-            return [[[1, 2, 3]]]  # no usable id
-
-        with pytest.raises(SourceAddError, match="did not provide a trustworthy") as exc_info:
-            await pipeline.register_file_source(
-                "nb_1",
-                "report.pdf",
-                list_sources=_list,
-                logger=MagicMock(),
-                rpc_call=_rpc_call,
-            )
-
-        # The register RPC already returned 200, so a row may exist and this
-        # probe could not check — an unconfirmed create (#2220). The marker has
-        # to survive the wrap: ``_probe`` marks the AuthError it re-raises, but
-        # this handler builds a NEW SourceAddError, and the marker lives on the
-        # object that propagates, not on its ``cause``. Asserting only the
-        # message (as this test used to) is why the gap went unnoticed.
-        assert getattr(exc_info.value, "unconfirmed", False) is True
-        classified = classify(exc_info.value)
-        assert classified.category is ErrorCategory.RPC
-        assert classified.retriable is False
-        assert batch_item_is_fatal(exc_info.value) is True
-
-    @pytest.mark.asyncio
-    async def test_probe_multiple_new_matches_raises_ambiguity(self) -> None:
-        """The probe raising on >1 new same-titled source surfaces ambiguity .
-        Baseline is empty, the create RPC fails transiently so the probe runs;
-        the probe then sees two new sources sharing the filename and raises
-        SourceAddError rather than guessing.
-        """
-        pipeline = _make_pipeline()
-        list_calls = {"n": 0}
-
-        async def _list(_nb: str) -> list[Source]:
-            list_calls["n"] += 1
-            if list_calls["n"] == 1:
-                return []  # baseline empty
-            return [
-                Source(id="new_a", title="report.pdf"),
-                Source(id="new_b", title="report.pdf"),
-            ]
-
-        async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-            raise NetworkError("transport down")
-
-        with pytest.raises(SourceAddError, match="probe found 2 new sources") as exc_info:
-            await pipeline.register_file_source(
-                "nb_1",
-                "report.pdf",
-                list_sources=_list,
-                logger=MagicMock(),
-                rpc_call=_rpc_call,
-            )
-
-        # An ambiguity is an unconfirmed create (#2220): nothing threw, but the
-        # server may hold a row either way. The marker keeps it out of the
-        # non-fatal per-item SOURCE_ADD bucket a batch add would continue past.
-        assert getattr(exc_info.value, "unconfirmed", False) is True
-        assert classify(exc_info.value).category is ErrorCategory.RPC
-        assert classify(exc_info.value).retriable is False
-
-    @pytest.mark.asyncio
-    async def test_missing_id_probe_ambiguity_propagates(self) -> None:
-        """A SourceAddError raised by the post-create probe propagates .
-        The create RPC succeeds with no usable id, then the probe finds two
-        new same-titled sources and raises SourceAddError; ``_create`` must
-        re-raise it unchanged rather than wrap it as a transport failure.
-        """
-        pipeline = _make_pipeline()
-        list_calls = {"n": 0}
-
-        async def _list(_nb: str) -> list[Source]:
-            list_calls["n"] += 1
-            if list_calls["n"] == 1:
-                return []  # baseline empty
-            return [
-                Source(id="new_a", title="report.pdf"),
-                Source(id="new_b", title="report.pdf"),
-            ]
-
-        async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-            return [[[1, 2, 3]]]  # no usable id -> triggers probe
-
-        with pytest.raises(SourceAddError, match="probe found 2 new sources") as exc_info:
-            await pipeline.register_file_source(
-                "nb_1",
-                "report.pdf",
-                list_sources=_list,
-                logger=MagicMock(),
-                rpc_call=_rpc_call,
-            )
-
-        # An ambiguity is an unconfirmed create (#2220): nothing threw, but the
-        # server may hold a row either way. The marker keeps it out of the
-        # non-fatal per-item SOURCE_ADD bucket a batch add would continue past.
-        assert getattr(exc_info.value, "unconfirmed", False) is True
-        assert classify(exc_info.value).category is ErrorCategory.RPC
-        assert classify(exc_info.value).retriable is False
+        assert getattr(raised.value, "unconfirmed", False) is True
+        assert raised.value.reconciliation_candidates == ("possible",)  # type: ignore[attr-defined]
 
     @pytest.mark.asyncio
     async def test_rpc_error_with_invalid_argument_code_adds_limit_hint(self) -> None:
-        """An RPCError with code 3 attaches a source-limit hint (845-849)."""
         pipeline = _make_pipeline()
 
         async def _list(_nb: str) -> list[Source]:
             return [Source(id=f"s{i}", title=f"f{i}.pdf") for i in range(60)]
 
-        rpc_err = RPCError("invalid argument")
-        rpc_err.rpc_code = 3  # type: ignore[attr-defined]
+        rpc_err = RPCError("invalid argument", rpc_code=3)
 
         async def _rpc_call(*_a: Any, **_k: Any) -> Any:
             raise rpc_err
 
-        with pytest.raises(SourceAddError) as exc_info:
+        with pytest.raises(SourceAddError) as raised:
             await pipeline.register_file_source(
                 "nb_1",
                 "report.pdf",
@@ -811,8 +595,8 @@ class TestRegisterFileSourceBranches:
                 logger=MagicMock(),
                 rpc_call=_rpc_call,
             )
-        # The floor-based hint (>= 50 sources, no explicit limit) is appended.
-        assert "50/100/300/600" in str(exc_info.value)
+
+        assert "50/100/300/600" in str(raised.value)
 
 
 # =============================================================================
@@ -1353,43 +1137,6 @@ async def test_add_file_closes_the_descriptor_when_the_size_probe_fails(
 
 # =============================================================================
 # register_file_source() — probe with an unavailable baseline
-# =============================================================================
-@pytest.mark.asyncio
-async def test_probe_with_an_unavailable_baseline_is_silent_when_no_title_matches() -> None:
-    """An unavailable baseline is only an ambiguity when a same-titled source EXISTS.
-
-    The disambiguation guard must not fire on an empty match list: doing so
-    would convert every transport blip on a notebook that has no same-titled
-    source into an unresolvable ``SourceAddError`` instead of letting
-    ``idempotent_create`` retry the register.
-    """
-    pipeline = _make_pipeline()
-    list_calls = {"n": 0}
-
-    async def _list(_nb: str) -> list[Source]:
-        list_calls["n"] += 1
-        if list_calls["n"] == 1:
-            raise RuntimeError("baseline boom")
-        return [Source(id="unrelated", title="something-else.pdf")]
-
-    async def _rpc_call(*_a: Any, **_k: Any) -> Any:
-        raise NetworkError("transport down")
-
-    with pytest.raises(NetworkError, match="transport down"):
-        await pipeline.register_file_source(
-            "nb_1",
-            "report.pdf",
-            list_sources=_list,
-            logger=MagicMock(),
-            rpc_call=_rpc_call,
-        )
-
-    # The probe really ran (baseline call plus at least one probe call).
-    assert list_calls["n"] > 1
-
-
-# =============================================================================
-# Source-lifecycle delegation to the shared lister / poller
 # =============================================================================
 @pytest.mark.asyncio
 async def test_get_source_delegates_to_the_lister_with_the_pipeline_list_seam() -> None:

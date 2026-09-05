@@ -244,7 +244,7 @@ async def test_transport_server_error_with_http_status_error_maps_to_chat_error(
 
     message = str(excinfo.value)
     assert "HTTP 503" in message
-    assert "after retries" in message
+    assert getattr(excinfo.value, "unconfirmed", False) is True
     assert excinfo.value.__cause__ is transport_exc
 
 
@@ -262,10 +262,11 @@ async def test_transport_server_error_with_request_error_maps_to_network_error()
         )
 
     message = str(excinfo.value)
-    assert "network error after retries" in message
+    assert "network error" in message
     assert "timed out" not in message
     assert excinfo.value.original_error is original
     assert excinfo.value.__cause__ is transport_exc
+    assert getattr(excinfo.value, "unconfirmed", False) is True
 
 
 @pytest.mark.asyncio

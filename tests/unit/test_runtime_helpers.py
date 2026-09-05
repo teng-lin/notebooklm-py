@@ -104,6 +104,7 @@ def test_google_http_status_maps_web_auth_and_chains_http_cause() -> None:
             response,
             filename="downloading report.pdf",
             chain=True,
+            mutation=False,
             cause=original.value,
         )
 
@@ -114,7 +115,9 @@ def test_google_http_status_maps_android_auth_without_secret_bearing_cause() -> 
     response = _google_response(401)
 
     with pytest.raises(AuthError, match="notebooklm login") as excinfo:
-        map_google_http_status(response, filename="downloading report.pdf", chain=False)
+        map_google_http_status(
+            response, filename="downloading report.pdf", chain=False, mutation=False
+        )
 
     assert excinfo.value.__cause__ is None
     assert excinfo.value.__context__ is None
@@ -126,6 +129,7 @@ def test_google_http_status_maps_rate_limit_with_retry_after() -> None:
             _google_response(429, retry_after="17"),
             filename="uploading report.pdf",
             chain=False,
+            mutation=False,
         )
 
     assert excinfo.value.retry_after == 17
@@ -141,6 +145,7 @@ def test_google_http_status_preserves_bounded_retry_after_parsing(
             _google_response(429, retry_after=value),
             filename="uploading report.pdf",
             chain=False,
+            mutation=False,
         )
 
     assert excinfo.value.retry_after == expected
@@ -152,14 +157,17 @@ def test_google_http_status_maps_server_error_and_leaves_endpoint_statuses() -> 
             _google_response(503),
             filename="importing a Drive source",
             chain=False,
+            mutation=True,
         )
     assert excinfo.value.status_code == 503
+    assert getattr(excinfo.value, "unconfirmed", False) is True
 
     assert (
         map_google_http_status(
             _google_response(403),
             filename="importing a Drive source",
             chain=False,
+            mutation=True,
         )
         is None
     )

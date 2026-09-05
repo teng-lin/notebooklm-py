@@ -16,6 +16,7 @@ from .._chat import (
     _TurnRoleSnapshot,
 )
 from .._conversation_cache import ConversationCache
+from .._idempotency import mark_unconfirmed
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.call_supervisor import OperationLease
 from .._runtime.config import (
@@ -395,9 +396,12 @@ class AndroidChatAPI(ChatAPI):
                 final_response = response
 
         if final_response is None:
-            raise ChatResponseParseError(
-                "Android GenerateFreeFormStreamed ended before response field 5 "
-                "declared a final snapshot."
+            raise mark_unconfirmed(
+                ChatResponseParseError(
+                    "Android GenerateFreeFormStreamed ended before response field 5 "
+                    "declared a final snapshot."
+                ),
+                operation="chat",
             )
 
         answer = final_response.answer

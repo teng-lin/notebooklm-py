@@ -21,7 +21,7 @@ import logging
 from typing import Any, Literal
 
 from .._collections import CollectionsAPI, ListNotebooks
-from .._idempotency import call_unconfirmed_on_transport_loss
+from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
 from ..exceptions import CollectionError, UnknownRPCMethodError
 from ..rpc import RPCMethod
 from ..types import Collection
@@ -126,13 +126,10 @@ class WebCollectionsAPI(CollectionsAPI):
     async def create(self, name: str) -> Collection:
         """Create an empty, named collection (``CREATE_LABEL``, type 3).
 
-        Locates the new collection by ID-diff, NOT by name (names may collide):
-        snapshot the ids, fire the create, re-list, and return the single
-        collection whose id is new. Unlike ``labels.create`` this re-lists rather
-        than parsing the create echo — the collection create-response shape was
-        not captured on the wire, so the robust path is a fresh ``list()``.
-        Raises ``CollectionError`` if zero or more than one new id appears (a
-        concurrent create) — intentionally loud, mirroring the label precedent.
+        The create response and subsequent list are cumulative collection sets,
+        not a correlated created-resource response. The method therefore sends
+        once and raises ``CollectionError`` with bounded inspection candidates;
+        it never attributes another writer's row to this call.
 
         Collections carry no emoji at creation (the wire has no emoji slot); set
         one later in the UI if desired.
@@ -154,16 +151,18 @@ class WebCollectionsAPI(CollectionsAPI):
             create_and_readback,
             method=RPCMethod.CREATE_LABEL,
             what="the collection create and required list readback",
+            force_unknown=True,
         )
         new = [collection for collection in after if collection.id not in before_ids]
-        if len(new) != 1:
-            raise CollectionError(
-                f"create(name={name!r}) expected exactly 1 new collection, found {len(new)} "
-                f"(a concurrent create, or read-after-write lag on the re-list, can cause "
-                f"this — retry from a fresh list)"
-            )
-        (collection,) = new  # exactly one (guarded); unpack avoids the name[int] ratchet
-        return collection
+        error = CollectionError(
+            f"Collection create for {name!r} returned no caller-correlated id. "
+            "Inspect the collection list before creating again."
+        )
+        error.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
+            collection.id for collection in new[:20]
+        )
+        error.unresolved_inputs = (name[:200],)  # type: ignore[attr-defined]
+        raise mark_unconfirmed(error)
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 

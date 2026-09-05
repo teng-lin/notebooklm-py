@@ -17,10 +17,7 @@ import httpx
 from ..._auth.account import authuser_query, format_authuser_value
 from ..._callbacks import maybe_await_callback
 from ..._idempotency import (
-    _coerce_create_result,
-    _IdempotentCreateResult,
-    idempotent_create,
-    unresolved_commit_error,
+    call_unconfirmed_on_transport_loss,
 )
 from ..._idempotency import mark_unconfirmed as _unconfirmed
 from ..._loop_bound import EpochFenced
@@ -642,7 +639,7 @@ class SourceUploadPipeline(EpochFenced):
             handed_off = False
             try:
                 registration = await self._register_file_source_for_upload(notebook_id, filename)
-                source_id = registration.value
+                source_id = registration
                 stage: SourceAddStage = "start_session"
                 try:
                     upload_url = await self.start_resumable_upload(
@@ -727,31 +724,24 @@ class SourceUploadPipeline(EpochFenced):
         get_source_limit: GetSourceLimit | None = None,
         rpc_call: RpcCallback | None = None,
     ) -> str:
-        """Register a file source intent and return its source ID."""
-        return (
-            await self._register_file_source_result(
-                notebook_id,
-                filename,
-                list_sources=list_sources,
-                logger=logger,
-                get_source_limit=get_source_limit,
-                rpc_call=rpc_call,
-            )
-        ).value
+        """Register a file source exactly once and return its correlated source ID."""
+        return await self._register_file_source_result(
+            notebook_id,
+            filename,
+            list_sources=list_sources,
+            logger=logger,
+            get_source_limit=get_source_limit,
+            rpc_call=rpc_call,
+        )
 
-    async def _register_file_source_for_upload(
-        self, notebook_id: str, filename: str
-    ) -> _IdempotentCreateResult[str]:
-        """Normalize built-in and legacy registration seams for ``add_file``."""
+    async def _register_file_source_for_upload(self, notebook_id: str, filename: str) -> str:
+        """Normalize built-in and legacy registration seams for add_file."""
         register = self.register_file_source
-        registration: str | _IdempotentCreateResult[str]
         if getattr(register, "__func__", None) is SourceUploadPipeline.register_file_source:
-            registration = await self._register_file_source_result(notebook_id, filename)
-        else:
-            # Preserve injected and overridden legacy seams that only accept
-            # the historical (notebook_id, filename) call shape.
-            registration = await register(notebook_id, filename)
-        return _coerce_create_result(registration)
+            return await self._register_file_source_result(notebook_id, filename)
+        # Preserve injected and overridden legacy seams that only accept the
+        # historical (notebook_id, filename) call shape.
+        return await register(notebook_id, filename)
 
     async def _register_file_source_result(
         self,
@@ -762,163 +752,27 @@ class SourceUploadPipeline(EpochFenced):
         logger: Any | None = None,
         get_source_limit: GetSourceLimit | None = None,
         rpc_call: RpcCallback | None = None,
-    ) -> _IdempotentCreateResult[str]:
-        """Register a file source intent and retain create/probe provenance.
-
-        Filenames are not identity-bearing, so the probe matches only source IDs
-        that appeared after the pre-create baseline and rejects ambiguity.
-        """
+    ) -> str:
+        """Register once; candidate inspection after uncertainty never recovers."""
         params = build_register_file_source_params(filename, notebook_id)
-        if rpc_call is None:
-            rpc_call = self._rpc.rpc_call
-        if list_sources is None:
-            list_sources = self.list_sources
-        if logger is None:
-            logger = module_logger
-        if get_source_limit is None:
-            get_source_limit = self._get_source_limit
+        rpc_call = rpc_call or self._rpc.rpc_call
+        list_sources = list_sources or self.list_sources
+        logger = logger or module_logger
+        get_source_limit = get_source_limit or self._get_source_limit
 
-        # Capture baseline source IDs before the first create attempt so the
-        # probe can distinguish "this upload landed" from "a same-named source
-        # already existed." Mirrors the pattern in NotebooksAPI.create.
-        #
-        # ``None`` is the "baseline unavailable" sentinel — used when the
-        # baseline fetch failed (e.g. transient 5xx). The probe treats this
-        # as "we cannot safely distinguish new sources from pre-existing
-        # ones" and raises ``SourceAddError`` on any same-titled match,
-        # rather than risk returning a pre-existing source as if it were the
-        # just-created one. This protects against the silent
-        # data-corruption mode where a failed create + pre-existing
-        # same-name source would otherwise direct the subsequent upload
-        # stream to the wrong source.
-        baseline_ids: set[str] | None
-        baseline_source_count: int | None
-        # Retained so the ambiguity raise below can name what went wrong, the
-        # same way ``add_url`` and ``add_drive`` do: the caller reads "baseline
-        # snapshot was unavailable" long after this line ran, and without the
-        # cause nothing left in the process can explain it.
-        baseline_error: Exception | None = None
-        try:
-            baseline_sources = await list_sources(notebook_id)
-            baseline_ids = {source.id for source in baseline_sources}
-            baseline_source_count = len(baseline_sources)
-        except Exception as exc:
-            baseline_error = exc
-            # WARNING, not DEBUG (#2220 parity with ``add_url`` / ``add_drive``,
-            # #2204): the ``notebooklm`` logger defaults to WARNING, so a DEBUG
-            # record here is discarded before any handler sees it and the call
-            # silently proceeds with its idempotency probe degraded.
-            #
-            # This one still swallows, unlike the probe below, and the asymmetry
-            # is deliberate: nothing has been written yet at baseline time, so
-            # degrading is safe and failing here would break adds that would
-            # otherwise have succeeded. The probe runs *after* a create that may
-            # already have committed, so it has no such freedom.
-            logger.warning(
-                "register_file_source: baseline list() failed (%s); the idempotency probe "
-                "can no longer tell a source this call created from one that was already "
-                "there, so a transport failure will surface as an ambiguity error instead "
-                "of recovering",
-                type(exc).__name__,
-                exc_info=True,
-            )
-            baseline_ids = None
-            baseline_source_count = None
-
-        async def _probe() -> str | None:
+        async def _inspect_candidates(exc: BaseException) -> None:
             try:
                 sources = await list_sources(notebook_id)
-            except (AuthError, RateLimitError, ServerError, NetworkError) as exc:
-                # Transport- and auth-level probe failures must propagate
-                # — otherwise idempotent_create would retry the
-                # register on top of a broken probe.
-                # Mark it UNCONFIRMED before it goes (#2220 review): the create
-                # may already have committed and this probe could not say, which
-                # is the same predicament as the decode branch below. Without the
-                # marker a ServerError/RateLimitError here classifies as the
-                # *retriable* SERVER/RATE_LIMITED with the hint "retry after a
-                # short delay" — and the caller retries the ADD, not the probe.
-                # The underlying type is left intact, so "re-authenticate" /
-                # "connectivity" remain readable in the message.
-                _unconfirmed(exc)
-                raise
-            except Exception as exc:
-                # Propagate, do not retry (#2220) — see the full rationale on
-                # ``SourceAddService.add_url._probe``. Sharper here than on the
-                # URL paths: a wrong answer does not merely duplicate a row, it
-                # picks the source id the *file bytes* are then streamed into,
-                # so an unconfirmed guess can direct an upload at the wrong
-                # source. This branch is also reached from ``_create`` below,
-                # where the register RPC already returned and the probe is the
-                # only way to learn the id — "no match" there is a claim this
-                # failure cannot support either.
+            except Exception:
                 logger.warning(
-                    "register_file_source: probe list() failed with a non-transport error "
-                    "(%s); the registration cannot be confirmed, so it will not be retried",
-                    type(exc).__name__,
+                    "register_file_source: candidate inspection failed; preserving "
+                    "the original registration error",
                     exc_info=True,
                 )
-                raise unresolved_commit_error(
-                    RPCMethod.ADD_SOURCE_FILE,
-                    "the file-source registration",
-                    SourceAddError(
-                        filename,
-                        cause=exc,
-                        message=(
-                            # Action first — see the note on ``add_url``'s copy.
-                            # "may or may not have committed" rather than "did not
-                            # complete": this branch is also reached from ``_create``
-                            # below, where the register RPC returned 200 and only the
-                            # SOURCE_ID was untrustworthy.
-                            "UNRESOLVED — do not blindly retry; check the notebook "
-                            "source list first. Cannot confirm file source "
-                            f"{filename!r}: the registration may or may not have "
-                            "committed, and the idempotency probe that would settle "
-                            f"it failed too ({type(exc).__name__}). No FURTHER attempt was "
-                            "made, because retrying on an unanswered probe is how "
-                            "duplicates happen — but an earlier attempt in this call "
-                            "may also have committed."
-                        ),
-                    ),
-                    preserve_exception=True,
-                ) from exc
-            matches = [source for source in sources if source.title == filename]
-            if baseline_ids is not None:
-                matches = [source for source in matches if source.id not in baseline_ids]
-            elif matches:
-                # Baseline was unavailable so we cannot safely tell a new
-                # source apart from a pre-existing one with the same name.
-                # Surface this as an ambiguity rather than guessing — see
-                # the ``baseline_ids`` comment above for the failure mode
-                # this guards against.
-                raise _unconfirmed(
-                    SourceAddError(
-                        filename,
-                        cause=baseline_error,
-                        message=(
-                            f"Cannot disambiguate file source with title {filename!r}: the "
-                            f"pre-create baseline snapshot failed "
-                            f"({type(baseline_error).__name__}), so a matching title may "
-                            "either predate this upload or be the source it just "
-                            "registered. Resolve manually before retrying."
-                        ),
-                    )
-                )
-            if len(matches) == 1:
-                (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
-                return match.id
-            if len(matches) > 1:
-                raise _unconfirmed(
-                    SourceAddError(
-                        filename,
-                        message=(
-                            f"Cannot disambiguate file source with title {filename!r}: "
-                            f"probe found {len(matches)} new sources with this title "
-                            "after a transport failure. Resolve manually before retrying."
-                        ),
-                    )
-                )
-            return None
+                return
+            matching_ids = [source.id for source in sources if source.title == filename]
+            exc.reconciliation_candidates = tuple(matching_ids[:20])  # type: ignore[attr-defined]
+            exc.unresolved_inputs = (filename[:200],)  # type: ignore[attr-defined]
 
         async def _create() -> str:
             try:
@@ -930,84 +784,61 @@ class SourceUploadPipeline(EpochFenced):
                     disable_internal_retries=True,
                 )
             except (AuthError, RateLimitError, ServerError, NetworkError):
-                # Transport-level signals must propagate so idempotent_create
-                # can catch them and run the probe before retrying.
                 raise
             except RPCError as exc:
                 hint = ""
                 if getattr(exc, "rpc_code", None) == _INVALID_ARGUMENT_RPC_CODE:
+                    try:
+                        source_count = len(await list_sources(notebook_id))
+                    except Exception:
+                        source_count = None
                     hint = await _build_invalid_argument_source_limit_hint(
-                        source_count=baseline_source_count,
+                        source_count=source_count,
                         get_source_limit=get_source_limit,
                         logger=logger,
                     )
-                raise SourceAddError(
+                error = SourceAddError(
                     filename,
                     cause=exc,
                     message=f"Failed to register file source for {filename}: {exc}{hint}",
-                ) from exc
+                )
+                state = getattr(exc, "commit_state", None)
+                if state is not None:
+                    error.commit_state = state  # type: ignore[attr-defined]
+                if getattr(exc, "unconfirmed", False):
+                    _unconfirmed(error, operation="sources.add_file")
+                raise error from exc
 
             source_id = _extract_register_file_source_id(result, filename)
             if source_id:
-                if baseline_ids is None or source_id not in baseline_ids:
-                    return source_id
-                logger.info(
-                    "register_file_source[%s]: response SOURCE_ID matched a "
-                    "pre-existing source; probing for the newly registered source",
-                    filename,
-                )
+                return source_id
 
-            # The RPC returned successfully but the response shape did not
-            # contain a trustworthy SOURCE_ID. Before raising, run the
-            # source-list probe to see if the source landed server-side
-            # anyway. This converts recoverable schema drift into the same
-            # probe-recovery path that transport failures use without binding
-            # unrelated ids from the response.
-            try:
-                probed_source_id = await _probe()
-            except SourceAddError:
-                raise
-            except (AuthError, RateLimitError, ServerError, NetworkError) as exc:
-                # The create RPC already returned successfully, so do not
-                # let idempotent_create treat probe failure here as a
-                # retryable create failure and re-POST the file source.
-                raise _unconfirmed(
-                    SourceAddError(
-                        filename,
-                        cause=exc,
-                        message=(
-                            f"Cannot confirm registered file source for {filename!r}: "
-                            "the register response did not provide a trustworthy "
-                            f"SOURCE_ID and the source-list probe failed ({type(exc).__name__}). "
-                            "Check the notebook source list before retrying."
-                        ),
-                    )
-                ) from exc
-            if probed_source_id is not None:
-                logger.info(
-                    "register_file_source[%s]: response missing SOURCE_ID but "
-                    "probe found a freshly committed source",
-                    filename,
-                )
-                return probed_source_id
-
-            raise _unconfirmed(
+            error = _unconfirmed(
                 SourceAddError(
                     filename,
                     message=(
                         "Failed to get SOURCE_ID: no trustworthy SOURCE_ID found in "
-                        f"{_register_response_shape_label(result)} registration response, "
-                        "and the source-list probe found no "
-                        "unambiguous new source. Check the notebook source list before retrying."
+                        f"{_register_response_shape_label(result)} registration response. "
+                        "Check the notebook source list before retrying."
                     ),
-                )
+                ),
+                operation="sources.add_file",
             )
+            await _inspect_candidates(error)
+            raise error
 
-        return await idempotent_create(
-            _create,
-            _probe,
-            label=f"sources.register_file_source[{filename}]",
-        )
+        try:
+            return await call_unconfirmed_on_transport_loss(
+                _create,
+                method=RPCMethod.ADD_SOURCE_FILE,
+                what="the file-source registration",
+                force_unknown=True,
+                operation="sources.add_file",
+            )
+        except Exception as exc:
+            if getattr(exc, "unconfirmed", False) and not hasattr(exc, "reconciliation_candidates"):
+                await _inspect_candidates(exc)
+            raise
 
     async def list_sources(self, notebook_id: str) -> list[Source]:
         """List notebook sources for upload idempotency and polling."""

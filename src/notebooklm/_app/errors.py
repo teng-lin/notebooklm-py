@@ -225,12 +225,22 @@ class ClassifiedError:
 #: and the underlying exception is often a bare connection failure whose own
 #: message says nothing about a possible write. Same override shape the
 #: near-miss ``candidates`` use.
-UNCONFIRMED_HINT = (
+_DEFAULT_UNCONFIRMED_HINT = (
     "The outcome of this write is unknown — it may or may not have been created, "
     "and no further attempt was made once the check came back inconclusive. "
     "Reconcile against the notebook (or its source list) before retrying; "
     "retrying blind can create a duplicate."
 )
+
+
+def unconfirmed_hint(exc: BaseException) -> str:
+    """Return operation-aware recovery guidance for an uncertain write."""
+    if getattr(exc, "operation", None) == "chat":
+        return (
+            "The chat turn may or may not have been recorded. Inspect the conversation "
+            "history before trying again; replaying the question can record a duplicate turn."
+        )
+    return _DEFAULT_UNCONFIRMED_HINT
 
 
 #: Categories for which a retry could plausibly succeed.

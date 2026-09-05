@@ -16,10 +16,7 @@ from notebooklm.rpc import RPCMethod
 pytestmark = pytest.mark.repo_lint
 
 _ANDROID_ROOT = Path(__file__).resolve().parents[2] / "src" / "notebooklm" / "_android"
-_FORCE_NO_RETRY = {
-    IdempotencyPolicy.PROBE_THEN_CREATE,
-    IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY,
-}
+_FORCE_NO_RETRY = {IdempotencyPolicy.NON_IDEMPOTENT_NO_RETRY}
 
 
 @dataclass(frozen=True)

@@ -31,7 +31,7 @@ import httpx
 import pytest
 
 import notebooklm._runtime.helpers as _runtime_helpers
-from notebooklm import NetworkError, NotebookLMClient, RPCError
+from notebooklm import NotebookLMClient, ServerError
 from notebooklm._web.policy import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
@@ -435,26 +435,15 @@ async def test_notebooks_create_probe_propagates_network_error(
     transport = httpx.MockTransport(handler)
     client = await _make_client_with_transport(transport, auth_tokens)
     try:
-        with pytest.raises(NetworkError):
+        with pytest.raises(ServerError) as caught:
             await client.notebooks.create("Some Title")
     finally:
         await client.close()
 
-    # Bite-check: the retry-safe LIST_NOTEBOOKS / CREATE_NOTEBOOK 5xx path
-    # exercises the backoff sleep, so the patched seam was invoked —
-    # proving the object-form patch reached production ``resolve_sleep``.
-    assert sleep_calls >= 1, "patched asyncio.sleep was never invoked"
-
-    # Sanity check: the probe was actually attempted and the create fired
-    # once before the probe failed. LIST_NOTEBOOKS is retry-safe so the
-    # inner transport retry loop fires for the probe — we don't pin a
-    # precise count, only that the probe path was entered (>1 list call).
-    assert list_call_count >= 2, (
-        f"expected ≥2 LIST_NOTEBOOKS calls (baseline + probe), got {list_call_count}"
-    )
-    assert create_call_count >= 1, (
-        f"expected ≥1 CREATE_NOTEBOOK call before probe NetworkError, got {create_call_count}"
-    )
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert sleep_calls == 0
+    assert list_call_count == 0
+    assert create_call_count == 1
 
 
 async def test_notebooks_create_probe_propagates_non_network_exception(
@@ -519,7 +508,7 @@ async def test_notebooks_create_probe_propagates_non_network_exception(
     transport = httpx.MockTransport(handler)
     client = await _make_client_with_transport(transport, auth_tokens)
     try:
-        with pytest.raises(RPCError, match="Cannot confirm notebook"):
+        with pytest.raises(ServerError) as caught:
             await client.notebooks.create(title)
     finally:
         await client.close()
@@ -533,4 +522,5 @@ async def test_notebooks_create_probe_propagates_non_network_exception(
     )
     # Baseline + the one probe that failed; no second probe, since the retry
     # loop aborted rather than continuing.
-    assert list_call_count == 2, f"expected 2 LIST_NOTEBOOKS, got {list_call_count}"
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert list_call_count == 0

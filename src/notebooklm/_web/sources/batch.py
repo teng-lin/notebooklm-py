@@ -1,8 +1,8 @@
 """Private true-batch URL source creation service.
 
-The public single-item :meth:`SourcesAPI.add_url` path deliberately keeps its
-probe-then-create retry contract.  This module is only for the already
-batch-shaped MCP and REST endpoints: one ``ADD_SOURCE`` request carries every
+The public single-item :meth:`SourcesAPI.add_url` path also sends its mutation
+once. This module is only for the already batch-shaped MCP and REST endpoints:
+one ``ADD_SOURCE`` request carries every
 validated URL, and omitted response rows are projected back into positional
 per-item failures.
 """

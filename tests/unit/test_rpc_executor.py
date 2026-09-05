@@ -550,12 +550,12 @@ async def test_decode_time_auth_retry_preserves_none_result() -> None:
 async def test_decode_time_auth_retry_skipped_for_non_idempotent_method() -> None:
     """A non-idempotent create is NOT replayed on a decode-time auth error.
 
-    Regression for issue #1157: ``CREATE_NOTEBOOK`` is PROBE_THEN_CREATE, so
+    Regression for issue #1157: ``CREATE_NOTEBOOK`` is non-idempotent, so
     ``resolve_effective_disable_internal_retries`` forces the effective
     disable flag True even though the caller passed False. The server may
     have already committed the notebook before the auth-shaped ``RPCError``
     surfaced; re-POSTing would duplicate it. The original error must
-    propagate so the caller's probe-then-create wrapper can disambiguate.
+    propagate so the caller can inspect before deciding what to do next.
     """
 
     async def refresh_callback() -> object:

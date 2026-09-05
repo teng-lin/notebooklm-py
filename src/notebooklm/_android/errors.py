@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any, NoReturn, ParamSpec, TypeVar
 
+from .._idempotency import mark_unconfirmed
 from ..exceptions import (
     AuthError,
     ClientError,
@@ -16,6 +17,7 @@ from ..exceptions import (
     RPCTimeoutError,
     ServerError,
 )
+from .retry_policy import replay_safe_for
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,8 @@ def raise_grpc_status(
         error = ClientError(message, method_id=method, rpc_code=status.code)
     else:
         error = RPCError(message, method_id=method, rpc_code=status.code)
+    if not replay_safe_for(method, True):
+        mark_unconfirmed(error)
     raise error
 
 

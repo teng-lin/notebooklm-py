@@ -58,6 +58,9 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
     "notebooklm.log": [
         "install_redaction",
     ],
+    "notebooklm.outcomes": [
+        "CommitState",
+    ],
     "notebooklm.research": [
         "extract_report_urls",
         "normalize_url",

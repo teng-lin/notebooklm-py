@@ -300,7 +300,7 @@
       "dot": "rose",
       "title": "Duplicate safety",
       "items": [
-        "SourceAddService wraps URL and Drive mutations in idempotent_create",
+        "SourceAddService sends URL and Drive mutations once",
         "Text adds stay non-idempotent unless the caller dedupes externally"
       ]
     }

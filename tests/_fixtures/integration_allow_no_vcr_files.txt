@@ -7,7 +7,6 @@ tests/integration/concurrency/test_cross_loop_affinity.py # existing mock-only i
 tests/integration/concurrency/test_download_blocks_loop.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_harness_smoke.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_helpers.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/concurrency/test_idempotency_create.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_keepalive_path_canonicalize.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_max_concurrent_rpcs.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_note_create_cancel.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
@@ -38,5 +37,4 @@ tests/integration/test_session_integration.py # existing mock-only integration e
 tests/integration/test_settings_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sharing_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_side_effects_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
-tests/integration/test_sources_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_sources_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

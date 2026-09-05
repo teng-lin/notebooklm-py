@@ -181,9 +181,9 @@ async def import_research(
     sources = await research_core.poll_sources_for_import(client, notebook_id, run_id)
     # The MCP ``research_import`` tool imports via the timeout-tolerant
     # ``import_sources_with_verification`` (#1920), but this synchronous REST route
-    # deliberately stays on the one-shot ``import_sources``: a web request must not
-    # block on a multi-minute reconcile-and-retry loop. A REST caller that hits a
-    # timeout reconciles by polling ``GET .../sources`` for what actually committed.
+    # deliberately stays on the direct ``import_sources`` path: both forms send the
+    # mutation once, while only the verified form performs bounded read-only
+    # candidate inspection after an unknown outcome.
     imported = await client.research.import_sources(notebook_id, run_id, sources)
     # Record each new source id in the pending registry so the source poll route
     # can answer 200-pending (not 404) for the not-yet-listable window.

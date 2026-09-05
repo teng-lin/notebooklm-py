@@ -965,69 +965,14 @@ async def test_register_file_source_uses_configured_source_limit_lookup(
 
 
 @pytest.mark.asyncio
-async def test_register_file_source_ambiguous_response_falls_back_to_probe(
+async def test_register_file_source_ambiguous_response_reports_candidates(
     service: SourceUploadPipeline,
 ) -> None:
     unrelated_uuid = "11111111-2222-3333-4444-555555555555"
     rpc = RecordingRpc({"debug": [["trace", unrelated_uuid]], "status": "ok"})
-    list_sources = AsyncMock(
-        side_effect=[
-            [],
-            [Source(id="src_probe", title="report.pdf")],
-        ]
-    )
+    list_sources = AsyncMock(return_value=[Source(id="src_probe", title="report.pdf")])
 
-    source_id = await service.register_file_source(
-        "nb_123",
-        "report.pdf",
-        rpc_call=rpc,
-        list_sources=list_sources,
-        logger=MagicMock(),
-    )
-
-    assert source_id == "src_probe"
-    assert [call.args for call in list_sources.await_args_list] == [
-        ("nb_123",),
-        ("nb_123",),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_register_file_source_pre_existing_response_id_falls_back_to_probe(
-    service: SourceUploadPipeline,
-) -> None:
-    rpc = RecordingRpc([["src_existing"]])
-    list_sources = AsyncMock(
-        side_effect=[
-            [Source(id="src_existing", title="old.pdf")],
-            [
-                Source(id="src_existing", title="old.pdf"),
-                Source(id="src_new", title="report.pdf"),
-            ],
-        ]
-    )
-
-    source_id = await service.register_file_source(
-        "nb_123",
-        "report.pdf",
-        rpc_call=rpc,
-        list_sources=list_sources,
-        logger=MagicMock(),
-    )
-
-    assert source_id == "src_new"
-
-
-@pytest.mark.asyncio
-async def test_register_file_source_probe_failure_is_typed_and_sanitized(
-    service: SourceUploadPipeline,
-) -> None:
-    unrelated_uuid = "11111111-2222-3333-4444-555555555555"
-    secret = "SECRET_UPLOAD_ID"
-    rpc = RecordingRpc({"debug": [["trace", unrelated_uuid]], "upload": secret})
-    list_sources = AsyncMock(side_effect=[[], NetworkError(f"network leaked {secret}")])
-
-    with pytest.raises(SourceAddError) as exc_info:
+    with pytest.raises(SourceAddError) as raised:
         await service.register_file_source(
             "nb_123",
             "report.pdf",
@@ -1036,54 +981,31 @@ async def test_register_file_source_probe_failure_is_typed_and_sanitized(
             logger=MagicMock(),
         )
 
-    message = str(exc_info.value)
-    assert exc_info.value.cause is not None
-    assert "source-list probe failed (NetworkError)" in message
-    assert unrelated_uuid not in message
-    assert secret not in message
+    assert raised.value.reconciliation_candidates == ("src_probe",)  # type: ignore[attr-defined]
+    list_sources.assert_awaited_once_with("nb_123")
 
 
 @pytest.mark.asyncio
-async def test_register_file_source_probe_decode_failure_aborts_instead_of_retrying(
+async def test_register_file_source_trusts_correlated_response_id_without_list(
     service: SourceUploadPipeline,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A probe that cannot answer aborts the registration, not retries it (#2220).
+    rpc = RecordingRpc([["src_existing"]])
+    list_sources = AsyncMock()
 
-    Sharper here than on the URL paths: the probe's answer is the source id the
-    file bytes are subsequently streamed into, so guessing "no match" does not
-    merely risk a duplicate row — it can direct an upload at the wrong source.
-    The registration must fire once and the failure must surface.
-    """
-    logger = logging.getLogger("tests.upload_pipeline_probe")
-    rpc = RecordingRpc(NetworkError("commit lost"))
-    probe_error = RPCError("probe decode failed")
-    # Baseline succeeds; the probe that follows the transport failure does not.
-    # Exactly two: baseline, then the failing probe (see the add_url twin).
-    list_sources = AsyncMock(side_effect=[[], probe_error])
+    source_id = await service.register_file_source(
+        "nb_123",
+        "report.pdf",
+        rpc_call=rpc,
+        list_sources=list_sources,
+        logger=MagicMock(),
+    )
 
-    with (
-        caplog.at_level(logging.WARNING, logger=logger.name),
-        pytest.raises(SourceAddError) as exc_info,
-    ):
-        await service.register_file_source(
-            "nb_123",
-            "report.pdf",
-            rpc_call=rpc,
-            list_sources=list_sources,
-            logger=logger,
-        )
-
-    # The load-bearing assertion: ONE register attempt. Restore the probe's
-    # ``return None`` and this becomes 2.
-    assert len(rpc.calls) == 1
-    assert exc_info.value.cause is probe_error
-    assert "Cannot confirm file source" in str(exc_info.value)
-    assert "will not be retried" in caplog.text
+    assert source_id == "src_existing"
+    list_sources.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_register_file_source_baseline_failure_warns_but_proceeds(
+async def test_register_file_source_has_no_preflight_list(
     service: SourceUploadPipeline,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1096,7 +1018,7 @@ async def test_register_file_source_baseline_failure_warns_but_proceeds(
     """
     logger = logging.getLogger("tests.upload_pipeline_baseline")
     rpc = RecordingRpc([[["src_new"]]])
-    list_sources = AsyncMock(side_effect=RPCError("baseline decode failed"))
+    list_sources = AsyncMock(side_effect=RPCError("must not be called"))
 
     with caplog.at_level(logging.WARNING, logger=logger.name):
         source_id = await service.register_file_source(
@@ -1108,8 +1030,8 @@ async def test_register_file_source_baseline_failure_warns_but_proceeds(
         )
 
     assert source_id == "src_new"
-    # Emitted at a level the default configuration actually passes through.
-    assert "baseline list() failed (RPCError)" in caplog.text
+    list_sources.assert_not_awaited()
+    assert caplog.text == ""
 
 
 @pytest.mark.asyncio

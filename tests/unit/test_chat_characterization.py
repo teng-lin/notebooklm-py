@@ -1417,7 +1417,7 @@ class TestAskServerAssignedConversationId:
             is_reusable=True,
         )
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ChatError, match="hPTbtc"):
+            with pytest.raises(ChatError, match="conversation id could not be resolved"):
                 await client.chat.ask(
                     "nb_123",
                     "Q?",

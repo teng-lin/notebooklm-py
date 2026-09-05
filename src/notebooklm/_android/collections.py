@@ -105,23 +105,15 @@ class AndroidCollectionsAPI(CollectionsAPI):
                 and (collection.emoji or "") == ""
                 and not collection.notebook_ids
             ]
-            if len(candidates) == 1 and not matching:
-                raise mark_unconfirmed(
-                    DecodingError(
-                        "Android collection create response did not echo the requested empty "
-                        "collection",
-                        method_id=CREATE_LABEL_METHOD,
-                    )
-                )
-            if len(matching) != 1:
-                raise mark_unconfirmed(
-                    CollectionError(
-                        f"create(name={name!r}) expected exactly 1 new matching collection in "
-                        f"the Android response, found {len(matching)}"
-                    )
-                )
-            (collection,) = matching
-            return collection
+            collection_error = CollectionError(
+                f"Android collection create for {name!r} returned no caller-correlated id. "
+                "Inspect the collection list before creating again."
+            )
+            collection_error.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
+                collection.id for collection in matching[:20]
+            )
+            collection_error.unresolved_inputs = (name[:200],)  # type: ignore[attr-defined]
+            raise mark_unconfirmed(collection_error)
 
     async def _send_update(
         self,

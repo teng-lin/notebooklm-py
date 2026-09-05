@@ -74,7 +74,7 @@
       "dot": "emerald",
       "title": "Shared outcome honesty",
       "items": [
-        "idempotent_create probes for a committed result before repeating a create",
+        "ambiguous create outcomes surface unchanged and are never automatically replayed",
         "call_unconfirmed_on_transport_loss and unresolved_commit_error expose unknown commits honestly"
       ]
     },

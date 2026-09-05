@@ -331,14 +331,12 @@ class WebSourcesAPI(SourcesAPI):
                 logger=logger,
                 return_result=True,
             )
-            # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2204).
             return await honor_requested_title_if_fresh(
                 self.rename,
                 notebook_id,
                 result,
                 title,
                 logger,
-                probe_proves_freshness=True,
             )
 
     async def _add_urls_batch(
@@ -349,9 +347,9 @@ class WebSourcesAPI(SourcesAPI):
         """Add validated URL entries with one batch-capable ``ADD_SOURCE`` RPC.
 
         Internal adapter seam for the existing MCP/REST batch endpoints.  The
-        public single-item :meth:`add_url` contract remains unchanged; in
-        particular, it retains precise probe-then-create recovery.  This bulk
-        path never replays an uncertain write and returns typed positional
+        public single-item :meth:`add_url` contract remains unchanged; both
+        paths send the mutation once. This bulk path never replays an uncertain
+        write and returns typed positional
         outcomes after reconciling silently omitted failures.
         """
         async with self._supervisor.operation_scope("source.add_urls_batch"):
@@ -385,9 +383,7 @@ class WebSourcesAPI(SourcesAPI):
             idempotent: Opt-in safety flag that REFUSES the call rather
                 than risk silent duplication on retry. Text sources
                 lack a reliable server-side dedupe key (titles non-unique;
-                content not exposed in the source list), so the
-                probe-then-retry pattern used by ``add_url`` cannot be
-                applied here. When True, raises
+                content not exposed in the source list). When True, raises
                 :class:`NonIdempotentRetryError` immediately. Default
                 ``False`` no longer relies on the inner transport retry
                 loop — as of the variant-keyed idempotency rollout, the
@@ -490,9 +486,8 @@ class WebSourcesAPI(SourcesAPI):
                 logger=logger,
                 return_result=True,
             )
-            # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2113).
             return await honor_requested_title_if_fresh(
-                self.rename, notebook_id, result, title, logger, probe_proves_freshness=True
+                self.rename, notebook_id, result, title, logger
             )
 
     async def add_drive_file(
@@ -832,8 +827,8 @@ class WebSourcesAPI(SourcesAPI):
 
         ``disable_internal_retries=True``: ADD_SOURCE is a
         mutating RPC that may have committed server-side even if the
-        client sees a 5xx / network error. The probe-then-retry loop
-        in ``add_url`` owns recovery via ``idempotent_create``.
+        client sees a 5xx / network error. ``add_url`` surfaces that
+        ambiguity without replaying the create.
         """
         # allow_null=False (mirrors _register_file_source): ADD_SOURCE returns the
         # new source row on success. A null result with a status code at wrb.fr[5]

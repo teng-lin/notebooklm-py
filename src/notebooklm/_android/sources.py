@@ -868,7 +868,8 @@ class AndroidSourcesAPI(AndroidSourceTransferMixin, SourcesAPI):
                 raise
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except AuthError:
+            except AuthError as exc:
+                cast(Any, exc).stage = "register"
                 raise
             except (RateLimitError, ServerError, NetworkError, DecodingError) as exc:
                 raise _unresolved_add_error(

@@ -212,25 +212,22 @@ class _DrainingWebWorkflowAPI(_FakeNotebooksAPI):
 
 
 @pytest.mark.asyncio
-async def test_create_recovers_through_transport_neutral_hook_and_probe() -> None:
+async def test_create_surfaces_transport_loss_without_probe_or_replay() -> None:
     created = Notebook(id="nb-created", title="Base orchestration")
     api = _FakeNotebooksAPI(
         list_results=[[], [created]],
         create_results=[NetworkError("response lost")],
     )
 
-    result = await api.create("Base orchestration")
+    with pytest.raises(NetworkError) as raised:
+        await api.create("Base orchestration")
 
-    assert result is created
+    assert getattr(raised.value, "unconfirmed", False) is True
     assert api.sent_titles == ["Base orchestration"]
-    assert api._take_created_chat_session_id(created.id) is None
+    assert api._list_results == [[], [created]]
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason="E5: a singleton same-title probe match has no caller provenance",
-)
 async def test_e5_concurrent_same_title_create_does_not_return_the_other_callers_id() -> None:
     service = _ConcurrentCreateService()
     caller_a = _ConcurrentNotebooksAPI(service, "A")
@@ -248,10 +245,6 @@ async def test_e5_concurrent_same_title_create_does_not_return_the_other_callers
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True,
-    reason="E5: a stale list miss is not authoritative evidence that create did not commit",
-)
 async def test_e5_stale_probe_after_committed_create_does_not_send_a_second_create() -> None:
     service = _StaleCreateService()
     api = _StaleNotebooksAPI(service)

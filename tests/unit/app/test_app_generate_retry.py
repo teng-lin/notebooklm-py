@@ -37,8 +37,18 @@ from notebooklm._app.generate_retry import (
     generation_outcome_from_status,
     handle_generation_result,
 )
+from notebooklm._idempotency import mark_commit_state
 from notebooklm.exceptions import RateLimitError
+from notebooklm.outcomes import CommitState
 from notebooklm.types import GenerationStatus
+
+
+def _refused_rate_limit() -> RateLimitError:
+    return mark_commit_state(
+        RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+        CommitState.REJECTED,
+    )
+
 
 # ---------------------------------------------------------------------------
 # calculate_backoff_delay — exponential backoff math (moved, pure).
@@ -99,7 +109,7 @@ class TestGenerateWithRetry:
         )
         generate_fn = AsyncMock(
             side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                _refused_rate_limit(),
                 success_result,
             ]
         )
@@ -114,7 +124,7 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_exhausted_reraises(self):
         """v0.8.0 (#1342): exhausting the budget re-raises the RateLimitError."""
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        error = _refused_rate_limit()
         generate_fn = AsyncMock(side_effect=error)
 
         with (
@@ -144,7 +154,7 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_no_retry_when_max_retries_zero(self):
         """Test that max_retries=0 means no retry attempts (re-raises immediately)."""
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        error = _refused_rate_limit()
         generate_fn = AsyncMock(side_effect=error)
 
         with pytest.raises(RateLimitError):
@@ -155,7 +165,7 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_delays_increase_exponentially(self):
         """Verify delays follow exponential backoff pattern (60s, 120s, 240s)."""
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        error = _refused_rate_limit()
         generate_fn = AsyncMock(side_effect=error)
 
         with (
@@ -171,7 +181,7 @@ class TestGenerateWithRetry:
     @pytest.mark.asyncio
     async def test_retry_delay_caps_at_max(self):
         """Verify delay caps at 300s even with many retries."""
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        error = _refused_rate_limit()
         generate_fn = AsyncMock(side_effect=error)
 
         with (
@@ -197,7 +207,7 @@ class TestGenerateWithRetry:
         )
         generate_fn = AsyncMock(
             side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                _refused_rate_limit(),
                 success_result,
             ]
         )
