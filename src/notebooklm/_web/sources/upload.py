@@ -832,7 +832,6 @@ class SourceUploadPipeline(EpochFenced):
                 _create,
                 method=RPCMethod.ADD_SOURCE_FILE,
                 what="the file-source registration",
-                force_unknown=True,
                 operation="sources.add_file",
             )
         except Exception as exc:
