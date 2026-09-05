@@ -471,6 +471,30 @@ async def test_collection_create_selects_new_row_from_cumulative_response() -> N
     ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="E5-class collection attribution: a foreign singleton response row has no provenance",
+)
+async def test_collection_create_does_not_attribute_delayed_foreign_android_singleton() -> None:
+    """The caller's create is invisible while an external same-shaped row is echoed."""
+    server = FakeOrganizationServer()
+    server.next_collection_ids = []
+    server.create_response_override = organization_pb2.CreateLabelResponse(
+        notebook_collections=[
+            organization_pb2.NotebookCollection(
+                name="Requested",
+                id=COLLECTION_MISSING,
+            )
+        ]
+    )
+    _labels, collections = _apis(server)
+
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Requested")
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+
+
 async def test_collection_create_ignores_unrelated_concurrent_post_state() -> None:
     server = FakeOrganizationServer()
     server.concurrent_collection_ids = [COLLECTION_MISSING]

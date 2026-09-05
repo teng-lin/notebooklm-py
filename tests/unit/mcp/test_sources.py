@@ -2325,6 +2325,39 @@ async def test_source_add_batch_fatal_error_aborts_the_call(mcp_call, mock_clien
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="E9: MCP re-raises a fatal batch member and discards committed siblings",
+)
+async def test_e9_mcp_batch_error_preserves_committed_sibling_id(mcp_call, mock_client) -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+    from notebooklm._web.sources.batch import SourceUrlBatchItem
+    from notebooklm.exceptions import RateLimitError
+
+    fatal = RateLimitError("batch response left another member unresolved")
+    mark_unconfirmed(fatal)
+    mock_client.sources._add_urls_batch = AsyncMock(
+        return_value=[
+            SourceUrlBatchItem(
+                url="https://first.example.com",
+                source=Source(id="committed-before-failure", title="Committed"),
+            ),
+            SourceUrlBatchItem(url="https://second.example.com", error=fatal),
+        ]
+    )
+
+    with pytest.raises(ToolError) as raised:
+        await mcp_call(
+            "source_add",
+            {
+                "notebook": NB_ID,
+                "urls": ["https://first.example.com", "https://second.example.com"],
+            },
+        )
+
+    assert "committed-before-failure" in str(raised.value)
+
+
 async def test_source_add_batch_isolates_non_fatal_input_error(mcp_call, mock_client) -> None:
     """A per-URL INPUT failure (a 404 / not-found — non-fatal) is isolated as an
     ``error`` item while the rest of the batch proceeds (the other half of #1871)."""

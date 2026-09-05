@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from fastapi.testclient import TestClient
 
 from notebooklm._types.notebooks import Notebook
@@ -657,6 +658,39 @@ def test_add_batch_transport_rate_limit_is_unconfirmed_502(
     assert error["retriable"] is False
     assert "reconcile" in error["hint"].lower()
     assert "results" not in resp.json()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="E9: REST re-raises a fatal batch member and discards committed siblings",
+)
+def test_e9_rest_batch_error_preserves_committed_sibling_id(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from notebooklm._idempotency import mark_unconfirmed
+    from notebooklm._web.sources.batch import SourceUrlBatchItem
+    from notebooklm.exceptions import RateLimitError
+
+    _seed_notebook(fake_client)
+    committed = Source(id="committed-before-failure", title="Committed")
+    fatal = RateLimitError("batch response left another member unresolved")
+    mark_unconfirmed(fatal)
+    fake_client.sources._add_urls_batch = AsyncMock(
+        return_value=[
+            SourceUrlBatchItem(url="https://a.example.com", source=committed),
+            SourceUrlBatchItem(url="https://b.example.com", error=fatal),
+        ]
+    )
+
+    response = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["https://a.example.com", "https://b.example.com"]},
+    )
+
+    assert response.status_code >= 400
+    assert "committed-before-failure" in str(response.json())
 
 
 def test_add_batch_mid_item_source_add_error_isolates_not_aborts(

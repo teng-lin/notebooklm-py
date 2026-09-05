@@ -181,6 +181,24 @@ async def test_create_multiple_new_raises_collection_error() -> None:
         await api.create("X")
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="E5-class collection attribution: a foreign singleton list diff has no provenance",
+)
+async def test_collection_create_does_not_attribute_delayed_foreign_web_singleton() -> None:
+    """The caller's row is delayed while an external writer becomes visible first."""
+    foreign = _collection_tuple("External", "foreign-collection")
+    api, _, _ = _api(
+        sequences={RPCMethod.LIST_LABELS: [_list_env(), _list_env(foreign)]},
+        responses={RPCMethod.CREATE_LABEL: None},
+    )
+
+    with pytest.raises(CollectionError) as raised:
+        await api.create("Requested")
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+
+
 # -- rename ------------------------------------------------------------------
 
 
