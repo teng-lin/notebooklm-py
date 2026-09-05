@@ -198,64 +198,60 @@ def test_client_composed_does_not_expose_collaborators_alias() -> None:
     tree = _tree(COMPOSED_PATH)
     violations: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "collaborators":
-            violations.append(f"property/function line {node.lineno}: collaborators")
+        if isinstance(node, ast.FunctionDef) and node.name in {
+            "collaborators",
+            "runtime_collaborators",
+            "bind_runtime_collaborators",
+        }:
+            violations.append(f"property/function line {node.lineno}: {node.name}")
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Attribute) and target.attr == "collaborators":
-                    violations.append(f"assignment line {node.lineno}: .collaborators")
+                if isinstance(target, ast.Attribute) and target.attr in {
+                    "collaborators",
+                    "_runtime_collaborators",
+                }:
+                    violations.append(f"assignment line {node.lineno}: .{target.attr}")
     assert not violations, (
-        "ClientComposed must expose runtime_collaborators, not collaborators:\n  "
+        "ClientComposed must not retain the final shared runtime bundle:\n  "
         + "\n  ".join(violations)
     )
 
 
 def test_android_web_compatibility_installer_has_one_root_owner() -> None:
-    """The temporary 0.x bridge must not leak back into either backend assembler."""
-    definitions: list[str] = []
+    """One pure factory owns sidecar construction and its lazy Web builder."""
     sidecar_constructors: list[str] = []
-    installer_calls: list[str] = []
     runtime_builder_calls: list[str] = []
+    lifecycle_calls: list[str] = []
     for path in sorted((REPO_ROOT / "src" / "notebooklm").rglob("*.py")):
         relative = path.relative_to(REPO_ROOT).as_posix()
         for node in ast.walk(_tree(path)):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
-                "_install_android_lifecycle",
-                "_install_android_web_compatibility",
-            }:
-                definitions.append(f"{relative}:{node.name}")
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "LazyWebSidecar"
-            ):
-                sidecar_constructors.append(f"{relative}:{node.lineno}")
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                if node.func.id == "_install_android_web_compatibility":
-                    installer_calls.append(f"{relative}:{node.lineno}")
+                if node.func.id == "LazyWebSidecar":
+                    sidecar_constructors.append(f"{relative}:{node.lineno}")
                 if node.func.id == "build_compatibility_runtime":
                     runtime_builder_calls.append(f"{relative}:{node.lineno}")
+                if node.func.id == "ClientLifecycle":
+                    lifecycle_calls.append(f"{relative}:{node.lineno}")
 
-    assert definitions == ["src/notebooklm/_client_compat.py:_install_android_web_compatibility"]
     assert len(sidecar_constructors) == 1
     assert sidecar_constructors[0].startswith("src/notebooklm/_client_compat.py:")
-    assert len(installer_calls) == 1
-    assert installer_calls[0].startswith("src/notebooklm/_client_assembly.py:")
     assert len(runtime_builder_calls) == 1
     assert runtime_builder_calls[0].startswith("src/notebooklm/_client_compat.py:")
+    assert len(lifecycle_calls) == 1
+    assert lifecycle_calls[0].startswith("src/notebooklm/_client_assembly.py:")
 
 
 def test_android_web_compatibility_import_and_lifecycle_placement_are_exact() -> None:
-    """Only the root owner may lazily build Web and extend the frozen lifecycle tuples."""
+    """Only root installation and loaded-auth finalization mutate a client."""
     tree = _tree(CLIENT_COMPAT_PATH)
-    installer = next(
+    factory = next(
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_install_android_web_compatibility"
+        if isinstance(node, ast.FunctionDef) and node.name == "build_compatibility_sidecar"
     )
     builder = next(
         node
-        for node in installer.body
+        for node in factory.body
         if isinstance(node, ast.FunctionDef) and node.name == "build_sidecar_runtime"
     )
     web_imports = [
@@ -276,17 +272,36 @@ def test_android_web_compatibility_import_and_lifecycle_placement_are_exact() ->
         )
     ]
 
-    lifecycle_calls = [
-        node
-        for node in ast.walk(installer)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "ClientLifecycle"
-    ]
-    assert len(lifecycle_calls) == 1
-    keywords = {keyword.arg: keyword.value for keyword in lifecycle_calls[0].keywords}
-    assert ast.unparse(keywords["transports"]) == "(*assembly.transports, sidecar)"
-    assert ast.unparse(keywords["loop_participants"]) == "(*assembly.loop_participants, sidecar)"
+    scoped = (WEB_ASSEMBLY_PATH, ANDROID_ASSEMBLY_PATH, CLIENT_COMPAT_PATH, ASSEMBLY_PATH)
+    violations: list[str] = []
+    for path in scoped:
+        for function in (
+            node for node in ast.walk(_tree(path)) if isinstance(node, ast.FunctionDef)
+        ):
+            client_parameters = {arg.arg for arg in function.args.args if arg.arg == "client"}
+            client_parameters.update(
+                arg.arg for arg in function.args.kwonlyargs if arg.arg == "client"
+            )
+            if not client_parameters or (
+                path == ASSEMBLY_PATH
+                and function.name in {"_install_client", "_finalize_loaded_client"}
+            ):
+                continue
+            for node in ast.walk(function):
+                targets: list[ast.expr] = []
+                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                    if isinstance(node, ast.Assign):
+                        targets.extend(node.targets)
+                    else:
+                        targets.append(node.target)
+                if any(
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "client"
+                    for target in targets
+                ):
+                    violations.append(f"{path.name}:{function.name}:{node.lineno}")
+    assert violations == []
 
 
 def test_android_rpc_call_materializes_sidecar_inside_operation_lease() -> None:

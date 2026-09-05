@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from .._client_metrics import ClientMetrics
 from .call_supervisor import CallSupervisor
-from .lifecycle import ClientLifecycle
 
 if TYPE_CHECKING:
     from ..types import RpcTelemetryEvent
@@ -33,14 +32,6 @@ class SharedRuntime:
 
     metrics: ClientMetrics
     call_supervisor: CallSupervisor
-    _lifecycle: ClientLifecycle | None
-
-    @property
-    def lifecycle(self) -> ClientLifecycle:
-        """Return the root after final client assembly has frozen the graph."""
-        if self._lifecycle is None:
-            raise RuntimeError("Client lifecycle has not been assembled.")
-        return self._lifecycle
 
 
 # One-release compatibility name for private importers.  The concrete type is
@@ -81,7 +72,6 @@ def build_collaborators(
     return SharedRuntime(
         metrics=metrics,
         call_supervisor=call_supervisor,
-        _lifecycle=None,
     )
 
 

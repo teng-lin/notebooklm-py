@@ -236,7 +236,7 @@ def test_shared_wiring_identities_hold_on_both_paths() -> None:
             is client._web_runtime.kernel
         ), f"{label}: uploader must share the client's Kernel"
         assert (
-            getattr(client._collaborators.lifecycle, "_supervisor", _missing)
+            getattr(client._lifecycle, "_supervisor", _missing)
             is client._collaborators.call_supervisor
         ), f"{label}: lifecycle must share the client's CallSupervisor"
         assert getattr(client._web_runtime.source_uploader, "_lister", _missing) is getattr(

@@ -128,8 +128,8 @@ class WebResearchAPI(BaseResearchAPI):
             base_timeout: The owning client's configured ``timeout=``. The
                 batch-scaled IMPORT_RESEARCH window is floored at it so a
                 caller's larger explicit budget is never silently shortened
-                (#2205). Standalone ``WebResearchAPI(rpc)`` keeps the historical
-                behavior via the shared 30 s default.
+                (#2205). Standalone ``WebResearchAPI(rpc, supervisor=supervisor)``
+                keeps the historical behavior via the shared 30 s default.
             import_research_timeout: Per-attempt read window for
                 IMPORT_RESEARCH, read exactly like ``chat_timeout``: unset
                 (default) keeps the batch-scaled, ``base_timeout``-floored

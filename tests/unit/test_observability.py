@@ -221,7 +221,7 @@ async def test_close_with_drain_closes_transport_after_timeout(auth_tokens: Auth
         calls.append(f"close:{drain}:{drain_timeout}")
         raise TimeoutError("deadline")
 
-    client._collaborators.lifecycle.close = close_transport  # type: ignore[method-assign]
+    client._lifecycle.close = close_transport  # type: ignore[method-assign]
 
     with pytest.raises(TimeoutError, match="deadline"):
         await client.close(drain=True, drain_timeout=0.1)
@@ -238,7 +238,7 @@ async def test_close_with_invalid_drain_does_not_close_transport(auth_tokens: Au
         calls.append(f"close:{drain}:{drain_timeout}")
         raise ValueError("bad deadline")
 
-    client._collaborators.lifecycle.close = close_transport  # type: ignore[method-assign]
+    client._lifecycle.close = close_transport  # type: ignore[method-assign]
 
     with pytest.raises(ValueError, match="bad deadline"):
         await client.close(drain=True, drain_timeout=-1.0)
