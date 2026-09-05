@@ -902,6 +902,49 @@ async def test_from_storage_handoff_skips_nested_client_in_subclass_constructor(
     assert caught[0].filename == __file__
 
 
+async def test_from_storage_handoff_is_claimed_by_only_the_outer_same_subclass_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class SameSubclassNestedClient(NotebookLMClient):
+        constructing_nested = False
+
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            if not type(self).constructing_nested:
+                type(self).constructing_nested = True
+                try:
+                    nested_kwargs = {**kwargs, "backend": "web"}
+                    self.nested = type(self)(auth, **nested_kwargs)  # type: ignore[arg-type]
+                finally:
+                    type(self).constructing_nested = False
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    with pytest.warns(DeprecationWarning, match="legacy NotebookLMClient.from_storage"):
+        wrapper = SameSubclassNestedClient.from_storage(timeout=60.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await wrapper._build()
+
+    assert isinstance(client, SameSubclassNestedClient)
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert client.nested.preference_after_super == BackendPreference("web", "explicit")
+    assert client.nested._backend_preference == BackendPreference("web", "explicit")
+    assert len(caught) == 1
+    assert "legacy NotebookLMClient tuning arguments" in str(caught[0].message)
+    assert "backend, timeout" in str(caught[0].message)
+    assert caught[0].filename == __file__
+
+
 async def test_from_storage_handoff_supports_non_cooperative_subclass_new(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

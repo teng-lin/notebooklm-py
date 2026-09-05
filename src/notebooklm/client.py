@@ -51,12 +51,12 @@ from ._client_assembly import (
     _finalize_loaded_client,
 )
 from ._client_options import (
+    claim_storage_construction_instance,
     client_construction_context,
+    consume_storage_construction_preference,
     legacy_client_option_names,
     normalize_legacy_client_options,
     resolve_backend_preference,
-    storage_construction_preference,
-    storage_construction_warning_suppressed,
 )
 from ._collections import CollectionsAPI
 from ._deprecation import warn_deprecated, warn_registered_deprecation
@@ -205,6 +205,21 @@ class NotebookLMClient:
         if runtime is None:
             raise RuntimeError("The web runtime is not available for this client.")
         return runtime
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> NotebookLMClient:
+        """Allocate normally while claiming the exact stored-auth target instance."""
+
+        mro_tail = cls.__mro__[cls.__mro__.index(NotebookLMClient) + 1 :]
+        next_allocator = next(base for base in mro_tail if "__new__" in base.__dict__)
+        if next_allocator is object:
+            instance = object.__new__(cls)
+        else:
+            instance = super().__new__(cls, *args, **kwargs)
+        if args:
+            claim_storage_construction_instance(cls, args[0], instance)
+        elif "auth" in kwargs:
+            claim_storage_construction_instance(cls, kwargs["auth"], instance)
+        return instance
 
     @property
     def raw(self) -> raw_api.WebRawAPI | raw_api.AndroidRawAPI:
@@ -380,7 +395,7 @@ class NotebookLMClient:
         # otherwise. The test-only seam kwargs (``decode_response`` /
         # ``sleep`` / ``is_auth_error`` / ``async_client_factory``) stay
         # off this public constructor by design.
-        storage_preference = storage_construction_preference(self, auth)
+        storage_preference = consume_storage_construction_preference(self, auth)
         normalized = normalize_legacy_client_options(
             timeout=timeout,
             keepalive=keepalive,
@@ -401,7 +416,7 @@ class NotebookLMClient:
             config=config,
             preference=storage_preference,
         )
-        if normalized.legacy_arguments and not storage_construction_warning_suppressed(self, auth):
+        if normalized.legacy_arguments and storage_preference is None:
             detail = f"Offending arguments: {', '.join(normalized.legacy_arguments)}."
             warn_registered_deprecation("client_legacy_constructor_options", detail=detail)
         _assemble_client(
