@@ -204,11 +204,17 @@ class NotebookLMClient:
         """Make a subclass allocator visible to the stored-auth class call."""
 
         super().__init_subclass__(**kwargs)
-        descriptor = cls.__dict__.get("__new__")
+        allocator_owner = next(base for base in cls.__mro__ if "__new__" in base.__dict__)
+        if allocator_owner is NotebookLMClient:
+            return
+        descriptor = allocator_owner.__dict__["__new__"]
         if not isinstance(descriptor, staticmethod):
             return
         custom_new = descriptor.__func__
-        if getattr(custom_new, "__notebooklm_storage_allocation_wrapper__", False):
+        if (
+            getattr(custom_new, "__notebooklm_storage_allocation_wrapper_owner__", None)
+            is allocator_owner
+        ):
             return
 
         @wraps(custom_new)
@@ -221,7 +227,7 @@ class NotebookLMClient:
                 claim(instance)
                 return instance
 
-        storage_aware_new.__notebooklm_storage_allocation_wrapper__ = True  # type: ignore[attr-defined]
+        storage_aware_new.__notebooklm_storage_allocation_wrapper_owner__ = cls  # type: ignore[attr-defined]
         type.__setattr__(cls, "__new__", staticmethod(storage_aware_new))
 
     def _require_web_runtime(self) -> Any:

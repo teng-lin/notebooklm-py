@@ -1111,6 +1111,44 @@ async def test_from_storage_passes_auth_and_options_to_mi_allocator(
     assert client._backend_preference == BackendPreference("web", "env")
 
 
+async def test_from_storage_handoff_wraps_mixin_first_inherited_allocator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class NonCooperativeAllocatorMixin:
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> NonCooperativeAllocatorMixin:
+            instance = object.__new__(cls)
+            instance.allocator_auth = auth
+            instance.allocator_backend = kwargs["backend"]
+            return instance
+
+    class MixinFirstClient(NonCooperativeAllocatorMixin, NotebookLMClient):
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    with pytest.warns(DeprecationWarning, match="legacy NotebookLMClient.from_storage"):
+        context = MixinFirstClient.from_storage(timeout=60.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await context._build()
+
+    assert isinstance(client, MixinFirstClient)
+    assert client.allocator_auth is loaded_auth
+    assert client.allocator_backend == "android"
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert caught == []
+
+
 async def test_from_storage_preserves_custom_metaclass_call_hook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
