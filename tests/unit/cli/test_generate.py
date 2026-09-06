@@ -356,6 +356,35 @@ class TestGenerateVideo:
         assert kwargs["video_style"].name == "CUSTOM"
         assert kwargs["style_prompt"] == "Use hand-drawn diagrams"
 
+    def test_generate_video_cinematic_format_ignores_custom_style(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.artifacts.generate_cinematic_video = AsyncMock(
+            return_value={"artifact_id": "cin_123", "status": "processing"}
+        )
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                [
+                    "generate",
+                    "video",
+                    "--format",
+                    "cinematic",
+                    "--style",
+                    "custom",
+                    "-n",
+                    "nb_123",
+                ],
+                obj=inject_client(mock_client),
+            )
+        assert result.exit_code == 0, result.output
+        mock_client.artifacts.generate_cinematic_video.assert_awaited_once()
+        kwargs = mock_client.artifacts.generate_cinematic_video.await_args.kwargs
+        assert "video_style" not in kwargs
+        assert "style_prompt" not in kwargs
+
     def test_generate_video_custom_style_requires_prompt(
         self, runner, mock_auth, mock_fetch_tokens
     ):
@@ -470,15 +499,25 @@ class TestGenerateCinematicVideo:
         assert result.exit_code == 1
         assert "--style-prompt cannot be used with cinematic video" in result.output
 
-    def test_generate_cinematic_video_rejects_custom_style_without_prompt(
-        self, runner, mock_auth, mock_fetch_tokens
-    ):
-        result = runner.invoke(
-            cli,
-            ["generate", "cinematic-video", "--style", "custom", "-n", "nb_123"],
+    def test_generate_cinematic_video_ignores_custom_style(self, runner, mock_auth):
+        mock_client = create_mock_client()
+        mock_client.artifacts.generate_cinematic_video = AsyncMock(
+            return_value={"artifact_id": "cin_123", "status": "processing"}
         )
-        assert result.exit_code == 1
-        assert "--style custom requires --style-prompt" in result.output
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["generate", "cinematic-video", "--style", "custom", "-n", "nb_123"],
+                obj=inject_client(mock_client),
+            )
+        assert result.exit_code == 0, result.output
+        mock_client.artifacts.generate_cinematic_video.assert_awaited_once()
+        kwargs = mock_client.artifacts.generate_cinematic_video.await_args.kwargs
+        assert "video_style" not in kwargs
+        assert "style_prompt" not in kwargs
 
     def test_generate_cinematic_video_rejects_non_cinematic_format(
         self, runner, mock_auth, mock_fetch_tokens

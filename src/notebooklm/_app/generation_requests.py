@@ -115,12 +115,16 @@ class VideoGenerationRequest(_SourcedGenerationRequest):
         prompt = self.style_prompt
         normalized = prompt.strip() if isinstance(prompt, str) else prompt
         has_prompt = isinstance(normalized, str) and bool(normalized)
-        if self.video_format is VideoFormat.CINEMATIC and has_prompt:
-            raise GenerationRequestValidationError(
-                "cinematic_style_prompt",
-                "style_prompt is not supported for cinematic video",
-            )
-        if self.video_format is VideoFormat.SHORT and (
+        if self.video_format is VideoFormat.CINEMATIC:
+            if has_prompt:
+                raise GenerationRequestValidationError(
+                    "cinematic_style_prompt",
+                    "style_prompt is not supported for cinematic video",
+                )
+            # Cinematic video has no style input.  Preserve the historical
+            # contract by ignoring every video_style value, including CUSTOM,
+            # instead of applying the explainer-video style/prompt coupling.
+        elif self.video_format is VideoFormat.SHORT and (
             self.video_style is not VideoStyle.AUTO_SELECT or has_prompt
         ):
             raise GenerationRequestValidationError(
@@ -128,12 +132,12 @@ class VideoGenerationRequest(_SourcedGenerationRequest):
                 "video_style and style_prompt are not supported for short video "
                 "because it has a fixed visual style",
             )
-        if self.video_style is VideoStyle.CUSTOM and not has_prompt:
+        elif self.video_style is VideoStyle.CUSTOM and not has_prompt:
             raise GenerationRequestValidationError(
                 "custom_style_prompt_required",
                 "video_style=custom requires a non-empty style_prompt",
             )
-        if has_prompt and self.video_style is not VideoStyle.CUSTOM:
+        elif has_prompt and self.video_style is not VideoStyle.CUSTOM:
             raise GenerationRequestValidationError(
                 "style_prompt_requires_custom",
                 "style_prompt requires video_style=custom",
@@ -292,9 +296,9 @@ def build_generation_request(
             max_retries=max_retries,
         )
     if kind in ("video", "cinematic-video"):
-        # Validate every video-specific value before normalizing cinematic video
-        # to its distinct execution variant.  Constructing the cinematic request
-        # first would silently discard an invalid custom style or style prompt.
+        # Validate video semantics before normalizing cinematic video to its
+        # distinct execution variant.  Cinematic rejects a style prompt but
+        # deliberately ignores video_style, including CUSTOM.
         normalized_video = VideoGenerationRequest(
             notebook_id=notebook_id,
             source_ids=source_ids,

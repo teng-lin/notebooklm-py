@@ -102,6 +102,28 @@ def test_video_cinematic_normalizes_to_distinct_variant() -> None:
     assert isinstance(request, CinematicVideoGenerationRequest)
 
 
+@pytest.mark.parametrize(
+    ("kind", "video_format"),
+    [
+        ("video", VideoFormat.CINEMATIC),
+        ("cinematic-video", VideoFormat.EXPLAINER),
+    ],
+)
+@pytest.mark.parametrize("video_style", list(VideoStyle))
+def test_factory_ignores_every_video_style_for_cinematic(
+    kind: str,
+    video_format: VideoFormat,
+    video_style: VideoStyle,
+) -> None:
+    request = build_generation_request(
+        kind,  # type: ignore[arg-type]
+        notebook_id="nb",
+        video_format=video_format,
+        video_style=video_style,
+    )
+    assert isinstance(request, CinematicVideoGenerationRequest)
+
+
 def test_video_custom_style_trims_prompt() -> None:
     request = VideoGenerationRequest(
         notebook_id="nb",
@@ -174,11 +196,6 @@ def test_video_validation(
             "style_prompt is not supported",
         ),
         (
-            {"video_style": VideoStyle.CUSTOM},
-            "custom_style_prompt_required",
-            "video_style=custom",
-        ),
-        (
             {"video_style": VideoStyle.CUSTOM, "style_prompt": "ink"},
             "cinematic_style_prompt",
             "style_prompt is not supported",
@@ -200,6 +217,20 @@ def test_factory_validates_video_options_before_cinematic_normalization(
             **kwargs,  # type: ignore[arg-type]
         )
     assert exc_info.value.code == code
+
+
+def test_factory_non_cinematic_custom_style_still_requires_prompt() -> None:
+    with pytest.raises(
+        GenerationRequestValidationError,
+        match="video_style=custom requires a non-empty style_prompt",
+    ) as exc_info:
+        build_generation_request(
+            "video",
+            notebook_id="nb",
+            video_style=VideoStyle.CUSTOM,
+        )
+    assert exc_info.value.code == "custom_style_prompt_required"
+    assert "--" not in str(exc_info.value)
 
 
 @pytest.mark.parametrize("kind", _GENERATION_KINDS)
