@@ -94,6 +94,7 @@ class Transfer:
     expected_size: int | None = None
     expected_digest: str | None = None
     commit_id: str | None = None
+    allow_abandoned_body: bool = False
 
     def __post_init__(self) -> None:
         if self.prefix_bytes < 1:
@@ -243,6 +244,8 @@ class HttpFaultServer:
 
     async def _wait_gate(self, name: str) -> None:
         self._observed_gates[name] += 1
+        async with self._changed:
+            self._changed.notify_all()
         await self.gate(name).wait()
 
     def release(self, name: str) -> None:
@@ -318,6 +321,13 @@ class HttpFaultServer:
         if remaining:
             raise AssertionError(f"unconsumed HTTP actions: {remaining!r}")
 
+    async def wait_for_gate(self, name: str, *, count: int = 1, timeout: float = 2.0) -> None:
+        async def wait() -> None:
+            async with self._changed:
+                await self._changed.wait_for(lambda: self._observed_gates[name] >= count)
+
+        await asyncio.wait_for(wait(), timeout)
+
     async def wait_for_event(self, phase: str, *, count: int = 1, timeout: float = 2.0) -> None:
         async def wait() -> None:
             async with self._changed:
@@ -352,6 +362,7 @@ class HttpFaultServer:
     ) -> None:
         record: RequestRecord | None = None
         expected_disconnect = False
+        transfer: Transfer | None = None
         try:
             while True:
                 try:
@@ -472,6 +483,11 @@ class HttpFaultServer:
                     break
         except asyncio.CancelledError:
             raise
+        except asyncio.IncompleteReadError:
+            if transfer is None or not transfer.allow_abandoned_body:
+                self.errors.append("IncompleteReadError")
+            elif record is not None:
+                await self._event("body_abandoned", record)
         except (BrokenPipeError, ConnectionResetError) as exc:
             if not expected_disconnect:
                 self.errors.append(type(exc).__name__)

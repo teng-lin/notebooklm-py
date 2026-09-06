@@ -347,3 +347,40 @@ async def test_unused_required_prefix_gate_cannot_pass() -> None:
         ).status_code == 200
     with pytest.raises(AssertionError, match="unobserved required"):
         server.assert_drained()
+
+
+@pytest.mark.parametrize("allowed", [False, True])
+async def test_abandoned_body_requires_explicit_fault_contract(allowed: bool) -> None:
+    import asyncio
+
+    from tests._fault_server.http import Route, Transfer
+
+    server = HttpFaultServer()
+    server.enqueue(
+        Route("PUT", "notebook.google.com", "/upload"),
+        Transfer(
+            prefix_bytes=4,
+            gates={"body_prefix": "prefix"},
+            allow_abandoned_body=allowed,
+        ),
+    )
+    async with server:
+        _reader, writer = await asyncio.open_connection(*server.address)
+        writer.write(
+            b"PUT /upload HTTP/1.1\r\nHost: notebook.google.com\r\nContent-Length: 10\r\n\r\npart"
+        )
+        await writer.drain()
+        await server.wait_for_gate("prefix")
+        writer.close()
+        await writer.wait_closed()
+        server.release("prefix")
+        await server.wait_for_event("handler_settled")
+    assert not server.journal[0].body_complete
+    assert server.journal[0].body_bytes == 4
+    assert server.committed == []
+    if allowed:
+        server.assert_drained()
+        assert any(event["phase"] == "body_abandoned" for event in server.events)
+    else:
+        with pytest.raises(AssertionError, match="IncompleteReadError"):
+            server.assert_drained()
