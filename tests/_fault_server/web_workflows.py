@@ -14,11 +14,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from notebooklm import NetworkError
+from notebooklm import NetworkError, ServerError
 from notebooklm._app.generate import execute_generation
 from notebooklm._app.generation_requests import AudioGenerationRequest
 from notebooklm._app.research import execute_research_import
 from notebooklm._web.rows.research_task import parse_research_task_models
+from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 
 from .common import ScenarioResult
@@ -30,6 +31,8 @@ _LIST_ARTIFACTS = Route.rpc(RPCMethod.LIST_ARTIFACTS.value)
 _POLL_RESEARCH = Route.rpc(RPCMethod.POLL_RESEARCH.value)
 _IMPORT_RESEARCH = Route.rpc(RPCMethod.IMPORT_RESEARCH.value)
 _GET_NOTEBOOK = Route.rpc(RPCMethod.GET_NOTEBOOK.value)
+_LIST_LABELS = Route.rpc(RPCMethod.LIST_LABELS.value)
+_CREATE_LABEL = Route.rpc(RPCMethod.CREATE_LABEL.value)
 _READ = Route.rpc(RPCMethod.LIST_NOTEBOOKS.value)
 _CLOSE_TIMEOUT = 2.0
 
@@ -38,6 +41,7 @@ SCENARIOS = (
     "workflow_generation_terminal_failure",
     "workflow_research_import_candidates",
     "workflow_research_import_ordered_loss",
+    "workflow_collection_readback_failure",
 )
 
 
@@ -109,6 +113,10 @@ def _source_list_response(source_id: str | None = None, *, url: str = "") -> byt
             ]
         ]
     return rpc_response(_GET_NOTEBOOK.rpc_id or "", [["Notebook", sources, "nb-workflow"]])
+
+
+def _collection_list_response() -> bytes:
+    return rpc_response(_LIST_LABELS.rpc_id or "", [None, [["Existing", None, "c-existing", ""]]])
 
 
 def _completed_research_poll() -> tuple[str, bytes, tuple[str, ...]]:
@@ -294,11 +302,51 @@ async def _research_import_ordered_loss(result: ScenarioResult) -> None:
     )
 
 
+async def _collection_readback_failure(result: ScenarioResult) -> None:
+    server = HttpFaultServer()
+    server.enqueue(
+        _LIST_LABELS,
+        Reply(body=_collection_list_response()),
+        Reply(body=_collection_list_response()),
+        Reply(503),
+        Reply(body=_collection_list_response()),
+    )
+    server.enqueue(_CREATE_LABEL, Reply(body=rpc_response(_CREATE_LABEL.rpc_id or "", None)))
+    error: BaseException | None = None
+    async with _cohort(result, server) as client:
+        preflight = await client.collections.list()
+        try:
+            await client.collections.create("Research")
+        except Exception as exc:
+            error = exc
+        recovered = await client.collections.list()
+    metadata = getattr(error, "operation_metadata", None)
+    entries = () if metadata is None else metadata.entries
+    result.record("workflow_outcome", error=None if error is None else type(error).__name__)
+    result.require(
+        "collection_preflight_decoded", [item.id for item in preflight] == ["c-existing"]
+    )
+    result.require("collection_readback_error", isinstance(error, ServerError))
+    result.require(
+        "collection_primary_confirmed",
+        getattr(error, "commit_state", None) is CommitState.CONFIRMED,
+    )
+    result.require(
+        "collection_readback_failed",
+        len(entries) == 2 and entries[1].commit_state is CommitState.UNKNOWN,
+    )
+    result.require(
+        "collection_one_create", len([r for r in server.journal if r.route == _CREATE_LABEL]) == 1
+    )
+    result.require("collection_recovery", [item.id for item in recovered] == ["c-existing"])
+
+
 _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
     "workflow_generation_lost_kickoff": _lost_kickoff,
     "workflow_generation_terminal_failure": _terminal_failure,
     "workflow_research_import_candidates": _research_import_candidates,
     "workflow_research_import_ordered_loss": _research_import_ordered_loss,
+    "workflow_collection_readback_failure": _collection_readback_failure,
 }
 
 
