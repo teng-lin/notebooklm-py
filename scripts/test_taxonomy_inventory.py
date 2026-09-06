@@ -43,7 +43,9 @@ class CollectionRecorder:
     def __init__(self) -> None:
         self.items: list[pytest.Item] = []
 
-    def pytest_collection_modifyitems(self, config: pytest.Config, items: list[pytest.Item]) -> None:
+    def pytest_collection_modifyitems(
+        self, config: pytest.Config, items: list[pytest.Item]
+    ) -> None:
         self.items = list(items)
 
 
