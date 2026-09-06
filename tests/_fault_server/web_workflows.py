@@ -42,8 +42,10 @@ SCENARIOS = (
 
 
 @asynccontextmanager
-async def _cohort(result: ScenarioResult, server: HttpFaultServer) -> AsyncIterator[Any]:
-    client = build_fault_client(server, timeout=0.5, server_error_max_retries=0)
+async def _cohort(
+    result: ScenarioResult, server: HttpFaultServer, *, server_retries: int = 0
+) -> AsyncIterator[Any]:
+    client = build_fault_client(server, timeout=0.5, server_error_max_retries=server_retries)
     await server.__aenter__()
     await client.__aenter__()
     try:
@@ -85,12 +87,12 @@ async def _resolve_sources(
     return list(source_ids)
 
 
-def _request(*, wait: bool) -> AudioGenerationRequest:
+def _request(*, wait: bool, timeout: float = 0.1) -> AudioGenerationRequest:
     return AudioGenerationRequest(
         notebook_id="nb-workflow",
         source_ids=(),
         wait=wait,
-        timeout=0.1,
+        timeout=timeout,
         interval=0.001,
     )
 
@@ -129,7 +131,7 @@ async def _lost_kickoff(result: ScenarioResult) -> None:
     async with _cohort(result, server) as client:
         try:
             await execute_generation(
-                _request(wait=True),
+                _request(wait=True, timeout=5.0),
                 client,
                 notebook_resolver=_resolve_notebook,
                 source_resolver=_resolve_sources,
