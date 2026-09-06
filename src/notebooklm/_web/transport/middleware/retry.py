@@ -68,11 +68,13 @@ from ...._backoff import (
 from ...._deadline import Monotonic, RuntimeDeadline
 from ...._runtime.config import CORE_LOGGER_NAME
 from ...._runtime.helpers import resolve_sleep
+from ...._runtime.retry_budget import RetryBudget
 from ..errors import TransportRateLimited, TransportServerError, parse_retry_after
 from .context import (
     RPC_CONTEXT_DISABLE_INTERNAL_RETRIES,
     RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES,
     RPC_CONTEXT_LOG_LABEL,
+    RPC_CONTEXT_RETRY_BUDGET,
     RPC_CONTEXT_RETRY_DEADLINE,
 )
 from .core import NextCall, RpcRequest, RpcResponse
@@ -193,8 +195,9 @@ class RetryMiddleware:
             request.context.get(RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES, False)
         )
 
-        rate_limit_retries = 0
-        server_error_retries = 0
+        retry_budget = request.context.get(RPC_CONTEXT_RETRY_BUDGET)
+        if retry_budget is None:
+            retry_budget = RetryBudget()
         # Prefer an aggregate deadline threaded in by the RPC executor
         # (``RPC_CONTEXT_RETRY_DEADLINE``) so a decode-time auth-refresh retry
         # re-enters the chain with the SAME T0-anchored budget instead of
@@ -215,17 +218,17 @@ class RetryMiddleware:
                 if (
                     disable_internal_retries
                     or disable_read_timeout_retries
-                    or rate_limit_retries >= rate_limit_max
+                    or retry_budget.rate_limit_retries >= rate_limit_max
                 ):
                     raise
                 await self._wait_for_rate_limit(
                     exc=exc,
-                    attempt=rate_limit_retries,
+                    attempt=retry_budget.rate_limit_retries,
                     log_label=log_label,
                     rate_limit_max=rate_limit_max,
                     retry_deadline=retry_deadline,
                 )
-                rate_limit_retries += 1
+                retry_budget.rate_limit_retries += 1
                 if self._metrics is not None:
                     self._metrics.increment(rpc_rate_limit_retries=1)
                 continue
@@ -235,16 +238,19 @@ class RetryMiddleware:
                 ):
                     raise
                 server_error_max = self._resolve_server_error_max()
-                if disable_internal_retries or server_error_retries >= server_error_max:
+                if (
+                    disable_internal_retries
+                    or retry_budget.server_error_retries >= server_error_max
+                ):
                     raise
                 await self._wait_for_server_error(
                     exc=exc,
-                    attempt=server_error_retries,
+                    attempt=retry_budget.server_error_retries,
                     log_label=log_label,
                     server_error_max=server_error_max,
                     retry_deadline=retry_deadline,
                 )
-                server_error_retries += 1
+                retry_budget.server_error_retries += 1
                 if self._metrics is not None:
                     self._metrics.increment(rpc_server_error_retries=1)
                 continue

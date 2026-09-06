@@ -41,6 +41,10 @@ RPC_CONTEXT_REFRESH_BUDGET: Final = "refresh_budget"
 # deadline (e.g. the chat path), in which case ``RetryMiddleware`` falls back
 # to ``_start_retry_deadline()``.
 RPC_CONTEXT_RETRY_DEADLINE: Final = "retry_deadline"
+# Optional shared retry counters. The executor seeds one instance for the
+# complete logical RPC so decode-time auth recursion cannot reset the 429 or
+# server-error allowance when it re-enters the middleware chain.
+RPC_CONTEXT_RETRY_BUDGET: Final = "retry_budget"
 # Optional bound journal entry, or tuple of batch-member entries. The runtime
 # terminal is the sole owner that opens one attempt per physical POST.
 RPC_CONTEXT_JOURNAL: Final = "operation_journal"
@@ -60,6 +64,7 @@ ALLOWED_RPC_CONTEXT_KEYS: Final[frozenset[str]] = frozenset(
         RPC_CONTEXT_RESOURCE_EPOCH,
         RPC_CONTEXT_REFRESH_BUDGET,
         RPC_CONTEXT_RETRY_DEADLINE,
+        RPC_CONTEXT_RETRY_BUDGET,
         RPC_CONTEXT_JOURNAL,
     }
 )
@@ -77,6 +82,7 @@ __all__ = [
     "RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES",
     "RPC_CONTEXT_REFRESH_BUDGET",
     "RPC_CONTEXT_RETRY_DEADLINE",
+    "RPC_CONTEXT_RETRY_BUDGET",
     "RPC_CONTEXT_RPC_METHOD",
     "RPC_CONTEXT_RPC_QUEUE_WAIT_SECONDS",
     "RPC_CONTEXT_RESOURCE_EPOCH",
