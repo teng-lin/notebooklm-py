@@ -42,6 +42,7 @@ from notebooklm._android.sources import (
     AndroidSourcesAPI,
 )
 from notebooklm._android.upload import AndroidUploadPipeline
+from notebooklm._app.source_batch import MAX_BATCH_URLS
 from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._types.research import SourceGuide
 from notebooklm._types.sources import PlayBookExportReason
@@ -699,6 +700,42 @@ async def test_empty_url_batch_has_zero_io() -> None:
     assert await _api(transport)._add_urls_batch(NOTEBOOK_ID, []) == []
     assert transport.calls == []
     assert transport.scopes == []
+
+
+@pytest.mark.asyncio
+async def test_public_batch_cap_rejects_21_duplicate_occurrences_before_grpc() -> None:
+    transport = FakeTransport()
+
+    with pytest.raises(ValidationError, match=r"at most 20 entries; got 21"):
+        await _api(transport).add_urls_batch(
+            NOTEBOOK_ID,
+            ["https://same.example"] * (MAX_BATCH_URLS + 1),
+        )
+
+    assert transport.calls == []
+    assert transport.scopes == []
+
+
+@pytest.mark.asyncio
+async def test_public_batch_allows_20_duplicate_occurrences() -> None:
+    url = "https://same.example"
+    urls = [url] * MAX_BATCH_URLS
+    source_ids = [f"00000000-0000-4000-8000-{index:012d}" for index in range(MAX_BATCH_URLS)]
+    sources = [_source(source_id, url=url) for source_id in source_ids]
+    transport = FakeTransport()
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler(source_ids)
+    transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse(sources=sources)
+    transport.handlers[GET_PROJECT_METHOD] = _project(*sources)
+
+    outcomes = await _api(transport).add_urls_batch(NOTEBOOK_ID, urls)
+
+    assert [item.member for item in outcomes] == list(range(MAX_BATCH_URLS))
+    assert [item.input for item in outcomes] == urls
+    assert [call[0] for call in transport.calls] == [
+        ADD_TENTATIVE_SOURCES_METHOD,
+        ADD_SOURCES_METHOD,
+        GET_PROJECT_METHOD,
+    ]
 
 
 @pytest.mark.asyncio

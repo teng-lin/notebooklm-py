@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ..._app.source_batch import validate_source_batch_occurrences
 from ..._runtime.call_supervisor import CallSupervisor, OperationLease
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ..._sources import SourcesAPI, _TransferResult, _validate_add_text_idempotency, validate_search
@@ -351,6 +352,7 @@ class WebSourcesAPI(SourcesAPI):
         write and returns typed positional outcomes after reconciling silently
         omitted failures.
         """
+        validate_source_batch_occurrences(urls)
         async with self._supervisor.operation_scope("source.add_urls_batch"):
             return await self._batch_adder.add_urls(
                 notebook_id,

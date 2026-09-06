@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Sequence
 from typing import Any, Protocol, TypeVar, cast
 
+from .._app.source_batch import validate_source_batch_occurrences
 from .._idempotency import (
     JournalEntry,
     OperationJournal,
@@ -191,6 +192,7 @@ class AndroidSourceBatchMixin:
         urls: list[str],
     ) -> list[SourceUrlBatchItem]:
         snapshot = tuple(urls)
+        validate_source_batch_occurrences(snapshot)
         if not snapshot:
             return []
         correlations = [correlation_name() for _ in snapshot]
