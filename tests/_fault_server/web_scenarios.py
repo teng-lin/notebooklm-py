@@ -66,6 +66,16 @@ SCENARIOS: tuple[str, ...] = tuple(
     )
 )
 
+_ADAPTER_SCENARIOS = tuple(
+    sorted(
+        f"adapter_{adapter}_{fault}"
+        for adapter in ("cli", "mcp", "rest")
+        for fault in ("ambiguous_create", "transient_read")
+    )
+)
+SCENARIOS = tuple(sorted((*SCENARIOS, *_ADAPTER_SCENARIOS)))
+
+
 _PLANS: dict[str, tuple[tuple[str, ...], int]] = {
     "auth_refresh": (("rpc:400", "homepage:tokens+secure-cookie", "rpc:200"), 1),
     "auth_refresh_coalesced": (
@@ -575,6 +585,10 @@ async def run_scenario(
     result: ScenarioResult | None = None,
 ) -> ScenarioResult:
     """Run one bounded Web cohort and retain evidence on every failure path."""
+    if name in _ADAPTER_SCENARIOS:
+        from .adapter_scenarios import run_scenario as run_adapter
+
+        return await run_adapter(name, operation_id=operation_id, result=result)
     implementation = _IMPLEMENTATIONS.get(name)
     if implementation is None:
         raise ValueError(f"unknown web fault scenario {name!r}; choose from {SCENARIOS!r}")

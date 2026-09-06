@@ -16,8 +16,7 @@ mutation is `NOT_SENT` only when its production operation metadata says so.
 The mandatory registry baseline is 25 scenarios: 16 Web scenarios in
 `tests/_fault_server/web_scenarios.py` and 9 Android scenarios in
 `tests/_fault_server/android_scenarios.py`. The new cases below add coverage; they do not replace
-or narrow any registered socket scenario. The coordinator's measured baseline suite and stress
-durations are still pending and must be recorded here before the global F0 gate closes. The plan's
+or narrow any registered socket scenario. The [measured baseline](fault-resilience-coverage.md#baseline) records suite and stress durations. The plan's
 provisional stress bounds remain 64 iterations per PR cohort, 400 scheduled iterations, 600 seconds
 aggregate, 15 seconds per scenario, and 15 minutes per job; these are budgets, not measured results.
 
@@ -186,5 +185,4 @@ report schema, and global baseline measurements.
   failing regression target, not assumed away.
 - Socket evidence remains pending where stated. The existing 16 Web and 9 Android scenarios remain
   mandatory, including both ambiguous notebook-create loss cases.
-- Global F0 still requires the coordinator's measured baseline durations and inventories for the
-  families owned elsewhere.
+- Companion [transfer](fault-resilience-seams.md) and [adapter](fault-resilience-adapters.md) inventories cover the other families; the [coverage index](fault-resilience-coverage.md) records measured baseline evidence.

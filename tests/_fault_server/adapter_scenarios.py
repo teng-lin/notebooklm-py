@@ -411,7 +411,7 @@ async def run_scenario(
         "plan",
         adapter=adapter,
         faults=[fault],
-        cohort_ids=[operation_id],
+        cohort_ids=[f"{operation_id}:0"],
         budgets={"rpc_timeout_s": 0.5, "cleanup_timeout_s": _CLOSE_TIMEOUT},
     )
     await implementation(result)

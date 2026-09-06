@@ -10,7 +10,7 @@ a failed request from a write that succeeded before its response disappeared.
 From a source checkout:
 
 ```bash
-uv sync --frozen --extra browser --extra dev --extra markdown --extra android
+uv sync --frozen --extra browser --extra dev --extra markdown --extra android --extra mcp --extra server
 uv run pytest tests/integration/faults -q
 ```
 

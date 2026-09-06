@@ -2,7 +2,7 @@
 
 Audit baseline: `65dbd21d70f5be8c892da40a3660987b4118cd1c`, 2026-09-06.
 This is the F0 construction audit for R3–R6, R9, R12 and R13 in the
-[resilience plan](plans/2026-09-06-resilience-fault-coverage.md). It records current
+[resilience program](fault-resilience-coverage.md). It records current
 contracts and proposed private seams; it does not assert that planned socket
 cases already exist. Retry authorities and backend differences remain unchanged.
 

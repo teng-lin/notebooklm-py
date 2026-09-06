@@ -53,3 +53,34 @@ Completion also requires ordinary-suite coverage, configured per-file floors, `m
 current qualification selection, and supported Python/OS portable jobs. Local macOS
 measurements do not substitute for that matrix. Optional curl reports name the platform
 and real transport tested.
+
+## Case inventories
+
+- [Replay, budgets, shared work and workflows](fault-resilience-contracts.md): R1, R2, R7, R8, R10, R11.
+- [Transfer construction and contracts](fault-resilience-seams.md): R3–R6, R9, R12, R13.
+- [Adapter contracts](fault-resilience-adapters.md): R14.
+
+## Implemented Android direct-upload cases
+
+`tests/_fault_server/android_transfers.py` owns these explicit portable registry cases.
+Each first decodes a successful registration and completes a successful upload, then
+runs its selected variant and recovers through the same client (reopened for forced close).
+Registration, POST start and PUT finalize counts are independently asserted. Baseline and
+fault use distinct session capabilities. The socket service validates expected bytes/digest
+before a commit. Outcomes export exception type/stage and retained-identity booleans only.
+
+| Registry case | Coverage |
+| --- | --- |
+| `upload_success` | R3 successful direct transfer and digest commit |
+| `upload_start_failure` | R3 registered identity retained on failed start |
+| `upload_prefix_disconnect` | R3 nonempty partial request, no commit |
+| `upload_body_stall` | R3 8 MiB producer against held consumer; bounded real transfer timeout |
+| `upload_commit_loss` | R3 independently committed bytes, lost acknowledgement, no replay |
+| `upload_start_401`, `upload_start_403` | R9 separate start credential/status contracts |
+| `upload_finalize_401`, `upload_finalize_403` | R9 separate finalize credential/status contracts |
+| `upload_cancel_before_finalize` | R4 cancellation during held start response, zero finalize |
+| `upload_cancel_after_prefix` | R4 cancellation after server body consumption |
+| `upload_close_reopen` | R4 forced owner close and same-client reopen recovery |
+
+Initial combined validation: 110 helper, integration and runner tests passed in 6.09 seconds.
+This is partial implementation evidence; remaining cases in the inventories are still pending.

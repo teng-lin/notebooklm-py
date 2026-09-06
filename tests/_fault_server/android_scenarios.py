@@ -15,6 +15,8 @@ from notebooklm.outcomes import CommitState
 from notebooklm.raw import GrpcUnaryStreamMethod
 
 from .android import SyntheticOAuthMinter, build_android_client
+from .android_transfers import SCENARIOS as TRANSFER_SCENARIOS
+from .android_transfers import run_scenario as run_transfer_scenario
 from .common import ScenarioResult
 from .grpc import (
     CREATE_PROJECT,
@@ -41,6 +43,8 @@ SCENARIOS = (
     "stream_auth",
     "unavailable",
 )
+
+SCENARIOS = tuple(sorted((*SCENARIOS, *TRANSFER_SCENARIOS)))
 
 _FAULTS = {
     "auth": ("GetProject:UNAUTHENTICATED->reply", "GetProject:UNAUTHENTICATED->UNAUTHENTICATED"),
@@ -513,6 +517,8 @@ async def run_scenario(
 ) -> ScenarioResult:
     """Run one fresh Android fault cohort and preserve its evidence trace."""
 
+    if name in TRANSFER_SCENARIOS:
+        return await run_transfer_scenario(name, operation_id=operation_id, result=result)
     evidence = _result(name, operation_id, result)
     handlers: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
         "public_flows": _public_flows,
