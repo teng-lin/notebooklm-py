@@ -41,6 +41,8 @@ from .web_streaming import IMPLEMENTATIONS as CHAT_IMPLEMENTATIONS
 from .web_streaming import PLANS as CHAT_PLANS
 from .web_transfers import IMPLEMENTATIONS as TRANSFER_IMPLEMENTATIONS
 from .web_transfers import PLANS as TRANSFER_PLANS
+from .web_workflows import SCENARIOS as WORKFLOW_SCENARIOS
+from .web_workflows import run_scenario as run_workflow_scenario
 
 _READ = Route.rpc(RPCMethod.LIST_NOTEBOOKS.value)
 _CREATE = Route.rpc(RPCMethod.CREATE_NOTEBOOK.value)
@@ -590,7 +592,7 @@ _IMPLEMENTATIONS.update(CHAT_IMPLEMENTATIONS)
 _PLANS.update(CHAT_PLANS)
 _IMPLEMENTATIONS.update(TRANSFER_IMPLEMENTATIONS)
 _PLANS.update(TRANSFER_PLANS)
-SCENARIOS = tuple(sorted(_IMPLEMENTATIONS))
+SCENARIOS = tuple(sorted((*_IMPLEMENTATIONS, *_ADAPTER_SCENARIOS, *WORKFLOW_SCENARIOS)))
 
 
 async def run_scenario(
@@ -600,6 +602,8 @@ async def run_scenario(
     result: ScenarioResult | None = None,
 ) -> ScenarioResult:
     """Run one bounded Web cohort and retain evidence on every failure path."""
+    if name in WORKFLOW_SCENARIOS:
+        return await run_workflow_scenario(name, operation_id=operation_id, result=result)
     if name in _ADAPTER_SCENARIOS:
         from .adapter_scenarios import run_scenario as run_adapter
 

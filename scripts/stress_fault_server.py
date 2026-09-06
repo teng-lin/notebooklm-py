@@ -142,6 +142,8 @@ def _validate_evidence(result: ScenarioResult) -> None:
         raise ValueError("scenario completed without nonempty passing invariant checks")
     if not any(event.get("kind") == "plan" for event in result.events):
         raise ValueError("scenario completed without a recorded fault plan")
+    if not any(event.get("kind") == "cleanup" for event in result.events):
+        raise ValueError("scenario completed without cleanup evidence")
     recorded: dict[str, bool] = {}
     for event in result.events:
         if event.get("kind") != "check":

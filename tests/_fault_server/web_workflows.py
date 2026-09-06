@@ -359,6 +359,8 @@ async def run_scenario(
     result = result or ScenarioResult("web", name, operation_id)
     result.record(
         "plan",
+        faults=[name],
+        cohort_ids=[f"{operation_id}:0"],
         family="R11" if name.startswith("workflow_research") else "R10",
         budgets={"rpc_timeout_s": 0.5},
     )

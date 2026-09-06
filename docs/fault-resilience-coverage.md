@@ -84,3 +84,15 @@ before a commit. Outcomes export exception type/stage and retained-identity bool
 
 Initial combined validation: 110 helper, integration and runner tests passed in 6.09 seconds.
 This is partial implementation evidence; remaining cases in the inventories are still pending.
+
+## Implemented Android download mechanisms
+
+`android_downloads.py` registers 15 explicit variants each for public infographic download
+and the assembled guarded batch service (no new public batch API). Variants cover valid
+PNG publication, truncation, response-prefix disconnect, operation deadline during body
+stall, cancellation, close/reopen, separate 401 and 403, trusted/disallowed/loop redirects,
+expired capability, HTML, wrong signature, and a bearer-to-capability-to-bearer bounce.
+Each case preserves an existing destination on failure, checks the staging directory,
+asserts owned clients/tasks settle, and downloads successfully again on the same client.
+Per-hop checks prove bearer removal remains sticky across a bounce and resets for the
+next download. Initial concurrent validation: 30/30 cases passed with concurrency 2.

@@ -19,6 +19,7 @@ from tests._fault_server.common import ScenarioFailure, ScenarioResult
 async def _passing(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
     assert result.operation_id == operation_id
     result.record("plan", faults=[name])
+    result.record("cleanup", completed=True)
     result.require("work completed", True)
     return result
 
@@ -246,6 +247,7 @@ def test_cli_writes_report_and_returns_failed_invariant_exit_code(
 ) -> None:
     async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
         result.record("plan", faults=["commit_then_disconnect"])
+        result.record("cleanup", completed=True)
         result.require("one commit", not failure)
         return result
 
