@@ -10,9 +10,12 @@ from functools import partial
 from typing import Any
 from unittest.mock import patch
 
+import httpx
+
 from notebooklm._auth.cookie_types import Cookie, CookieJar
 from notebooklm._client_assembly import _assemble_client
 from notebooklm._client_options import normalize_legacy_client_options
+from notebooklm._http_client_factory import HttpClientFactories
 from notebooklm._web.transport.middleware import chain as middleware_chain
 from notebooklm._web.transport.middleware.retry import RetryMiddleware
 from notebooklm.auth import AuthTokens
@@ -84,6 +87,8 @@ def build_fault_client(
     max_concurrent_rpcs: int | None = 16,
     operation_timeout: float | None = None,
     sleep: Callable[[float], Awaitable[Any]] | None = None,
+    transfer_timeout: float | None = None,
+    transfer_client_factory: Callable[..., Any] | None = None,
 ) -> NotebookLMClient:
     """Assemble a production Web graph while varying only private test seams.
 
@@ -97,6 +102,8 @@ def build_fault_client(
         server_error_max_retries=server_error_max_retries,
         max_concurrent_rpcs=max_concurrent_rpcs,
         backend="web",
+        upload_timeout=httpx.Timeout(transfer_timeout) if transfer_timeout is not None else None,
+        chat_timeout=timeout,
     )
     if operation_timeout is not None:
         options = replace(
@@ -114,12 +121,23 @@ def build_fault_client(
         if sleep is not None
         else nullcontext()
     )
+
+    def transfer_factory(**kwargs: Any) -> httpx.AsyncClient:
+        # Asset APIs have fixed defaults; the private constructor seam supplies
+        # a short real HTTP read/write budget without changing credential policy.
+        if transfer_timeout is not None:
+            kwargs["timeout"] = httpx.Timeout(transfer_timeout)
+        return server.client_factory(**kwargs)
+
     with construction:
         _assemble_client(
             client,
             auth=synthetic_auth(),
             options=options,
             async_client_factory=server.client_factory,
+            http_client_factories=HttpClientFactories(
+                httpx=transfer_client_factory or transfer_factory
+            ),
             sleep=sleep,
             refresh_retry_delay=0.0,
         )

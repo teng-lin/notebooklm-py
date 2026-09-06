@@ -172,7 +172,8 @@ and `tests/unit/android/test_asset_downloads.py`; use tiny valid PNG, PDF, WAV/M
 payloads with provenance rather than arbitrary text marked as media.
 
 Inventory mechanisms: W-single HTTPX producer/writer queue; W-batch buffered GET plus
-`write_staging` (reachable through Web multi-asset selection); A-guarded streaming
+`write_staging` at the assembled service layer (no current public caller reaches
+its private batch wrapper); A-guarded streaming
 single/typed; A-guarded batch at service layer where no distinct public batch API
 exists; and optional W-curl buffered single. Public single entries must exercise
 both backend owners. Narrower-layer Android batch disposition is intentional and
@@ -287,3 +288,25 @@ probe succeeded after using an explicitly owned CONNECT_TO slist; no live endpoi
 were contacted. This documentation change does not claim a suite run, stress timing,
 or implementation completion. Suite counts/timings and R1–R2/R7–R8/R10–R11/R14 are
 owned by the companion whole-program inventory.
+
+
+## Implemented Web evidence
+
+`tests/_fault_server/web_transfers.py` registers 13 upload and 26 download cases;
+`web_streaming.py` registers five chat cases. The resulting Web registry has 60
+scenarios including the original 16. Each new case performs a valid baseline and
+same-client read recovery, or reopens the same object for intentional close.
+Public audio cases obtain artifact rows through real LIST_ARTIFACTS RPC decoding;
+only buffered batch uses the backend-owned service directly. Asset read/write
+budgets use the private constructor seam because those APIs expose fixed default
+transport windows. Upload phases use the existing upload timeout configuration.
+
+Web start and finalize routes use distinct exact session capabilities for baseline
+and target transactions. Pre-finalize cancellation gates one instance's real HTTPX
+client context entry and observes that the caller has attached to the finalize
+shield before cancelling; the tracked Scotty cancel is observed on the socket.
+Declared abandoned request bodies use the server's explicit abandonment contract;
+malformed framing is still a service failure. The Web socket cases and exact
+construction signature guardrail passed together: 135 tests in 5.01 seconds.
+This does not claim optional curl faults, repeated-cancellation variants, or other
+backend families are complete.

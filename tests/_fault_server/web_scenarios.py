@@ -37,6 +37,10 @@ from .web import (
     list_response,
     rpc_response,
 )
+from .web_streaming import IMPLEMENTATIONS as CHAT_IMPLEMENTATIONS
+from .web_streaming import PLANS as CHAT_PLANS
+from .web_transfers import IMPLEMENTATIONS as TRANSFER_IMPLEMENTATIONS
+from .web_transfers import PLANS as TRANSFER_PLANS
 
 _READ = Route.rpc(RPCMethod.LIST_NOTEBOOKS.value)
 _CREATE = Route.rpc(RPCMethod.CREATE_NOTEBOOK.value)
@@ -117,6 +121,8 @@ async def _cohort(
     rate_retries: int = 2,
     server_retries: int = 2,
     record_sleep: bool = True,
+    transfer_timeout: float | None = None,
+    transfer_client_factory: Callable[..., Any] | None = None,
 ) -> AsyncIterator[NotebookLMClient]:
     client: NotebookLMClient | None = None
     close_error: BaseException | None = None
@@ -133,6 +139,8 @@ async def _cohort(
             rate_limit_max_retries=rate_retries,
             server_error_max_retries=server_retries,
             sleep=sleep if record_sleep else None,
+            transfer_timeout=transfer_timeout,
+            transfer_client_factory=transfer_client_factory,
         )
         await client.__aenter__()
         yield client
@@ -576,6 +584,13 @@ _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
     "truncated_body": _truncated_body,
     "valid_read_create": _valid_read_create,
 }
+
+
+_IMPLEMENTATIONS.update(CHAT_IMPLEMENTATIONS)
+_PLANS.update(CHAT_PLANS)
+_IMPLEMENTATIONS.update(TRANSFER_IMPLEMENTATIONS)
+_PLANS.update(TRANSFER_PLANS)
+SCENARIOS = tuple(sorted(_IMPLEMENTATIONS))
 
 
 async def run_scenario(

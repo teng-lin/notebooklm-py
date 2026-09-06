@@ -110,6 +110,7 @@ CONSTRUCTION_SIGNATURES = (
             "sleep",
             "is_auth_error",
             "async_client_factory",
+            "http_client_factories",
             "master_token_reader",
             "oauth_minter",
         ),
@@ -177,6 +178,7 @@ CONSTRUCTION_SIGNATURES = (
             "sleep",
             "is_auth_error",
             "async_client_factory",
+            "http_client_factories",
             "master_token_reader",
             "oauth_minter",
         ),
@@ -284,6 +286,9 @@ PRIVATE_DEPENDENCY_DISPOSITIONS = {
     "decode_response": Disposition("P5", "Move to WebDependencies with late binding intact."),
     "is_auth_error": Disposition("P5", "Move to WebDependencies with late binding intact."),
     "async_client_factory": Disposition("P5", "Move to WebDependencies as a test factory."),
+    "http_client_factories": Disposition(
+        "P5", "Keep per-owner HTTP construction private in Web/AndroidDependencies."
+    ),
     "sleep": Disposition("P5/P6", "Inject only into owners sharing retry/deadline time."),
     "master_token_reader": Disposition(
         "P5", "Move to AndroidDependencies; keep construction inert."
