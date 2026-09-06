@@ -254,6 +254,7 @@ async def test_retry_inherits_parent_request_id():
         raise_on_null_status: bool = False,
         _refresh_budget=None,
         _retry_deadline=None,
+        _retry_budget=None,
         _resource_epoch: int | None = None,
     ):
         captured_ids.append(get_request_id())

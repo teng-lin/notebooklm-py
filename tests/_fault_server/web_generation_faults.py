@@ -78,29 +78,50 @@ async def _cohort(
     server: HttpFaultServer,
     *,
     operation_timeout: float | None = None,
+    rpc_timeout: float = 1.0,
+    poll_sleep: Callable[[float], Awaitable[Any]] | None = None,
+    owned_tasks: list[asyncio.Task[Any]] | None = None,
 ) -> AsyncIterator[Any]:
-    await server.__aenter__()
-    client = build_fault_client(
-        server,
-        timeout=0.5,
-        server_error_max_retries=0,
-        operation_timeout=operation_timeout,
-    )
-    await client.__aenter__()
+    client = None
     primary_error: BaseException | None = None
     try:
+        await server.__aenter__()
+        client = build_fault_client(
+            server,
+            timeout=rpc_timeout,
+            server_error_max_retries=0,
+            operation_timeout=operation_timeout,
+        )
+        if poll_sleep is not None:
+            client.artifacts._polling._sleep = poll_sleep
+        await client.__aenter__()
         yield client
     except BaseException as error:
         primary_error = error
         raise
     finally:
         cleanup_errors: list[BaseException] = []
+        for task in owned_tasks or []:
+            if not task.done():
+                task.cancel()
+        if owned_tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*owned_tasks, return_exceptions=True), _CLOSE_TIMEOUT
+                )
+            except BaseException as error:
+                cleanup_errors.append(error)
         try:
-            await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
+            if client is not None:
+                await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
         except BaseException as error:
             cleanup_errors.append(error)
         try:
             await asyncio.wait_for(server.aclose(), _CLOSE_TIMEOUT)
+        except BaseException as error:
+            cleanup_errors.append(error)
+        try:
+            server.assert_drained()
         except BaseException as error:
             cleanup_errors.append(error)
         result.record(
@@ -115,16 +136,31 @@ async def _cohort(
             ],
         )
         result.record(
-            "generation_cleanup",
-            client_closed=not client._lifecycle.is_open(),
+            "cleanup",
+            owner="generation",
+            client_closed=client is None or not client._lifecycle.is_open(),
             active_handlers=server.active_handlers,
             server_errors=list(server.errors),
             remaining=server.remaining(),
             cleanup_error_types=[type(error).__name__ for error in cleanup_errors],
             primary_error_type=(None if primary_error is None else type(primary_error).__name__),
         )
+        exit_error = next(
+            (
+                error
+                for error in cleanup_errors
+                if isinstance(error, (KeyboardInterrupt, SystemExit))
+            ),
+            None,
+        )
+        if exit_error is not None and not isinstance(
+            primary_error, (KeyboardInterrupt, SystemExit)
+        ):
+            raise exit_error
         if primary_error is None:
-            result.require("generation_client_closed", not client._lifecycle.is_open())
+            result.require(
+                "generation_client_closed", client is None or not client._lifecycle.is_open()
+            )
             result.require("generation_handlers_settled", server.active_handlers == 0)
             result.require("generation_server_clean", not server.errors and server.remaining() == 0)
             if cleanup_errors:
@@ -140,10 +176,16 @@ async def accepted_kickoff_poll_exhaustion(result: ScenarioResult) -> None:
         Reply(body=list_response(_READ.rpc_id or "", [("recovered", "Recovered")])),
     )
     error: BaseException | None = None
-    async with _cohort(result, server) as client:
+    backoffs: list[float] = []
+
+    async def record_backoff(delay: float) -> None:
+        backoffs.append(delay)
+        await asyncio.sleep(0)
+
+    async with _cohort(result, server, poll_sleep=record_backoff) as client:
         try:
             await execute_generation(
-                _request(timeout=20.0),
+                _request(timeout=12.0),
                 client,
                 notebook_resolver=_resolve_notebook,
                 source_resolver=_resolve_sources,
@@ -158,6 +200,8 @@ async def accepted_kickoff_poll_exhaustion(result: ScenarioResult) -> None:
         commit_state=(None if metadata is None else str(metadata.commit_state)),
         known_ids=[] if metadata is None else list(metadata.known_resource_ids),
     )
+    result.record("retry_arithmetic", clock="injected_instance_sleep", delays=backoffs)
+    result.require("poll_exhaustion_backoff_arithmetic", backoffs == [2.0, 4.0, 8.0])
     result.require("poll_exhaustion_server_error", isinstance(error, ServerError))
     result.require(
         "poll_exhaustion_one_kickoff",
@@ -191,7 +235,10 @@ async def shared_poller_original_operation_timeout(result: ScenarioResult) -> No
         Reply(body=list_response(_READ.rpc_id or "", [("recovered", "Recovered")])),
     )
     error: BaseException | None = None
-    async with _cohort(result, server, operation_timeout=0.2) as client:
+    tasks: list[asyncio.Task[Any]] = []
+    async with _cohort(
+        result, server, operation_timeout=2.0, rpc_timeout=4.0, owned_tasks=tasks
+    ) as client:
         execution = asyncio.create_task(
             execute_generation(
                 _request(timeout=5.0),
@@ -200,8 +247,9 @@ async def shared_poller_original_operation_timeout(result: ScenarioResult) -> No
                 source_resolver=_resolve_sources,
             )
         )
+        tasks.append(execution)
         await server.wait_for_requests(_CREATE_ARTIFACT, 1)
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         server.release("kickoff")
         await server.wait_for_requests(_LIST_ARTIFACTS, 1)
         follower = asyncio.create_task(
@@ -213,6 +261,7 @@ async def shared_poller_original_operation_timeout(result: ScenarioResult) -> No
                 timeout=5.0,
             )
         )
+        tasks.append(follower)
         await asyncio.sleep(0)
         try:
             await execution
@@ -252,6 +301,7 @@ SCENARIOS = tuple(IMPLEMENTATIONS)
 
 REQUIRED_CHECKS = {
     "workflow_generation_poll_exhaustion": (
+        "poll_exhaustion_backoff_arithmetic",
         "poll_exhaustion_server_error",
         "poll_exhaustion_one_kickoff",
         "poll_exhaustion_four_polls",
@@ -277,15 +327,17 @@ REQUIRED_CHECKS = {
 
 BUDGETS = {
     "workflow_generation_poll_exhaustion": {
-        "scenario_timeout_s": 20.0,
+        "scenario_timeout_s": 15.0,
         "cleanup_timeout_s": _CLOSE_TIMEOUT,
-        "poll_timeout_s": 20.0,
-        "poll_backoff_s": 14.0,
+        "poll_timeout_s": 12.0,
+        "poll_backoff_arithmetic_s": [2.0, 4.0, 8.0],
+        "rpc_timeout_s": 1.0,
     },
     "workflow_generation_shared_original_timeout": {
-        "scenario_timeout_s": 20.0,
+        "scenario_timeout_s": 15.0,
         "cleanup_timeout_s": _CLOSE_TIMEOUT,
-        "operation_timeout_s": 0.2,
+        "operation_timeout_s": 2.0,
+        "rpc_timeout_s": 4.0,
         "poll_timeout_s": 5.0,
     },
 }

@@ -2086,6 +2086,7 @@ src/notebooklm/
 ├── _callbacks.py                # Sync/async callback invocation helper
 ├── _adapter_support.py          # Small transport-neutral adapter support leaf
 ├── _client_assembly.py          # Typed graph composition + sole client installer
+├── _http_client_factory.py      # Captured private HTTPX/curl transfer constructors
 ├── _client_compat.py            # Pure 0.x Android-to-Web sidecar factory/proxy
 ├── _client_contracts.py         # Frozen assembly graphs + private P4 carriers
 ├── _client_options.py           # Legacy-flat to owner-grouped option normalization
@@ -2325,6 +2326,7 @@ src/notebooklm/
 ├── _runtime/                    # Client-runtime subpackage (promoted from flat _runtime_*.py, #1328)
 │   ├── __init__.py              # Re-exports only transport-neutral runtime names
 │   ├── auth_refresh_retry.py    # Shared refresh budget + retry body
+│   ├── retry_budget.py          # Independent retry counters retained across decoded auth recursion
 │   ├── call_supervisor.py       # Shared call admission, metrics, semaphore, and generation leases
 │   ├── config.py                # DEFAULT_* knobs + module-level constants
 │   ├── contracts.py             # Transport-neutral LoopGuard Protocol
