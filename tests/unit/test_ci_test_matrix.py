@@ -272,6 +272,11 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
     for release_path in (PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW):
         release = yaml.safe_load(release_path.read_text(encoding="utf-8"))
         release_job = release["jobs"]["build-and-test"]
+        install = str(
+            _step(release_job, "Install built wheel + release-smoke extras in a clean venv")["run"]
+        )
+        assert "mcp" in install
+        assert "server" in install
         assert "not refactor_qualification" in str(
             _step(release_job, "Run routine unit tests against wheel")["run"]
         )
@@ -635,13 +640,13 @@ def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() 
 
 
 @pytest.mark.parametrize("workflow_path", [PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW])
-def test_release_publish_smokes_install_impersonate_extra(workflow_path: Path) -> None:
-    """Published-wheel unit smoke must install every CI-required transport."""
+def test_release_publish_smokes_install_required_adapter_extras(workflow_path: Path) -> None:
+    """Published-wheel smoke must satisfy unconditional unit-test imports."""
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     job = workflow["jobs"]["build-and-test"]
     install = str(_step(job, "Install built wheel + release-smoke extras in a clean venv")["run"])
 
-    assert '"${WHEEL}[browser,dev,markdown,impersonate]"' in install
+    assert '"${WHEEL}[browser,dev,markdown,impersonate,mcp,server]"' in install
 
 
 def test_pr_and_release_workflows_verify_clean_base_wheel() -> None:
