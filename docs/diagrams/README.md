@@ -30,6 +30,8 @@ system overview at the [Pages site root](https://teng-lin.github.io/notebooklm-p
 | 28 | Profile, auth, and backend selection | Which auth, runtime, raw adapter, and compatibility resources does each backend construct? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) · [Source](./28-profile-auth-backend-selection.workflow.json) |
 | 29 | Organization and sharing | Which APIs span account and notebook scope, and where do sharing and membership live? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/29-organization-and-sharing.architecture.html) · [Source](./29-organization-and-sharing.architecture.json) |
 | 30 | Transfer security boundaries | How do the Web and Android transfer planes fence URLs, credentials, cleanup, and publication? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/30-transfer-security-boundaries.dataflow.html) · [Source](./30-transfer-security-boundaries.dataflow.json) |
+| 34 | Client ownership boundaries | Which resources belong to configuration, construction, one client instance, or one operation? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/34-client-ownership-boundaries.html) · [Source](./34-client-ownership-boundaries.architecture.json) |
+| 35 | Client construction and lifecycle | How do build, open, drain, close, and reopen preserve one-owner resource rules? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/35-client-construction-and-lifecycle.html) · [Source](./35-client-construction-and-lifecycle.lifecycle.json) |
 
 ## Authentication
 
@@ -54,6 +56,9 @@ system overview at the [Pages site root](https://teng-lin.github.io/notebooklm-p
 | 21 | Deep research lifecycle | How do research tasks progress through polling, completion, import, failure, or cancellation? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/21-deep-research-lifecycle.html) · [Source](./21-deep-research-lifecycle.lifecycle.json) |
 | 32 | MCP client provider | How does the MCP adapter open, reuse, invalidate, and recover its shared client? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/32-mcp-client-provider.html) · [Source](./32-mcp-client-provider.sequence.json) |
 | 33 | MCP detached chat task | How does a detached chat task move from creation through polling, terminal observation, and TTL expiry? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/33-mcp-detached-chat-task.html) · [Source](./33-mcp-detached-chat-task.lifecycle.json) |
+| 36 | Operation deadline and cancellation | How does one operation budget span nested work while preserving caller cancellation? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/36-operation-deadline-and-cancellation.html) · [Source](./36-operation-deadline-and-cancellation.sequence.json) |
+| 37 | Operation journal and recovery | How does attempt evidence become commit certainty and a safe recovery action? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/37-operation-journal-and-recovery.html) · [Source](./37-operation-journal-and-recovery.dataflow.json) |
+| 38 | Adapter prepare, confirm, and execute | How do canonical resource IDs or notebook-plus-sharing operands cross human delay before confirmed execution? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/38-adapter-prepare-confirm-execute.html) · [Source](./38-adapter-prepare-confirm-execute.workflow.json) |
 
 ## Domain models and adapters
 
@@ -79,6 +84,9 @@ root compatibility-sidecar, shared source workflow, and guarded-transfer refacto
 affected diagrams without adding external systems, RPC ids, or wire shapes.
 Diagrams 31–33 add the previously missing cold-authentication recovery sequence, MCP provider
 open/recovery sequence, and detached-task lifecycle, where concurrency and cleanup ordering matter.
+Diagrams 34–38 document the client ownership model, construction and shutdown lifecycle,
+whole-operation deadline and cancellation contract, mutation journal and recovery evidence, and
+the adapter prepare/confirm/execute boundary introduced by the September 2026 ownership refactor.
 
 Some views are deliberately not generated:
 
@@ -97,6 +105,10 @@ The repository commits Archify JSON sources and self-contained HTML viewers, but
 currently vendor or pin the generator. Set `ARCHIFY_ROOT` to the installed Archify skill/package,
 record its version in the PR, and review the generated diff. Use the diagram's type
 (`architecture`, `workflow`, `sequence`, `dataflow`, or `lifecycle`):
+
+For architecture candidates with repository evidence, append `--repo-root "$PWD"` to `validate`
+and `deliver`. That flag is architecture-only; workflow, sequence, data-flow, and lifecycle
+candidates must omit it.
 
 ```bash
 ARCHIFY_ROOT=/path/to/archify

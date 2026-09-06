@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Adapter Prepare, Confirm, and Execute",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "preview-call",
+        "label": "Prepare and preview",
+        "focus": ["initial_call", "resolve_ids", "preview"],
+        "note": "The first call resolves resource IDs or a notebook ID and preserves explicit sharing operands."
+      },
+      {
+        "id": "human-delay",
+        "label": "Human decision gap",
+        "focus": ["preview", "review", "confirmed_call"],
+        "note": "The caller may pause indefinitely; no client lease or request context spans that delay."
+      },
+      {
+        "id": "confirmed-execution",
+        "label": "Confirmed execution",
+        "focus": ["confirmed_call", "execute"],
+        "note": "A new call reacquires the shared client and executes with the previewed identifiers and operands."
+      },
+      {
+        "id": "covered-tools",
+        "label": "Covered MCP tools",
+        "focus": ["resolve_ids", "preview", "execute"],
+        "note": "Notebook, source, and Studio deletes plus share remove, grant/regrade, and public widening use this contract."
+      }
+    ],
+    "viewBox": [1080, 500]
+  },
+  "lanes": [
+    {"id": "caller", "label": "MCP Caller"},
+    {"id": "adapter", "label": "MCP Adapter"},
+    {"id": "decision", "label": "Human / Agent Decision"}
+  ],
+  "phases": [
+    {"id": "prepare", "label": "Prepare", "fromCol": 0, "toCol": 2, "variant": "emphasis"},
+    {"id": "confirm", "label": "Confirm", "fromCol": 3, "toCol": 3, "variant": "security"},
+    {"id": "execute_phase", "label": "Execute", "fromCol": 4, "toCol": 5, "variant": "dashed"}
+  ],
+  "mainPath": [
+    "initial_call",
+    "resolve_ids",
+    "preview",
+    "review",
+    "confirmed_call",
+    "execute"
+  ],
+  "nodes": [
+    {"id": "initial_call", "lane": "caller", "col": 0, "type": "external", "label": "Initial Call", "sublabel": "confirm=false"},
+    {"id": "resolve_ids", "lane": "adapter", "col": 1, "type": "backend", "label": "Prepare", "sublabel": "IDs · email/access"},
+    {"id": "preview", "lane": "caller", "col": 2, "type": "security", "label": "Return Preview", "sublabel": "no write · call ends"},
+    {"id": "review", "lane": "decision", "col": 3, "type": "security", "label": "Review", "sublabel": "human delay", "tag": "no lease"},
+    {"id": "confirmed_call", "lane": "caller", "col": 4, "type": "external", "label": "Confirm Call", "sublabel": "IDs · confirm=true"},
+    {"id": "execute", "lane": "adapter", "col": 5, "type": "backend", "label": "Execute Once", "sublabel": "fresh client access", "tag": "canonical operands"}
+  ],
+  "edges": [
+    {"id": "call_resolve", "from": "initial_call", "to": "resolve_ids", "variant": "emphasis"},
+    {"id": "resolve_preview", "from": "resolve_ids", "to": "preview", "variant": "emphasis"},
+    {"id": "preview_review", "from": "preview", "to": "review", "label": "needs_confirmation", "variant": "security", "labelDy": 27},
+    {"id": "review_confirm", "from": "review", "to": "confirmed_call", "variant": "security"},
+    {"id": "confirm_execute", "from": "confirmed_call", "to": "execute", "label": "new invocation", "variant": "emphasis"}
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Safety Contract",
+      "items": [
+        "Resource deletes resolve their canonical ID operands",
+        "Sharing keeps a canonical notebook ID plus email/access operands",
+        "Preview sends no mutation; the confirmed call holds no cross-delay lease"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Covered Mutations",
+      "items": [
+        "notebook_delete · source_delete · studio_delete",
+        "share_remove_user · share_set_user · public widening"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Code Evidence",
+      "items": [
+        "Repository: https://github.com/teng-lin/notebooklm-py",
+        "Revision: 719378b8af7023b8eca0c33d2de6d44d35db3434",
+        "mcp/_confirm.py:45 and tools/notebooks.py:155 — canonical preview",
+        "tools/sources.py:403, studio.py:782, sharing.py:86 — gated tools"
+      ]
+    }
+  ]
+}

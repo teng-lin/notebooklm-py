@@ -5,6 +5,10 @@
     "title": "MCP Adapter Subsystem",
     "locale": "en",
     "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/teng-lin/notebooklm-py",
+      "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"
+    },
     "views": [
       {
         "id": "tool-call",
@@ -16,7 +20,7 @@
           "app",
           "client"
         ],
-        "note": "Tools choose a transport-neutral core for workflows or a selected client namespace for simple operations."
+        "note": "Tools build typed neutral requests, call the selected client, then own the MCP wire projection."
       },
       {
         "id": "guards",
@@ -26,7 +30,7 @@
           "guards",
           "confirm"
         ],
-        "note": "Loopback binding, optional OAuth, and confirmation gating on deletes, grants/regrades, and public-access widening."
+        "note": "Preview returns canonical resource IDs, or a notebook ID plus sharing operands; confirm=true executes independently."
       },
       {
         "id": "files",
@@ -70,7 +74,20 @@
       "id": "confirm",
       "type": "security",
       "label": "Confirm Gate",
-      "sublabel": "needs_confirmation",
+      "sublabel": "canonical IDs · operands",
+      "tag": "no cross-call lease",
+      "sources": [
+        {
+          "path": "src/notebooklm/mcp/_confirm.py",
+          "line": 45,
+          "label": "preview envelope"
+        },
+        {
+          "path": "src/notebooklm/mcp/tools/sources.py",
+          "line": 403,
+          "label": "strict IDs"
+        }
+      ],
       "pos": [
         544,
         60
@@ -113,8 +130,25 @@
       "id": "tools",
       "type": "frontend",
       "label": "MCP Tools",
-      "sublabel": "mcp/tools/",
-      "tag": "notebooks · studio",
+      "sublabel": "typed request · wire result",
+      "tag": "source · Studio · sharing",
+      "sources": [
+        {
+          "path": "src/notebooklm/mcp/tools/studio.py",
+          "line": 6,
+          "label": "generation requests"
+        },
+        {
+          "path": "src/notebooklm/mcp/tools/sources.py",
+          "line": 8,
+          "label": "batch adapter"
+        },
+        {
+          "path": "src/notebooklm/mcp/tools/sharing.py",
+          "line": 86,
+          "label": "sharing gates"
+        }
+      ],
       "pos": [
         544,
         260
@@ -127,8 +161,20 @@
     {
       "id": "app",
       "type": "backend",
-      "label": "Dispatch Choice",
-      "sublabel": "_app/ or client.*",
+      "label": "Neutral Operations",
+      "sublabel": "requests · events · outcomes",
+      "sources": [
+        {
+          "path": "src/notebooklm/_app/generation_requests.py",
+          "line": 531,
+          "label": "11-kind union"
+        },
+        {
+          "path": "src/notebooklm/_app/source_batch.py",
+          "line": 1,
+          "label": "commit policy"
+        }
+      ],
       "pos": [
         806,
         260
@@ -143,6 +189,13 @@
       "type": "backend",
       "label": "NotebookLMClient",
       "sublabel": "one long-lived",
+      "sources": [
+        {
+          "path": "src/notebooklm/mcp/_context.py",
+          "line": 129,
+          "label": "per-call access"
+        }
+      ],
       "pos": [
         1063,
         260
@@ -169,8 +222,20 @@
     {
       "id": "errors",
       "type": "backend",
-      "label": "Error Projection",
-      "sublabel": "CODE: message",
+      "label": "MCP Projection",
+      "sublabel": "code · message · hint",
+      "sources": [
+        {
+          "path": "src/notebooklm/mcp/_errors.py",
+          "line": 102,
+          "label": "error envelope"
+        },
+        {
+          "path": "src/notebooklm/mcp/_batch.py",
+          "line": 12,
+          "label": "batch envelope"
+        }
+      ],
       "pos": [
         282,
         460
@@ -243,7 +308,7 @@
       "id": "tools-app",
       "from": "tools",
       "to": "app",
-      "label": "core or namespace",
+      "label": "typed contract",
       "variant": "emphasis"
     },
     {
@@ -268,7 +333,7 @@
       "id": "tools-confirm",
       "from": "tools",
       "to": "confirm",
-      "label": "delete / share change",
+      "label": "prepare / confirm",
       "variant": "security",
       "labelAt": [
         629,
@@ -345,10 +410,10 @@
       "dot": "cyan",
       "title": "Same cores",
       "items": [
-        "Multi-step tools call _app/ cores; simple reads and mutations call selected client namespaces",
+        "Studio generation uses the exact 11-kind request union and one shared validation table",
+        "Source batches retain four commit states; inputs and titles are redacted before projection",
         "One long-lived client serves every tool call in the process",
-        "ChatTaskRegistry owns bounded detached asks for chat_start and chat_status",
-        "mcp/ imports no click, rich or cli — pinned by test_mcp_boundary.py"
+        "MCP owns its wire projection and imports no click, rich, or cli"
       ]
     },
     {
@@ -356,7 +421,8 @@
       "title": "Safety gates",
       "items": [
         "Deletes, user grants/regrades, and public-access widening require confirm=true",
-        "HTTP mode binds loopback and rejects non-loopback Host headers"
+        "Resource previews return canonical parent/target IDs; sharing keeps email/access operands",
+        "A separate confirmed call reacquires request access; no lease spans human delay"
       ]
     },
     {

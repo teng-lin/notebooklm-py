@@ -5,6 +5,10 @@
     "title": "Adapters and the Application Layer",
     "locale": "en",
     "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/teng-lin/notebooklm-py",
+      "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"
+    },
     "views": [
       {
         "id": "cli-path",
@@ -15,7 +19,7 @@
           "app_flows",
           "client"
         ],
-        "note": "Click commands own parsing and rendering; services adapt typed application workflows."
+        "note": "Click commands map their inputs into typed variants and own presentation, error text, and exits around neutral events and outcomes."
       },
       {
         "id": "server-paths",
@@ -26,7 +30,7 @@
           "app_flows",
           "client"
         ],
-        "note": "Both experimental adapters call the same neutral cores with no Click or Rich."
+        "note": "MCP and REST share the per-kind request builder, then project their own wire envelopes."
       },
       {
         "id": "failure-path",
@@ -36,20 +40,20 @@
           "app_errors",
           "envelopes"
         ],
-        "note": "One classify call feeds three vocabularies, including download-hop AuthError."
+        "note": "One neutral classify call feeds CLI codes, MCP codes, and REST status envelopes."
       },
       {
-        "id": "download-errors",
-        "label": "Download auth failure",
+        "id": "batch-and-generation",
+        "label": "Batch and generation",
         "focus": [
           "cli_cmd",
           "mcp_tools",
           "rest_routes",
           "app_flows",
-          "app_errors",
+          "app_resolve",
           "envelopes"
         ],
-        "note": "Single downloads re-raise AuthError; batch adapters retain rows and add code, message and hint."
+        "note": "Typed generation variants and four-state batch outcomes reach every adapter without presentation policy."
       }
     ]
   },
@@ -60,6 +64,18 @@
       "label": "Click Commands",
       "sublabel": "cli/*_cmd.py",
       "tag": "parse · render · exit",
+      "sources": [
+        {
+          "path": "src/notebooklm/cli/generate_cmd.py",
+          "line": 1,
+          "label": "generation adapter"
+        },
+        {
+          "path": "src/notebooklm/cli/error_handler.py",
+          "line": 144,
+          "label": "CLI errors"
+        }
+      ],
       "pos": [
         30,
         120
@@ -74,7 +90,19 @@
       "type": "frontend",
       "label": "MCP Tools",
       "sublabel": "mcp/tools/",
-      "tag": "confirm-gated",
+      "tag": "wire projection",
+      "sources": [
+        {
+          "path": "src/notebooklm/mcp/tools/studio.py",
+          "line": 29,
+          "label": "typed generation"
+        },
+        {
+          "path": "src/notebooklm/mcp/_batch.py",
+          "line": 12,
+          "label": "batch projection"
+        }
+      ],
       "pos": [
         30,
         250
@@ -90,6 +118,18 @@
       "label": "REST Routes",
       "sublabel": "server/routes/ · /v1",
       "tag": "bearer + Host guard",
+      "sources": [
+        {
+          "path": "src/notebooklm/server/routes/artifacts.py",
+          "line": 182,
+          "label": "generation route"
+        },
+        {
+          "path": "src/notebooklm/server/routes/sources.py",
+          "line": 77,
+          "label": "batch projection"
+        }
+      ],
       "pos": [
         30,
         380
@@ -102,9 +142,21 @@
     {
       "id": "cli_svc",
       "type": "frontend",
-      "label": "CLI Services",
-      "sublabel": "cli/services/",
-      "tag": "ADR-0008",
+      "label": "CLI Projection",
+      "sublabel": "render events · outcomes",
+      "tag": "adapter-owned words",
+      "sources": [
+        {
+          "path": "src/notebooklm/cli/_generate_render.py",
+          "line": 1,
+          "label": "event rendering"
+        },
+        {
+          "path": "src/notebooklm/cli/_source_render.py",
+          "line": 108,
+          "label": "reason rendering"
+        }
+      ],
       "pos": [
         277,
         120
@@ -117,8 +169,20 @@
     {
       "id": "envelopes",
       "type": "frontend",
-      "label": "Error Envelopes",
-      "sublabel": "code · message · hint · HTTP",
+      "label": "Adapter Envelopes",
+      "sublabel": "CLI · MCP · HTTP",
+      "sources": [
+        {
+          "path": "src/notebooklm/mcp/_errors.py",
+          "line": 102,
+          "label": "MCP envelope"
+        },
+        {
+          "path": "src/notebooklm/server/_errors.py",
+          "line": 242,
+          "label": "REST envelope"
+        }
+      ],
       "pos": [
         277,
         500
@@ -131,8 +195,20 @@
     {
       "id": "app_resolve",
       "type": "backend",
-      "label": "Resolve",
-      "sublabel": "_app/resolve.py · partial ids",
+      "label": "Neutral Contracts",
+      "sublabel": "11 kinds · 4 commit states",
+      "sources": [
+        {
+          "path": "src/notebooklm/_app/generation_requests.py",
+          "line": 531,
+          "label": "generation union"
+        },
+        {
+          "path": "src/notebooklm/outcomes.py",
+          "line": 35,
+          "label": "commit states"
+        }
+      ],
       "pos": [
         529,
         60
@@ -146,8 +222,25 @@
       "id": "app_flows",
       "type": "backend",
       "label": "Feature Cores",
-      "sublabel": "_app/ plans · waits · download",
+      "sublabel": "requests · events · outcomes",
       "tag": "transport-neutral",
+      "sources": [
+        {
+          "path": "src/notebooklm/_app/generate.py",
+          "line": 166,
+          "label": "generation core"
+        },
+        {
+          "path": "src/notebooklm/_app/generate_retry.py",
+          "line": 45,
+          "label": "typed events"
+        },
+        {
+          "path": "src/notebooklm/_app/source_batch.py",
+          "line": 1,
+          "label": "batch policy"
+        }
+      ],
       "pos": [
         529,
         250
@@ -163,6 +256,13 @@
       "label": "errors.classify",
       "sublabel": "AuthError → authentication",
       "tag": "single category source",
+      "sources": [
+        {
+          "path": "src/notebooklm/_app/errors.py",
+          "line": 1,
+          "label": "classification"
+        }
+      ],
       "pos": [
         529,
         500
@@ -228,13 +328,13 @@
       "id": "cmd-to-svc",
       "from": "cli_cmd",
       "to": "cli_svc",
-      "label": "workflows"
+      "label": "parse + render"
     },
     {
       "id": "svc-to-core",
       "from": "cli_svc",
       "to": "app_flows",
-      "label": "typed plan"
+      "label": "typed request"
     },
     {
       "id": "mcp-to-core",
@@ -252,7 +352,7 @@
       "id": "core-to-resolve",
       "from": "app_flows",
       "to": "app_resolve",
-      "label": "id lookup"
+      "label": "typed outcome"
     },
     {
       "id": "core-to-client",
@@ -291,24 +391,24 @@
       "dot": "cyan",
       "title": "Adapter responsibilities",
       "items": [
-        "*_cmd.py owns Click options, rendering and exits; cli/services/ owns plans and wait policy",
-        "MCP mutations preview unless called with confirm=true"
+        "CLI owns Click options, progress text, tables, JSON, and exit codes",
+        "MCP owns tool envelopes and confirmation previews; REST owns HTTP models and status"
       ]
     },
     {
       "dot": "emerald",
       "title": "Neutral core",
       "items": [
-        "_app/ raises public exceptions and owns login, generate, wait, and download flows",
-        "Simple reads call client namespaces directly"
+        "11 frozen variants share domain validation; MCP + REST use the option-table builder",
+        "CLI maps Click inputs directly; typed wait/outcome semantics exclude presentation"
       ]
     },
     {
       "dot": "rose",
-      "title": "Download error routing",
+      "title": "Settled batch evidence",
       "items": [
-        "A single-item download re-raises AuthError from a guarded 401 or 403 hop",
-        "--all keeps rows plus code/message/hint; MCP returns AUTH and REST uses shared classification"
+        "Every input keeps an ordered confirmed, rejected, unknown, or not_sent state",
+        "Typed outcomes drive continuation; inputs and titles are redacted before projection"
       ]
     }
   ]
