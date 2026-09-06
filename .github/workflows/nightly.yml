@@ -321,8 +321,15 @@ jobs:
     - name: Run compatibility tests without coverage
       run: >-
         uv run pytest -n auto --dist loadgroup
-        -m "not repo_lint and not requires_playwright and not requires_chromium"
+        -m "not repo_lint and not refactor_qualification and not requires_playwright and not requires_chromium"
         --no-cov
+    - name: Run refactor qualification on every supported Python
+      if: matrix.os == 'ubuntu-latest'
+      # The exhaustive qualification runs once per supported interpreter,
+      # rather than being multiplied across all three operating systems.
+      run: >-
+        uv run pytest -n auto --dist loadgroup -m refactor_qualification
+        --timeout=180 --no-cov
 
   coverage:
     name: Coverage (${{ needs.resolve-target.outputs.branch }}@${{ needs.resolve-target.outputs.short_sha }})
@@ -353,12 +360,12 @@ jobs:
     - name: Run ordinary tests with coverage
       run: >-
         uv run pytest -n auto --dist loadgroup
-        -m "not repo_lint and not requires_playwright and not requires_chromium"
+        -m "not repo_lint and not refactor_qualification and not requires_playwright and not requires_chromium"
         --cov=src/notebooklm --cov-report= --cov-fail-under=0
     - name: Append Playwright-dependent unit coverage
       run: >-
         uv run pytest tests/unit
-        -m "(requires_playwright or requires_chromium) and not reality"
+        -m "(requires_playwright or requires_chromium) and not reality and not refactor_qualification"
         -n 0 --cov=src/notebooklm --cov-append
         --cov-report=term-missing --cov-report=json:coverage.json
         --cov-fail-under=90
@@ -389,7 +396,8 @@ jobs:
         --extra mcp --extra server --extra impersonate --extra cookies
     - name: Run repository lint tests
       run: >-
-        uv run pytest -n auto --dist loadgroup -m repo_lint
+        uv run pytest -n auto --dist loadgroup
+        -m "repo_lint and not refactor_qualification"
         --timeout=180 --no-cov
 
   e2e:

@@ -607,11 +607,14 @@ uv run pytest
 # to one worker. Mirror it locally when running the whole suite.
 uv run pytest -n auto --dist loadgroup
 
-# Fast local loop — skip repo-wide audit / release-gate checks (~40s saved).
+# Fast local loop — skip repo-wide audits and exhaustive refactor qualification.
 # PR CI also skips the bulk repo_lint marker (of it, only node ids named in
-# the critical-guard step run); the manual repo-lint job and nightly run the
-# full marker. Run `make gates` before pushing a change that could trip one.
-uv run pytest tests/unit tests/integration -m "not repo_lint"
+# the critical-guard step run). Manual and nightly qualification run both
+# slower markers; `make gates` still runs the complete repo_lint marker.
+uv run pytest tests/unit tests/integration -m "not repo_lint and not refactor_qualification"
+
+# Exhaustive lifecycle races and migration-only structural inventories.
+uv run pytest -m refactor_qualification --timeout=180 --no-cov
 
 # E2E tests (requires auth + test notebook)
 uv run pytest tests/e2e -m readonly        # Read-only tests only
@@ -627,6 +630,12 @@ docstring/install-doc drift guards, version-sync, and CI-script audits.
 These are valuable release/CI guardrails but cost ~30–45s locally. See
 [`CONTRIBUTING.md`](../CONTRIBUTING.md#fast-local-loop-skip-repo-wide-audit-checks)
 for the canonical fast-loop guidance.
+
+The `refactor_qualification` marker is narrower: it tags exhaustive concurrency
+wave matrices and exact migration inventories that are useful during architecture
+work and release qualification, but need not be multiplied across routine PR
+matrix cells. Compact public-surface, compatibility, and ownership-boundary tests
+remain in the required PR lane.
 
 ### Testing across boundaries and against reality
 

@@ -181,10 +181,14 @@ jobs:
         source .venv/bin/activate
         playwright install chromium
         playwright install-deps chromium
-    - name: Run unit tests
+    - name: Run routine unit tests
       run: |
         source .venv/bin/activate
-        pytest tests/unit -v
+        pytest tests/unit -v -m "not refactor_qualification"
+    - name: Run refactor qualification
+      run: |
+        source .venv/bin/activate
+        pytest -v -m refactor_qualification
     - name: Run integration tests
       run: |
         source .venv/bin/activate
