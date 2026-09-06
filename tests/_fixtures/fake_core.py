@@ -124,8 +124,19 @@ async def declared_noop_operation_scope(label: str) -> AsyncIterator[FakeOperati
     yield FakeOperationLease()
 
 
-async def declared_spawn_child(label: str, factory: Any) -> asyncio.Task[Any]:
-    """Declare an unowned child task for transport-free unit fakes."""
+async def declared_spawn_child(
+    label: str,
+    factory: Any,
+    *,
+    inherit_operation: bool = True,
+) -> asyncio.Task[Any]:
+    """Declare a child task with the production supervisor's ownership contract.
+
+    The transport-free fake has no operation context to propagate or detach;
+    accepting the flag keeps test collaborators signature-compatible while the
+    returned task remains deliberately unowned.
+    """
+    del inherit_operation
     return asyncio.create_task(factory(), name=label)
 
 
