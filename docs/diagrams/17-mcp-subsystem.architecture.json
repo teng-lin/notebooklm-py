@@ -30,7 +30,7 @@
           "guards",
           "confirm"
         ],
-        "note": "Prepare returns canonical IDs without mutation; a later confirm=true call executes independently."
+        "note": "Preview returns canonical resource IDs, or a notebook ID plus sharing operands; confirm=true executes independently."
       },
       {
         "id": "files",
@@ -74,7 +74,7 @@
       "id": "confirm",
       "type": "security",
       "label": "Confirm Gate",
-      "sublabel": "canonical preview",
+      "sublabel": "canonical IDs · operands",
       "tag": "no cross-call lease",
       "sources": [
         {
@@ -421,7 +421,7 @@
       "title": "Safety gates",
       "items": [
         "Deletes, user grants/regrades, and public-access widening require confirm=true",
-        "The preview returns canonical parent and target IDs and sends no mutation",
+        "Resource previews return canonical parent/target IDs; sharing keeps email/access operands",
         "A separate confirmed call reacquires request access; no lease spans human delay"
       ]
     },

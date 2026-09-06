@@ -58,7 +58,7 @@ system overview at the [Pages site root](https://teng-lin.github.io/notebooklm-p
 | 33 | MCP detached chat task | How does a detached chat task move from creation through polling, terminal observation, and TTL expiry? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/33-mcp-detached-chat-task.html) · [Source](./33-mcp-detached-chat-task.lifecycle.json) |
 | 36 | Operation deadline and cancellation | How does one operation budget span nested work while preserving caller cancellation? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/36-operation-deadline-and-cancellation.html) · [Source](./36-operation-deadline-and-cancellation.sequence.json) |
 | 37 | Operation journal and recovery | How does attempt evidence become commit certainty and a safe recovery action? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/37-operation-journal-and-recovery.html) · [Source](./37-operation-journal-and-recovery.dataflow.json) |
-| 38 | Adapter prepare, confirm, and execute | How does a non-mutating canonical-ID preview cross human delay before a separate confirmed execution? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/38-adapter-prepare-confirm-execute.html) · [Source](./38-adapter-prepare-confirm-execute.workflow.json) |
+| 38 | Adapter prepare, confirm, and execute | How do canonical resource IDs or notebook-plus-sharing operands cross human delay before confirmed execution? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/38-adapter-prepare-confirm-execute.html) · [Source](./38-adapter-prepare-confirm-execute.workflow.json) |
 
 ## Domain models and adapters
 
@@ -106,13 +106,17 @@ currently vendor or pin the generator. Set `ARCHIFY_ROOT` to the installed Archi
 record its version in the PR, and review the generated diff. Use the diagram's type
 (`architecture`, `workflow`, `sequence`, `dataflow`, or `lifecycle`):
 
+For architecture candidates with repository evidence, append `--repo-root "$PWD"` to `validate`
+and `deliver`. That flag is architecture-only; workflow, sequence, data-flow, and lifecycle
+candidates must omit it.
+
 ```bash
 ARCHIFY_ROOT=/path/to/archify
 node "$ARCHIFY_ROOT/bin/archify.mjs" doctor --json
 node "$ARCHIFY_ROOT/bin/archify.mjs" validate <type> <diagram.json> \
-  --quality showcase --repo-root "$PWD" --json
+  --quality showcase --json
 node "$ARCHIFY_ROOT/bin/archify.mjs" deliver <type> <diagram.json> <diagram.html> \
-  --quality showcase --repo-root "$PWD" --json
+  --quality showcase --json
 node "$ARCHIFY_ROOT/bin/archify.mjs" visual-check <diagram.html> --json
 ```
 

@@ -10,7 +10,7 @@
         "id": "preview-call",
         "label": "Prepare and preview",
         "focus": ["initial_call", "resolve_ids", "preview"],
-        "note": "The first call resolves canonical IDs and returns a non-mutating preview."
+        "note": "The first call resolves resource IDs or a notebook ID and preserves explicit sharing operands."
       },
       {
         "id": "human-delay",
@@ -22,7 +22,7 @@
         "id": "confirmed-execution",
         "label": "Confirmed execution",
         "focus": ["confirmed_call", "execute"],
-        "note": "A new call reacquires the shared client and executes with canonical IDs."
+        "note": "A new call reacquires the shared client and executes with the previewed identifiers and operands."
       },
       {
         "id": "covered-tools",
@@ -53,7 +53,7 @@
   ],
   "nodes": [
     {"id": "initial_call", "lane": "caller", "col": 0, "type": "external", "label": "Initial Call", "sublabel": "confirm=false"},
-    {"id": "resolve_ids", "lane": "adapter", "col": 1, "type": "backend", "label": "Resolve IDs", "sublabel": "canonical targets"},
+    {"id": "resolve_ids", "lane": "adapter", "col": 1, "type": "backend", "label": "Prepare", "sublabel": "IDs · email/access"},
     {"id": "preview", "lane": "caller", "col": 2, "type": "security", "label": "Return Preview", "sublabel": "no write · call ends"},
     {"id": "review", "lane": "decision", "col": 3, "type": "security", "label": "Review", "sublabel": "human delay", "tag": "no lease"},
     {"id": "confirmed_call", "lane": "caller", "col": 4, "type": "external", "label": "Confirm Call", "sublabel": "IDs · confirm=true"},
@@ -71,9 +71,9 @@
       "dot": "rose",
       "title": "Safety Contract",
       "items": [
-        "Preview calls resolve targets but send no mutation",
-        "The preview echoes canonical parent and target IDs",
-        "A separate confirmed call holds no lease across human delay"
+        "Resource deletes resolve canonical parent and target IDs",
+        "Sharing keeps a canonical notebook ID plus email/access operands",
+        "Preview sends no mutation; the confirmed call holds no cross-delay lease"
       ]
     },
     {

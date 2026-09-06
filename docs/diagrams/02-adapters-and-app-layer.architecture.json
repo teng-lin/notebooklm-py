@@ -19,7 +19,7 @@
           "app_flows",
           "client"
         ],
-        "note": "Click commands own parsing, presentation, error text, and exits around neutral requests, events, and outcomes."
+        "note": "Click commands map their inputs into typed variants and own presentation, error text, and exits around neutral events and outcomes."
       },
       {
         "id": "server-paths",
@@ -30,7 +30,7 @@
           "app_flows",
           "client"
         ],
-        "note": "Both experimental adapters build the same typed requests and project their own wire envelopes."
+        "note": "MCP and REST share the per-kind request builder, then project their own wire envelopes."
       },
       {
         "id": "failure-path",
@@ -399,8 +399,8 @@
       "dot": "emerald",
       "title": "Neutral core",
       "items": [
-        "Frozen requests cover 11 generation kinds; one option table validates all adapters",
-        "GenerationWaitStarted and GenerationOutcome carry semantics, never presentation"
+        "11 frozen variants share domain validation; MCP + REST use the option-table builder",
+        "CLI maps Click inputs directly; typed wait/outcome semantics exclude presentation"
       ]
     },
     {

@@ -246,21 +246,24 @@ These conventions hold across every tool:
   `studio_download`'s `artifact_id`; the `source_list(label=…)` name filter is out of scope.)
 - **Destructive tools need confirmation.** `notebook_delete`, `source_delete`,
   `studio_delete`, and `share_remove_user` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
-  containing canonical parent/target IDs (plus display titles where applicable) and delete **nothing**;
-  re-submit those IDs with `confirm=true`. Confirmed names remain compatible in v0.9 but warn and
+  containing canonical parent/target IDs for notebook, source, and Studio deletes, or the canonical
+  notebook ID plus email for `share_remove_user`; they delete **nothing**. Re-submit those exact
+  identifiers and operands with `confirm=true`. Confirmed names remain compatible in v0.9 but warn and
   return a `deprecation` note; v1 rejects them. A confirmed subset is allowed.
 - **Sharing-widening tools need confirmation too.** `share_set_user` (every grant/regrade) and
   `share_set_access` when it would widen link access (`public=true` on a currently-restricted
   notebook) take `confirm` (default `false`) and return a `needs_confirmation` preview instead of
-  mutating; re-submit the preview's canonical `notebook_id` with `confirm=true` to apply.
+  mutating; re-submit the preview's canonical `notebook_id` and the same email/permission or
+  public/view-level operands with `confirm=true` to apply.
   Restricting (`public=false`) and
   `view_level`-only changes are not gated. These tools are *not* flagged `destructiveHint` — the
   gate is on the widening direction only.
 
-  Preparation and execution are separate tool invocations. The preview call resolves references,
-  returns canonical parent and target IDs, and sends no mutation. The caller may pause for human
-  review without holding a request context or client lease; a later `confirm=true` call reacquires
-  the shared client and executes with the previewed IDs. See the
+  Preparation and execution are separate tool invocations. Resource-delete previews return
+  canonical parent/target IDs; sharing previews return the canonical notebook ID together with
+  email/permission or public/view-level operands. Neither sends a mutation. The caller may pause for
+  human review without holding a request context or client lease; a later `confirm=true` call
+  reacquires the shared client and executes with those previewed identifiers and operands. See the
   [prepare/confirm/execute diagram](https://teng-lin.github.io/notebooklm-py/diagrams/38-adapter-prepare-confirm-execute.html).
 - **Long-running work is non-blocking.** `studio_generate` returns immediately with a `task_id`;
   poll `studio_status` until it's complete, then `studio_download`. Research is the same shape:
@@ -490,8 +493,9 @@ option is valid only for its own kind — passing one to a different `artifact_t
 validation error, not a silent no-op.
 
 The tool converts that input into one of the exact typed generation variants shared by CLI and
-REST. One neutral option table owns the per-kind choices and cross-option rules before any
-generation call is sent; the MCP layer owns only tool-schema parsing and result/error projection.
+REST. MCP and REST share one central builder and per-kind option table before any generation call is
+sent; the CLI maps most Click inputs directly into the same validated variants. The MCP layer owns
+only tool-schema parsing and result/error projection.
 
 ### Run deep research and import the findings
 
