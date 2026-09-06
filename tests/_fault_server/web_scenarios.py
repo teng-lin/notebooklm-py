@@ -21,6 +21,7 @@ from notebooklm.client import NotebookLMClient
 from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 
+from .adapter_registry import SCENARIOS as _ADAPTER_SCENARIOS
 from .common import ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route, Stall, Truncate
 from .web import (
@@ -90,13 +91,6 @@ SCENARIOS: tuple[str, ...] = tuple(
     )
 )
 
-_ADAPTER_SCENARIOS = tuple(
-    sorted(
-        f"adapter_{adapter}_{fault}"
-        for adapter in ("cli", "mcp", "rest")
-        for fault in ("ambiguous_create", "transient_read")
-    )
-)
 SCENARIOS = tuple(sorted((*SCENARIOS, *_ADAPTER_SCENARIOS)))
 
 

@@ -169,6 +169,7 @@ CONSTRUCTION_SIGNATURES = (
             "limits",
             "max_concurrent_uploads",
             "max_concurrent_rpcs",
+            "upload_timeout",
             "on_rpc_event",
             "cookie_saver",
             "cookie_rotator",

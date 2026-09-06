@@ -544,3 +544,49 @@ async def test_success_report_exports_auth_generations_without_credential_values
         secret not in serialized
         for secret in (NEW_COOKIE, NEW_CSRF, NEW_SESSION, OLD_COOKIE, OLD_CSRF, OLD_SESSION)
     )
+
+
+def test_all_adapter_cases_share_portable_stress_selection() -> None:
+    from tests._fault_server.adapter_lifecycle import IMPLEMENTATIONS as live_cases
+    from tests._fault_server.adapter_scenarios import SCENARIOS as adapter_cases
+
+    registry = stress.load_registry("web")
+    assert set(adapter_cases) <= {name for backend, name in registry}
+    assert set(live_cases) <= set(adapter_cases)
+
+
+@pytest.mark.parametrize(
+    "exit_expression,expected",
+    [("KeyboardInterrupt()", "KeyboardInterrupt"), ("SystemExit(23)", "SystemExit:23")],
+)
+def test_cli_preserves_interpreter_exit_after_writing_partial_report(
+    tmp_path: Path, exit_expression: str, expected: str
+) -> None:
+    destination = tmp_path / "exit-report.json"
+    code = """
+import sys
+from scripts import stress_fault_server as stress
+async def scenario(name, *, operation_id, result):
+    result.record("plan", required_checks=["never reached"])
+    try:
+        raise EXIT_EXPRESSION
+    finally:
+        result.record("cleanup", completed=True)
+stress.load_registry = lambda backend: {("web", "exit"): scenario}
+try:
+    stress.main(["--backend", "web", "--iterations", "1", "--json-report", sys.argv[1]])
+except KeyboardInterrupt:
+    print("KeyboardInterrupt")
+except SystemExit as error:
+    print("SystemExit:" + str(error.code))
+else:
+    raise AssertionError("interpreter exit was downgraded")
+""".replace("EXIT_EXPRESSION", exit_expression)
+    process = subprocess.run(
+        [sys.executable, "-c", code, str(destination)], capture_output=True, text=True, timeout=5
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout.strip() == expected
+    report = json.loads(destination.read_text())
+    assert not report["summary"]["ok"]
+    assert any(event["kind"] == "cleanup" for event in report["operations"][0]["events"])

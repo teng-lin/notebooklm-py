@@ -24,6 +24,7 @@ from notebooklm.mcp.server import create_server
 from notebooklm.server.app import create_app
 
 from .adapter_lifecycle import IMPLEMENTATIONS as _LIVE_IMPLEMENTATIONS
+from .adapter_registry import SCENARIOS as SCENARIOS
 from .common import ScenarioFailure, ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route
 from .web import build_fault_client, list_response
@@ -31,20 +32,6 @@ from .web import build_fault_client, list_response
 _READ = Route.rpc("wXbhsf")
 _CREATE = Route.rpc("CCqFvf")
 _CLOSE_TIMEOUT = 2.0
-
-SCENARIOS: tuple[str, ...] = tuple(
-    sorted(
-        (
-            *_LIVE_IMPLEMENTATIONS,
-            "adapter_cli_ambiguous_create",
-            "adapter_cli_transient_read",
-            "adapter_mcp_ambiguous_create",
-            "adapter_mcp_transient_read",
-            "adapter_rest_ambiguous_create",
-            "adapter_rest_transient_read",
-        )
-    )
-)
 
 
 def _record_trace(result: ScenarioResult, server: HttpFaultServer) -> None:

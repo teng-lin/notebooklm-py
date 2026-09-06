@@ -344,9 +344,11 @@ def _run_cli(config: RunConfig, registry: Registry) -> dict[str, Any]:
     try:
         try:
             report = loop.run_until_complete(main_task)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit) as error:
             main_task.cancel()
             report = loop.run_until_complete(main_task)
+            error._fault_report = report
+            raise
         return report
     finally:
         pending = asyncio.all_tasks(loop)
@@ -432,7 +434,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = _run_cli(config, registry)
     except ValueError as exc:
         parser.error(str(exc))
-    except (Exception, KeyboardInterrupt) as exc:
+    except (KeyboardInterrupt, SystemExit) as exc:
+        partial = getattr(exc, "_fault_report", None)
+        if partial is not None:
+            try:
+                write_report(args.json_report, partial)
+            except (OSError, TypeError, ValueError):
+                pass
+        raise
+    except Exception as exc:
         report = {
             "schema_version": 1,
             "config": asdict(config),
