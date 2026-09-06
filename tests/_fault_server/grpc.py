@@ -54,6 +54,10 @@ def wait_reply(gate: str, response: Any | None = None) -> GrpcAction:
     return GrpcAction("wait_reply", response=response, gate=gate)
 
 
+def wait_abort(gate: str, status: grpc.StatusCode) -> GrpcAction:
+    return GrpcAction("wait_abort", status=status, gate=gate)
+
+
 def commit_abort(status: grpc.StatusCode) -> GrpcAction:
     return GrpcAction("commit_abort", status=status)
 
@@ -61,7 +65,12 @@ def commit_abort(status: grpc.StatusCode) -> GrpcAction:
 def stream(
     frames: Iterable[Any], *, after: GrpcAction | None = None, gate: str | None = None
 ) -> GrpcAction:
-    return GrpcAction("stream", response=tuple(frames), gate=gate or (after.gate if after else None), status=(after.status if after else None))
+    return GrpcAction(
+        "stream",
+        response=tuple(frames),
+        gate=gate or (after.gate if after else None),
+        status=(after.status if after else None),
+    )
 
 
 @dataclass
@@ -69,6 +78,7 @@ class GrpcRequest:
     method: str
     request: Any
     metadata: tuple[tuple[str, str], ...]
+    cancelled: bool = False
 
 
 @dataclass
@@ -78,7 +88,8 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
     actions: dict[str, deque[GrpcAction]] = field(default_factory=lambda: defaultdict(deque))
     requests: list[GrpcRequest] = field(default_factory=list)
     state: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
-    cancellations: set[str] = field(default_factory=set)
+    cancellations: list[GrpcRequest] = field(default_factory=list)
+    handler_errors: list[str] = field(default_factory=list)
     _gates: dict[str, asyncio.Event] = field(default_factory=dict)
     _server: grpc.aio.Server | None = None
     _port: int | None = None
@@ -100,13 +111,15 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         self.actions[method].extend(actions)
 
     def assert_consumed(self) -> None:
+        if self.handler_errors:
+            raise AssertionError(f"gRPC handler errors: {self.handler_errors}")
         pending = {method: len(items) for method, items in self.actions.items() if items}
         if pending:
             raise AssertionError(f"unconsumed gRPC actions: {pending}")
         if self._active:
             raise AssertionError(f"active gRPC handlers leaked: {len(self._active)}")
 
-    async def __aenter__(self) -> "GrpcFaultServer":
+    async def __aenter__(self) -> GrpcFaultServer:
         self._server = grpc.aio.server()
         self._server.add_generic_rpc_handlers((self._handler(),))
         self._port = self._server.add_insecure_port("127.0.0.1:0")
@@ -115,12 +128,15 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
     async def __aexit__(self, *exc_info: object) -> None:
         try:
+            if self._server is not None:
+                await asyncio.wait_for(self._server.stop(0), timeout=1.0)
             if self._active:
-                await asyncio.gather(*tuple(self._active), return_exceptions=True)
+                await asyncio.wait_for(
+                    asyncio.gather(*tuple(self._active), return_exceptions=True), timeout=1.0
+                )
         finally:
             if self._server is not None:
-                await self._server.stop(0)
-                await self._server.wait_for_termination()
+                await asyncio.wait_for(self._server.wait_for_termination(), timeout=1.0)
 
     def _handler(self) -> grpc.GenericRpcHandler:
         return grpc.method_handlers_generic_handler(
@@ -153,24 +169,36 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         try:
             return self.actions[method].popleft()
         except IndexError as error:
+            self.handler_errors.append(f"unexpected request: {method}")
             raise AssertionError(f"unexpected gRPC request: {method}") from error
 
-    def _record(self, method: str, request: Any, context: grpc.aio.ServicerContext) -> None:
-        self.requests.append(
-            GrpcRequest(method, request, tuple((str(k), str(v)) for k, v in context.invocation_metadata()))
+    def _record(self, method: str, request: Any, context: grpc.aio.ServicerContext) -> GrpcRequest:
+        recorded = GrpcRequest(
+            method, request, tuple((str(k), str(v)) for k, v in context.invocation_metadata())
         )
+        self.requests.append(recorded)
+        return recorded
 
     @staticmethod
     def _project(project_id: str = "notebook-1", title: str = "Fault notebook") -> Any:
         return read_pb2.Project(id=project_id, title=title)
 
-    async def _apply_unary(self, method: str, request: Any, context: grpc.aio.ServicerContext) -> Any:
-        self._record(method, request, context)
-        action = self._next(method)
+    async def _apply_unary(
+        self, method: str, request: Any, context: grpc.aio.ServicerContext
+    ) -> Any:
+        task = asyncio.current_task()
+        if task is not None:
+            self._active.add(task)
         try:
+            recorded = self._record(method, request, context)
+            action = self._next(method)
             if action.kind == "wait_reply":
                 assert action.gate is not None
                 await self.gate(action.gate).wait()
+            if action.kind == "wait_abort":
+                assert action.gate is not None and action.status is not None
+                await self.gate(action.gate).wait()
+                await context.abort(action.status, "synthetic gated fault")
             if action.kind == "commit_abort":
                 self.state[method].append(str(getattr(request, "name", "committed")))
                 assert action.status is not None
@@ -190,8 +218,12 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                 return self._project("created-1", request.name)
             return chat_pb2.ListChatSessionsResponse()
         except asyncio.CancelledError:
-            self.cancellations.add(method)
+            recorded.cancelled = True
+            self.cancellations.append(recorded)
             raise
+        finally:
+            if task is not None:
+                self._active.discard(task)
 
     async def _get_project(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(GET_PROJECT, request, context)
@@ -205,9 +237,12 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
     async def _generate_streamed(
         self, request: Any, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[Any]:
-        self._record(GENERATE_STREAMED, request, context)
-        action = self._next(GENERATE_STREAMED)
+        task = asyncio.current_task()
+        if task is not None:
+            self._active.add(task)
         try:
+            recorded = self._record(GENERATE_STREAMED, request, context)
+            action = self._next(GENERATE_STREAMED)
             for frame in action.response or ():
                 yield frame
             if action.gate is not None:
@@ -215,8 +250,12 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             if action.status is not None:
                 await context.abort(action.status, "synthetic stream fault")
         except asyncio.CancelledError:
-            self.cancellations.add(GENERATE_STREAMED)
+            recorded.cancelled = True
+            self.cancellations.append(recorded)
             raise
+        finally:
+            if task is not None:
+                self._active.discard(task)
 
 
 __all__ = [
@@ -231,5 +270,6 @@ __all__ = [
     "commit_abort",
     "reply",
     "stream",
+    "wait_abort",
     "wait_reply",
 ]
