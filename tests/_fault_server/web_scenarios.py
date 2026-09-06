@@ -240,7 +240,7 @@ async def _rate_limit_recovery(result: ScenarioResult) -> None:
         notebooks = await client.notebooks.list()
     sleeps = [event["seconds"] for event in result.events if event["kind"] == "sleep"]
     result.require("rate_limit_recovered", [item.id for item in notebooks] == ["nb-rate"])
-    result.require("retry_after_recorded", sleeps == [1])
+    result.require("fractional_retry_after_rounded_up", sleeps == [1])
     result.require("rate_limit_request_count", len(_requests(server, _READ)) == 2)
     _require_clean(result, server)
 
