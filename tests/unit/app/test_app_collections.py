@@ -41,13 +41,12 @@ def _client(collections=None) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_resolution_error_carries_code_and_extra() -> None:
-    err = CollectionResolutionError("No match", "NOT_FOUND", {"id": "x"})
-    assert err.message == "No match"
-    assert err.code == "NOT_FOUND"
-    assert err.extra == {"id": "x"}
+def test_resolution_error_carries_semantic_reason() -> None:
+    err = CollectionResolutionError("not_found", token="x")
+    assert err.reason == "not_found"
+    assert err.token == "x"
     assert isinstance(err, ValidationError)
-    assert "code=NOT_FOUND" in str(err)
+    assert "notebooklm " not in str(err)
 
 
 # ---------------------------------------------------------------------------
@@ -80,8 +79,8 @@ async def test_resolve_ambiguous_prefix_raises_before_name_fallback() -> None:
     client = _client([Collection(id="colaaa111", name="A"), Collection(id="colaaa222", name="B")])
     with pytest.raises(CollectionResolutionError) as exc:
         await resolve_collection_id(client, "colaaa")
-    assert exc.value.code == "AMBIGUOUS_ID"
-    assert len(exc.value.extra["candidates"]) == 2
+    assert exc.value.reason == "ambiguous_id"
+    assert len(exc.value.matches) == 2
 
 
 async def test_resolve_ambiguous_name_raises() -> None:
@@ -90,14 +89,14 @@ async def test_resolve_ambiguous_name_raises() -> None:
     )
     with pytest.raises(CollectionResolutionError) as exc:
         await resolve_collection_id(client, "Dup")
-    assert exc.value.code == "AMBIGUOUS_NAME"
+    assert exc.value.reason == "ambiguous_name"
 
 
 async def test_resolve_not_found() -> None:
     client = _client([Collection(id="colaaa111", name="A")])
     with pytest.raises(CollectionResolutionError) as exc:
         await resolve_collection_id(client, "zzz")
-    assert exc.value.code == "NOT_FOUND"
+    assert exc.value.reason == "not_found"
 
 
 async def test_resolve_empty_token_raises_validation_error() -> None:

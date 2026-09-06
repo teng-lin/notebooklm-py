@@ -28,6 +28,9 @@ from typing import Any
 from ..._app.download import (
     FORMAT_EXTENSIONS,
     ArtifactDict,
+    DownloadEvent,
+    DownloadEventSink,
+    DownloadFailure,
     DownloadOutcome,
     DownloadPlan,
     DownloadPlanValidationError,
@@ -36,7 +39,6 @@ from ..._app.download import (
 )
 from ..._app.download import build_download_plan as _build_download_plan_core
 from ..._app.download import execute_download as _execute_download_core
-from ..._app.events import ProgressEvent, ProgressSink
 from ...types import Artifact
 from ..download_helpers import resolve_partial_artifact_id
 from ..resolve import require_notebook, resolve_notebook_id
@@ -53,10 +55,45 @@ __all__ = [
     "DownloadTypeSpec",
     "build_download_envelope",
     "build_download_plan",
+    "download_validation_message",
     "execute_download",
     "require_notebook",
     "resolve_notebook_id",
 ]
+
+
+def download_validation_message(exc: DownloadPlanValidationError) -> str:
+    """Render a semantic validation reason using the established CLI wording."""
+    if exc.reason == "missing_notebook":
+        return "notebook_id is required"
+    if exc.reason == "conflicting_overwrite_policy":
+        return "Cannot specify both --force and --no-clobber"
+    if exc.reason == "conflicting_selection_order":
+        return "Cannot specify both --latest and --earliest"
+    if exc.reason == "all_with_artifact":
+        return "Cannot specify both --all and --artifact"
+    if exc.reason == "unsupported_format":
+        return (
+            f"Invalid {exc.format_parameter} {exc.format_choice!r}; "
+            f"expected one of {list(exc.supported_formats)}"
+        )
+    raise AssertionError(f"Unhandled download validation reason: {exc.reason}")
+
+
+def _download_failure_message(failure: DownloadFailure) -> str:
+    """Render a semantic failure using the legacy CLI error string."""
+    if failure.reason == "no_artifacts":
+        return f"No completed {failure.artifact_type} artifacts found"
+    if failure.reason == "name_not_found":
+        return (
+            f"No artifacts matching '{failure.name}'. "
+            f"Available: {', '.join(failure.available_titles)}"
+        )
+    if failure.reason == "file_exists":
+        return f"File exists: {failure.path}"
+    if failure.reason == "authentication":
+        return f"Authentication error: {failure.detail}"
+    return failure.detail or failure.reason.replace("_", " ")
 
 
 def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
@@ -69,14 +106,21 @@ def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
     stays stable for scripts that parse it.
     """
     if result.outcome is DownloadOutcome.NO_ARTIFACTS:
-        return {"error": result.error, "suggestion": result.suggestion}
+        failure = result.failure
+        assert failure is not None
+        return {
+            "error": _download_failure_message(failure),
+            "suggestion": f"Generate one with: notebooklm generate {failure.artifact_type}",
+        }
 
     if result.outcome is DownloadOutcome.ERROR:
-        envelope: dict[str, Any] = {"error": result.error}
+        failure = result.failure
+        assert failure is not None
+        envelope: dict[str, Any] = {"error": _download_failure_message(failure)}
         if result.artifact is not None:
             envelope["artifact"] = result.artifact
-        if result.suggestion is not None:
-            envelope["suggestion"] = result.suggestion
+        if failure.reason == "file_exists":
+            envelope["suggestion"] = "Use --force to overwrite or choose a different path"
         return envelope
 
     if result.outcome is DownloadOutcome.ALL_DRY_RUN:
@@ -100,12 +144,10 @@ def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
         }
         if result.is_failure:
             envelope["error"] = True
-        if result.error_code is not None:
-            envelope["code"] = result.error_code
-        if result.message is not None:
-            envelope["message"] = result.message
-        if result.hint is not None:
-            envelope["hint"] = result.hint
+        if result.failure is not None and result.failure.reason == "authentication":
+            envelope["code"] = "AUTH_ERROR"
+            envelope["message"] = _download_failure_message(result.failure)
+            envelope["hint"] = "Run 'notebooklm login' to re-authenticate."
         return envelope
 
     if result.outcome is DownloadOutcome.SINGLE_DRY_RUN:
@@ -142,20 +184,22 @@ def build_download_plan(
     return _build_download_plan_core(config, args, cwd, notebook_required=require_notebook)
 
 
-class _TextProgressSink(ProgressSink):
-    """Adapt a ``Callable[[str], None]`` text sink to the neutral ProgressSink.
+class _TextProgressSink(DownloadEventSink):
+    """Adapt semantic download events to the established CLI progress line.
 
     The Click handler injects ``console.print``; the service-layer tests inject
     a ``list.append`` to capture the rendered progress lines. Both consume the
-    pre-formatted Rich-markup message string the ``--all`` loop emits, so the
-    sink simply forwards ``event.message`` unchanged.
+    adapter owns the Rich markup and wording; the neutral loop emits only the
+    item index, total, and title.
     """
 
     def __init__(self, sink: Callable[[str], None]) -> None:
         self._sink = sink
 
-    def emit(self, event: ProgressEvent) -> None:
-        self._sink(event.message)
+    def emit(self, event: DownloadEvent) -> None:
+        if event.kind != "ITEM_STARTED":  # pragma: no cover - exhaustive today
+            raise AssertionError(f"Unhandled download event: {event.kind}")
+        self._sink(f"[dim]Downloading {event.index}/{event.total}:[/dim] {event.title}")
 
 
 async def execute_download(
@@ -170,7 +214,7 @@ async def execute_download(
     Thin CLI adapter around :func:`notebooklm._app.download.execute_download`:
     it supplies the CLI's notebook / partial-artifact-id resolvers (looked up at
     call time so ``services.download.resolve_notebook_id`` stays patchable) and
-    a :class:`ProgressSink` wrapping the optional ``text_progress_sink``, then
+    a :class:`DownloadEventSink` wrapping the optional ``text_progress_sink``, then
     projects the typed result back to the envelope dict via
     :func:`build_download_envelope`.
 

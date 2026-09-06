@@ -41,6 +41,15 @@ if TYPE_CHECKING:
 
 SourceAddType = Literal["url", "text", "file", "youtube"]
 
+
+@dataclass(frozen=True)
+class SourceAddWarning:
+    """Semantic warning emitted while classifying a source-add input."""
+
+    code: Literal["PATH_NOT_FOUND"]
+    content: str
+
+
 #: Maximum length of a file's basename on the common filesystems (ext4, APFS,
 #: NTFS) — measured in **bytes**, not characters. A multibyte name (emoji, CJK)
 #: can blow past this while looking short by ``len()``, so truncation is
@@ -104,14 +113,46 @@ def safe_upload_name(filename: str | None) -> str:
     return _truncate_utf8(Path(base).stem, stem_budget) + suffix
 
 
+SourceAddValidationReason = Literal[
+    "invalid_url",
+    "unsupported_url_scheme",
+    "url_missing_host",
+    "local_host_disallowed",
+    "internal_ip_disallowed",
+    "symlink_disallowed",
+    "not_regular_file",
+    "missing_upload_path",
+]
+
+
 class SourceAddValidationError(ValidationError):
-    """Raised when source-add inputs fail validation.
+    """Typed source-add validation failure with adapter-neutral parameters.
 
     Subclasses :class:`~notebooklm.exceptions.ValidationError` (was ``ValueError``)
     so ``_app.errors.classify`` covers it uniformly across adapters — it
     classifies as :attr:`~notebooklm._app.errors.ErrorCategory.VALIDATION`. The
-    CLI catches it and emits its historical ``VALIDATION_ERROR`` ``--json`` code.
+    Adapters map :attr:`reason` and the accompanying parameters to their own
+    vocabulary. The exception text intentionally contains no CLI flags.
     """
+
+    def __init__(
+        self,
+        reason: SourceAddValidationReason,
+        *,
+        url: str | None = None,
+        scheme: str | None = None,
+        host: str | None = None,
+        path: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        self.reason = reason
+        self.url = url
+        self.scheme = scheme
+        self.host = host
+        self.path = path
+        self.detail = detail
+        subject = url or path or "source input"
+        super().__init__(f"{reason.replace('_', ' ')}: {subject}")
 
 
 class SourceAddFacade(Protocol):
@@ -140,7 +181,7 @@ class SourceAddPlan:
     title: str | None
     upload_path: Path | None
     mime_type: str | None = None
-    warnings: tuple[str, ...] = ()
+    warnings: tuple[SourceAddWarning, ...] = ()
 
 
 #: Extensions that make an argument *look* path-shaped. Not declared here: this is
@@ -231,24 +272,21 @@ def validate_url(url: str, *, allow_internal: bool) -> None:
     try:
         parsed = urlsplit(url)
     except ValueError as exc:  # pragma: no cover — urlsplit is permissive
-        raise SourceAddValidationError(f"Invalid URL: {url} ({exc})") from exc
+        raise SourceAddValidationError("invalid_url", url=url, detail=str(exc)) from exc
 
     scheme = parsed.scheme.lower()
     if scheme not in _ALLOWED_URL_SCHEMES:
-        raise SourceAddValidationError(
-            f"URL scheme {scheme!r} is not allowed; only http and https URLs "
-            f"are accepted as sources. Got: {url}"
-        )
+        raise SourceAddValidationError("unsupported_url_scheme", url=url, scheme=scheme)
 
     # ``hostname`` strips port + IPv6 brackets, lowercases for us, and
     # returns ``None`` for ``http:///path`` style inputs with no host.
     host = parsed.hostname
     if not host:
-        raise SourceAddValidationError(f"URL has no host component: {url}")
+        raise SourceAddValidationError("url_missing_host", url=url)
 
     canonical_host = _canonical_host(host)
     if not canonical_host:
-        raise SourceAddValidationError(f"URL has no host component: {url}")
+        raise SourceAddValidationError("url_missing_host", url=url)
 
     if allow_internal:
         return
@@ -260,17 +298,11 @@ def validate_url(url: str, *, allow_internal: bool) -> None:
         # only localhost spellings; everything else is accepted at this
         # layer and the network stack handles connectivity later.
         if _is_localhost_name(canonical_host):
-            raise SourceAddValidationError(
-                f"URL targets the local host {host!r}; pass --allow-internal "
-                f"to override. Got: {url}"
-            ) from None
+            raise SourceAddValidationError("local_host_disallowed", url=url, host=host) from None
         return
 
     if _is_internal_ip(ip):
-        raise SourceAddValidationError(
-            f"URL targets an internal IP address {host}; pass --allow-internal "
-            f"to override. Got: {url}"
-        )
+        raise SourceAddValidationError("internal_ip_disallowed", url=url, host=host)
 
 
 def looks_like_path(content: str) -> bool:
@@ -304,15 +336,12 @@ def validate_upload_path(content: str, follow_symlinks: bool) -> Path:
     if not follow_symlinks:
         for component in [raw, *raw.parents]:
             if component.is_symlink():
-                raise SourceAddValidationError(
-                    "Path is a symlink; pass --follow-symlinks to follow it "
-                    f"explicitly. Refusing to upload: {raw}"
-                )
+                raise SourceAddValidationError("symlink_disallowed", path=str(raw))
 
     file_path = raw.resolve()
 
     if not file_path.is_file():
-        raise SourceAddValidationError(f"Not a regular file: {content}")
+        raise SourceAddValidationError("not_regular_file", path=content)
 
     return file_path
 
@@ -343,7 +372,7 @@ def build_source_add_plan(
     detected_type = source_type
     file_title = title
     upload_path: Path | None = None
-    warnings: list[str] = []
+    warnings: list[SourceAddWarning] = []
 
     if detected_type is None:
         if _is_url_shaped(content):
@@ -358,11 +387,7 @@ def build_source_add_plan(
             detected_type = "file"
         else:
             if looks_path_shaped(content):
-                warnings.append(
-                    f"warning: '{content}' looks like a path but does not "
-                    "exist; ingesting as inline text. Pass --type text to "
-                    "suppress this warning, or check the path for typos."
-                )
+                warnings.append(SourceAddWarning("PATH_NOT_FOUND", content))
             detected_type = "text"
             file_title = title or "Pasted Text"
     elif detected_type == "file":
@@ -404,7 +429,7 @@ async def add_source(
         return await sources.add_text(notebook_id, text_title, plan.content)
 
     if plan.upload_path is None:
-        raise SourceAddValidationError("upload_path must be set when detected_type == 'file'")
+        raise SourceAddValidationError("missing_upload_path")
 
     return await sources.add_file(
         notebook_id,
@@ -465,6 +490,8 @@ __all__ = [
     "SourceAddPlan",
     "SourceAddResult",
     "SourceAddType",
+    "SourceAddValidationReason",
+    "SourceAddWarning",
     "SourceAddValidationError",
     "add_source",
     "build_source_add_plan",

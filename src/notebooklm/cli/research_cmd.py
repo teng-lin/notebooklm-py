@@ -59,9 +59,11 @@ from .resolve import (
     resolve_notebook_id,
 )
 from .services.research import (
+    ResearchValidationError,
     ResearchWaitPlan,
     ResearchWaitResult,
     execute_research_wait,
+    research_validation_message,
 )
 
 # UI-only cap for the research summary preview shown in `research status` /
@@ -562,7 +564,8 @@ def research_wait(
     """
     try:
         validate_research_wait_flags(import_all=import_all, cited_only=cited_only)
-    except ValidationError as exc:
+    except ResearchValidationError as exc:
+        message = research_validation_message(exc)
         # Per ADR-0015 §2: under --json this flag-combination conflict must
         # emit the typed JSON envelope and exit 1 (VALIDATION_ERROR), not
         # ride Click's parse-time UsageError path (exit 2, usage text on
@@ -570,9 +573,9 @@ def research_wait(
         # existing Click UX so interactive users still get the
         # ``Usage: ... / Error: ...`` formatting.
         if json_output:
-            _output_error(str(exc), "VALIDATION_ERROR", json_output, 1)
+            _output_error(message, "VALIDATION_ERROR", json_output, 1)
         raise click.UsageError(  # cli-input-validation: --cited-only requires --import-all
-            str(exc)
+            message
         ) from exc
 
     nb_id = require_notebook(notebook_id)
@@ -582,7 +585,6 @@ def research_wait(
         interval=interval,
         import_all=import_all,
         cited_only=cited_only,
-        json_output=json_output,
         task_id=run_id,
     )
 
@@ -598,7 +600,7 @@ def research_wait(
                     resume_hint += f" -n {plan.notebook_id} --run-id {plan.task_id}"
                 return status_with_elapsed(
                     "Waiting for research to complete...",
-                    json_output=plan.json_output,
+                    json_output=json_output,
                     resume_hint=resume_hint,
                 )
 
@@ -606,13 +608,16 @@ def research_wait(
                 plan,
                 client=client,
                 wait_context=_wait_context,
+                json_output=json_output,
             )
-            _render_wait_result(plan, result)
+            _render_wait_result(plan, result, json_output=json_output)
 
     return _run()
 
 
-def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> None:
+def _render_wait_result(
+    plan: ResearchWaitPlan, result: ResearchWaitResult, *, json_output: bool
+) -> None:
     """Render a :class:`ResearchWaitResult` and exit on non-success outcomes.
 
     The handler owns all CLI I/O — text vs JSON, exit codes, "Imported N
@@ -620,14 +625,14 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
     a CliRunner).
     """
     if result.outcome == "no_research":
-        if plan.json_output:
+        if json_output:
             json_output_response({"status": "no_research", "error": "No research running"})
         else:
             console.print("[red]No research running[/red]")
         exit_with_code(1)
 
     if result.outcome == "timeout":
-        if plan.json_output:
+        if json_output:
             json_output_response(
                 {"status": "timeout", "error": f"Timed out after {result.timeout}s"}
             )
@@ -636,7 +641,7 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
         exit_with_code(1)
 
     if result.outcome == "failed":
-        if plan.json_output:
+        if json_output:
             failed_payload: dict[str, Any] = {"status": "failed", "error": "Research failed"}
             if result.query:
                 failed_payload["query"] = result.query
@@ -662,7 +667,7 @@ def _render_wait_result(plan: ResearchWaitPlan, result: ResearchWaitResult) -> N
         exit_with_code(1)
 
     # outcome == "completed"
-    if plan.json_output:
+    if json_output:
         # The CLI owns the ``--json`` envelope projection (``_app`` returns only
         # the typed result); ``_completed_wait_payload`` rebuilds the historical
         # completed payload (base keys + optional cited/imported keys) verbatim.

@@ -88,6 +88,7 @@ def test_server_info_uses_bound_profile_for_probe(
     seen: dict[str, Any] = {}
 
     async def _fake_run(plan: Any, *, read_env_auth_json: Any) -> _FakeAuthResult:
+        assert not hasattr(plan, "json_output")
         seen["profile"] = plan.profile
         seen["storage_path"] = plan.storage_path
         return _FakeAuthResult(all_passed=True)

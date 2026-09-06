@@ -26,16 +26,15 @@ The category set is deliberately granular enough that the CLI's
 ``TIMEOUT``                 (generic wait timeout — CLI maps to its own code)
 ``SERVER``                  (5xx — CLI currently folds into ``NOTEBOOKLM_ERROR``)
 ``RPC``                     (other RPC failures -> ``NOTEBOOKLM_ERROR``)
-``SOURCE_MUTATION``         (``SourceMutationError`` carries its own ``.code``)
+``SOURCE_MUTATION``         (CLI maps its semantic ``reason`` to a code)
 ``SOURCE_ADD``              (``SourceAddError`` -> ``NOTEBOOKLM_ERROR``; non-fatal per-item)
 ``UNEXPECTED``              ``UNEXPECTED_ERROR`` (non-library exceptions)
 ==========================  ====================================
 
 ``SOURCE_MUTATION`` is the ``_app``-raised :class:`SourceMutationError`. It is
-a deterministic CLI-input failure that carries its own ``.code`` vocabulary
-(``AMBIGUOUS_ID`` / ``NOT_FOUND`` / ``CONFIRM_REQUIRED`` / …), so the CLI
-projects that carried code rather than a category-derived one; the category
-exists only so the coverage test never sees it fall through to ``LIBRARY``.
+a deterministic source-resolution failure carrying an adapter-neutral reason
+and typed candidate data. The CLI maps that reason to its historical code;
+the category exists so other adapters can project it without parsing text.
 
 :func:`classify` is **class-sensitive**: it tests ``isinstance`` against the
 ``notebooklm.exceptions`` hierarchy most-specific-first, so an
@@ -119,11 +118,9 @@ class ErrorCategory(Enum):
     SERVER = "server"
     #: Other RPC-protocol failure after the connection succeeded.
     RPC = "rpc"
-    #: A CLI-input source mutation failure (``SourceMutationError``) that
-    #: carries its own ``.code`` taxonomy (``AMBIGUOUS_ID`` / ``NOT_FOUND`` /
-    #: ``CONFIRM_REQUIRED`` / …). Distinct from the generic :attr:`LIBRARY`
-    #: catch-all so adapters can recover that carried code rather than folding
-    #: it into the library default.
+    #: A source mutation resolution failure (``SourceMutationError``) carrying
+    #: an adapter-neutral semantic reason. Distinct from the generic
+    #: :attr:`LIBRARY` catch-all so adapters can select their own projection.
     SOURCE_MUTATION = "source_mutation"
     #: A per-source ADD failure (``SourceAddError``) — NotebookLM rejected this
     #: specific source input (invalid/inaccessible/paywalled/empty/unparseable
@@ -453,7 +450,7 @@ def _category_for(exc: BaseException) -> ErrorCategory:
             return ErrorCategory.SERVER
         return ErrorCategory.SOURCE_ADD
 
-    # --- CLI-input source-mutation error (carries its own .code taxonomy). ----
+    # --- Semantic source-mutation resolution failure. -------------------------
     # A direct NotebookLMError subclass, so it must precede the LIBRARY
     # catch-all to keep its distinct category.
     if isinstance(exc, SourceMutationError):

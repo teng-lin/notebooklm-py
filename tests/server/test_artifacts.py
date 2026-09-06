@@ -242,6 +242,8 @@ def test_download_not_ready_is_409(authed_client: TestClient) -> None:
     # No artifacts exist → NO_ARTIFACTS → 409, not 500.
     resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "audio"})
     assert resp.status_code == 409
+    assert "notebooklm " not in resp.text
+    assert "--" not in resp.text
 
 
 def test_download_caller_path_field_is_ignored(

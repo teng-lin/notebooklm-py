@@ -819,7 +819,7 @@ def register_session_commands(cli):
             # check or hijack its exit code).
             result.details["notebook_count"] = auth_check_notebook_count(ctx)
 
-        _render_auth_check_result(result)
+        _render_auth_check_result(result, json_output=json_output)
 
     @auth_group.command("refresh")
     @click.option(

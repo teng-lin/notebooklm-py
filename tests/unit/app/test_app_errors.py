@@ -93,16 +93,16 @@ def test_every_library_exception_classifies_as_a_library_category(cls: type) -> 
         (exc.NotebookLMError("generic"), ErrorCategory.LIBRARY, False),
         # ``_app``-raised errors re-based onto the public hierarchy (§11). The
         # two validation errors fold into VALIDATION via their ValidationError
-        # base; SourceMutationError keeps its own category so adapters recover
-        # its carried ``.code`` taxonomy.
+        # base; SourceMutationError keeps its own category so adapters can map
+        # its semantic reason independently.
         (
-            DownloadPlanValidationError("Cannot specify both --force and --no-clobber"),
+            DownloadPlanValidationError("conflicting_overwrite_policy"),
             ErrorCategory.VALIDATION,
             False,
         ),
-        (SourceAddValidationError("bad url"), ErrorCategory.VALIDATION, False),
+        (SourceAddValidationError("invalid_url", url="bad"), ErrorCategory.VALIDATION, False),
         (
-            SourceMutationError("ambiguous", "AMBIGUOUS_ID"),
+            SourceMutationError("ambiguous_id", token="ambiguous"),
             ErrorCategory.SOURCE_MUTATION,
             False,
         ),
@@ -197,13 +197,17 @@ def test_research_task_mismatch_is_validation() -> None:
     ("app_error", "expected_base", "expected_category"),
     [
         (
-            DownloadPlanValidationError("boom"),
+            DownloadPlanValidationError("missing_notebook"),
             exc.ValidationError,
             ErrorCategory.VALIDATION,
         ),
-        (SourceAddValidationError("boom"), exc.ValidationError, ErrorCategory.VALIDATION),
         (
-            SourceMutationError("boom", "NOT_FOUND"),
+            SourceAddValidationError("invalid_url", url="boom"),
+            exc.ValidationError,
+            ErrorCategory.VALIDATION,
+        ),
+        (
+            SourceMutationError("id_not_found", token="boom"),
             exc.NotebookLMError,
             ErrorCategory.SOURCE_MUTATION,
         ),
@@ -359,26 +363,16 @@ def test_partial_upload_recovery_attributes_do_not_change_classification(
     assert result.retriable is retriable
 
 
-def test_source_mutation_error_keeps_cli_attributes() -> None:
-    """Re-basing onto NotebookLMError must not drop the CLI-read attributes."""
-    err = SourceMutationError(
-        "ambiguous id",
-        "AMBIGUOUS_ID",
-        {"source_id": "abc"},
-        status_message="[dim]Matched: abc[/dim]",
-    )
-    assert err.message == "ambiguous id"
-    assert err.code == "AMBIGUOUS_ID"
-    assert err.extra == {"source_id": "abc"}
-    assert err.status_message == "[dim]Matched: abc[/dim]"
+def test_source_mutation_error_keeps_typed_attributes() -> None:
+    err = SourceMutationError("ambiguous_id", token="abc")
+    assert err.reason == "ambiguous_id"
+    assert err.token == "abc"
 
 
-def test_download_plan_validation_error_keeps_code_and_message() -> None:
-    """``download_cmd`` reads ``.message`` / ``.code`` for its --json envelope."""
-    err = DownloadPlanValidationError("Cannot specify both --force and --no-clobber")
-    assert err.message == "Cannot specify both --force and --no-clobber"
-    assert err.code == "VALIDATION_ERROR"
-    assert str(err) == "Cannot specify both --force and --no-clobber"
+def test_download_plan_validation_error_keeps_semantic_reason() -> None:
+    err = DownloadPlanValidationError("conflicting_overwrite_policy")
+    assert err.reason == "conflicting_overwrite_policy"
+    assert "--" not in str(err)
 
 
 def test_retriable_only_for_transient_categories() -> None:

@@ -361,7 +361,6 @@ async def test_import_all_passes_json_output_flag():
         timeout=300,
         interval=5,
         import_all=True,
-        json_output=True,
     )
     client = _FakeClient(
         wait_side_effect=[
@@ -387,6 +386,7 @@ async def test_import_all_passes_json_output_flag():
         client=client,
         resolve_id=_fake_resolve,
         import_sources=import_mock,
+        json_output=True,
     )
 
     call_kwargs = import_mock.await_args.kwargs
@@ -635,7 +635,7 @@ class TestResearchWaitPlan:
         plan = ResearchWaitPlan(notebook_id="nb", timeout=10, interval=1)
         assert plan.import_all is False
         assert plan.cited_only is False
-        assert plan.json_output is False
+        assert not hasattr(plan, "json_output")
 
     def test_is_frozen(self):
         from dataclasses import FrozenInstanceError

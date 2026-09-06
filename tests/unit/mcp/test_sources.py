@@ -2722,6 +2722,9 @@ async def test_source_add_batch_internal_rejected_without_allow_internal(
     assert sc["added"] == 0
     assert sc["results"][0]["status"] == "error"
     assert sc["results"][0]["error"]["code"] == "VALIDATION"
+    projected = str(sc["results"][0]["error"])
+    assert "--allow-internal" not in projected
+    assert "notebooklm " not in projected
     mock_client.sources.add_url.assert_not_called()
 
 
@@ -3012,7 +3015,10 @@ async def test_source_list_unknown_label_raises(mcp_call, mock_client) -> None:
 
     with pytest.raises(ToolError) as excinfo:
         await mcp_call("source_list", {"notebook": NB_ID, "label": "Unknown"})
-    assert "No label found matching" in str(excinfo.value)
+    projected = str(excinfo.value)
+    assert "label resolution not found" in projected
+    assert "notebooklm " not in projected
+    assert "--" not in projected
 
 
 async def test_source_list_ambiguous_label_raises(mcp_call, mock_client) -> None:
@@ -3028,8 +3034,10 @@ async def test_source_list_ambiguous_label_raises(mcp_call, mock_client) -> None
 
     with pytest.raises(ToolError) as excinfo:
         await mcp_call("source_list", {"notebook": NB_ID, "label": "Work"})
-    assert "matches 2 labels" in str(excinfo.value)
-    assert "Use a label id instead" in str(excinfo.value)
+    projected = str(excinfo.value)
+    assert "label resolution ambiguous name" in projected
+    assert "notebooklm " not in projected
+    assert "--" not in projected
 
 
 # ---------------------------------------------------------------------------
@@ -3509,6 +3517,8 @@ async def test_source_add_wait_remote_file_rejected(mcp_call, mock_client, monke
             {"notebook": NB_ID, "wait": True, "source_type": "file", "path": "/tmp/doc.pdf"},
         )
     assert "VALIDATION" in str(excinfo.value)
+    assert "--allow-internal" not in str(excinfo.value)
+    assert "notebooklm " not in str(excinfo.value)
     mock_client.sources.add_file.assert_not_called()
 
 

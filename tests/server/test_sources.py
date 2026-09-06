@@ -548,6 +548,8 @@ def test_add_batch_partial_failure_isolated(
     err = body["results"][1]["error"]
     assert err["category"] == "validation"
     assert "retriable" in err
+    assert "--allow-internal" not in str(err)
+    assert "notebooklm " not in str(err)
 
 
 def test_add_batch_all_failed_is_200_status_error(

@@ -21,9 +21,11 @@ same cross-wire guard.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from ..._app.research import (
+    ResearchValidationError,
     ResearchWaitOutcome,
     ResearchWaitPlan,
     ResearchWaitResult,
@@ -36,6 +38,19 @@ from ..research_import import ResearchImportResult, import_research_sources
 from ..resolve import resolve_notebook_id
 
 
+def research_validation_message(exc: ResearchValidationError) -> str:
+    """Render a neutral research conflict using the established CLI wording."""
+    if exc.reason == "cited_requires_import":
+        return "--cited-only requires --import-all"
+    if exc.reason == "import_requires_wait":
+        return (
+            "--import-all requires --wait (the default), or after --no-wait a "
+            "separate 'research wait --import-all' (blocks) or 'research import' "
+            "(imports an already-completed run, never blocks)."
+        )
+    raise AssertionError(f"Unhandled research validation reason: {exc.reason}")
+
+
 async def execute_research_wait(
     plan: ResearchWaitPlan,
     *,
@@ -43,6 +58,7 @@ async def execute_research_wait(
     wait_context=_null_wait_context,
     resolve_id=None,
     import_sources=None,
+    json_output: bool = False,
 ) -> ResearchWaitResult:
     """Resolve, wait, and optionally import — injecting the CLI collaborators.
 
@@ -53,12 +69,26 @@ async def execute_research_wait(
     ``patch.object(services.research, "resolve_notebook_id" / "import_research_sources", ...)``
     seams land; callers may still pass explicit overrides.
     """
+    bound_importer = (
+        partial(
+            import_research_sources if import_sources is None else import_sources,
+            json_output=True,
+        )
+        if json_output
+        else partial(
+            import_research_sources if import_sources is None else import_sources,
+            status_message="Importing sources...",
+        )
+    )
     return await _execute_research_wait(
         plan,
         client=client,
         wait_context=wait_context,
-        resolve_id=resolve_notebook_id if resolve_id is None else resolve_id,
-        import_sources=import_research_sources if import_sources is None else import_sources,
+        resolve_id=partial(
+            resolve_notebook_id if resolve_id is None else resolve_id,
+            json_output=json_output,
+        ),
+        import_sources=bound_importer,
     )
 
 
@@ -67,7 +97,9 @@ __all__ = [
     "ResearchWaitOutcome",
     "ResearchWaitPlan",
     "ResearchWaitResult",
+    "ResearchValidationError",
     "execute_research_wait",
     "import_research_sources",
     "resolve_notebook_id",
+    "research_validation_message",
 ]

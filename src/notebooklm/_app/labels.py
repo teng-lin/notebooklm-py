@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from ..exceptions import ValidationError
 from ..types import Label
@@ -52,39 +52,36 @@ ResolveNotebookIdFn = Callable[..., Awaitable[str]]
 ResolveSourceIdsFn = Callable[..., Awaitable[list[str] | None]]
 
 
+LabelResolutionReason = Literal["ambiguous_id", "ambiguous_name", "not_found"]
+
+
+@dataclass(frozen=True)
+class LabelResolutionMatch:
+    """Label candidate carried by a semantic ambiguity."""
+
+    id: str
+    emoji: str | None
+    source_count: int
+
+
 class LabelResolutionError(ValidationError):
-    """Typed label-resolution error for command-layer rendering and exit policy.
-
-    Subclasses :class:`~notebooklm.exceptions.ValidationError` (the public
-    ``NotebookLMError`` hierarchy) so ``_app.errors.classify`` covers it
-    uniformly — every error a ``_app`` module raises stays inside that
-    hierarchy. Carries a human ``message``, an ADR-0015 ``code``
-    (``NOT_FOUND`` / ``AMBIGUOUS_ID`` / ``AMBIGUOUS_NAME`` / ``VALIDATION_ERROR``),
-    and an optional ``extra`` payload. The command layer catches it explicitly
-    (before any generic ``ValidationError`` handler) and maps it through
-    ``output_error`` so the typed ``--json`` envelope + its ADR-0015 code are
-    preserved.
-    """
-
-    #: Near-miss ``{"id", "title"}`` candidates for a failed name lookup
-    #: (issue #1787). Mirrors :attr:`NotFoundError.candidates` so the MCP / REST
-    #: surfaces — which read ``getattr(exc, "candidates", ())`` and never reach
-    #: into ``.extra`` — enrich a label near-miss too, even though this error
-    #: classifies as ``VALIDATION`` rather than ``NOT_FOUND``. Empty unless the
-    #: resolver sets it; the ``.extra["candidates"]`` copy still feeds the CLI
-    #: ``--json`` envelope (which surfaces ``.extra``).
-    candidates: Sequence[dict[str, str]] = ()
+    """Typed label-resolution failure with adapter-neutral reason data."""
 
     def __init__(
         self,
-        message: str,
-        code: str,
-        extra: dict[str, Any] | None = None,
+        reason: LabelResolutionReason,
+        *,
+        notebook_id: str,
+        token: str,
+        matches: tuple[LabelResolutionMatch, ...] = (),
+        candidates: Sequence[dict[str, str]] = (),
     ) -> None:
-        self.message = message
-        self.code = code
-        self.extra = extra
-        super().__init__(f"{message} (code={code})")
+        self.reason = reason
+        self.notebook_id = notebook_id
+        self.token = token
+        self.matches = matches
+        self.candidates = candidates
+        super().__init__(f"label resolution {reason.replace('_', ' ')}: {token}")
 
 
 # ---------------------------------------------------------------------------
@@ -92,50 +89,16 @@ class LabelResolutionError(ValidationError):
 # ---------------------------------------------------------------------------
 
 
-def _candidate_payload(matches: Sequence[Label]) -> list[dict[str, Any]]:
-    """Build the structured candidate list (id + emoji + source count)."""
-    return [
-        {
-            "id": label.id,
-            "emoji": label.emoji,
-            "source_count": len(label.source_ids),
-        }
-        for label in matches
-    ]
-
-
-def _append_candidate_lines(lines: list[str], matches: Sequence[Label]) -> None:
-    """Append the per-candidate ``id emoji (N sources)`` lines (capped at 5)."""
-    for label in matches[:5]:
-        emoji = f"{label.emoji} " if label.emoji else ""
-        count = len(label.source_ids)
-        lines.append(f"  {label.id} {emoji}({count} source{'s' if count != 1 else ''})")
-    if len(matches) > 5:
-        lines.append(f"  ... and {len(matches) - 5} more")
-
-
-def _ambiguous_id_message(partial_id: str, matches: Sequence[Label]) -> str:
-    """Build the ambiguous-prefix error listing each candidate (id + emoji + count)."""
-    lines = [f"Ambiguous label id '{partial_id}' matches {len(matches)} labels:"]
-    _append_candidate_lines(lines, matches)
-    lines.append("Specify more characters to disambiguate.")
-    return "\n".join(lines)
-
-
-def _ambiguous_name_message(name: str, matches: Sequence[Label]) -> str:
-    """Build the ambiguous-name error listing each candidate (id + emoji + count)."""
-    lines = [f"Name '{name}' matches {len(matches)} labels. Use a label id instead:"]
-    _append_candidate_lines(lines, matches)
-    lines.append("Specify the label id to disambiguate.")
-    return "\n".join(lines)
+def _resolution_matches(matches: Sequence[Label]) -> tuple[LabelResolutionMatch, ...]:
+    return tuple(
+        LabelResolutionMatch(label.id, label.emoji, len(label.source_ids)) for label in matches
+    )
 
 
 async def resolve_label_id(
     client: NotebookLMClient,
     notebook_id: str,
     token: str,
-    *,
-    json_output: bool = False,
 ) -> str:
     """Resolve a label ``<id|name>`` token to a full label id.
 
@@ -166,9 +129,10 @@ async def resolve_label_id(
         # already returned above), so surface the candidate list rather than
         # silently falling through to the name pass and reporting NOT_FOUND.
         raise LabelResolutionError(
-            _ambiguous_id_message(token, prefix_matches),
-            "AMBIGUOUS_ID",
-            {"id": token, "candidates": _candidate_payload(prefix_matches)},
+            "ambiguous_id",
+            notebook_id=notebook_id,
+            token=token,
+            matches=_resolution_matches(prefix_matches),
         )
 
     # Pass 2: explicit exact-name match (no id / prefix match found above).
@@ -177,33 +141,27 @@ async def resolve_label_id(
         return name_matches[0].id
     if len(name_matches) > 1:
         raise LabelResolutionError(
-            _ambiguous_name_message(token, name_matches),
-            "AMBIGUOUS_NAME",
-            {"name": token, "candidates": _candidate_payload(name_matches)},
+            "ambiguous_name",
+            notebook_id=notebook_id,
+            token=token,
+            matches=_resolution_matches(name_matches),
         )
 
     # Near-miss "did you mean" candidates (issue #1787): a name mistyped with a
-    # hyphen for an em-dash or a bare prefix surfaces the real label(s). Stored on
-    # ``.extra`` (for the CLI ``--json`` envelope) AND on ``.candidates`` (for the
-    # MCP / REST surfaces, reached by ``source_list(label=…)``, which read the
-    # attribute — not ``.extra`` — and never see a VALIDATION error's near-misses
-    # otherwise).
-    extra: dict[str, Any] = {"id": token, "notebook_id": notebook_id}
+    # hyphen for an em-dash or a bare prefix surfaces the real label(s). The
+    # semantic ``.candidates`` are projected independently by CLI and MCP/REST.
     candidates = near_miss_candidates(
         token,
         labels,
         id_of=lambda label: label.id,
         title_of=lambda label: label.name,
     )
-    if candidates:
-        extra["candidates"] = candidates
-    error = LabelResolutionError(
-        f"No label found matching '{token}'. Run 'notebooklm label list' to see available labels.",
-        "NOT_FOUND",
-        extra,
+    raise LabelResolutionError(
+        "not_found",
+        notebook_id=notebook_id,
+        token=token,
+        candidates=candidates,
     )
-    error.candidates = candidates
-    raise error
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +310,8 @@ __all__ = [
     "LabelGenerateResult",
     "LabelMembershipResult",
     "LabelResolutionError",
+    "LabelResolutionMatch",
+    "LabelResolutionReason",
     "ResolveNotebookIdFn",
     "ResolveSourceIdsFn",
     "execute_label_add_sources",

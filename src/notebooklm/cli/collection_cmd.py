@@ -50,12 +50,54 @@ def _handle_collection_resolution_error(
 ) -> NoReturn:
     """Render a typed collection-resolution error through the CLI error contract."""
     candidates = list(exc.candidates)
+    matches = exc.matches
+    candidate_payload = [
+        {"id": match.id, "emoji": match.emoji, "notebook_count": match.notebook_count}
+        for match in matches
+    ]
+    if exc.reason == "ambiguous_id":
+        lines = [f"Ambiguous collection id '{exc.token}' matches {len(matches)} collections:"]
+        for match in matches[:5]:
+            emoji = f"{match.emoji} " if match.emoji else ""
+            lines.append(
+                f"  {match.id} {emoji}"
+                f"({match.notebook_count} notebook{'s' if match.notebook_count != 1 else ''})"
+            )
+        if len(matches) > 5:
+            lines.append(f"  ... and {len(matches) - 5} more")
+        lines.append("Specify more characters to disambiguate.")
+        message, code = "\n".join(lines), "AMBIGUOUS_ID"
+        extra: dict[str, Any] = {"id": exc.token, "candidates": candidate_payload}
+    elif exc.reason == "ambiguous_name":
+        lines = [
+            f"Name '{exc.token}' matches {len(matches)} collections. Use a collection id instead:"
+        ]
+        for match in matches[:5]:
+            emoji = f"{match.emoji} " if match.emoji else ""
+            lines.append(
+                f"  {match.id} {emoji}"
+                f"({match.notebook_count} notebook{'s' if match.notebook_count != 1 else ''})"
+            )
+        if len(matches) > 5:
+            lines.append(f"  ... and {len(matches) - 5} more")
+        lines.append("Specify the collection id to disambiguate.")
+        message, code = "\n".join(lines), "AMBIGUOUS_NAME"
+        extra = {"name": exc.token, "candidates": candidate_payload}
+    else:
+        message = (
+            f"No collection found matching '{exc.token}'. "
+            "Run 'notebooklm collection list' to see available collections."
+        )
+        code = "NOT_FOUND"
+        extra = {"id": exc.token}
+        if candidates:
+            extra["candidates"] = candidates
     output_error(
-        exc.message,
-        code=exc.code,
+        message,
+        code=code,
         json_output=json_output,
         exit_code=1,
-        extra=dict(exc.extra) if exc.extra else None,
+        extra=extra,
         hint=did_you_mean_hint(candidates) if candidates else None,
     )
     raise AssertionError("unreachable")  # pragma: no cover
@@ -157,9 +199,7 @@ def collection_notebooks(ctx, collection_ref, json_output, client_auth):
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             notebooks = await execute_collection_notebooks(client, collection_id)
@@ -219,9 +259,7 @@ def collection_rename(ctx, collection_ref, new_name, json_output, client_auth):
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             collection_ = await execute_collection_rename(client, collection_id, new_name)
@@ -250,9 +288,7 @@ def collection_add(ctx, collection_ref, notebook_refs, json_output, client_auth)
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             notebook_ids = await _resolve_notebook_ids(
@@ -297,9 +333,7 @@ def collection_remove(ctx, collection_ref, notebook_refs, json_output, client_au
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:
             try:
-                collection_id = await resolve_collection_id(
-                    client, collection_ref, json_output=json_output
-                )
+                collection_id = await resolve_collection_id(client, collection_ref)
             except CollectionResolutionError as exc:
                 _handle_collection_resolution_error(exc, json_output=json_output)
             notebook_ids = await _resolve_notebook_ids(
@@ -345,9 +379,7 @@ def collection_delete(ctx, collection_refs, yes, json_output, client_auth):
                 try:
                     collections = await client.collections.list()
                     collection_ids = [
-                        await resolve_collection_id(
-                            client, ref, json_output=json_output, collections=collections
-                        )
+                        await resolve_collection_id(client, ref, collections=collections)
                         for ref in collection_refs
                     ]
                 except CollectionResolutionError as exc:

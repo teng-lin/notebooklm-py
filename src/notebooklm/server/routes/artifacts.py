@@ -619,10 +619,15 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
         # No completed artifact of this kind exists yet (not ready), or a
         # pre-download error — surface as 409, not 500.
         if result.outcome != download_core.DownloadOutcome.SINGLE_DOWNLOADED:
+            failure = result.failure
             detail = (
-                safe_detail(result.error)
-                if result.error
-                else (f"No completed {body.type} artifact is available yet")
+                safe_detail(failure.detail)
+                if failure is not None and failure.detail
+                else (
+                    failure.reason.replace("_", " ")
+                    if failure is not None
+                    else f"No completed {body.type} artifact is available yet"
+                )
             )
             raise HTTPException(status_code=409, detail=detail)
 
