@@ -28,6 +28,10 @@ from notebooklm.types import ArtifactListingComponent, ArtifactLookupStatus
 from .common import ScenarioFailure, ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route
 from .web import build_fault_client, list_response, rpc_response
+from .web_generation_faults import BUDGETS as GENERATION_BUDGETS
+from .web_generation_faults import IMPLEMENTATIONS as GENERATION_IMPLEMENTATIONS
+from .web_generation_faults import REQUIRED_CHECKS as GENERATION_REQUIRED_CHECKS
+from .web_generation_faults import SCENARIOS as GENERATION_SCENARIOS
 
 _CREATE_ARTIFACT = Route.rpc(RPCMethod.CREATE_ARTIFACT.value)
 _LIST_ARTIFACTS = Route.rpc(RPCMethod.LIST_ARTIFACTS.value)
@@ -47,6 +51,7 @@ SCENARIOS = (
     "workflow_research_import_candidates",
     "workflow_research_import_ordered_loss",
     "workflow_collection_readback_failure",
+    *GENERATION_SCENARIOS,
 )
 
 
@@ -539,6 +544,7 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "server_clean",
     ],
 }
+_IMPLEMENTATIONS.update(GENERATION_IMPLEMENTATIONS)
 
 
 async def run_scenario(
@@ -553,8 +559,11 @@ async def run_scenario(
         faults=[name],
         cohort_ids=[f"{operation_id}:0"],
         family="R10" if name.startswith("workflow_generation") else "R11",
-        budgets={"rpc_timeout_s": 0.5},
-        required_checks=_REQUIRED_CHECKS[name],
+        budgets=GENERATION_BUDGETS.get(
+            name,
+            {"scenario_timeout_s": 20.0, "rpc_timeout_s": 0.5, "cleanup_timeout_s": 2.0},
+        ),
+        required_checks=list(GENERATION_REQUIRED_CHECKS[name] if name in GENERATION_REQUIRED_CHECKS else _REQUIRED_CHECKS[name]),
     )
     if name == "workflow_artifact_incomplete_lookup":
         result.record(

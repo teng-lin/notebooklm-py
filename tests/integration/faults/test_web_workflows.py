@@ -14,7 +14,7 @@ pytestmark = pytest.mark.allow_no_vcr
 @pytest.mark.parametrize("scenario", SCENARIOS)
 async def test_web_workflow_fault_scenario(scenario: str) -> None:
     result = await asyncio.wait_for(
-        run_scenario(scenario, operation_id=f"pytest-{scenario}"), timeout=8.0
+        run_scenario(scenario, operation_id=f"pytest-{scenario}"), timeout=20.0
     )
 
     assert result.checks
