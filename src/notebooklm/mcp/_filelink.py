@@ -41,6 +41,7 @@ import hmac
 import json
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -375,6 +376,11 @@ class FileTransferConfig:
     #: In-process ``shortid -> token`` map backing the ``/u/<shortid>`` tap-friendly links
     #: (:meth:`short_upload_url`). ``compare=False`` for the same reason as :attr:`jti_store`.
     short_links: ShortLinkStore = field(default_factory=ShortLinkStore, compare=False)
+
+    # Instance-owned spool allocation seam; None retains the normal private temp directory.
+    _download_temp_factory: Callable[[], str] | None = field(
+        default=None, compare=False, repr=False
+    )
 
     def short_upload_url(self, payload: dict[str, Any]) -> str:
         """Mint an upload token for ``payload`` and return a tap-friendly ``/u/<shortid>`` URL.

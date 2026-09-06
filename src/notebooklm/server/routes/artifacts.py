@@ -42,7 +42,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
 from starlette.types import Receive, Scope, Send
@@ -368,7 +368,9 @@ class _CleanupFileResponse(FileResponse):
 
 
 @router.post("/download", dependencies=[Depends(limit_download)])
-async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) -> FileResponse:
+async def download(
+    notebook_id: str, body: ArtifactDownload, client: ClientDep, request: Request
+) -> FileResponse:
     """Download a completed artifact, streaming from a server-generated temp path."""
     spec = DOWNLOAD_SPECS.get(body.type)
     if spec is None:
@@ -379,7 +381,10 @@ async def download(notebook_id: str, body: ArtifactDownload, client: ClientDep) 
     # file, which the download core treats as a conflict and may auto-rename
     # (download.py); an isolated empty dir avoids that, and we assert the served
     # path stays inside it so a surprising resolved path can never be streamed.
-    temp_dir = tempfile.mkdtemp(prefix="nblm-download-")
+    temp_factory = request.app.state._download_temp_factory
+    temp_dir = (
+        temp_factory() if temp_factory is not None else tempfile.mkdtemp(prefix="nblm-download-")
+    )
     # On SUCCESS, ownership of the temp dir passes to the returned
     # ``_CleanupFileResponse`` (cleans after streaming, disconnect-safe); every
     # other exit — validation, a not-ready 409, an unexpected raise — cleans in the

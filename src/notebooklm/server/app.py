@@ -310,6 +310,7 @@ def create_app(
     profile: str | None = None,
     backend: Literal["web", "android"] | None = None,
     client_factory: ClientFactory | None = None,
+    _download_temp_factory: Callable[[], str] | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -322,6 +323,8 @@ def create_app(
         client_factory: Test seam — a zero-arg callable returning an async
             context manager that yields a client. Defaults to
             ``NotebookLMClient.from_storage(profile=profile, keepalive=600.0)``.
+        _download_temp_factory: Private per-app spool allocation seam. ``None``
+            retains private directories allocated by ``tempfile.mkdtemp``.
 
     Returns:
         A configured :class:`~fastapi.FastAPI` app whose lifespan binds exactly
@@ -427,6 +430,7 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
+    app.state._download_temp_factory = _download_temp_factory
 
     install_exception_handlers(app)
 
