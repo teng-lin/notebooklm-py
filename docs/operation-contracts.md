@@ -145,6 +145,9 @@ input occurrence in original order. Duplicate URLs remain distinct because
 `member` is an occurrence index. Each item carries a canonical
 `BatchItemOutcome`:
 
+One public batch accepts at most 20 input occurrences. The cap counts duplicate
+URLs separately and is checked before either backend sends its first mutation.
+
 - `CONFIRMED` has a matching `resource_id` and public `Source`.
 - `REJECTED` has a typed error and cannot claim a resource.
 - `UNKNOWN` has a `ReconciliationReport`; candidate rows are not success proof.

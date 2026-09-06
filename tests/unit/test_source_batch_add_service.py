@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app.errors import ErrorCategory, classify
+from notebooklm._app.source_batch import MAX_BATCH_URLS
 from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.rows.sources import unwrap_add_source_rows
@@ -22,6 +23,7 @@ from notebooklm.exceptions import (
     RPCError,
     ServerError,
     SourceAddError,
+    ValidationError,
 )
 from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
@@ -137,6 +139,31 @@ async def test_web_public_facade_uses_one_batch_rpc_and_public_outcomes() -> Non
         CommitState.CONFIRMED,
         CommitState.CONFIRMED,
     ]
+    assert len(rpc.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_web_public_batch_cap_rejects_21_duplicate_occurrences_before_rpc() -> None:
+    rpc = RecordingRpc([])
+    api = WebSourcesAPI(rpc, supervisor=make_fake_core(), uploader=MagicMock())
+
+    with pytest.raises(ValidationError, match=r"at most 20 entries; got 21"):
+        await api.add_urls_batch("nb-1", ["https://same.example"] * (MAX_BATCH_URLS + 1))
+
+    assert rpc.calls == []
+
+
+@pytest.mark.asyncio
+async def test_web_public_batch_allows_20_duplicate_occurrences() -> None:
+    url = "https://same.example"
+    urls = [url] * MAX_BATCH_URLS
+    rpc = RecordingRpc([_url_row(f"src-{index}", url) for index in range(MAX_BATCH_URLS)])
+    api = WebSourcesAPI(rpc, supervisor=make_fake_core(), uploader=MagicMock())
+
+    outcomes = await api.add_urls_batch("nb-1", urls)
+
+    assert [item.member for item in outcomes] == list(range(MAX_BATCH_URLS))
+    assert [item.input for item in outcomes] == urls
     assert len(rpc.calls) == 1
 
 
