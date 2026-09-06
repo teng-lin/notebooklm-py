@@ -1,34 +1,40 @@
 # Resilience construction seams and transfer acceptance inventory
 
 Audit baseline: `65dbd21d70f5be8c892da40a3660987b4118cd1c`, 2026-09-06.
-This is the F0 construction audit for R3–R6, R9, R12 and R13 in the
-[resilience program](fault-resilience-coverage.md). It records current
-contracts and proposed private seams; it does not assert that planned socket
-cases already exist. Retry authorities and backend differences remain unchanged.
+This document retains the F0 construction audit and records implemented R3–R6,
+R9, R12 and R13 evidence. The [coverage inventory](fault-resilience-coverage.md)
+owns whole-program qualification and platform results. The historical table below
+describes the audit baseline; its required seams are now implemented. Retry
+authorities and backend differences remain unchanged.
 
-## Exact construction map
+
+## Historical construction audit and implemented seams
 
 Paths below are relative to `src/notebooklm/`. A construction-time substitution
 means a synchronous context that ends before opening or awaiting the client.
 Captured collaborators must remain instance-owned throughout close and reopen.
 
-| Operation | Current production construction and dispatch | Existing seam / required change |
+| Operation | Production construction at the audit baseline | Audited seam / change now implemented |
 | --- | --- | --- |
 | Web RPC and chat HTTP | `_client_assembly._assemble_client(async_client_factory=...)` → `_web/assembly.py` → `WebRuntimeConfig` → `_web/transport/init.py` kernel/session construction. Chat uses that kernel's `stream_post_with_size_cap`, then the real parser. | Existing factory routes the main session and homepage refresh. `tests/_fault_server/web.py` already captures `server.client_factory`. Preserve that path and real middleware. |
-| Android RPC | `_android/assembly.py` constructs `AndroidSession`; session captures `grpc_loader`; loader opens the channel on use. | Existing `tests/_fault_server/android.py` synchronously substitutes the session constructor, capturing a local gRPC loader. It validates the logical production target before opening an insecure loopback channel. HTTP paths still need separate routing. |
+| Android RPC | `_android/assembly.py` constructs `AndroidSession`; session captures `grpc_loader`; loader opens the channel on use. | Existing `tests/_fault_server/android.py` synchronously substitutes the session constructor, capturing a local gRPC loader. It validates the logical production target before opening an insecure loopback channel. HTTP paths require the separately captured routing described below. |
 | Web upload register | `SourceUploadPipeline._register_file_source_for_upload` uses its real RPC executor and decoder. | Main-session seam above. Preserve registration policy, response correlation, candidate-versus-confirmed identity and source-limit diagnostics. |
 | Web upload start/finalize/cancel | `_web/transport/init.py:build_web_runtime` constructs `SourceUploadPipeline` **without** `async_client_factory`. Pipeline `_client_factory()` uses its optional instance factory or resolves transport at call time. `start_resumable_upload` creates a client; `upload_file_streaming` creates another in a tracked child; `cancel_upload_session` creates another. | Existing pipeline constructor seam is sufficient, but production assembly must forward the injected factory. Main RPC injection currently does not reach these clients. Keep live cookies, phase timeouts, epoch tracking and shielded finalize intact. |
 | Web Drive fetch | `_web/sources/upload.py:drive_download_scope` constructs `DriveFetcher` while the operation runs. `_web/sources/drive_import.py:DriveFetcher` captures `client_factory`, default `_default_streaming_client`, which directly builds HTTPX with streaming/redirect hooks. | Capture a separate streaming factory on the uploader and pass it when constructing `DriveFetcher`. This intentionally HTTPX streaming path must not accidentally switch to curl buffered GET. Factory needs `(cookies, timeout)` adaptation preserving redirect hooks. |
 | Web artifact single | `_web/assembly.py` constructs `WebAssetDownloadService`, which inherits `AssetDownloadService.download_url`. `_artifact/downloads.py` resolves transport during transfer; HTTPX branch directly creates `httpx.AsyncClient` and uses a writer thread plus bounded queue; curl branch builds factory client and calls buffered `get_guarded`. | Add an optional instance-owned transport-selection/construction seam to the asset service. Replacing a module binding only during root construction does not capture these later constructions. Preserve the HTTPX branch identity when injecting a routing factory. |
 | Web artifact batch | `AssetDownloadService.download_urls_batch` calls `_artifact/_download_client.py:_make_download_client`, whose HTTPX branch directly creates HTTPX and whose curl branch calls `get_guarded`. Each successful buffered response goes through `AssetPublication.write_file`/`write_staging` and atomic replace. | Pass the captured asset construction collaborator into `_make_download_client`, with existing default resolution unchanged. Single and batch must both use it; overriding only `download_url` misses batch. Preserve per-hop hooks and per-URL policy renewal. |
-| Android artifact single/typed/batch | `_android/assembly.py` constructs `AndroidAssetDownloadService` without its supported `client_factory`. Service `_transfer_worker` and `_download_urls_batch_impl` call this captured zero-argument factory. Both use neutral `guarded_transfer` and manual redirect checks. | Existing constructor seam suffices. Capture a zero-argument adapter around cohort factory during assembly, retaining `cookies=None`, `follow_redirects=False`, timeout 60. Guarded transfer already receives the constructed client; it needs no global factory. |
+| Android artifact single/typed/batch | `_android/assembly.py` constructs `AndroidAssetDownloadService` without its supported `client_factory`. Service `_transfer_worker` and the guarded batch worker call this captured zero-argument factory. Both use neutral `guarded_transfer` and manual redirect checks. | Existing constructor seam suffices. Capture a zero-argument adapter around cohort factory during assembly, retaining `cookies=None`, `follow_redirects=False`, timeout 60. Guarded transfer already receives the constructed client; it needs no global factory. |
 | Android direct upload | `_android/assembly.py` constructs `AndroidUploadPipeline` without its supported `async_client_factory`. `_control_plane` registers over gRPC, `_start_worker` creates HTTP client for POST, `_finalize_worker` creates another for PUT. | Forward captured factory into existing constructor. Keep exact `isinstance(CurlCffiAsyncClient)` branch: curl uses disk-backed `stream_upload`, HTTPX consumes an async iterator. |
 | Android Drive download/staging | Upload pipeline `_download_drive_file` uses `_client_factory`; `_drive_staging()` constructs `DriveStagingTransfer` with the bound pipeline factory. `stage` POST and `unstage` DELETE create clients through it. | Forwarding upload factory routes all these existing collaborators. No new Drive-global transport patch is needed. Keep real multipart encoder, import gRPC, cleanup scope and bearer ownership. |
 | Android bearer issuance | Assembly takes `master_token_reader`/`oauth_minter`, constructs real `BearerProvider`; otherwise uses profile reader and `MintService`. | Existing synthetic reader/minter seam avoids credentials, disk and issuer traffic. Extend harness minter with gates/counts; retain real provider, generation and waiter behavior. This is deliberate issuer-boundary simulation, not an issuer socket claim. |
 | Curl session and upload handle | `_curl_cffi_transport.CurlCffiAsyncClient.__init__` directly constructs `AsyncSession`; `stream_upload` creates an independent low-level `Curl()` inside its worker thread. | Both need captured, private construction collaborators/options. Configuring only `AsyncSession` leaves actual upload unrouted. Neither HTTPX replacement nor environment mutation qualifies curl evidence. |
 
-Recommended implementation: retain `None` defaults and add narrow optional private
-constructor dependencies, forwarded by backend assembly. HTTPX asset construction
+Implemented shape: `HttpClientFactories` in `_http_client_factory.py` retains
+`None` defaults and forwards optional private dependencies through backend assembly.
+Its `select`, `create` and `create_httpx` methods retain transport identity and
+captured construction. `_assemble_client(http_client_factories=...)` reaches the
+Web uploader, Web Drive fetcher, both asset owners and Android upload/Drive.
+Curl captures separate `session_factory` and `curl_factory` collaborators. HTTPX asset construction
 must distinguish transport *kind* from injected client factory; testing `factory is
 httpx.AsyncClient` against an arbitrary routing factory incorrectly selects the curl
 branch. A separately captured HTTPX factory preserves current branching and event
@@ -84,13 +90,12 @@ A Python list for `CONNECT_TO` is **not supported** by the installed binding:
 `Curl.setopt` special-cases list conversion for `RESOLVE`, but not `CONNECT_TO`.
 The successful probe passed a `curl_slist` pointer created with
 `curl_cffi.lib.curl_slist_append`; it retained the list until both handles closed
-and then freed it. A production-default-preserving test seam must own that lifetime,
-including upload worker settlement. An alternative is a local CONNECT proxy with
-strict route rejection and local TLS endpoints; it needs its own evidence.
+and then freed it. The implemented captured routing owner retains that lifetime through upload
+worker settlement. The optional lane below uses this exact mechanism.
 
-This proves routing feasibility, not completed R13 upload/cancellation coverage.
-The optional lane still needs production adapter construction, POST/PUT body
-consumption, per-hop redirect routing, timeout/close evidence, and negative TLS tests.
+This was the F0 feasibility probe. The implemented optional lane below now
+exercises production adapter construction, request-body consumption, timeout/close,
+upload cancellation and negative TLS routing checks.
 `CONNECT_TO` alone does not reject unmapped destinations: validate every requested
 logical URL in the captured adapter and either disable auto-follow or preflight
 redirects through the existing production guards. Any automatic redirect route
@@ -101,10 +106,11 @@ change system DNS/hosts, or treat HTTPX emulation as a curl result.
 
 Case suffixes below are separate deterministic cases, never random alternatives.
 Each owning socket module must expose a success baseline before its failure family.
-Suggested owners: `tests/_fault_server/web_transfers.py`, `android_transfers.py`,
-`web_streaming.py`, `android_drive.py`, and `connection_scenarios.py`, dispatched
+Implemented owners: `tests/_fault_server/web_transfers.py`, `android_transfers.py`,
+`web_streaming.py`, `android_drive.py`, and `web_connections.py`, dispatched
 from the existing backend registries. The public integration tests belong under
-`tests/integration/faults/`. Names are inventory assignments, not existing files.
+`tests/integration/faults/`. The R-number labels below name acceptance contracts; registry names are listed
+in the implementation sections and corresponding scenario modules.
 
 All cases record backend, public method, fixture provenance, expected outcome,
 request/commit counts per phase, gates, configured timeout/retry counters, cleanup,
@@ -115,7 +121,7 @@ SHA-256 on success; seed an existing destination and assert it survives failure.
 
 ### R3: direct upload
 
-Public entry: `client.sources.add_file(notebook_id, small_txt_path)` on both backends.
+Public entry: `client.sources.add_file`; Web uses a TXT file and Android an opaque PDF body.
 Web fixture provenance: `tests/unit/test_source_upload_pipeline.py` registration
 shape cases and `test_start_resumable_upload_uses_injected_http_client`. Android:
 `tests/unit/android/test_source_upload.py` real generated `sources_pb2` tentative
@@ -127,7 +133,7 @@ Android final response requires `x-goog-upload-status: final`.
 | Cases | Contract and wire evidence |
 | --- | --- |
 | R3-W/A-success | Register once, start once, finalize once; exact digest committed; real source readback fixture if finalizer requests it; returned `Source.id` matches confirmed registration. |
-| R3-W/A-register-refused | Use an existing decoder-supported refusal; no start/finalize. Web registration exceptions retain current mapper behavior; Android tentative-registration refusal provides positive rejection evidence. Do not equate arbitrary status with rejection. |
+| R3-W/A-registration-failure | Registration fails before start/finalize. Web registration exceptions retain current mapper behavior; Android tentative-registration refusal provides positive rejection evidence. Do not equate arbitrary status with rejection. |
 | R3-W/A-start-failed | Register once, start once, no finalize. Web 503 → `ServerError`, with `source_id` and `stage="start_session"`; Android invalid/failed start → `SourceAddError`, `source_id`, `stage="start"`. |
 | R3-W/A-prefix-disconnect | Gate after actual nonzero body consumption, then disconnect before full body. One finalize dispatch, no transfer commit. Web transport error → `NetworkError`, `stage="upload_finalize"`; Android → `SourceAddError`, `stage="finalize"`; both retain registered ID. |
 | R3-W/A-body-stall | Hold request consumer after prefix; use body large enough to establish producer backpressure, plus watchdog. Same stage identity contract as above; inspect actual timeout/outcome rather than assuming a read timeout while still writing. No duplicate registration/finalize. |
@@ -179,9 +185,9 @@ exists; and optional W-curl buffered single. Public single entries must exercise
 both backend owners. Narrower-layer Android batch disposition is intentional and
 must not be described as a new public API.
 
-For each selected mechanism register separate `success`, `truncation`,
-`body-stall`, `prefix-disconnect`, `cancel`, and `close-reopen` cases. Truncation
-advertises more bytes than sent; prefix-disconnect requires server response-prefix
+For each portable mechanism register separate `success`, `truncation`,
+`body-stall`, `prefix-disconnect`, `cancel`, and `close-reopen` cases. Optional curl is the explicitly representative subset listed under R13.
+Truncation advertises more bytes than sent; prefix-disconnect requires server response-prefix
 evidence; stalls/cancellation use deterministic gates. W-single transport failures
 raise `ArtifactDownloadError` with the established cause; W-batch accumulates
 `DownloadResult.failed` and public aggregation retains its established error.
@@ -199,13 +205,15 @@ Fixtures: `tests/unit/fixtures/chat_stream_final_response.json`,
 Produce valid length-prefixed batchexecute-style chat wire frames, then split at
 real frame boundaries and inside a frame in separate cases.
 
-Cases: R6-W-success, R6-W-partial-frame-disconnect, R6-W-partial-answer-disconnect,
-R6-W-partial-answer-stall, R6-W-partial-answer-cancel. Web currently buffers through
+Cases: R6-W-success, R6-W-multibyte-fragmented-success,
+R6-W-partial-frame-disconnect, R6-W-partial-frame-stall,
+R6-W-partial-answer-disconnect, R6-W-partial-answer-stall,
+R6-W-partial-answer-cancel. Web currently buffers through
 `stream_post_with_size_cap` and parses only after response completion; do not claim
 that a partial public answer was delivered. Disconnect/read stall surfaces
 `NetworkError` with real transport evidence, no replay of transmitted chat, and
 current operation metadata. Cancel settles stream and client, then same-client
-ask/read succeeds. Reuse Android registry `stream_auth` and `deadlines_cancel`
+ask/read succeeds. Reuse Android registry `stream_auth` and `deadline_and_cancellation`
 partial delivery cases as comparative evidence; they do not establish Web decoding.
 Applicable invariants: I1–I2, I4, I7–I8.
 
@@ -215,7 +223,7 @@ Use the R5 public entries and fixtures plus
 `tests/unit/test_download_redirect_revalidation.py` and Android asset fixtures.
 Cases for both owners: `401`, `403`, `trusted-redirect`, `untrusted-redirect`,
 `redirect-loop`, `expired-signed-capability`, and `200-html`. Android adds
-`bearer-to-capability-to-bearer`, `application-redirect`, and `200-wrong-signature`;
+`bearer-to-capability-to-bearer` and `200-wrong-signature`;
 Web has no equivalent general signature requirement and must not gain one here.
 Also exercise upload `401` and `403` independently on start and finalize under R3.
 
@@ -253,7 +261,7 @@ from NotebookLM source deletion.
 | R12-cleanup-failed-success / cleanup-failed-refusal | DELETE failure logs bounded warning and exact staging identity; preserve success or original import failure. No new source DELETE. |
 | R12-cancel-during-stage | No invented staged identity if response was lost. Cancel settles stage client/body; no speculative cleanup. |
 | R12-cancel-after-stage / during-import | Cancellation keeps staged prerequisite because it does not prove dependent import settlement. No unconditional DELETE. |
-| R12-close-before-cleanup / deadline-before-cleanup | Closed epoch or workflow cleanup deadline retains staging even after a successful body; bounded warning records retention. Reopen probe must use same client. |
+| R12-close-during-import / deadline-before-cleanup | Closed epoch retains staging during a held import; the cleanup-deadline case gates readiness before advancing its explicitly injected clock. Neither dispatches DELETE. Close recovery reopens the same client. |
 
 `drive_staging._cleanup_allowed_after_import_error` is authoritative: only
 NOT_SENT/REJECTED, or CONFIRMED plus recovery NONE on `SourceProcessingError`,
@@ -277,24 +285,24 @@ Optional curl lane: separate real-adapter `read`, `upload-success`,
 `transfer-cancel` cases. Cover AsyncSession and standalone upload Curl construction,
 TLS verification, forbidden destination rejection and thread/response settlement.
 Use actual curl request/commit counts; exceptions may normalize differently from
-HTTPX. This lane requires the routing seam above and remains incomplete until it
-runs. No production retry authorization changes are permitted (I1–I4, I7–I8).
+HTTPX. This lane runs through the captured routing seam above; local results are
+recorded below. No production retry authorization changes are permitted (I1–I4, I7–I8).
 
 ## Audit validation
 
 Inspected owners, existing harness assembly, listed unit/concurrency fixture sources
 and generated protocol imports at the baseline. The isolated underlying curl/TLS
 probe succeeded after using an explicitly owned CONNECT_TO slist; no live endpoints
-were contacted. This documentation change does not claim a suite run, stress timing,
-or implementation completion. Suite counts/timings and R1–R2/R7–R8/R10–R11/R14 are
-owned by the companion whole-program inventory.
+were contacted. That initial F0 audit did not establish implementation completion. Subsequent
+focused results are below; full-suite qualification and R1–R2/R7–R8/R10–R11/R14
+remain documented in the companion whole-program inventory.
 
 
 ## Implemented Web evidence
 
 `tests/_fault_server/web_transfers.py` registers 14 upload and 30 download cases;
-`web_streaming.py` registers five chat cases. The resulting Web registry has 65
-scenarios including the original 16. Each new case performs a valid baseline and
+`web_streaming.py` registers seven chat cases. Whole-registry totals also include
+independently owned replay/concurrency, workflow and adapter cases. Each new case performs a valid baseline and
 same-client read recovery, or reopens the same object for intentional close.
 Public audio cases obtain artifact rows through real LIST_ARTIFACTS RPC decoding;
 only buffered batch uses the backend-owned service directly. Asset read/write
@@ -308,8 +316,8 @@ shield before cancelling; the tracked Scotty cancel is observed on the socket.
 Declared abandoned request bodies use the server's explicit abandonment contract;
 malformed framing is still a service failure. The Web socket cases and exact
 construction signature guardrail passed together: 135 tests in 5.01 seconds.
-This does not claim optional curl faults, repeated-cancellation variants, or other
-backend families are complete.
+These were initial focused measurements. Repeated cancellation and optional
+curl evidence are recorded below; Android has its separately owned modules.
 
 
 Repeated caller cancellation initially failed the socket assertion that upload
@@ -368,3 +376,65 @@ A separate 30-case optional curl deck passed at concurrency three with per-case
 8-second watchdogs and exported-event synthetic-secret scans. Curl upload reports
 also count the actual source descriptors observed by the native READFUNCTION;
 route-list cleanup verifies those descriptors and both native handles have closed.
+
+
+## Final transfer evidence refinements
+
+Plans declare nonempty required checks before allocation. Web configuration events
+record actual selected timeout/retry budgets before opening the listener; curl
+plans declare their real 0.5-second HTTP windows and independent cleanup watchdog.
+Web/curl checks enforce both action consumption and observed required server gates.
+The separate runner verifies declared checks and selected/executed/skipped coverage.
+
+Web chat now includes `chat_multibyte_fragmented_success` and
+`chat_partial_frame_stall`. Fixtures contain unescaped UTF-8 text. The success
+case holds the response inside a multibyte codepoint and observes the real HTTPX
+byte stream before releasing the continuation. It proves successful reassembly
+without assuming TCP packet boundaries. Partial-frame failure variants cut at
+that same codepoint. The seven cases still use public `chat.ask` and production
+decoding; no partial public answer is claimed.
+
+Web download cases observe actual response objects through HTTPX response hooks
+and assert closure, owner task/client settlement and writer completion. Cancellation
+and close wait for both the server's body prefix and observed response headers,
+so the response-closure assertion is not vacuous. Old destinations survive all
+failed publications, and staging files are removed.
+
+Web/curl cleanup independently records sanitized primary and cleanup exception
+classes. The original failure, cancellation and interpreter-exit semantics survive
+secondary cleanup errors. Curl captures partial traces even when client assembly
+fails after the listener/routing owner is allocated. Negative helper tests cover
+these paths and synthetic-secret exclusion. Curl emits an explicit cleanup event,
+so it satisfies the same runner evidence validation as the portable lane.
+
+Finalize `Transfer` actions opt into `require_session=True`: successful start
+responses issue exact host/path/session capabilities, and finalize validates
+issuance before reading a body. Commit requires independently validated expected
+bytes/digest and a scripted commit ID. The helper rejects missing, unknown or
+already-settled sessions; exact route matching alone cannot authorize finalize.
+
+Android direct upload and guarded single/batch publication live in
+`android_transfers.py` and `android_downloads.py`. Android public infographic
+fixtures use generated protobuf artifact rows and a valid generated 1×1 PNG.
+Single and batch variants cover successful publication, truncation, prefix loss,
+body stall, cancellation, close/reopen, authorization, trusted/disallowed/loop
+redirects, expired capability, HTML, wrong signature and bearer bounce. Batch
+uses the assembled service because there is no distinct public batch API. The
+Android modules own their precise error, descriptor/task/client and permit checks;
+Web resource assertions do not stand in for Android evidence.
+
+`android_drive.py` exercises public CSV import through real multipart staging,
+registration/import/readiness protobufs and exact staged-file DELETE routes.
+Variants cover refusal/ambiguity, timeout, terminal processing failure, cleanup
+failure, stage/import cancellation and owner close. The production cleanup
+lifetime has a 300-second floor. `drive_deadline_before_cleanup` therefore
+advances an instance-owned clock after gated readiness and labels this as injected
+cleanup-fence arithmetic. It does not claim a 300-second real-clock socket expiry;
+`drive_import_timeout` separately proves actual clock-based timeout behavior.
+
+After these refinements, focused Web/curl/helper validation passed 113 tests in
+4.36 seconds on macOS/Python 3.12. A 30-case real-curl run through the current
+runner passed at concurrency four in 3.59 seconds: ten selected, ten executed,
+zero skipped, with exported synthetic-capability scans. These focused local
+measurements do not substitute for the full-suite and CI evidence owned by the
+companion inventory.

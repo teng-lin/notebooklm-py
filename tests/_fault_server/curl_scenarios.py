@@ -131,12 +131,13 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
     if variant == "success":
         action = _finalize(body, "curl-upload")
     elif variant == "prefix_failure":
-        action = Transfer(prefix_bytes=4096, disconnect_at="body_prefix")
+        action = Transfer(require_session=True, prefix_bytes=4096, disconnect_at="body_prefix")
     elif variant == "commit_loss":
         action = _finalize(body, "curl-upload", Disconnect())
     elif variant == "cancel":
         finalized = _finalize(body, "curl-upload")
         action = Transfer(
+            require_session=True,
             prefix_bytes=4096,
             gates={"body_prefix": "curl-upload-body"},
             expected_size=finalized.expected_size,

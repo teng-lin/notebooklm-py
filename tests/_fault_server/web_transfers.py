@@ -126,6 +126,7 @@ def _start(*, baseline: bool = False) -> Reply:
 
 def _finalize(payload: bytes, commit: str, response: Any = None) -> Transfer:
     return Transfer(
+        require_session=True,
         response=Reply() if response is None else response,
         expected_size=len(payload),
         expected_digest=hashlib.sha256(payload).hexdigest(),
@@ -181,15 +182,18 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
     else:
         server.enqueue(UPLOAD, _start())
         if variant == "prefix_disconnect":
-            action = Transfer(prefix_bytes=4096, disconnect_at="body_prefix")
+            action = Transfer(require_session=True, prefix_bytes=4096, disconnect_at="body_prefix")
         elif variant == "body_stall":
             action = Transfer(
-                prefix_bytes=4096, gates={"body_prefix": "held-body"}, allow_abandoned_body=True
+                require_session=True,
+                prefix_bytes=4096,
+                gates={"body_prefix": "held-body"},
+                allow_abandoned_body=True,
             )
         elif variant == "commit_loss":
             action = _finalize(payload, "uploaded", Disconnect())
         elif variant in {"finalize_401", "finalize_403"}:
-            action = Transfer(response=Reply(int(variant.rsplit("_", 1)[1])))
+            action = Transfer(require_session=True, response=Reply(int(variant.rsplit("_", 1)[1])))
         elif variant in {
             "cancel_before_dispatch",
             "cancel_after_prefix",
@@ -197,6 +201,7 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
             "close_reopen",
         }:
             action = Transfer(
+                require_session=True,
                 prefix_bytes=4096,
                 gates={"body_prefix": "held-body"},
                 expected_size=len(payload),
