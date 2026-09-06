@@ -1,7 +1,7 @@
 # API Stability and Versioning
 
 **Status:** Active
-**Last Updated:** 2026-09-03
+**Last Updated:** 2026-09-05
 
 This document describes the stability guarantees and versioning policy for `notebooklm-py`.
 
@@ -90,6 +90,7 @@ ClientMetricsSnapshot, ConnectionLimits, RpcTelemetryEvent
 NotebookLMError  # Base exception
 NotFoundError  # Cross-domain umbrella for *NotFoundError
 WaitTimeoutError  # Cross-domain umbrella for wait/poll timeouts (also a built-in TimeoutError)
+OperationTimeoutError  # Whole-workflow deadline; also WaitTimeoutError and TimeoutError
 RPCError, AuthError, RateLimitError, RPCTimeoutError, RPCResponseTooLargeError, ServerError
 NetworkError, DecodingError, UnknownRPCMethodError
 ClientError, ConfigurationError, ValidationError, MissingDependencyError
@@ -139,6 +140,11 @@ LabelError, LabelNotFoundError
 CollectionError, CollectionNotFoundError
 ChatError, ChatResponseParseError
 
+# Operation outcomes (imported from notebooklm.outcomes)
+CommitState, RecoveryAction, OperationMetadata
+BatchItemOutcome, BatchOutcome, SourceBatchItemOutcome
+ReconciliationCandidate, ReconciliationReport, LookupSuggestion
+
 # Enums
 AudioFormat, AudioLength
 VideoFormat, VideoStyle
@@ -187,6 +193,35 @@ compatibility window and are scheduled for removal in v1. Use the corresponding
 typed client namespace (`client.artifacts`, `collections`, `labels`, `notebooks`,
 `sharing`, or `sources`) instead; there is no supported public raw-row decoder.
 See [Deprecations](deprecations.md) for the exact nine methods and warning window.
+
+### Operation deadline and outcome stability
+
+`NotebookLMClient.operation(timeout=...)`,
+`RuntimeOptions.operation_timeout`, and `OperationTimeoutError` are public
+contracts. The operation scope remains task-, event-loop-, and client-epoch
+owned; nested scopes cannot extend a parent deadline; and external cancellation
+is not translated into `OperationTimeoutError`. Additional first-party phases
+may become covered by the aggregate budget in a backward-compatible release,
+but an existing phase will not silently gain a fresh independent budget inside
+a bounded operation.
+
+The symbols listed above from `notebooklm.outcomes` are public. Existing
+`CommitState` and `RecoveryAction` values keep their meanings. Treat both enums
+as open to additive members: callers should include a conservative fallback
+rather than exhaustively assuming the current member set is permanent.
+`UNKNOWN` never authorizes blind replay, and reconciliation candidates never
+constitute proof of a committed resource.
+
+`OperationMetadata` and `BatchOutcome` are additive evidence carriers. New
+optional evidence fields may be added in a minor release. Existing fields will
+not be reinterpreted to claim greater commit certainty. Batch member order and
+occurrence indexes are stable, including duplicate inputs and an escaping
+whole-request failure. Text, collections, and adapter projections are bounded
+and redacted; exact caps and private journal structures such as `SendIdentity`,
+`JournalEntry`, and `AttemptRecord` are implementation details and may change.
+
+See [Operation deadlines, ownership, and recovery
+contracts](operation-contracts.md) for the behavioral matrix and evidence map.
 
 Backend selection is also public: `backend="web"` (the default) or
 `backend="android"` on the client, and `--backend web|android` on the CLI.

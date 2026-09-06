@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Operation Deadline and Cancellation Contract",
+    "output": "docs/diagrams/36-operation-deadline-and-cancellation.html",
+    "viewBox": [1000, 500],
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "views": [
+      {
+        "id": "deadline-budget",
+        "label": "Deadline budget",
+        "focus": ["caller", "client", "operation", "transport"],
+        "note": "One aggregate deadline bounds every phase while a shorter phase limit still wins."
+      },
+      {
+        "id": "ownership-check",
+        "label": "Ownership checks",
+        "focus": ["client", "operation", "transport"],
+        "note": "Task, event loop, and client epoch are validated before work crosses a boundary."
+      },
+      {
+        "id": "cancellation-paths",
+        "label": "Cancellation paths",
+        "focus": ["caller", "operation", "shared_poll", "transport"],
+        "note": "Deadline expiry and caller cancellation remain distinct; shared polling may outlive one waiter."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "caller", "type": "external", "label": "Caller", "sublabel": "owning asyncio task" },
+    { "id": "client", "type": "frontend", "label": "Client API", "sublabel": "public operation" },
+    { "id": "operation", "type": "security", "label": "Operation Context", "sublabel": "deadline + ownership" },
+    { "id": "shared_poll", "type": "messagebus", "label": "Shared Poll", "sublabel": "detached leader" },
+    { "id": "transport", "type": "cloud", "label": "Transport", "sublabel": "RPC / HTTP" }
+  ],
+  "segments": [
+    { "from": 150, "to": 246, "label": "Bind aggregate operation" },
+    { "from": 254, "to": 356, "label": "Run bounded phases" },
+    { "from": 364, "to": 446, "label": "Attribute termination" }
+  ],
+  "messages": [
+    { "id": "open_op", "from": "caller", "to": "client", "y": 170, "label": "client.operation(timeout=T)", "variant": "emphasis" },
+    { "id": "bind_op", "from": "client", "to": "operation", "y": 208, "label": "bind task + loop + epoch", "variant": "security" },
+    { "id": "invoke_phase", "from": "caller", "to": "client", "y": 270, "label": "invoke first-party phase", "variant": "default" },
+    { "id": "dispatch", "from": "client", "to": "transport", "y": 306, "label": "dispatch with min(phase, operation)", "variant": "emphasis" },
+    { "id": "poll", "from": "client", "to": "shared_poll", "y": 342, "label": "join or create detached poll leader", "variant": "dashed" },
+    { "id": "deadline", "from": "operation", "to": "caller", "y": 374, "label": "owned expiry → OperationTimeoutError", "variant": "security" },
+    { "id": "propagate", "from": "operation", "to": "caller", "y": 410, "label": "external cancel → CancelledError", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "client", "from": 164, "to": 354, "type": "backend" },
+    { "participant": "operation", "from": 202, "to": 424, "type": "security" },
+    { "participant": "transport", "from": 300, "to": 320, "type": "cloud" },
+    { "participant": "shared_poll", "from": 336, "to": 354, "type": "messagebus" }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Deadline Contract",
+      "items": [
+        "The aggregate budget spans retries, polling waiters, transfers, and follow-up phases",
+        "Phase and nested scopes can shorten but never extend the earliest deadline"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Ownership Contract",
+      "items": [
+        "The scope is task-, loop-, and epoch-owned; arbitrary child tasks do not inherit it",
+        "External cancellation stays CancelledError; detached polling survives one waiter"
+      ]
+    }
+  ]
+}

@@ -1,13 +1,14 @@
 # Python API Reference
 
 **Status:** Active
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-05
 
 Complete reference for the `notebooklm` Python library.
 
 See also:
 - [Architecture Guide](./architecture.md) for structural overview, capability protocols, and transport design.
 - [Architecture diagrams](./diagrams/README.md) for explorable call flows, lifecycles, and class models.
+- [Operation contracts](./operation-contracts.md) for aggregate deadlines, task/epoch ownership, mutation journals, and safe recovery.
 - [RPC Development Guide](./rpc-development.md) for custom RPC design, protocols, and mock assertions.
 
 ## Quick Start
@@ -122,6 +123,18 @@ shorten it. The budget covers admission, queueing, auth waits, retry backoff,
 wire work, reconciliation, polling, and transfers. It prevents new dispatch
 after expiry but still permits required local settlement to finish; it does not
 cancel an already-accepted upstream artifact or research job.
+
+The explicit operation scope is task-owned. Arbitrary tasks created with
+`asyncio.create_task()` inside the block do not inherit its context; give each
+independent task its own explicit operation scope. Library-owned exclusive
+children inherit only through the supervisor, while shared polling leaders are
+detached so one waiter's timeout or cancellation cannot stop other waiters.
+Only the operation timer's own cancellation request becomes
+`OperationTimeoutError`; caller, `TaskGroup`, outer-timeout, and stale-epoch
+cancellation remain `CancelledError`. See the
+[operation contracts](./operation-contracts.md) and the
+[deadline sequence](https://teng-lin.github.io/notebooklm-py/diagrams/36-operation-deadline-and-cancellation.html)
+for the exact ownership rules.
 
 ### Concurrency model
 
@@ -645,6 +658,9 @@ Adapters use the same metadata to avoid presenting an ambiguous write as a
 clean retryable failure. Diagnostic `reconciliation_candidates` are bounded and
 are never promoted into a success result. The original exception object and its
 cause chain are preserved wherever the underlying boundary can be propagated.
+For workflow aggregation, ordered attempts, complete batch settlement, and the
+four recovery actions, see [Operation deadlines, ownership, and recovery
+contracts](./operation-contracts.md).
 
 **Partial file uploads.** File registration creates the source row before the
 resumable HTTP upload starts. If session setup or the combined upload/finalize
@@ -748,6 +764,10 @@ not expose a server-side dedupe key.
 **Cancellation safety.** Several paths are now shielded against
 cancellation:
 
+- **`client.operation()`** translates only its own aggregate-deadline
+  cancellation into `OperationTimeoutError`. External cancellation stays
+  `CancelledError`, and the attached mutation journal preserves evidence from
+  sends that already started.
 - **`close()`** is shielded; Ctrl-C during shutdown will not leak the
   underlying `httpx.AsyncClient`.
 - **`refresh_auth()`** runs the shared refresh task under `asyncio.shield`;

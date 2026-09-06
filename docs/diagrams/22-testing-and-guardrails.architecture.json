@@ -5,6 +5,11 @@
     "title": "Test Suite and Architectural Guardrails",
     "locale": "en",
     "quality_profile": "showcase",
+    "output": "docs/diagrams/22-testing-and-guardrails.html",
+    "repository": {
+      "url": "https://github.com/teng-lin/notebooklm-py",
+      "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"
+    },
     "views": [
       {
         "id": "tiers",
@@ -30,14 +35,14 @@
       },
       {
         "id": "pins",
-        "label": "Invariant pins",
+        "label": "Ownership contract pins",
         "focus": [
           "guardrails",
           "pins",
           "wire",
           "golden"
         ],
-        "note": "Pins cover backend retry parity, scoped compatibility hooks, boundaries, and wire contracts."
+        "note": "Pins cover ownership boundaries, operation deadlines, journal outcomes, public surfaces, and adapter parity."
       }
     ]
   },
@@ -45,8 +50,12 @@
     {
       "id": "pins",
       "type": "security",
-      "label": "Static Pins",
-      "sublabel": "imports · module size",
+      "label": "Ownership Pins",
+      "sublabel": "imports · raw ingress",
+      "sources": [
+        { "path": "tests/_guardrails/test_client_operation_contract_inventory.py", "line": 1, "label": "contract inventory" },
+        { "path": "tests/_guardrails/test_no_raw_positional_rpc_indexing.py", "line": 1, "label": "raw payload boundary" }
+      ],
       "pos": [
         282,
         60
@@ -59,9 +68,14 @@
     {
       "id": "wire",
       "type": "security",
-      "label": "Backend Parity",
-      "sublabel": "retry manifest · scope hooks",
+      "label": "Contract Parity",
+      "sublabel": "retry · outcomes · adapters",
       "tag": "guardrail",
+      "sources": [
+        { "path": "src/notebooklm/_web/policy.py", "line": 1, "label": "Web retry policy" },
+        { "path": "src/notebooklm/_android/retry_policy.py", "line": 1, "label": "Android retry manifest" },
+        { "path": "tests/unit/test_source_batch_outcomes.py", "line": 46, "label": "batch parity evidence" }
+      ],
       "pos": [
         544,
         60
@@ -76,6 +90,10 @@
       "type": "backend",
       "label": "src/notebooklm",
       "sublabel": "system under test",
+      "sources": [
+        { "path": "src/notebooklm/client.py", "line": 542, "label": "operation API" },
+        { "path": "src/notebooklm/outcomes.py", "line": 1, "label": "typed outcomes" }
+      ],
       "pos": [
         30,
         260
@@ -91,6 +109,10 @@
       "label": "Guardrails",
       "sublabel": "tests/_guardrails/",
       "tag": "invariant pins",
+      "sources": [
+        { "path": "tests/_guardrails/test_public_surface_manifest.py", "line": 31, "label": "public import manifest" },
+        { "path": "tests/_guardrails/test_classify_error_handler_consistency.py", "line": 1, "label": "adapter classification" }
+      ],
       "pos": [
         282,
         260
@@ -106,6 +128,11 @@
       "label": "Unit Tests",
       "sublabel": "tests/unit/",
       "tag": "no network",
+      "sources": [
+        { "path": "tests/unit/test_operation_context.py", "line": 43, "label": "deadline + cancellation" },
+        { "path": "tests/unit/test_operation_journal.py", "line": 27, "label": "journal aggregation" },
+        { "path": "tests/unit/test_source_batch_outcomes.py", "line": 88, "label": "complete batch outcomes" }
+      ],
       "pos": [
         544,
         260
@@ -147,8 +174,12 @@
     {
       "id": "golden",
       "type": "backend",
-      "label": "Golden Coverage",
-      "sublabel": "decode coverage pin",
+      "label": "Public Baselines",
+      "sublabel": "exports · signatures",
+      "sources": [
+        { "path": "tests/_guardrails/_public_import_manifest.py", "line": 1, "label": "documented imports" },
+        { "path": "tests/_guardrails/test_public_surface_manifest.py", "line": 48, "label": "resolution gate" }
+      ],
       "pos": [
         282,
         460
@@ -176,9 +207,9 @@
     {
       "id": "fixtures",
       "type": "backend",
-      "label": "FakeSession",
-      "sublabel": "constructor injection",
-      "tag": "ADR-0007",
+      "label": "Runtime Fixtures",
+      "sublabel": "clock · task · transport",
+      "tag": "deterministic",
       "pos": [
         544,
         460
@@ -330,11 +361,11 @@
     },
     {
       "dot": "rose",
-      "title": "Pinned invariants",
+      "title": "Pinned ownership contracts",
       "items": [
-        "Boundary gates reject forbidden imports per adapter and per backend",
-        "Web and Android retry manifests must preserve policy parity",
-        "Scope-hook tests keep LazyWebSidecar inside operation_scope and out of keepalive"
+        "Boundary gates reject forbidden imports and raw payload ingress above the facade",
+        "Deadline tests distinguish owned expiry from external cancellation and stale epochs",
+        "Journal and batch tests preserve every ordered attempt, member, and recovery action"
       ]
     }
   ]
