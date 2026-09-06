@@ -384,3 +384,20 @@ async def test_abandoned_body_requires_explicit_fault_contract(allowed: bool) ->
     else:
         with pytest.raises(AssertionError, match="IncompleteReadError"):
             server.assert_drained()
+
+
+async def test_upload_route_rejects_wrong_session_capability() -> None:
+    from tests._fault_server.http import Route, Transfer
+
+    server = HttpFaultServer()
+    server.enqueue(Route("PUT", "notebook.google.com", "/upload", upload_id="expected"), Transfer())
+    async with server, server.client_factory() as client:
+        response = await client.put(
+            "https://notebook.google.com/upload?upload_id=wrong-secret", content=b"data"
+        )
+    assert response.status_code == 500
+    assert server.journal == []
+    assert server.remaining() == 1
+    assert "wrong-secret" not in str(server.errors)
+    with pytest.raises(AssertionError, match="unexpected request"):
+        server.assert_drained()

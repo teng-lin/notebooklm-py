@@ -27,6 +27,7 @@ class Route:
     host: str
     path: str
     rpc_id: str | None = None
+    upload_id: str | None = None
 
     @classmethod
     def rpc(cls, rpc_id: str) -> Route:
@@ -381,6 +382,7 @@ class HttpFaultServer:
                     head.headers["host"],
                     target.path,
                     rpc_values[0] if rpc_values else None,
+                    query.get("upload_id", (None,))[0],
                 )
                 actions = self._scripts.get(route)
                 if not actions:
