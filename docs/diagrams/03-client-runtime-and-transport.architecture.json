@@ -39,6 +39,7 @@
     {"id": "assembly-client", "from": "assembly", "to": "client", "label": "installs", "variant": "emphasis"},
     {"id": "root-shared", "from": "root", "to": "shared", "label": "builds", "fromSide": "left", "toSide": "right", "via": [[435, 82], [435, 234]], "labelAt": [435, 155]},
     {"id": "root-lifecycle", "from": "root", "to": "lifecycle", "label": "constructs once", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [535, 165]},
+    {"id": "root-sidecar", "from": "root", "to": "sidecar", "label": "pre-registers", "variant": "dashed", "fromSide": "top", "toSide": "left", "via": [[530, 25], [20, 25], [20, 234]], "labelAt": [330, 25]},
     {"id": "client-web", "from": "client", "to": "webgraph", "label": "Web graph", "variant": "emphasis"},
     {"id": "client-android", "from": "client", "to": "androidgraph", "label": "Android graph", "variant": "emphasis", "labelAt": [750, 336]}
   ],

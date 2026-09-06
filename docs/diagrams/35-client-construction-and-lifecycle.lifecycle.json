@@ -7,34 +7,41 @@
     "quality_profile": "showcase",
     "viewBox": [1080, 566],
     "views": [
-      {"id": "construction", "label": "Construction", "focus": ["spec", "normalized", "assembled", "opening"], "note": "Direct synchronous construction resolves options and installs a complete graph without opening resources or reading credentials."},
-      {"id": "open-close", "label": "Open and close", "focus": ["assembled", "opening", "open", "shutdown", "reopenable"], "note": "One root lifecycle coordinates frozen participants through coalesced open and close waves."},
-      {"id": "rollback-reopen", "label": "Rollback and reopen", "focus": ["opening", "rollback", "reopenable"], "note": "An open failure cleans up every participant; reopening reuses the selected graph under a fresh epoch."}
+      {"id": "direct-construction", "label": "Direct construction", "focus": ["spec", "normalized", "assembled", "opening"], "note": "Direct construction installs a CLOSED graph synchronously, without credential reads, resource opens, or network I/O."},
+      {"id": "stored-construction", "label": "from_storage handoff", "focus": ["storage-context", "credential-load", "assembled", "opening"], "note": "from_storage() is inert; first await/enter loads credentials, constructs the CLOSED client, then __aenter__ opens resources."},
+      {"id": "close-paths", "label": "Close paths and reopen", "focus": ["open", "draining", "closing", "rollback", "reopenable", "opening"], "note": "drain=True awaits idle; drain=False bypasses that prephase. Both tear down to CLOSED; reopen starts a fresh epoch."}
     ]
   },
   "lanes": [
     {"id": "main", "label": "Construction and root lifecycle"},
-    {"id": "coordination", "label": "Shutdown, rollback, and reopen"}
+    {"id": "coordination", "label": "Deferred auth, shutdown, rollback, and reopen"}
   ],
   "states": [
-    {"id": "spec", "type": "start", "label": "Specification", "sublabel": "ClientConfig", "lane": "main", "col": 0, "step": "01", "tag": "direct sync · no I/O"},
+    {"id": "spec", "type": "start", "label": "Direct Inputs", "sublabel": "AuthTokens + ClientConfig", "lane": "main", "col": 0, "step": "01", "tag": "sync · no read · no I/O"},
     {"id": "normalized", "type": "active", "label": "Normalized", "sublabel": "backend frozen", "lane": "main", "col": 1, "step": "02", "tag": "typed owners"},
     {"id": "assembled", "type": "waiting", "label": "Installed · CLOSED", "sublabel": "assembly + owner", "lane": "main", "col": 2, "step": "03", "tag": "complete graph"},
     {"id": "opening", "type": "active", "label": "OPENING", "sublabel": "bind + open", "lane": "main", "col": 3, "step": "04", "tag": "new epoch"},
     {"id": "open", "type": "success", "label": "OPEN", "sublabel": "admission open", "lane": "main", "col": 4, "step": "05", "tag": "selected graph"},
-    {"id": "rollback", "type": "failure", "label": "Open Rollback", "sublabel": "clean prepared resources", "lane": "coordination", "col": 1, "tag": "recoverable"},
-    {"id": "shutdown", "type": "waiting", "label": "DRAIN → CLOSING", "sublabel": "await idle · teardown", "lane": "coordination", "col": 2, "yOffset": -50, "tag": "graceful or forced"},
+    {"id": "storage-context", "type": "external", "label": "from_storage()", "sublabel": "returns inert context", "lane": "coordination", "col": 0, "yOffset": -50, "tag": "no credential read yet"},
+    {"id": "credential-load", "type": "active", "label": "Credential Load", "sublabel": "_build awaits storage", "lane": "coordination", "col": 1, "yOffset": -50, "tag": "before client handoff"},
+    {"id": "rollback", "type": "failure", "label": "Open Rollback", "sublabel": "clean prepared resources", "lane": "coordination", "col": 0, "yOffset": 105, "tag": "recoverable"},
+    {"id": "draining", "type": "waiting", "label": "GRACEFUL DRAIN", "sublabel": "stop admission · await idle", "lane": "coordination", "col": 2, "yOffset": -50, "tag": "drain=True only"},
+    {"id": "closing", "type": "waiting", "label": "CLOSING", "sublabel": "prepare · hooks · teardown", "lane": "coordination", "col": 1, "yOffset": 105, "tag": "all close paths"},
     {"id": "reopenable", "type": "success", "label": "CLOSED", "sublabel": "generation retired", "lane": "coordination", "col": 2, "yOffset": 105, "tag": "fresh open allowed"}
   ],
   "transitions": [
-    {"id": "opening-rollback", "from": "opening", "to": "rollback", "label": "open failed", "variant": "security", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [556, 224]},
-    {"id": "rollback-reopenable", "from": "rollback", "to": "reopenable", "label": "cleanup settled", "variant": "emphasis", "route": "bottom-channel", "labelAt": [510, 432]},
-    {"id": "open-shutdown", "from": "open", "to": "shutdown", "label": "close(drain=…)", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [710, 224]},
-    {"id": "shutdown-reopenable", "from": "shutdown", "to": "reopenable", "label": "mark closed", "variant": "emphasis", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [760, 340]},
-    {"id": "reopenable-opening", "from": "reopenable", "to": "opening", "label": "fresh epoch", "variant": "dashed", "route": "auto", "labelAt": [836, 376]}
+    {"id": "storage-load", "from": "storage-context", "to": "credential-load", "variant": "emphasis", "fromSide": "bottom", "toSide": "bottom", "via": [[402, 310], [556, 310]]},
+    {"id": "load-handoff", "from": "credential-load", "to": "assembled", "variant": "emphasis", "fromSide": "top", "toSide": "bottom", "via": [[556, 208], [402, 208]]},
+    {"id": "opening-rollback", "from": "opening", "to": "rollback", "variant": "security", "fromSide": "top", "toSide": "left", "via": [[556, 90], [20, 90], [20, 412]]},
+    {"id": "open-draining", "from": "open", "to": "draining", "variant": "emphasis", "route": "straight", "fromSide": "bottom", "toSide": "top"},
+    {"id": "open-closing", "from": "open", "to": "closing", "label": "drain=False bypass", "variant": "security", "fromSide": "top", "toSide": "top", "via": [[710, 90], [850, 90], [850, 360], [556, 360]], "labelAt": [850, 330]},
+    {"id": "draining-closing", "from": "draining", "to": "closing", "label": "idle / timeout", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "via": [[710, 330], [556, 330]], "labelAt": [650, 330]},
+    {"id": "closing-reopenable", "from": "closing", "to": "reopenable", "variant": "emphasis", "fromSide": "bottom", "toSide": "bottom", "via": [[556, 470], [710, 470]]},
+    {"id": "rollback-reopenable", "from": "rollback", "to": "reopenable", "variant": "emphasis", "fromSide": "bottom", "toSide": "right", "via": [[402, 500], [800, 500], [800, 412]]},
+    {"id": "reopenable-opening", "from": "reopenable", "to": "opening", "label": "fresh epoch", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "via": [[710, 480], [930, 480], [930, 65], [556, 65]], "labelAt": [930, 250]}
   ],
   "cards": [
-    {"dot": "cyan", "title": "Construction evidence", "items": ["Options and normalization: src/notebooklm/options.py:49-233; src/notebooklm/_client_options.py:269-430", "Sole graph install: src/notebooklm/_client_assembly.py:60-110"]},
-    {"dot": "rose", "title": "Lifecycle evidence", "items": ["Open, drain, close, and rollback: src/notebooklm/_runtime/lifecycle.py:178-634; lazy compatibility: src/notebooklm/_client_compat.py:85-229", "https://github.com/teng-lin/notebooklm-py @ 719378b8af7023b8eca0c33d2de6d44d35db3434"]}
+    {"dot": "cyan", "title": "Two construction paths", "items": ["Direct constructor and sole graph install: src/notebooklm/client.py:261-490; src/notebooklm/_client_assembly.py:60-110", "Deferred storage load precedes construction and open: src/notebooklm/client.py:1117-1243"]},
+    {"dot": "rose", "title": "Distinct shutdown paths", "items": ["Graceful prephase runs only when drain=True; both paths then teardown: src/notebooklm/_runtime/lifecycle.py:528-634", "https://github.com/teng-lin/notebooklm-py @ 719378b8af7023b8eca0c33d2de6d44d35db3434"]}
   ]
 }
