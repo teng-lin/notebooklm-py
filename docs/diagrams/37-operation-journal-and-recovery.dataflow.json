@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Operation Journal and Recovery Evidence",
+    "output": "docs/diagrams/37-operation-journal-and-recovery.html",
+    "viewBox": [1068, 480],
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "send-evidence",
+        "label": "Semantic send evidence",
+        "focus": ["intent", "identity", "journal", "metadata"],
+        "note": "One semantic identity retains every ordered physical attempt and its commit evidence."
+      },
+      {
+        "id": "batch-settlement",
+        "label": "Complete batch settlement",
+        "focus": ["batch_inputs", "batch_outcome", "metadata", "consumer"],
+        "note": "Every input keeps its occurrence index and one of four commit states, even on whole-request failure."
+      },
+      {
+        "id": "recovery-decision",
+        "label": "Conservative recovery",
+        "focus": ["metadata", "decision", "consumer"],
+        "note": "Known IDs are proof; candidates are suggestions; unknown sends are inspected instead of replayed."
+      }
+    ]
+  },
+  "stages": [
+    { "label": "Operation intent" },
+    { "label": "Journal identity" },
+    { "label": "Physical evidence" },
+    { "label": "Canonical outcome" },
+    { "label": "Recovery + consumers" }
+  ],
+  "nodes": [
+    { "id": "intent", "type": "external", "label": "Semantic Send", "sublabel": "one logical mutation", "stage": 0, "row": 0, "tag": "operation" },
+    { "id": "batch_inputs", "type": "external", "label": "Batch Inputs", "sublabel": "ordered occurrences", "stage": 0, "row": 1, "tag": "member 0..n" },
+    { "id": "identity", "type": "security", "label": "SendIdentity", "sublabel": "invocation · method", "stage": 1, "row": 0, "tag": "phase · member" },
+    { "id": "journal", "type": "database", "label": "OperationJournal", "sublabel": "entries + attempts", "stage": 2, "row": 0, "tag": "ordered evidence" },
+    { "id": "batch_outcome", "type": "database", "label": "BatchOutcome", "sublabel": "complete ordered members", "stage": 3, "row": 1, "tag": "four commit states" },
+    { "id": "metadata", "type": "backend", "label": "OperationMetadata", "sublabel": "immutable snapshot", "stage": 3, "row": 0, "tag": "bounded aggregate" },
+    { "id": "decision", "type": "backend", "label": "RecoveryAction", "sublabel": "retry · inspect · wait", "stage": 4, "row": 0, "tag": "safe continuation" },
+    { "id": "consumer", "type": "frontend", "label": "Public Recovery", "sublabel": "reconcile · adapters", "stage": 4, "row": 1, "tag": "bounded + redacted" }
+  ],
+  "flows": [
+    { "id": "intent_identity", "from": "intent", "to": "identity", "label": "allocate once", "classification": "semantic identity", "variant": "emphasis" },
+    { "id": "identity_journal", "from": "identity", "to": "journal", "label": "bind entry", "classification": "same workflow", "variant": "emphasis" },
+    { "id": "journal_metadata", "from": "journal", "to": "metadata", "label": "aggregate attempts", "classification": "UNKNOWN wins", "variant": "emphasis" },
+    { "id": "batch_members", "from": "batch_inputs", "to": "batch_outcome", "label": "settle every member", "classification": "identity preserved", "variant": "emphasis" },
+    { "id": "batch_metadata", "from": "batch_outcome", "to": "metadata", "label": "attach on escape", "classification": "whole-request evidence", "variant": "default" },
+    { "id": "metadata_decision", "from": "metadata", "to": "decision", "label": "action", "classification": "typed", "variant": "emphasis", "route": "straight" },
+    { "id": "batch_consumer", "from": "batch_outcome", "to": "consumer", "label": "ordered evidence", "classification": "candidates are not proof", "variant": "security", "labelDy": 53 }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Commit-state lattice",
+      "items": [
+        "NOT_SENT is positive proof that dispatch did not occur; REJECTED is a decoded refusal",
+        "UNKNOWN means a dispatched write may have committed; CONFIRMED requires correlated success",
+        "Workflow aggregation is conservative: UNKNOWN outranks every settled state"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Recovery contract",
+      "items": [
+        "Only an explicit owner may replay NOT_SENT or REJECTED work",
+        "UNKNOWN normally carries inspect_and_reconcile; candidates never become known resource IDs",
+        "WAIT and NONE keep retry policy separate from exception categories"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Bounded public evidence",
+      "items": [
+        "Metadata and batch members are capped, redacted, ordered, and duplicate-safe",
+        "Escaping errors carry settled progress without adapter-specific inference"
+      ]
+    }
+  ]
+}
