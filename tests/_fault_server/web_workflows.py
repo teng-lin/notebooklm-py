@@ -15,12 +15,15 @@ from pathlib import Path
 from typing import Any
 
 from notebooklm import NetworkError, ServerError
+from notebooklm._app.artifacts import get_artifact, require_complete_artifact_listing
 from notebooklm._app.generate import execute_generation
 from notebooklm._app.generation_requests import AudioGenerationRequest
 from notebooklm._app.research import execute_research_import
 from notebooklm._web.rows.research_task import parse_research_task_models
+from notebooklm.exceptions import ArtifactNotFoundError, RPCError
 from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
+from notebooklm.types import ArtifactListingComponent, ArtifactLookupStatus
 
 from .common import ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route
@@ -28,6 +31,7 @@ from .web import build_fault_client, list_response, rpc_response
 
 _CREATE_ARTIFACT = Route.rpc(RPCMethod.CREATE_ARTIFACT.value)
 _LIST_ARTIFACTS = Route.rpc(RPCMethod.LIST_ARTIFACTS.value)
+_LIST_NOTES = Route.rpc(RPCMethod.GET_NOTES_AND_MIND_MAPS.value)
 _POLL_RESEARCH = Route.rpc(RPCMethod.POLL_RESEARCH.value)
 _IMPORT_RESEARCH = Route.rpc(RPCMethod.IMPORT_RESEARCH.value)
 _GET_NOTEBOOK = Route.rpc(RPCMethod.GET_NOTEBOOK.value)
@@ -37,6 +41,7 @@ _READ = Route.rpc(RPCMethod.LIST_NOTEBOOKS.value)
 _CLOSE_TIMEOUT = 2.0
 
 SCENARIOS = (
+    "workflow_artifact_incomplete_lookup",
     "workflow_generation_lost_kickoff",
     "workflow_generation_terminal_failure",
     "workflow_research_import_candidates",
@@ -341,7 +346,91 @@ async def _collection_readback_failure(result: ScenarioResult) -> None:
     result.require("collection_recovery", [item.id for item in recovered] == ["c-existing"])
 
 
+async def _artifact_incomplete_lookup(result: ScenarioResult) -> None:
+    """An unavailable secondary read cannot establish absence or uniqueness.
+
+    Studio and legacy note-row fixture shapes come from artifact completeness
+    and note-service unit tests; the baseline runs both real wire decoders.
+    """
+    server = HttpFaultServer()
+    studio = Reply(
+        body=rpc_response(
+            _LIST_ARTIFACTS.rpc_id or "", [[["studio-fixture", "Studio result", 2, None, 3]]]
+        )
+    )
+    notes = Reply(
+        body=rpc_response(
+            _LIST_NOTES.rpc_id or "",
+            [[["map-fixture", json.dumps({"name": "Mind map", "children": []})]]],
+        )
+    )
+    server.enqueue(_LIST_ARTIFACTS, *[studio for _ in range(6)])
+    server.enqueue(_LIST_NOTES, notes, *[Reply(503) for _ in range(4)], notes)
+    errors: list[Exception] = []
+    async with _cohort(result, server, server_retries=0) as client:
+        baseline = await client.artifacts.list_with_status("nb-workflow")
+        result.require("aggregate_baseline_complete", baseline.is_complete)
+        result.require(
+            "both_backings_decoded",
+            {item.id for item in baseline.items} == {"studio-fixture", "map-fixture"},
+        )
+        missing = await client.artifacts.lookup("nb-workflow", "absent")
+        positive = await client.artifacts.lookup("nb-workflow", "studio-fixture")
+        for operation in (
+            lambda: get_artifact(client, "nb-workflow", "absent"),
+            lambda: require_complete_artifact_listing(client, "nb-workflow"),
+        ):
+            try:
+                await operation()
+            except Exception as exc:
+                errors.append(exc)
+        recovered = await client.artifacts.lookup("nb-workflow", "absent")
+        result.require(
+            "incomplete_miss_unknown",
+            missing.status is ArtifactLookupStatus.UNKNOWN and missing.artifact is None,
+        )
+        result.require(
+            "missing_secondary_component_evidenced",
+            len(missing.failures) == 1
+            and missing.failures[0].component is ArtifactListingComponent.NOTE_BACKED_MIND_MAPS
+            and missing.failures[0].error_type == "ServerError",
+        )
+        result.require(
+            "positive_hit_preserved",
+            positive.status is ArtifactLookupStatus.FOUND
+            and positive.artifact is not None
+            and positive.artifact.id == "studio-fixture"
+            and len(positive.failures) == 1,
+        )
+        result.require(
+            "strict_projections_reject_incomplete_inventory",
+            len(errors) == 2
+            and all(
+                isinstance(exc, RPCError) and not isinstance(exc, ArtifactNotFoundError)
+                for exc in errors
+            ),
+        )
+        result.require(
+            "recovery_authoritative_missing",
+            recovered.status is ArtifactLookupStatus.MISSING and not recovered.failures,
+        )
+        result.record(
+            "workflow_outcome",
+            lookup_status=missing.status.value,
+            positive_status=positive.status.value,
+            unavailable_components=[failure.component.value for failure in missing.failures],
+            strict_error_types=[type(exc).__name__ for exc in errors],
+            recovery_status=recovered.status.value,
+        )
+    result.require(
+        "exact_primary_and_secondary_reads",
+        sum(r.route == _LIST_ARTIFACTS for r in server.journal) == 6
+        and sum(r.route == _LIST_NOTES for r in server.journal) == 6,
+    )
+
+
 _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
+    "workflow_artifact_incomplete_lookup": _artifact_incomplete_lookup,
     "workflow_generation_lost_kickoff": _lost_kickoff,
     "workflow_generation_terminal_failure": _terminal_failure,
     "workflow_research_import_candidates": _research_import_candidates,
@@ -361,9 +450,22 @@ async def run_scenario(
         "plan",
         faults=[name],
         cohort_ids=[f"{operation_id}:0"],
-        family="R11" if name.startswith("workflow_research") else "R10",
+        family="R10" if name.startswith("workflow_generation") else "R11",
         budgets={"rpc_timeout_s": 0.5},
     )
+    if name == "workflow_artifact_incomplete_lookup":
+        result.record(
+            "aggregate_plan",
+            operations=[
+                "artifacts.list_with_status",
+                "artifacts.lookup",
+                "get_artifact",
+                "require_complete_artifact_listing",
+            ],
+            server_error_max_retries=0,
+            expected_dispatches={"studio": 6, "notes": 6},
+            faults=["secondary:503"] * 4,
+        )
     await implementation(result)
     return result
 
