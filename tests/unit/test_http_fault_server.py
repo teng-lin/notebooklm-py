@@ -557,6 +557,47 @@ async def test_required_upload_session_rejects_duplicate_finalize() -> None:
     assert not server.journal[-1].body_complete
 
 
+async def test_required_upload_session_remains_active_without_validated_commit() -> None:
+    import hashlib
+
+    from tests._fault_server.http import Route, Transfer
+
+    payload = b"retry after rejected finalize"
+    start = Route("POST", "notebook.google.com", "/upload/start")
+    finalize = Route("PUT", "notebook.google.com", "/upload/session", upload_id="retry-session")
+    server = HttpFaultServer()
+    server.enqueue(start, _upload_session_reply("retry-session"))
+    server.enqueue(
+        finalize,
+        Transfer(require_session=True, response=Reply(403)),
+        Transfer(
+            require_session=True,
+            expected_size=len(payload),
+            expected_digest=hashlib.sha256(payload).hexdigest(),
+            commit_id="retry-commit",
+        ),
+    )
+
+    async with server, server.client_factory() as client:
+        await client.post("https://notebook.google.com/upload/start", content=b"")
+        assert (
+            await client.put(
+                "https://notebook.google.com/upload/session?upload_id=retry-session",
+                content=payload,
+            )
+        ).status_code == 403
+        assert (
+            await client.put(
+                "https://notebook.google.com/upload/session?upload_id=retry-session",
+                content=payload,
+            )
+        ).status_code == 200
+        await server.wait_for_event("handler_settled", count=3)
+
+    assert server.committed == ["retry-commit"]
+    server.assert_drained()
+
+
 async def test_required_upload_session_rejects_cancelled_session() -> None:
     from tests._fault_server.http import Reply, Route, Transfer
 

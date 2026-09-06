@@ -488,9 +488,9 @@ class HttpFaultServer:
                         if transfer.commit_id in self.committed:
                             raise AssertionError("duplicate transfer commit")
                         self.committed.append(transfer.commit_id)
+                        if session_key is not None:
+                            self._upload_sessions[session_key] = "committed"
                         await phase("commit")
-                    if session_key is not None:
-                        self._upload_sessions[session_key] = "committed"
                     response = transfer.response
                 else:
                     response = action
