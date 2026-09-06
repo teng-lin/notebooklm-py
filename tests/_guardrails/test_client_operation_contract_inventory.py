@@ -1113,34 +1113,7 @@ PRESENTATION_DISPOSITION = Disposition(
     "P7", "Move presentation policy to adapters or replace string callbacks with typed events."
 )
 
-PRESENTATION_INVENTORY = frozenset(
-    {
-        PresentationHit(
-            "_app/generate.py", "execute_generation", "string-callback", "wait_context"
-        ),
-        PresentationHit(
-            "_app/generate.py", "execute_generation", "string-callback", "wait_start_sink"
-        ),
-        PresentationHit("_app/generate_plans.py", "GenerationPlan", "field", "json_output"),
-        PresentationHit("_app/generate_plans.py", "GenerationPlan", "field", "warnings"),
-        PresentationHit("_app/generate_plans.py", "GenerationPlan", "field", "stderr_warnings"),
-        PresentationHit(
-            "_app/generate_retry.py", "GenerationOutcome.exit_code", "property", "exit_code"
-        ),
-        PresentationHit(
-            "_app/generate_retry.py",
-            "handle_generation_result",
-            "string-callback",
-            "wait_context",
-        ),
-        PresentationHit(
-            "_app/generate_retry.py",
-            "handle_generation_result",
-            "string-callback",
-            "wait_start_sink",
-        ),
-    }
-)
+PRESENTATION_INVENTORY: frozenset[PresentationHit] = frozenset()
 
 
 GUARDRAIL_DISPOSITIONS = {
