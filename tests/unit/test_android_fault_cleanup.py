@@ -88,3 +88,56 @@ async def test_android_cleanup_repeated_cancellation_does_not_abandon_close() ->
     assert calls == 1
     assert len(errors) == 2
     assert all(isinstance(error, asyncio.CancelledError) for error in errors)
+
+
+@pytest.mark.parametrize("wrapper", ["core", "resilience"])
+@pytest.mark.parametrize("primary_kind", ["error", "cancel", "none"])
+@pytest.mark.parametrize("shutdown_kind", ["error", "interrupt"])
+async def test_android_grpc_wrapper_preserves_primary_and_shutdown_evidence(
+    wrapper: str,
+    primary_kind: str,
+    shutdown_kind: str,
+) -> None:
+    from tests._fault_server.android_resilience_scenarios import _run_server as resilience_server
+    from tests._fault_server.android_scenarios import _run_server as core_server
+
+    result = ScenarioResult("android", "grpc-cleanup-negative", "cleanup")
+    primary = (
+        ValueError("private-primary")
+        if primary_kind == "error"
+        else asyncio.CancelledError("private-primary")
+        if primary_kind == "cancel"
+        else None
+    )
+    shutdown = (
+        SystemExit("private-shutdown")
+        if shutdown_kind == "interrupt"
+        else RuntimeError("private-shutdown")
+    )
+    stopped = False
+
+    async def body(server) -> None:
+        original_shutdown = server._shutdown
+
+        async def failed_shutdown() -> None:
+            nonlocal stopped
+            await original_shutdown()
+            stopped = True
+            raise shutdown
+
+        # The injected failure belongs to this server instance. Its real gRPC
+        # listener is closed before the failure; no global substitution or HTTP.
+        server._shutdown = failed_shutdown
+        if primary is not None:
+            raise primary
+
+    expected = shutdown if isinstance(shutdown, SystemExit) or primary is None else primary
+    with pytest.raises(type(expected)) as caught:
+        await (core_server if wrapper == "core" else resilience_server)(result, body)
+    assert caught.value is expected
+    assert stopped
+    cleanup = next(event for event in result.events if event["kind"] == "cleanup")
+    assert cleanup["primary_error"] == (None if primary is None else type(primary).__name__)
+    assert cleanup["cleanup_error_types"] == [type(shutdown).__name__]
+    assert not all(result.checks.values())
+    assert "private" not in json.dumps(result.events)

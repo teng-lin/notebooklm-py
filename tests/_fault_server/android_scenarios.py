@@ -15,6 +15,7 @@ from notebooklm.outcomes import CommitState
 from notebooklm.raw import GrpcUnaryStreamMethod
 
 from .android import SyntheticOAuthMinter, build_android_client
+from .android_cleanup import settle_actions
 from .android_downloads import SCENARIOS as DOWNLOAD_SCENARIOS
 from .android_downloads import run_scenario as run_download_scenario
 from .android_drive import SCENARIOS as DRIVE_SCENARIOS
@@ -31,7 +32,7 @@ from .android_resilience_scenarios import (
 )
 from .android_transfers import SCENARIOS as TRANSFER_SCENARIOS
 from .android_transfers import run_scenario as run_transfer_scenario
-from .common import ScenarioResult
+from .common import ScenarioFailure, ScenarioResult
 from .grpc import (
     CREATE_PROJECT,
     GENERATE_STREAMED,
@@ -96,6 +97,7 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "repeated_auth_raises",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
         "three_mints",
     ],
     "auth_concurrent": [
@@ -104,6 +106,7 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "refresh_mint_coalesced",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
     ],
     "commit_lost_response": [
         "lost_response_raises",
@@ -112,6 +115,7 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "one_committed_create",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
     ],
     "deadline_and_cancellation": [
         "aclose_cancels_exact_stream",
@@ -130,6 +134,7 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "fresh_channel_after_reopen",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
         "stream_deadline_and_cancel_release",
         "stream_deadline_raises",
     ],
@@ -139,6 +144,7 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "mint_failure_raises",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
     ],
     "public_flows": [
         "chat_decodes",
@@ -148,15 +154,18 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "production_target",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
     ],
     "rate_limit": [
         "scripts_consumed_exhaustion",
         "server_handlers_released_exhaustion",
+        "server_shutdown_clean_exhaustion",
         "rate_limit_exhaustion_raises",
         "rate_limit_exhausts_budget",
         "rate_limit_retries_once",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
     ],
     "stream_auth": [
         "feature_and_raw_stream_never_replay",
@@ -165,14 +174,17 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "raw_stream_delivers_partial",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
         "stream_auth_raises",
         "two_single_attempt_streams",
     ],
     "unavailable": [
         "scripts_consumed_exhaustion",
         "server_handlers_released_exhaustion",
+        "server_shutdown_clean_exhaustion",
         "scripts_consumed_primary",
         "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
         "unavailable_exhaustion_raises",
         "unavailable_exhausts_budget",
         "unavailable_retries_once",
@@ -221,13 +233,18 @@ async def _run_server(
     phase: str = "primary",
 ) -> ScenarioResult:
     server = GrpcFaultServer()
+    primary: BaseException | None = None
     try:
-        async with server:
-            await setup(server)
-            await server.wait_for_idle()
-            server.assert_consumed()
-            result.require(f"scripts_consumed_{phase}", True)
+        await server.__aenter__()
+        await setup(server)
+        await server.wait_for_idle()
+        server.assert_consumed()
+        result.require(f"scripts_consumed_{phase}", True)
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
+        errors = await settle_actions([lambda: server.__aexit__(None, None, None)])
         result.record(
             "grpc_journal",
             methods=[request.method.rpartition("/")[2] for request in server.requests],
@@ -238,11 +255,31 @@ async def _run_server(
         )
         result.record(
             "cleanup",
+            phase=phase,
             requests=len(server.requests),
             cancellations=[request.method.rpartition("/")[2] for request in server.cancellations],
             handler_errors=server.handler_errors,
+            primary_error=None if primary is None else type(primary).__name__,
+            cleanup_error_types=[type(error).__name__ for error in errors],
         )
-        result.require(f"server_handlers_released_{phase}", not server._active)
+        # Phase-specific names keep both retry and exhaustion cleanup mandatory.
+        check_error: ScenarioFailure | None = None
+        for label, passed in (
+            (f"server_handlers_released_{phase}", not server._active),
+            (f"server_shutdown_clean_{phase}", not errors),
+        ):
+            try:
+                result.require(label, passed)
+            except ScenarioFailure as exc:
+                check_error = exc
+        for error in errors:
+            if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                raise error
+        if primary is None:
+            if errors:
+                raise errors[0]
+            if check_error is not None:
+                raise check_error
     return result
 
 

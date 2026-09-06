@@ -11,7 +11,8 @@ from notebooklm.exceptions import AuthError
 from notebooklm.outcomes import CommitState
 
 from .android import SyntheticOAuthMinter, build_android_client
-from .common import ScenarioResult
+from .android_cleanup import settle_actions
+from .common import ScenarioFailure, ScenarioResult
 from .grpc import ADD_TENTATIVE_SOURCES, GET_PROJECT, GrpcFaultServer, abort, reply
 
 SCENARIOS = ("bearer_shared_failure_recovery", "tentative_registration_refused")
@@ -35,13 +36,18 @@ async def _run_server(
     body: Callable[[GrpcFaultServer], Awaitable[None]],
 ) -> None:
     server = GrpcFaultServer()
+    primary: BaseException | None = None
     try:
-        async with server:
-            await body(server)
-            await server.wait_for_idle()
-            server.assert_consumed()
-            result.require("resilience_scripts_consumed", True)
+        await server.__aenter__()
+        await body(server)
+        await server.wait_for_idle()
+        server.assert_consumed()
+        result.require("resilience_scripts_consumed", True)
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
+        errors = await settle_actions([lambda: server.__aexit__(None, None, None)])
         result.record(
             "grpc_journal",
             methods=[request.method.rpartition("/")[2] for request in server.requests],
@@ -51,8 +57,26 @@ async def _run_server(
             "cleanup",
             requests=len(server.requests),
             active_handlers=len(server._active),
+            primary_error=None if primary is None else type(primary).__name__,
+            cleanup_error_types=[type(error).__name__ for error in errors],
         )
-        result.require("resilience_grpc_handlers_settled", not server._active)
+        check_error: ScenarioFailure | None = None
+        for label, passed in (
+            ("resilience_grpc_handlers_settled", not server._active),
+            ("resilience_grpc_shutdown_clean", not errors),
+        ):
+            try:
+                result.require(label, passed)
+            except ScenarioFailure as exc:
+                check_error = exc
+        for error in errors:
+            if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                raise error
+        if primary is None:
+            if errors:
+                raise errors[0]
+            if check_error is not None:
+                raise check_error
 
 
 async def tentative_registration_refused(result: ScenarioResult) -> None:
@@ -120,6 +144,7 @@ async def bearer_shared_failure_recovery(result: ScenarioResult) -> None:
 REQUIRED_CHECKS: dict[str, list[str]] = {
     "bearer_shared_failure_recovery": [
         "resilience_grpc_handlers_settled",
+        "resilience_grpc_shutdown_clean",
         "resilience_scripts_consumed",
         "shared_mint_failed_once",
         "shared_mint_no_failed_wave_dispatch",
@@ -135,6 +160,7 @@ REQUIRED_CHECKS: dict[str, list[str]] = {
         "registration_refusal_recovery_remint",
         "registration_refusal_sent_once",
         "resilience_grpc_handlers_settled",
+        "resilience_grpc_shutdown_clean",
         "resilience_scripts_consumed",
     ],
 }
