@@ -222,7 +222,7 @@ class NotebookLMClient:
         def storage_aware_new(
             subclass: type[NotebookLMClient], *args: Any, **new_kwargs: Any
         ) -> Any:
-            auth = args[0] if args else new_kwargs.get("auth")
+            auth = next(iter(args), new_kwargs.get("auth"))
             with storage_construction_allocation(subclass, auth) as claim:
                 instance = custom_new(subclass, *args, **new_kwargs)
                 claim(instance)
@@ -241,7 +241,7 @@ class NotebookLMClient:
     def __new__(cls, *args: Any, **kwargs: Any) -> NotebookLMClient:
         """Allocate normally while claiming the exact stored-auth target instance."""
 
-        auth = args[0] if args else kwargs.get("auth")
+        auth = next(iter(args), kwargs.get("auth"))
         with storage_construction_allocation(cls, auth) as claim:
             mro_tail = cls.__mro__[cls.__mro__.index(NotebookLMClient) + 1 :]
             next_allocator = next(base for base in mro_tail if "__new__" in base.__dict__)

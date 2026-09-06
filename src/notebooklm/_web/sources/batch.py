@@ -185,6 +185,7 @@ def _attach_whole_batch_failure(
     entries: Sequence[JournalEntry],
     outcome: BatchOutcome,
 ) -> None:
+    primary_entry = next(iter(entries))
     recovery_action = (
         RecoveryAction.RETRY
         if outcome.items
@@ -196,12 +197,11 @@ def _attach_whole_batch_failure(
     if recovery_action is RecoveryAction.RETRY:
         # A lower compatibility wrapper may already have synthesized UNKNOWN.
         # Positive zero-send evidence is authoritative at this owner boundary.
-        primary = entries[0]
-        primary.recovery_action = RecoveryAction.RETRY
+        primary_entry.recovery_action = RecoveryAction.RETRY
     attach_operation_journal(
         error,
         journal,
-        primary=entries[0],
+        primary=primary_entry,
         recovery_action=recovery_action,
     )
     attach_batch_outcome(error, outcome)

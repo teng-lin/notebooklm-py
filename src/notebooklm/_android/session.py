@@ -203,7 +203,7 @@ def _attach_journal_failure(
             entry.record(error.commit_state, "producer evidence")
     attach_journal_entry(
         error,
-        entries[0],
+        next(iter(entries)),
         recovery_action=(
             RecoveryAction.INSPECT_AND_RECONCILE
             if any(entry.commit_state is CommitState.UNKNOWN for entry in entries)

@@ -73,7 +73,7 @@ async def _opened_core(refresh_callback):
 def _assert_open_generation(core: NotebookLMClient) -> int:
     """Return the lifecycle-created epoch after proving every owner agrees."""
     collaborators = core._collaborators
-    lifecycle = collaborators.lifecycle
+    lifecycle = core._lifecycle
     generation = collaborators.call_supervisor._current
 
     assert lifecycle.is_open()
