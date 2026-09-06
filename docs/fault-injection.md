@@ -123,3 +123,7 @@ regression; repeating random timing until a test passes does not resolve it.
 
 The architectural rationale is in
 [ADR-0038](adr/0038-local-fault-injection-harness.md).
+
+The [resilience coverage inventory](fault-resilience-coverage.md) records the measured
+baseline and acceptance requirements for the next scenario families. New cases remain
+pending until their evidence is linked there.
