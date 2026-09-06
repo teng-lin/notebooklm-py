@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 import tests._fault_server.web_scenarios as web_scenarios
-from tests._fault_server.common import ScenarioResult
+from tests._fault_server.common import ScenarioFailure, ScenarioResult
 from tests._fault_server.http import HttpFaultServer, LogicalHostTransport
 
 
@@ -100,3 +100,19 @@ async def test_cohort_records_server_cleanup_failure(monkeypatch) -> None:
     assert cleanup["server_close_error"] == "RuntimeError"
 
     await original_close()
+
+
+async def test_cohort_rejects_client_that_silently_remains_open(monkeypatch) -> None:
+    class UnclosedClient(_FakeClient):
+        async def close(self, *, drain: bool) -> None:
+            pass
+
+    result = ScenarioResult("web", "cleanup", "silent-close")
+    server = HttpFaultServer()
+    monkeypatch.setattr(web_scenarios, "build_fault_client", lambda *_a, **_kw: UnclosedClient())
+    with pytest.raises(ScenarioFailure, match="client_closed"):
+        async with web_scenarios._cohort(result, server):
+            pass
+    assert result.checks["client_closed"] is False
+    with pytest.raises(RuntimeError, match="not running"):
+        _ = server.address

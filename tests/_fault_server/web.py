@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
+from functools import partial
 from typing import Any
+from unittest.mock import patch
 
 from notebooklm._auth.cookie_types import Cookie, CookieJar
 from notebooklm._client_assembly import _assemble_client
 from notebooklm._client_options import normalize_legacy_client_options
+from notebooklm._web.transport.middleware import chain as middleware_chain
 from notebooklm._web.transport.middleware.retry import RetryMiddleware
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
@@ -90,22 +94,23 @@ def build_fault_client(
         server_error_max_retries=server_error_max_retries,
         backend="web",
     )
-    _assemble_client(
-        client,
-        auth=synthetic_auth(),
-        options=options,
-        async_client_factory=server.client_factory,
-        sleep=sleep,
-        refresh_retry_delay=0.0,
+    # The chain builder does not forward the legacy sleep seam to retries.
+    # Supply the sleeper through the middleware's constructor during synchronous
+    # assembly, restoring the binding before any concurrent cohort can run.
+    construction = (
+        patch.object(middleware_chain, "RetryMiddleware", partial(RetryMiddleware, sleep=sleep))
+        if sleep is not None
+        else nullcontext()
     )
-    if sleep is not None:
-        retry = client._web_runtime.composed.middlewares[0]
-        if not isinstance(retry, RetryMiddleware):
-            raise AssertionError("production Web middleware order changed")
-        # RetryMiddleware exposes this constructor seam, but production assembly
-        # intentionally resolves its default internally. Bind it per instance so
-        # concurrent cohorts can record delay decisions without global patches.
-        retry._sleep = sleep
+    with construction:
+        _assemble_client(
+            client,
+            auth=synthetic_auth(),
+            options=options,
+            async_client_factory=server.client_factory,
+            sleep=sleep,
+            refresh_retry_delay=0.0,
+        )
     return client
 
 

@@ -72,6 +72,10 @@ issuance, and kernel packet loss are outside this harness. These tests establish
 library resilience to the modeled protocol/socket faults; cassettes and live
 tests establish agreement with the real upstream service.
 
+The HTTP service closes each response connection. This version exercises the
+HTTPX transport's new-connection recovery; stale pooled keep-alive connections
+and the optional curl-cffi transport need separate scenarios.
+
 ## Add a scenario
 
 The implementation lives in `tests/_fault_server/`; `web_scenarios.py` and

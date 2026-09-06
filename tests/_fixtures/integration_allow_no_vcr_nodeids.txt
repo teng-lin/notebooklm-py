@@ -102,6 +102,31 @@ tests/integration/concurrency/test_upload_timeout_config.py::test_default_upload
 tests/integration/concurrency/test_upload_timeout_config.py::test_default_upload_timeout_preserves_back_compat_start # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_upload_timeout_config.py::test_from_storage_accepts_upload_timeout # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_wait_for_sources_leak.py::test_wait_for_sources_cancels_sibling_on_first_failure # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[auth] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[auth_concurrent] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[commit_lost_response] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[deadline_and_cancellation] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[minter_failure] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[public_flows] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[rate_limit] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[stream_auth] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[unavailable] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[auth_refresh] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[auth_refresh_coalesced] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[auth_refresh_login_redirect] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[auth_refresh_malformed] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[cancel_blocked_read] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[close_reopen] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[committed_create_disconnect] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[delayed_headers] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[malformed_payload] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[rate_limit_exhaustion] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[rate_limit_recovery] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[server_error_exhaustion] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[server_error_recovery] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[stalled_body] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[truncated_body] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[valid_read_create] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_create_artifact_classified_as_non_idempotent_no_retry # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_create_artifact_variant_none_explicit # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifact_generation_idempotency.py::TestRegistryClassification::test_generate_mind_map_classified_as_non_idempotent_no_retry # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

@@ -152,6 +152,7 @@ async def _cohort(
             raise close_error
         if server_close_error is not None:
             raise server_close_error
+        result.require("client_closed", client is None or not client._lifecycle.is_open())
 
 
 def _requests(server: HttpFaultServer, route: Route) -> list[Any]:
@@ -540,6 +541,7 @@ async def _close_reopen(result: ScenarioResult) -> None:
             raise cleanup_error
         if server_close_error is not None:
             raise server_close_error
+        result.require("client_closed", not client._lifecycle.is_open())
     _record_error(result, first_error)
     result.require("active_read_terminated", isinstance(first_error, NotebookLMError))
     result.require("reopen_succeeded", [item.id for item in reopened] == ["nb-reopen"])
