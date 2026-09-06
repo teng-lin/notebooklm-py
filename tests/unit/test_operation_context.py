@@ -292,13 +292,20 @@ async def test_external_cancellation_is_not_translated() -> None:
 
 async def test_timeout_carries_dispatched_mutation_evidence() -> None:
     supervisor = _supervisor()
+    dispatched = False
 
-    with pytest.raises(OperationTimeoutError) as caught:
-        async with supervisor.operation_scope("create", timeout=0.01):
+    async def _create() -> None:
+        nonlocal dispatched
+        async with supervisor.operation_scope("create", timeout=1.0):
             entry = OperationJournal("notebooks.create").new_entry(method="CREATE_NOTEBOOK")
             entry.mark_dispatched()
+            dispatched = True
             await asyncio.sleep(10)
 
+    with pytest.raises(OperationTimeoutError) as caught:
+        await asyncio.wait_for(_create(), timeout=5.0)
+
+    assert dispatched
     metadata = caught.value.operation_metadata
     assert metadata is not None
     assert metadata.commit_state is CommitState.UNKNOWN
@@ -326,24 +333,32 @@ async def test_web_terminal_auto_adopts_active_operation_journal(
         AuthTokens(csrf_token="csrf", session_id="session", cookies={})
     )
     never = asyncio.Event()
+    post_entered = asyncio.Event()
 
     async with client:
 
         async def _post(*args: object, **kwargs: object) -> httpx.Response:
             del args, kwargs
+            post_entered.set()
             await never.wait()
             raise AssertionError("unreachable")
 
         terminal = client._web_runtime.composed.transport
         monkeypatch.setattr(terminal._kernel, "post", _post)
 
-        with pytest.raises(OperationTimeoutError) as caught:
-            async with client.operation(timeout=0.01):
+        async def _create() -> None:
+            # Keep this a post-dispatch metadata test on slow/instrumented
+            # platforms, rather than expiring during request preparation.
+            async with client.operation(timeout=1.0):
                 await client._web_runtime.executor.rpc_call(
                     RPCMethod.CREATE_NOTEBOOK,
                     ["title", None],
                 )
 
+        with pytest.raises(OperationTimeoutError) as caught:
+            await asyncio.wait_for(_create(), timeout=5.0)
+
+    assert post_entered.is_set()
     metadata = caught.value.operation_metadata
     assert metadata is not None
     assert metadata.commit_state is CommitState.UNKNOWN

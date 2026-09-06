@@ -876,11 +876,14 @@ async def test_real_android_unary_cancellation_keeps_every_batch_attempt_unknown
 @pytest.mark.asyncio
 async def test_operation_timeout_auto_journals_unbound_android_mutation() -> None:
     channel = _Channel()
-    channel.unary_outcomes = [asyncio.Future()]
-    session, _, _, _, supervisor = await _open(channel=channel)
+    pending: asyncio.Future[bytes] = asyncio.Future()
+    channel.unary_outcomes = [pending]
+    session, _, _, _, supervisor = await _open(channel=channel, timeout=5.0)
 
-    with pytest.raises(OperationTimeoutError) as raised:
-        async with supervisor.operation_scope("raw mutation", timeout=0.01):
+    async def _mutate() -> None:
+        # Allow slow platforms/instrumentation to dispatch before the real
+        # operation deadline; expiry before dispatch tests a different state.
+        async with supervisor.operation_scope("raw mutation", timeout=1.0):
             await session.unary(
                 MUTATION_METHOD,
                 _Message(b"request"),
@@ -888,6 +891,19 @@ async def test_operation_timeout_auto_journals_unbound_android_mutation() -> Non
                 response_type=_Message,
             )
 
+    try:
+        with pytest.raises(OperationTimeoutError) as raised:
+            await asyncio.wait_for(_mutate(), timeout=5.0)
+        assert pending.cancelled()
+    finally:
+        if not pending.done():
+            pending.cancel()
+        await supervisor.begin_closing(1)
+        await session.prepare_close()
+        await session.close_resources()
+        supervisor.mark_closed(1)
+
+    assert [invocation[0] for invocation in channel.invocations] == [MUTATION_METHOD]
     metadata = raised.value.operation_metadata
     assert metadata is not None
     assert metadata.method == MUTATION_METHOD
