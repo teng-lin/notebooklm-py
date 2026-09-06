@@ -37,6 +37,8 @@ from .web import (
     list_response,
     rpc_response,
 )
+from .web_concurrency import IMPLEMENTATIONS as CONCURRENCY_IMPLEMENTATIONS
+from .web_concurrency import PLANS as CONCURRENCY_PLANS
 from .web_resilience_scenarios import (
     IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
 )
@@ -133,6 +135,8 @@ async def _cohort(
     timeout: float = 0.5,
     rate_retries: int = 2,
     server_retries: int = 2,
+    max_concurrent_rpcs: int | None = 16,
+    operation_timeout: float | None = None,
     record_sleep: bool = True,
     transfer_timeout: float | None = None,
     transfer_client_factory: Callable[..., Any] | None = None,
@@ -151,6 +155,8 @@ async def _cohort(
             timeout=timeout,
             rate_limit_max_retries=rate_retries,
             server_error_max_retries=server_retries,
+            max_concurrent_rpcs=max_concurrent_rpcs,
+            operation_timeout=operation_timeout,
             sleep=sleep if record_sleep else None,
             transfer_timeout=transfer_timeout,
             transfer_client_factory=transfer_client_factory,
@@ -598,6 +604,9 @@ _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
     "valid_read_create": _valid_read_create,
 }
 _IMPLEMENTATIONS.update(RESILIENCE_IMPLEMENTATIONS)
+
+_IMPLEMENTATIONS.update(CONCURRENCY_IMPLEMENTATIONS)
+_PLANS.update(CONCURRENCY_PLANS)
 
 
 _IMPLEMENTATIONS.update(CHAT_IMPLEMENTATIONS)
