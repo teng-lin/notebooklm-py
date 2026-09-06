@@ -72,6 +72,7 @@ The ADR Index table utilizes five eras of Status notation to reflect the lifecyc
 | [0035](0035-mobile-resilience-transport.md) | Mobile backend as a resilience transport | Accepted |
 | [0036](0036-browser-acquisition-package.md) | Browser acquisition package and neutral login orchestration | Accepted |
 | [0037](0037-live-usage-and-quota-api.md) | Live usage and quota API | Accepted |
+| [0038](0038-local-fault-injection-harness.md) | Local fault-injection services and concurrent resilience scenarios | Accepted |
 
 ADR-0007 ships alongside its enforcement substrate: the concrete fixtures (`tests/_fixtures/`) and meta-lint (`tests/_guardrails/test_no_forbidden_monkeypatches.py`) are added in the same PR (`arch-d1-fixtures-scaffolding`) so the record is grounded in working code rather than an empty placeholder.
 

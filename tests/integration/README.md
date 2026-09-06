@@ -175,8 +175,9 @@ or E2E.
 ## When to use `allow_no_vcr`
 
 `allow_no_vcr` exists for tests that legitimately live under
-`tests/integration/` for tree-organization reasons but make no real (or
-recorded) HTTP calls. The authoritative allowlists live in:
+`tests/integration/` without replaying upstream traffic. This includes local
+real-socket fault services and the legacy mock-only exceptions below. The
+authoritative allowlists live in:
 
 - `tests/_fixtures/integration_allow_no_vcr_files.txt`
 - `tests/_fixtures/integration_allow_no_vcr_nodeids.txt`
@@ -185,6 +186,11 @@ recorded) HTTP calls. The authoritative allowlists live in:
 
 Current categories include:
 
+- `faults/` — real loopback HTTP/gRPC services exercising protocol faults,
+  authentication recovery, mutation outcomes, and lifecycle cleanup. These
+  scenarios deliberately control live socket behavior that cassettes cannot
+  reproduce. See the [fault-injection guide](../../docs/fault-injection.md)
+  for the concurrent runner and extension rules.
 - `test_auto_refresh.py` — asserts that the refresh callback is *wired*;
   doesn't fire a real refresh.
 - `test_session_integration.py` — `httpx.MockTransport` + `AsyncMock` exercising error

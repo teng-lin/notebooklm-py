@@ -1406,10 +1406,17 @@ NotebookLM has undocumented rate limits. Generation tests may be skipped when ra
 
 ### Writing New Tests
 
+Use the [local fault-injection harness](fault-injection.md) for network,
+authentication, and lifecycle failures that need real socket behavior without
+a live account. Its deterministic scenarios also feed the concurrent stress
+runner.
+
 ```
 Need network?
 ├── No → tests/unit/
-├── Mocked → tests/integration/
+├── Mocked transport → tests/unit/
+├── Recorded upstream traffic → tests/integration/
+├── Local fault server → tests/integration/faults/
 └── Real API → tests/e2e/
     └── What notebook?
         ├── Read-only → read_only_notebook_id + @pytest.mark.readonly
@@ -1508,6 +1515,7 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `test.yml` | Push/PR | Reduced 7-cell compatibility matrix (Ubuntu × Python 3.10–3.14, plus macOS/Windows on 3.12), linting, type checking |
+| `fault-stress.yml` | PR, daily 5:45 AM UTC, manual dispatch | Local HTTP/gRPC fault workloads with synthetic credentials and diagnostic report artifacts |
 | `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch on `main` | Full compatibility/coverage plus managed-copy full Web/Ubuntu, full Android/macOS, and read-only Web/Windows E2E; an owner may qualify an open same-repository PR at its pinned head SHA |
 | `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch on `main` | RPC monitoring on a disposable fallback copy plus the template-read-only [Android gRPC canary](#android-grpc-canary); an owner may qualify an open same-repository PR at its pinned head SHA |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |

@@ -1,0 +1,48 @@
+name: Fault Server Stress
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '45 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fault-stress-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stress:
+    name: Local HTTP and gRPC stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FAULT_ITERATIONS: ${{ github.event_name == 'pull_request' && '64' || '400' }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+    - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+    - name: Install test dependencies
+      run: uv sync --frozen --extra browser --extra dev --extra markdown --extra android
+    - name: Run concurrent fault scenarios without live credentials
+      run: >-
+        uv run python scripts/stress_fault_server.py
+        --backend both --seed "$GITHUB_RUN_ID"
+        --iterations "$FAULT_ITERATIONS" --concurrency 4
+        --timeout 600 --scenario-timeout 15
+        --json-report fault-stress-report.json
+    - name: Preserve assignments and diagnostic traces
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: fault-stress-${{ github.run_id }}-${{ github.run_attempt }}
+        path: fault-stress-report.json
+        if-no-files-found: warn
+        retention-days: 14
