@@ -10570,11 +10570,11 @@
       "modules": 75
     },
     "mcp": {
-      "lines": 10953,
+      "lines": 10964,
       "modules": 38
     },
     "root": {
-      "lines": 24614,
+      "lines": 24703,
       "modules": 79
     },
     "rpc": {
@@ -10586,7 +10586,7 @@
       "modules": 9
     },
     "server": {
-      "lines": 4058,
+      "lines": 4069,
       "modules": 19
     },
     "types": {
@@ -10599,7 +10599,7 @@
     }
   },
   "summary": {
-    "authored_lines": 145999,
+    "authored_lines": 146110,
     "authored_modules": 458,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1161,

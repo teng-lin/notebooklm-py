@@ -8,6 +8,7 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 
+from notebooklm._redact import redact
 from notebooklm._types.notebooks import Notebook
 from notebooklm._types.sources import Source
 from notebooklm.rpc.types import DriveSourceStatus, SourceStatus
@@ -699,10 +700,14 @@ def test_add_batch_projects_all_four_public_commit_states(
     from notebooklm.outcomes import BatchItemOutcome, CommitState, SourceBatchItemOutcome
 
     _seed_notebook(fake_client)
+    invalid = (
+        "ftp://not-sent-user:not-sent-password@example.com/path?token=not-sent-token&pad="
+        + "x" * 300
+    )
     valid = [
-        "https://ok.example.com",
-        "https://rejected.example.com",
-        "https://unknown.example.com",
+        f"https://{state}-user:{state}-password@example.com/path?token={state}-token&pad="
+        + "x" * 300
+        for state in ("confirmed", "rejected", "unknown")
     ]
     rejected = SourceAddError(valid[1])
     fake_client.sources.add_urls_batch = AsyncMock(
@@ -731,7 +736,7 @@ def test_add_batch_projects_all_four_public_commit_states(
 
     response = authed_client.post(
         "/v1/notebooks/nb-1/sources/batch",
-        json={"urls": ["not a url", *valid]},
+        json={"urls": [invalid, *valid]},
     )
 
     assert response.status_code == 201
@@ -743,6 +748,11 @@ def test_add_batch_projects_all_four_public_commit_states(
         "unknown",
     ]
     assert rows[1]["source_id"] == "source-confirmed"
+    for row, raw in zip(rows, [invalid, *valid], strict=True):
+        assert row["input"] == redact(raw, max_length=200)
+        assert len(row["input"]) <= 201
+        assert "password" not in row["input"]
+        assert "-token" not in row["input"]
     fake_client.sources.add_urls_batch.assert_awaited_once_with("nb-1", valid)
 
 
@@ -829,6 +839,74 @@ async def test_add_batch_projection_cancellation_retains_all_settled_outcomes(
     items = operation_metadata_payload(cancelled)["batch_outcome"]["items"]  # type: ignore[index]
     assert items[0]["commit_state"] == "confirmed"
     assert items[0]["resource_id"] == "source-before-cancel"
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])
+@pytest.mark.asyncio
+async def test_add_batch_call_failure_merges_local_and_facade_members(
+    fake_client: FakeClient, failure_type: type[BaseException]
+) -> None:
+    """The original failure retains local and remapped facade settlements."""
+    from unittest.mock import AsyncMock
+
+    from fastapi import Response
+
+    from notebooklm._idempotency import attach_batch_outcome
+    from notebooklm.exceptions import SourceAddError
+    from notebooklm.outcomes import (
+        BatchItemOutcome,
+        BatchOutcome,
+        CommitState,
+        operation_metadata_payload,
+    )
+    from notebooklm.server._pending import PendingRegistry
+    from notebooklm.server.routes import sources as sources_route
+
+    _seed_notebook(fake_client)
+    invalid = "ftp://local-user:local-password@example.com/path?token=local-token"
+    valid = [
+        "https://ok-user:ok-password@example.com/path?token=ok-token",
+        "https://no-user:no-password@example.com/path?token=no-token",
+    ]
+    failure = failure_type("batch interrupted")
+    rejected = SourceAddError(valid[1])
+    attach_batch_outcome(
+        failure,
+        BatchOutcome(
+            items=(
+                BatchItemOutcome(
+                    member=0,
+                    input=valid[0],
+                    commit_state=CommitState.CONFIRMED,
+                    resource_id="source-before-failure",
+                ),
+                BatchItemOutcome(
+                    member=1,
+                    input=valid[1],
+                    commit_state=CommitState.REJECTED,
+                    error=rejected,
+                ),
+            )
+        ),
+    )
+    fake_client.sources.add_urls_batch = AsyncMock(side_effect=failure)
+
+    with pytest.raises(failure_type) as excinfo:
+        await sources_route.add_batch(
+            "nb-1",
+            sources_route.SourceAddBatch(urls=[invalid, *valid]),
+            fake_client,
+            PendingRegistry(),
+            Response(),
+        )
+
+    assert excinfo.value is failure
+    items = operation_metadata_payload(failure)["batch_outcome"]["items"]  # type: ignore[index]
+    assert [item["member"] for item in items] == [0, 1, 2]
+    assert [item["commit_state"] for item in items] == ["not_sent", "confirmed", "rejected"]
+    assert items[1]["resource_id"] == "source-before-failure"
+    for item, raw in zip(items, [invalid, *valid], strict=True):
+        assert item["input"] == redact(raw, max_length=200)
 
 
 def test_add_batch_mid_item_source_add_error_isolates_not_aborts(

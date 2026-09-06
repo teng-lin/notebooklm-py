@@ -21,6 +21,7 @@ pytest.importorskip("fastmcp")
 
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
+from notebooklm._redact import redact  # noqa: E402 - after importorskip guard
 from notebooklm._types.sources import SourceType  # noqa: E402 - after importorskip guard
 from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     NetworkError,
@@ -2406,10 +2407,14 @@ async def test_source_add_batch_projects_all_four_public_commit_states(
     from notebooklm.exceptions import SourceAddError
     from notebooklm.outcomes import BatchItemOutcome, CommitState, SourceBatchItemOutcome
 
+    invalid = (
+        "ftp://not-sent-user:not-sent-password@example.com/path?token=not-sent-token&pad="
+        + "x" * 300
+    )
     valid = [
-        "https://ok.example.com",
-        "https://rejected.example.com",
-        "https://unknown.example.com",
+        f"https://{state}-user:{state}-password@example.com/path?token={state}-token&pad="
+        + "x" * 300
+        for state in ("confirmed", "rejected", "unknown")
     ]
     rejected = SourceAddError(valid[1])
     unknown = SourceAddError(valid[2])
@@ -2435,7 +2440,7 @@ async def test_source_add_batch_projects_all_four_public_commit_states(
 
     result = await mcp_call(
         "source_add",
-        {"notebook": NB_ID, "urls": ["not a url", *valid]},
+        {"notebook": NB_ID, "urls": [invalid, *valid]},
     )
 
     rows = result.structured_content["results"]
@@ -2446,6 +2451,11 @@ async def test_source_add_batch_projects_all_four_public_commit_states(
         "unknown",
     ]
     assert rows[1]["source_id"] == "source-confirmed"
+    for row, raw in zip(rows, [invalid, *valid], strict=True):
+        assert row["input"] == redact(raw, max_length=200)
+        assert len(row["input"]) <= 201
+        assert "password" not in row["input"]
+        assert "-token" not in row["input"]
     mock_client.sources.add_urls_batch.assert_awaited_once_with(NB_ID, valid)
 
 
@@ -2589,6 +2599,60 @@ async def test_source_add_batch_propagates_cancellation(mock_client) -> None:
     mock_client.sources.add_url = AsyncMock(side_effect=asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
         await _add_url_batch(mock_client, NB_ID, ["https://example.com/a"], allow_internal=False)
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])
+async def test_source_add_batch_call_failure_merges_local_and_facade_members(
+    mock_client, failure_type: type[BaseException]
+) -> None:
+    """Facade-relative members are restored beside local NOT_SENT outcomes."""
+    from notebooklm._idempotency import attach_batch_outcome
+    from notebooklm.mcp.tools.sources import _add_url_batch
+    from notebooklm.outcomes import (
+        BatchItemOutcome,
+        BatchOutcome,
+        CommitState,
+        operation_metadata_payload,
+    )
+
+    invalid = "ftp://local-user:local-password@example.com/path?token=local-token"
+    valid = [
+        "https://ok-user:ok-password@example.com/path?token=ok-token",
+        "https://no-user:no-password@example.com/path?token=no-token",
+    ]
+    failure = failure_type("batch interrupted")
+    rejected = SourceAddError(valid[1])
+    attach_batch_outcome(
+        failure,
+        BatchOutcome(
+            items=(
+                BatchItemOutcome(
+                    member=0,
+                    input=valid[0],
+                    commit_state=CommitState.CONFIRMED,
+                    resource_id="source-before-failure",
+                ),
+                BatchItemOutcome(
+                    member=1,
+                    input=valid[1],
+                    commit_state=CommitState.REJECTED,
+                    error=rejected,
+                ),
+            )
+        ),
+    )
+    mock_client.sources.add_urls_batch = AsyncMock(side_effect=failure)
+
+    with pytest.raises(failure_type) as excinfo:
+        await _add_url_batch(mock_client, NB_ID, [invalid, *valid], allow_internal=False)
+
+    assert excinfo.value is failure
+    items = operation_metadata_payload(failure)["batch_outcome"]["items"]  # type: ignore[index]
+    assert [item["member"] for item in items] == [0, 1, 2]
+    assert [item["commit_state"] for item in items] == ["not_sent", "confirmed", "rejected"]
+    assert items[1]["resource_id"] == "source-before-failure"
+    for item, raw in zip(items, [invalid, *valid], strict=True):
+        assert item["input"] == redact(raw, max_length=200)
 
 
 @pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])

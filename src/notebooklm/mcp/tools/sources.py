@@ -42,7 +42,7 @@ from ..._app.source_batch import (
     unknown_source_batch_item,
 )
 from ..._app.views import source_view as _source_view
-from ..._source.batch import preserve_batch_projection_failure
+from ..._source.batch import preserve_batch_call_failure, preserve_batch_projection_failure
 from ...exceptions import (
     RPCError,
     SourceNotFoundError,
@@ -1044,7 +1044,18 @@ async def _add_url_batch(
             valid_positions.append(index)
             valid_urls.append(entry)
 
-    outcomes = await client.sources.add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+    try:
+        outcomes = (
+            await client.sources.add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+        )
+    except BaseException as exc:
+        preserve_batch_call_failure(
+            exc,
+            local_items=settled,
+            valid_positions=valid_positions,
+            valid_inputs=valid_urls,
+        )
+        raise
     for index, outcome in zip(valid_positions, outcomes, strict=False):
         settled[index] = remap_source_batch_item(outcome, member=index)
     if len(outcomes) != len(valid_urls):

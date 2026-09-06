@@ -211,12 +211,18 @@ class SourceBatchItemOutcome:
                 raise ValueError("confirmed source id must match the canonical outcome")
         elif self.source is not None:
             raise ValueError("unconfirmed source batch outcomes cannot expose a source")
+        # Retain only the canonical redacted/capped spelling.  Keeping the raw
+        # caller URL here would leak credentials through this public dataclass's
+        # ``url`` attribute and generated ``repr`` even when adapters correctly
+        # projected ``outcome.input``.
+        object.__setattr__(self, "url", self.outcome.input)
 
     @property
     def input(self) -> str:
         """Return the adapter-neutral input spelling."""
 
-        return self.url
+        assert self.outcome is not None
+        return self.outcome.input
 
 
 @dataclass(frozen=True)

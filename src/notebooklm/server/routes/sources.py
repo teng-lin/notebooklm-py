@@ -49,7 +49,7 @@ from ..._app.source_wait import (
     wait_all_sources,
 )
 from ..._app.views import source_view
-from ..._source.batch import preserve_batch_projection_failure
+from ..._source.batch import preserve_batch_call_failure, preserve_batch_projection_failure
 from ...client import NotebookLMClient
 from ...exceptions import ValidationError
 from ...outcomes import SourceBatchItemOutcome
@@ -77,10 +77,10 @@ _field_validator = getattr(pydantic, "field_validator", pydantic.validator)
 def _project_batch_item(item: SourceBatchItemOutcome) -> dict[str, Any]:
     """Project one public batch result without inventing continuation policy."""
 
+    assert item.outcome is not None
     if item.error is not None:
-        assert item.outcome is not None
         return {
-            "input": item.input,
+            "input": item.outcome.input,
             "status": "error",
             "commit_state": item.outcome.commit_state.value,
             "error": error_item(item.error),
@@ -90,7 +90,7 @@ def _project_batch_item(item: SourceBatchItemOutcome) -> dict[str, Any]:
         raise AssertionError("confirmed source batch outcome has no source")
     view = source_view(source)
     return {
-        "input": item.input,
+        "input": item.outcome.input,
         "status": "added",
         "commit_state": "confirmed",
         "source_id": source.id,
@@ -533,7 +533,18 @@ async def add_batch(
             valid_positions.append(index)
             valid_urls.append(entry)
 
-    outcomes = await client.sources.add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+    try:
+        outcomes = (
+            await client.sources.add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+        )
+    except BaseException as exc:
+        preserve_batch_call_failure(
+            exc,
+            local_items=settled,
+            valid_positions=valid_positions,
+            valid_inputs=valid_urls,
+        )
+        raise
     for index, outcome in zip(valid_positions, outcomes, strict=False):
         settled[index] = remap_source_batch_item(outcome, member=index)
     if len(outcomes) != len(valid_urls):

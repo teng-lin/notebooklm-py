@@ -73,9 +73,9 @@ def remap_source_batch_item(item: SourceBatchItemOutcome, *, member: int) -> Sou
 
     assert item.outcome is not None
     return SourceBatchItemOutcome(
-        url=item.url,
+        url=item.outcome.input,
         source=item.source,
         error=item.error,
         member=member,
-        outcome=replace(item.outcome, member=member, input=item.url),
+        outcome=replace(item.outcome, member=member),
     )

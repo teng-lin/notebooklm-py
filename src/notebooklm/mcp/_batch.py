@@ -16,11 +16,11 @@ def project_source_batch_item(
 ) -> tuple[dict[str, Any], Source | None]:
     """Project one settled member without deriving continuation policy."""
 
+    assert item.outcome is not None
     if item.error is not None:
-        assert item.outcome is not None
         return (
             {
-                "input": item.input,
+                "input": item.outcome.input,
                 "status": "error",
                 "commit_state": item.outcome.commit_state.value,
                 "error": error_payload(item.error),
@@ -31,7 +31,7 @@ def project_source_batch_item(
     if source is None:  # pragma: no cover - public outcome invariant
         raise AssertionError("confirmed source batch outcome has no source")
     projected: dict[str, Any] = {
-        "input": item.input,
+        "input": item.outcome.input,
         "status": "added",
         "commit_state": "confirmed",
         "source_id": source.id,
