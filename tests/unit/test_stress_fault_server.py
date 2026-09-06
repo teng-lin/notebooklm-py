@@ -521,3 +521,26 @@ async def test_empty_required_checks_cannot_claim_success(declaration: list[str]
     report = await stress.run_stress(stress.RunConfig(iterations=1), {("web", "read"): scenario})
     assert report["summary"]["failed"] == 1
     assert not report["summary"]["ok"]
+
+
+@pytest.mark.asyncio
+async def test_success_report_exports_auth_generations_without_credential_values() -> None:
+    from tests._fault_server.web import (
+        NEW_COOKIE,
+        NEW_CSRF,
+        NEW_SESSION,
+        OLD_COOKIE,
+        OLD_CSRF,
+        OLD_SESSION,
+    )
+    from tests._fault_server.web_scenarios import run_scenario
+
+    report = await stress.run_stress(
+        stress.RunConfig(backend="web", iterations=1), {("web", "auth_refresh"): run_scenario}
+    )
+    assert report["summary"]["ok"]
+    serialized = json.dumps(report)
+    assert all(
+        secret not in serialized
+        for secret in (NEW_COOKIE, NEW_CSRF, NEW_SESSION, OLD_COOKIE, OLD_CSRF, OLD_SESSION)
+    )

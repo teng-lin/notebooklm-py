@@ -426,9 +426,12 @@ async def _auth_refresh(result: ScenarioResult) -> None:
     calls = _requests(server, _READ)
     result.record(
         "auth_generations",
-        csrf=[call.csrf for call in calls],
-        session=[call.session_id for call in calls],
-        cookie=[call.cookie_values.get(COOKIE_NAME) for call in calls],
+        csrf=[_generation(call.csrf, old=OLD_CSRF, new=NEW_CSRF) for call in calls],
+        session=[_generation(call.session_id, old=OLD_SESSION, new=NEW_SESSION) for call in calls],
+        cookie=[
+            _generation(call.cookie_values.get(COOKIE_NAME), old=OLD_COOKIE, new=NEW_COOKIE)
+            for call in calls
+        ],
     )
     result.require("auth_refresh_succeeded", [item.id for item in notebooks] == ["nb-auth"])
     result.require("one_homepage_refresh", len(_requests(server, _HOME)) == 1)
