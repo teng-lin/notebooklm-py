@@ -32,12 +32,17 @@ jobs:
     - name: Install test dependencies
       run: uv sync --frozen --extra browser --extra dev --extra markdown --extra android
     - name: Run concurrent fault scenarios without live credentials
-      run: >-
-        uv run python scripts/stress_fault_server.py
-        --backend both --seed "$GITHUB_RUN_ID"
-        --iterations "$FAULT_ITERATIONS" --concurrency 4
-        --timeout 600 --scenario-timeout 15
-        --json-report fault-stress-report.json
+      run: |
+        selected=$(uv run python scripts/stress_fault_server.py --backend both --list-scenarios | wc -l)
+        iterations=$FAULT_ITERATIONS
+        if [ "$selected" -gt "$iterations" ]; then
+          iterations=$selected
+        fi
+        uv run python scripts/stress_fault_server.py \
+          --backend both --seed "$GITHUB_RUN_ID" \
+          --iterations "$iterations" --concurrency 4 --require-all-scenarios \
+          --timeout 600 --scenario-timeout 15 \
+          --json-report fault-stress-report.json
     - name: Preserve assignments and diagnostic traces
       if: always()
       uses: actions/upload-artifact@v7

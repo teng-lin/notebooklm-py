@@ -55,6 +55,7 @@ class RunConfig:
     scenario_timeout: float = 15.0
     cleanup_timeout: float = 5.0
     scenarios: tuple[str, ...] = ()
+    require_all_scenarios: bool = False
 
     def __post_init__(self) -> None:
         if self.backend not in {"web", "android", "both"}:
@@ -91,8 +92,8 @@ def load_registry(backend: str) -> dict[tuple[str, str], Scenario]:
     return registry
 
 
-def build_plan(config: RunConfig, registry: Registry) -> list[OperationPlan]:
-    """Shuffle complete decks so every available fault recurs under load."""
+def selected_cases(config: RunConfig, registry: Registry) -> list[tuple[str, str]]:
+    """Return the exact selected registry independently of assignment count."""
     candidates = sorted(
         key for key in registry if config.backend == "both" or key[0] == config.backend
     )
@@ -103,6 +104,12 @@ def build_plan(config: RunConfig, registry: Registry) -> list[OperationPlan]:
         candidates = [key for key in candidates if key[1] in config.scenarios]
     if not candidates:
         raise ValueError("no scenarios selected")
+    return candidates
+
+
+def build_plan(config: RunConfig, registry: Registry) -> list[OperationPlan]:
+    """Shuffle complete decks so every available fault recurs under load."""
+    candidates = selected_cases(config, registry)
     rng = random.Random(config.seed)
     plan: list[OperationPlan] = []
     while len(plan) < config.iterations:
@@ -145,6 +152,15 @@ def _validate_evidence(result: ScenarioResult) -> None:
         recorded[name] = True
     if recorded != result.checks:
         raise ValueError("scenario check summary does not match recorded evidence")
+    for event in result.events:
+        if event.get("kind") == "plan":
+            required = event.get("required_checks", [])
+            if not isinstance(required, (list, tuple)) or any(
+                not isinstance(name, str) or not name for name in required
+            ):
+                raise ValueError("invalid required check declaration")
+            if set(required) - recorded.keys():
+                raise ValueError("scenario omitted required invariant checks")
     # Validate even direct event-list mutations by scenario code.
     json.dumps({"events": result.events, "checks": result.checks}, allow_nan=False)
 
@@ -207,7 +223,7 @@ async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
             raise
         except Exception as exc:
             operation["status"] = "failed"
-            operation["error"] = f"{type(exc).__name__}: {str(exc)[:1000]}"
+            operation["error"] = type(exc).__name__
             if isinstance(exc, ScenarioFailure) and exc.result is not result:
                 operation["error"] += " (ScenarioFailure carried a different result)"
         finally:
@@ -226,7 +242,7 @@ async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
                 if not task.cancelled() and task.exception() is not None:
                     error = task.exception()
                     if operation["status"] in {"timed_out", "canceled"}:
-                        operation["cleanup_error"] = f"{type(error).__name__}: {str(error)[:1000]}"
+                        operation["cleanup_error"] = type(error).__name__
                 scenario_tasks.discard(task)
             operation["elapsed_seconds"] = time.monotonic() - began
 
@@ -251,7 +267,7 @@ async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
         done, pending = await asyncio.wait(workers, timeout=config.cleanup_timeout)
         for task in done:
             if not task.cancelled() and task.exception() is not None:
-                report["failures"].append(f"worker failed: {task.exception()}")
+                report["failures"].append(f"worker failed: {type(task.exception()).__name__}")
         if pending:
             report["failures"].append(
                 f"{len(pending)} workers did not finish cleanup within {config.cleanup_timeout:g}s"
@@ -276,6 +292,21 @@ async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
         status: sum(operation["status"] == status for operation in operations)
         for status in ("passed", "failed", "timed_out", "canceled", "not_started", "running")
     }
+    selected = set(selected_cases(config, registry))
+    executed = {
+        (operation["backend"], operation["scenario"])
+        for operation in operations
+        if operation["status"] != "not_started"
+    }
+    missing = selected - executed
+    report["coverage"] = {
+        "selected": [{"backend": b, "scenario": s} for b, s in sorted(selected)],
+        "executed": [{"backend": b, "scenario": s} for b, s in sorted(executed)],
+        "skipped": [{"backend": b, "scenario": s} for b, s in sorted(missing)],
+        "complete": not missing,
+    }
+    if config.require_all_scenarios and missing:
+        report["failures"].append("required selected scenarios were not executed")
     report["summary"] = {
         **counts,
         "total": len(plans),
@@ -292,11 +323,8 @@ def _run_cli(config: RunConfig, registry: Registry) -> dict[str, Any]:
 
     def exception_handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
         error = context.get("exception")
-        loop_errors.append(
-            f"event loop error: {context.get('message', 'unknown')}: "
-            f"{type(error).__name__}: {str(error)[:1000]}"
-        )
-        loop.default_exception_handler(context)
+        # Context, exception text, and task names may contain signed capabilities.
+        loop_errors.append(f"event loop error: {type(error).__name__}")
 
     loop.set_exception_handler(exception_handler)
     report: dict[str, Any] | None = None
@@ -311,9 +339,7 @@ def _run_cli(config: RunConfig, registry: Registry) -> dict[str, Any]:
     finally:
         pending = asyncio.all_tasks(loop)
         if pending and report is not None:
-            report["failures"].append(
-                "CLI found leaked tasks after run: " + ", ".join(t.get_name() for t in pending)
-            )
+            report["failures"].append(f"CLI found leaked tasks after run: {len(pending)}")
             report["summary"]["ok"] = False
         for task in pending:
             task.cancel()
@@ -325,9 +351,7 @@ def _run_cli(config: RunConfig, registry: Registry) -> dict[str, Any]:
                 if not task.cancelled():
                     task.exception()
             if survivors and report is not None:
-                report["failures"].append(
-                    "CLI shutdown left pending tasks: " + ", ".join(t.get_name() for t in survivors)
-                )
+                report["failures"].append(f"CLI shutdown left pending tasks: {len(survivors)}")
                 report["summary"]["ok"] = False
         if loop_errors and report is not None:
             report["failures"].extend(loop_errors)
@@ -363,6 +387,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--json-report", type=Path, default=Path("fault-report.json"))
     parser.add_argument("--scenario", action="append", default=[])
     parser.add_argument("--list-scenarios", action="store_true")
+    parser.add_argument("--require-all-scenarios", action="store_true")
     args = parser.parse_args(argv)
     try:
         config = RunConfig(
@@ -373,6 +398,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             timeout=args.timeout,
             scenario_timeout=args.scenario_timeout,
             scenarios=tuple(args.scenario),
+            require_all_scenarios=args.require_all_scenarios,
         )
     except ValueError as exc:
         parser.error(str(exc))
@@ -382,7 +408,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Validate selection before creating an event loop or opening sockets.
             build_plan(config, registry)
             if args.list_scenarios:
-                for backend, scenario in sorted(registry):
+                for backend, scenario in selected_cases(config, registry):
                     print(f"{backend}/{scenario}")
                 return 0
             report = _run_cli(config, registry)
@@ -392,7 +418,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = {
             "schema_version": 1,
             "config": asdict(config),
-            "failures": [f"{type(exc).__name__}: {str(exc)[:1000]}"],
+            "failures": [type(exc).__name__],
             "summary": {"ok": False},
         }
     try:

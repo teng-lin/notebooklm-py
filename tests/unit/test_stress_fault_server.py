@@ -354,7 +354,7 @@ def test_cli_records_unhandled_background_failure() -> None:
 
     report = stress._run_cli(stress.RunConfig(iterations=1), {("web", "broken"): scenario})
     assert not report["summary"]["ok"]
-    assert any("orphaned handler failed" in failure for failure in report["failures"])
+    assert "event loop error: RuntimeError" in report["failures"]
 
 
 def test_cli_bounds_cancellation_resistant_cleanup_in_subprocess() -> None:
@@ -387,3 +387,99 @@ print('bounded cleanup failure recorded')
     )
     assert completed.returncode == 0, completed.stderr
     assert "bounded cleanup failure recorded" in completed.stdout
+
+
+@pytest.mark.asyncio
+async def test_required_deck_cannot_pass_with_unassigned_case() -> None:
+    registry = {("web", name): _passing for name in ("read", "write")}
+    report = await stress.run_stress(
+        stress.RunConfig(iterations=1, require_all_scenarios=True), registry
+    )
+    assert report["summary"]["passed"] == 1
+    assert not report["summary"]["ok"]
+    assert not report["coverage"]["complete"]
+    assert len(report["coverage"]["selected"]) == 2
+    assert len(report["coverage"]["executed"]) == len(report["coverage"]["skipped"]) == 1
+    assert report["failures"] == ["required selected scenarios were not executed"]
+
+
+@pytest.mark.asyncio
+async def test_required_deck_respects_explicit_selection() -> None:
+    registry = {("web", name): _passing for name in ("read", "write")}
+    report = await stress.run_stress(
+        stress.RunConfig(iterations=1, scenarios=("read",), require_all_scenarios=True), registry
+    )
+    assert report["summary"]["ok"]
+    assert report["coverage"] == {
+        "selected": [{"backend": "web", "scenario": "read"}],
+        "executed": [{"backend": "web", "scenario": "read"}],
+        "skipped": [],
+        "complete": True,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing", ["cleanup", "required fault consumed", "no extra mutation"])
+async def test_declared_required_evidence_cannot_be_omitted(missing: str) -> None:
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        result.record("plan", faults=[name], required_checks=[missing])
+        result.require("unrelated successful read", True)
+        return result
+
+    report = await stress.run_stress(stress.RunConfig(iterations=1), {("web", "read"): scenario})
+    assert not report["summary"]["ok"]
+    assert report["summary"]["failed"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["failure", "timeout", "interruption"])
+async def test_error_reports_never_serialize_exception_capabilities(mode: str) -> None:
+    secret = "https://storage.google.com/private?token=SENTINEL_CAPABILITY"
+    started = asyncio.Event()
+
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        result.record("plan", faults=[name])
+        started.set()
+        try:
+            if mode == "failure":
+                raise RuntimeError(secret)
+            await asyncio.Event().wait()
+        finally:
+            result.record("cleanup", completed=True)
+            if mode != "failure":
+                raise ValueError(secret)
+
+    task = asyncio.create_task(
+        stress.run_stress(
+            stress.RunConfig(iterations=1, scenario_timeout=0.02), {("web", "read"): scenario}
+        )
+    )
+    await started.wait()
+    if mode == "interruption":
+        task.cancel()
+    report = await task
+    assert not report["summary"]["ok"]
+    assert "SENTINEL_CAPABILITY" not in json.dumps(report)
+    operation = report["operations"][0]
+    if mode == "failure":
+        assert operation["error"] == "RuntimeError"
+    else:
+        assert operation["cleanup_error"] == "ValueError"
+
+
+def test_unhandled_background_exception_diagnostics_hide_capabilities(capsys) -> None:
+    secret = "SENTINEL_BACKGROUND_CAPABILITY"
+
+    async def child() -> None:
+        raise RuntimeError(secret)
+
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        asyncio.create_task(child(), name=secret)
+        await asyncio.sleep(0)
+        return await _passing(name, operation_id=operation_id, result=result)
+
+    report = stress._run_cli(stress.RunConfig(iterations=1), {("web", "read"): scenario})
+    assert not report["summary"]["ok"]
+    assert report["failures"] == ["event loop error: RuntimeError"]
+    assert secret not in json.dumps(report)
+    assert secret not in capsys.readouterr().err

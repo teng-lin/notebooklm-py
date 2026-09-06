@@ -163,7 +163,6 @@ def _record_error(result: ScenarioResult, exc: BaseException | None) -> None:
     result.record(
         "outcome",
         error=None if exc is None else type(exc).__name__,
-        message=None if exc is None else str(exc),
     )
 
 
