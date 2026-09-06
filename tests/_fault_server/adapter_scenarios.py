@@ -9,25 +9,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
+import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import httpx
-from click.testing import CliRunner
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-from notebooklm._app.errors import unconfirmed_hint
-from notebooklm.cli import helpers as cli_helpers
 from notebooklm.mcp.server import create_server
-from notebooklm.notebooklm_cli import cli
 from notebooklm.server.app import create_app
 
 from .common import ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route
-from .web import build_fault_client, list_response, synthetic_auth
+from .web import build_fault_client, list_response
 
 _READ = Route.rpc("wXbhsf")
 _CREATE = Route.rpc("CCqFvf")
@@ -163,7 +162,8 @@ async def _rest_read(result: ScenarioResult) -> None:
             "adapter_outcome",
             adapter="rest",
             status=response.status_code,
-            body=body,
+            category=body.get("error", {}).get("category"),
+            retriable=body.get("error", {}).get("retriable"),
             preflight_status=before.status_code,
             recovery_status=recovered.status_code,
         )
@@ -203,7 +203,10 @@ async def _rest_create(result: ScenarioResult) -> None:
             "adapter_outcome",
             adapter="rest",
             status=response.status_code,
-            body=body,
+            category=error.get("category"),
+            retriable=error.get("retriable"),
+            unconfirmed=error.get("unconfirmed"),
+            commit_state=error.get("commit_state"),
             preflight_status=before.status_code,
             recovery_status=recovered.status_code,
         )
@@ -239,7 +242,12 @@ async def _mcp_read(result: ScenarioResult) -> None:
                 error = exc
             recovered = await caller.call_tool("notebook_list", {})
         message = "" if error is None else str(error)
-        result.record("adapter_outcome", adapter="mcp", error=message)
+        result.record(
+            "adapter_outcome",
+            adapter="mcp",
+            code=message.partition(":")[0],
+            retriable="retriable=true" in message,
+        )
         result.require("mcp_read_tool_error", error is not None)
         result.require("mcp_read_code", message.startswith("SERVER:"))
         result.require("mcp_read_retriable", "retriable=true" in message)
@@ -268,7 +276,13 @@ async def _mcp_create(result: ScenarioResult) -> None:
                 error = exc
             recovered = await caller.call_tool("notebook_list", {})
         message = "" if error is None else str(error)
-        result.record("adapter_outcome", adapter="mcp", error=message)
+        result.record(
+            "adapter_outcome",
+            adapter="mcp",
+            code=message.partition(":")[0],
+            retriable="retriable=true" in message,
+            unconfirmed="unconfirmed=true" in message,
+        )
         result.require("mcp_create_tool_error", error is not None)
         result.require("mcp_create_code", message.startswith("RPC:"))
         result.require("mcp_create_not_retriable", "retriable=false" in message)
@@ -290,93 +304,81 @@ async def _mcp_create(result: ScenarioResult) -> None:
 
 
 async def _run_cli(
-    args: list[str],
-    factory: Callable[[], AsyncIterator[Any]],
-) -> Any:
-    # CLI commands own their own event loop. Run them in a worker thread so the
-    # loopback fault server continues serving the real client socket on this loop.
-    def factory_ignoring_auth(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
-        return factory()
+    scenario: str,
+) -> dict[str, Any]:
+    """Run Click in an isolated process, where its global stdio/auth patches are safe.
 
-    with patch.object(cli_helpers, "get_auth_tokens", return_value=synthetic_auth()):
-        return await asyncio.to_thread(
-            CliRunner().invoke,
-            cli,
-            args,
-            obj={"client_factory": factory_ignoring_auth},
+    ``CliRunner`` replaces process-global streams.  The child owns both its
+    loopback server and its one worker thread, so no stress cohort can observe
+    its test-only authentication patch or its Click stream replacement.
+    """
+    with tempfile.TemporaryDirectory(prefix="notebooklm-adapter-cli-") as directory:
+        report = Path(directory) / "result.json"
+        command = [
+            sys.executable,
+            "-m",
+            "tests._fault_server.adapter_cli_worker",
+            "--scenario",
+            scenario,
+            "--report",
+            str(report),
+        ]
+        completed = await asyncio.to_thread(
+            subprocess.run,
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=6.0,
         )
+        if completed.returncode != 0 or not report.is_file():
+            raise AssertionError("isolated CLI fault worker did not produce a report")
+        return json.loads(report.read_text(encoding="utf-8"))
 
 
 async def _cli_read(result: ScenarioResult) -> None:
-    async with _fault_server(result, _enqueue_read) as server:
-        opened: list[Any] = []
-        before = await _run_cli(
-            ["list", "--json"],
-            _client_factory(server, opened, server_retries=0),
-        )
-        recovery: list[str] = []
-        outcome = await _run_cli(
-            ["list", "--json"],
-            _client_factory(server, opened, server_retries=0, recovery=recovery),
-        )
-        before_body = json.loads(before.output)
-        body = json.loads(outcome.output)
-        result.record(
-            "adapter_outcome",
-            adapter="cli",
-            exit_code=outcome.exit_code,
-            body=body,
-            preflight_exit=before.exit_code,
-            recovery_ids=recovery,
-        )
-        result.require(
-            "cli_read_preflight_decoded", before_body["notebooks"][0]["id"] == "nb-before"
-        )
-        result.require("cli_read_exit", outcome.exit_code == 1)
-        result.require("cli_read_code", body.get("code") == "NOTEBOOKLM_ERROR")
-        result.require("cli_read_fault_sent_once", len(server.journal) == 3)
-        result.require("cli_read_same_client_recovery", recovery == ["nb-recovered"])
-        _require_client_closed(result, opened, count=2)
+    worker = await _run_cli("read")
+    result.record("http_trace", requests=worker["http_trace"], committed=worker["committed"])
+    result.record(
+        "adapter_outcome",
+        adapter="cli",
+        exit_code=worker["exit_code"],
+        code=worker["code"],
+        preflight_exit=worker["preflight_exit"],
+        recovery_ids=worker["recovery_ids"],
+    )
+    result.require("cli_read_preflight_decoded", worker["preflight_id"] == "nb-before")
+    result.require("cli_read_exit", worker["exit_code"] == 1)
+    result.require("cli_read_code", worker["code"] == "NOTEBOOKLM_ERROR")
+    result.require("cli_read_fault_sent_once", worker["request_count"] == 3)
+    result.require("cli_read_same_client_recovery", worker["recovery_ids"] == ["nb-recovered"])
+    result.require("cli_read_worker_cleanup", worker["clean"] is True)
 
 
 async def _cli_create(result: ScenarioResult) -> None:
-    async with _fault_server(result, _enqueue_create) as server:
-        opened: list[Any] = []
-        before = await _run_cli(
-            ["list", "--json"],
-            _client_factory(server, opened, server_retries=0),
-        )
-        recovery: list[str] = []
-        outcome = await _run_cli(
-            ["create", "Committed once", "--json"],
-            _client_factory(server, opened, server_retries=5, recovery=recovery),
-        )
-        before_body = json.loads(before.output)
-        body = json.loads(outcome.output)
-        hint = str(body.get("hint", ""))
-        result.record(
-            "adapter_outcome",
-            adapter="cli",
-            exit_code=outcome.exit_code,
-            body=body,
-            preflight_exit=before.exit_code,
-            recovery_ids=recovery,
-        )
-        result.require(
-            "cli_create_preflight_decoded", before_body["notebooks"][0]["id"] == "nb-before"
-        )
-        result.require("cli_create_exit", outcome.exit_code == 1)
-        result.require("cli_create_code", body.get("code") == "UNCONFIRMED_WRITE")
-        result.require("cli_create_unconfirmed", body.get("unconfirmed") is True)
-        result.require("cli_create_unknown_commit", body.get("commit_state") == "unknown")
-        result.require("cli_create_hint", hint == unconfirmed_hint(None))
-        result.require(
-            "cli_create_sent_once",
-            len([row for row in server.journal if row.route == _CREATE]) == 1,
-        )
-        result.require("cli_create_committed_once", server.committed == ["nb-committed"])
-        result.require("cli_create_same_client_recovery", recovery == ["nb-recovered"])
-        _require_client_closed(result, opened, count=2)
+    worker = await _run_cli("create")
+    result.record("http_trace", requests=worker["http_trace"], committed=worker["committed"])
+    result.record(
+        "adapter_outcome",
+        adapter="cli",
+        exit_code=worker["exit_code"],
+        code=worker["code"],
+        unconfirmed=worker["unconfirmed"],
+        commit_state=worker["commit_state"],
+        hint_is_unconfirmed=worker["hint_is_unconfirmed"],
+        preflight_exit=worker["preflight_exit"],
+        recovery_ids=worker["recovery_ids"],
+    )
+    result.require("cli_create_preflight_decoded", worker["preflight_id"] == "nb-before")
+    result.require("cli_create_exit", worker["exit_code"] == 1)
+    result.require("cli_create_code", worker["code"] == "UNCONFIRMED_WRITE")
+    result.require("cli_create_unconfirmed", worker["unconfirmed"] is True)
+    result.require("cli_create_unknown_commit", worker["commit_state"] == "unknown")
+    result.require("cli_create_hint", worker["hint_is_unconfirmed"] is True)
+    result.require("cli_create_sent_once", worker["create_requests"] == 1)
+    result.require("cli_create_committed_once", worker["committed"] == ["nb-committed"])
+    result.require("cli_create_same_client_recovery", worker["recovery_ids"] == ["nb-recovered"])
+    result.require("cli_create_worker_cleanup", worker["clean"] is True)
 
 
 _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
