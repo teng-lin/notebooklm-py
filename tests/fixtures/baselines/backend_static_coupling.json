@@ -2255,7 +2255,7 @@
     },
     {
       "kind": "from",
-      "lineno": 9,
+      "lineno": 13,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.generation_requests",
@@ -2264,7 +2264,7 @@
     },
     {
       "kind": "from",
-      "lineno": 10,
+      "lineno": 14,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.generation_requests",
@@ -9707,7 +9707,7 @@
     },
     {
       "kind": "from",
-      "lineno": 28,
+      "lineno": 29,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9716,7 +9716,7 @@
     },
     {
       "kind": "from",
-      "lineno": 29,
+      "lineno": 30,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9725,7 +9725,7 @@
     },
     {
       "kind": "from",
-      "lineno": 30,
+      "lineno": 31,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9734,7 +9734,7 @@
     },
     {
       "kind": "from",
-      "lineno": 31,
+      "lineno": 32,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9743,7 +9743,7 @@
     },
     {
       "kind": "from",
-      "lineno": 32,
+      "lineno": 33,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9752,7 +9752,7 @@
     },
     {
       "kind": "from",
-      "lineno": 33,
+      "lineno": 34,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9761,7 +9761,7 @@
     },
     {
       "kind": "from",
-      "lineno": 34,
+      "lineno": 35,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9770,7 +9770,7 @@
     },
     {
       "kind": "from",
-      "lineno": 35,
+      "lineno": 36,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9779,7 +9779,7 @@
     },
     {
       "kind": "from",
-      "lineno": 36,
+      "lineno": 37,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9788,7 +9788,7 @@
     },
     {
       "kind": "from",
-      "lineno": 37,
+      "lineno": 38,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -9797,16 +9797,7 @@
     },
     {
       "kind": "from",
-      "lineno": 48,
-      "scope": null,
-      "scope_kind": "module",
-      "source": "notebooklm.mcp.tools.studio",
-      "target": "notebooklm.types",
-      "type_only": false
-    },
-    {
-      "kind": "from",
-      "lineno": 102,
+      "lineno": 88,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.studio",
@@ -10621,7 +10612,7 @@
       "modules": 53
     },
     "app": {
-      "lines": 12602,
+      "lines": 13040,
       "modules": 39
     },
     "auth": {
@@ -10633,7 +10624,7 @@
       "modules": 75
     },
     "mcp": {
-      "lines": 11065,
+      "lines": 10846,
       "modules": 38
     },
     "root": {
@@ -10649,7 +10640,7 @@
       "modules": 10
     },
     "server": {
-      "lines": 4073,
+      "lines": 3871,
       "modules": 19
     },
     "types": {
@@ -10662,13 +10653,13 @@
     }
   },
   "summary": {
-    "authored_lines": 147431,
+    "authored_lines": 147448,
     "authored_modules": 459,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1168,
+    "cross_subsystem_edges": 1167,
     "dynamic_import_calls": 10,
     "function_local_edges": 79,
-    "module_level_edges": 1089,
+    "module_level_edges": 1088,
     "type_only_edges": 133
   },
   "version": 1
