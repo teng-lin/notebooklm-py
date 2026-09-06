@@ -721,6 +721,7 @@ class CallSupervisor(LoopBoundPrimitive):
         *,
         expected_epoch: int | None = None,
         timeout: float | None | object = _OPERATION_TIMEOUT_UNSET,
+        _absolute_deadline: float | None = None,
     ) -> AsyncIterator[OperationLease]:
         """Hold admission across a complete multi-call workflow."""
         parent = current_operation_context(self)
@@ -730,6 +731,7 @@ class CallSupervisor(LoopBoundPrimitive):
             token = await self._admit(label, expected_epoch=expected_epoch)
             lease = OperationLease(epoch=token.generation.epoch, context=parent, _token=token)
             async with self._settle_operation_token(token):
+                self._run_operation_scope_body(label, expected_epoch, parent)
                 yield lease
             return
 
@@ -744,11 +746,14 @@ class CallSupervisor(LoopBoundPrimitive):
             label=label,
             timeout=resolved_timeout,
             parent=parent,
+            absolute_deadline=_absolute_deadline,
         )
         with activate_operation_context(context):
+            self._run_operation_scope_body(label, expected_epoch, context)
             token = await self._admit(label, expected_epoch=expected_epoch)
             lease = OperationLease(epoch=token.generation.epoch, context=context, _token=token)
             async with self._settle_operation_token(token):
+                self._run_operation_scope_body(label, expected_epoch, context)
                 yield lease
 
     def _run_operation_scope_body(

@@ -62,12 +62,10 @@ class OperationContext:
         """Attach the complete workflow snapshot without erasing richer evidence."""
 
         existing = getattr(error, "operation_metadata", None)
-        primary = self.entries[0] if self.entries else None
-        if primary is not None:
+        if self.entries:
             attach_operation_journal(
                 error,
                 self.journal,
-                primary=primary,
                 extra_entries=tuple(self.entries),
             )
         elif existing is None:
@@ -167,8 +165,11 @@ def _absolute_deadline(
     loop: asyncio.AbstractEventLoop,
     timeout: float | None,
     parent: OperationContext | None,
+    supplied: float | None,
 ) -> float | None:
     candidate = None if timeout is None else loop.time() + timeout
+    if supplied is not None:
+        candidate = supplied if candidate is None else min(candidate, supplied)
     if parent is None or parent.absolute_deadline is None:
         return candidate
     if candidate is None:
@@ -183,6 +184,7 @@ def create_operation_context(
     label: str,
     timeout: float | None,
     parent: OperationContext | None = None,
+    absolute_deadline: float | None = None,
 ) -> OperationContext:
     """Create a same-task context, sharing evidence with an explicit parent."""
 
@@ -211,7 +213,7 @@ def create_operation_context(
         epoch=epoch,
         owner_task=task,
         label=label,
-        absolute_deadline=_absolute_deadline(loop, timeout, parent),
+        absolute_deadline=_absolute_deadline(loop, timeout, parent, absolute_deadline),
         journal=journal,
         entries=entries,
     )
@@ -280,12 +282,15 @@ def activate_operation_context(context: OperationContext) -> Iterator[OperationC
         # Settlement may consume the timer's CancelledError while preserving a
         # body exception. Remove exactly our request so TaskGroup/timeout does
         # not observe a phantom external cancellation on Python 3.11+.
+        remaining_after_owned_cancel: int | None = None
         if fired and not owned_cancel_removed:
             uncancel = getattr(context.owner_task, "uncancel", None)
             if callable(uncancel):
-                uncancel()
+                remaining_after_owned_cancel = uncancel()
         if fired and caught is None:
             if _generation_retired(context):
+                raise asyncio.CancelledError
+            if remaining_after_owned_cancel is not None and remaining_after_owned_cancel > 0:
                 raise asyncio.CancelledError
             raise operation_timeout_error(context)
 

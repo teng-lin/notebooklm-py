@@ -14,7 +14,7 @@ from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._artifact.polling import ArtifactPollingService
 from notebooklm._auth.single_flight import SingleFlight
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._idempotency import OperationJournal
+from notebooklm._idempotency import OperationJournal, attach_journal_entry
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._runtime.operation_context import (
     adopt_operation_journal_entry,
@@ -130,6 +130,50 @@ async def test_one_workflow_journal_retains_distinct_semantic_invocations() -> N
         assert lease.context.journal.entries == (first, second)
 
 
+async def test_workflow_aggregation_selects_escaping_send_without_mutating_first_leaf() -> None:
+    supervisor = _supervisor()
+    failure = RPCError("second response was lost")
+
+    with pytest.raises(RPCError) as caught:
+        async with supervisor.operation_scope("client.operation"):
+            first = adopt_operation_journal_entry(
+                supervisor,
+                method="CREATE_NOTEBOOK",
+                operation="notebooks.create",
+            )
+            second = adopt_operation_journal_entry(
+                supervisor,
+                method="ADD_SOURCE",
+                operation="sources.add_url",
+            )
+            assert first is not None and second is not None
+            first.mark_dispatched()
+            first.record(
+                CommitState.CONFIRMED,
+                "decoded first response",
+                known_resource_ids=("notebook-1",),
+            )
+            second.source_id = "source-2"
+            second.remember_resource_ids("source-2")
+            second.mark_dispatched()
+            attach_journal_entry(failure, second)
+            escaping = failure.operation_metadata
+            raise failure
+
+    metadata = caught.value.operation_metadata
+    assert metadata is not None
+    assert metadata.invocation_id == second.identity.invocation_id
+    assert metadata.operation == "sources.add_url"
+    assert metadata.source_id == "source-2"
+    assert metadata.known_resource_ids == ("notebook-1", "source-2")
+    assert metadata.entries[0] == first.snapshot()
+    assert metadata.entries[0].source_id is None
+    assert metadata.entries[0].known_resource_ids == ("notebook-1",)
+    assert metadata.entries[1] is escaping
+    assert metadata.entries[1] == second.snapshot()
+    assert metadata.entries[1].known_resource_ids == ("source-2",)
+
+
 async def test_swallowed_owned_cancellation_still_raises_timeout() -> None:
     supervisor = _supervisor()
 
@@ -142,6 +186,30 @@ async def test_swallowed_owned_cancellation_still_raises_timeout() -> None:
     cancelling = getattr(asyncio.current_task(), "cancelling", None)
     if callable(cancelling):
         assert cancelling() == 0
+
+
+@pytest.mark.skipif(
+    not hasattr(asyncio.Task, "uncancel"),
+    reason="concurrent cancellation accounting is available on Python 3.11+",
+)
+async def test_swallowed_deadline_with_same_tick_external_cancel_stays_cancelled() -> None:
+    supervisor = _supervisor()
+    task = asyncio.current_task()
+    assert task is not None
+
+    with pytest.raises(asyncio.CancelledError):
+        async with supervisor.operation_scope("concurrent", timeout=0.02) as lease:
+            assert lease.context.absolute_deadline is not None
+            lease.context.loop.call_at(lease.context.absolute_deadline, task.cancel)
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                pass
+
+    # The operation context removed exactly its own request. The remaining
+    # count belongs to the deliberately injected external cancellation.
+    assert task.cancelling() == 1
+    assert task.uncancel() == 0
 
 
 async def test_retired_generation_wins_when_deadline_cancellation_is_swallowed() -> None:
@@ -369,6 +437,55 @@ async def test_poll_follower_with_identical_effective_knobs_is_silent() -> None:
     assert caught == []
     release.set()
     await asyncio.gather(leader, follower)
+
+
+async def test_poll_leader_survives_first_waiters_operation_deadline() -> None:
+    supervisor = _supervisor()
+    service = ArtifactPollingService(supervisor=supervisor)
+    poll_started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _poll(_notebook_id: str, task_id: str) -> GenerationStatus:
+        poll_started.set()
+        await release.wait()
+        return GenerationStatus(task_id=task_id, status="completed")
+
+    async def _first_waiter() -> GenerationStatus:
+        async with supervisor.operation_scope("first waiter", timeout=0.05):
+            return await service.wait_for_completion(
+                "nb",
+                "shared-task",
+                timeout=10.0,
+                poll_status=_poll,
+            )
+
+    first = asyncio.create_task(_first_waiter())
+    await poll_started.wait()
+    pending = service.poll_registry.get(("nb", "shared-task"))
+    assert pending is not None
+    _future, poll_task = pending
+    while poll_task is None:
+        await asyncio.sleep(0)
+        pending = service.poll_registry.get(("nb", "shared-task"))
+        assert pending is not None
+        _future, poll_task = pending
+    assert poll_task is not None
+    follower = asyncio.create_task(
+        service.wait_for_completion(
+            "nb",
+            "shared-task",
+            timeout=10.0,
+            poll_status=_poll,
+        )
+    )
+    await asyncio.sleep(0)
+
+    with pytest.raises(OperationTimeoutError):
+        await first
+    assert not poll_task.done()
+
+    release.set()
+    assert (await follower).status == "completed"
 
 
 async def test_operation_timeout_detaches_from_shared_auth_producer() -> None:

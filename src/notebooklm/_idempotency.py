@@ -261,6 +261,7 @@ class OperationJournal:
         entry: JournalEntry | None = None,
         *,
         primary: JournalEntry | None = None,
+        primary_metadata: OperationMetadata | None = None,
         extra_entries: tuple[JournalEntry, ...] = (),
     ) -> OperationMetadata:
         """Freeze one entry or an aggregate of every semantic workflow send."""
@@ -278,7 +279,16 @@ class OperationJournal:
         if primary is not None and not any(primary is item for item in all_entries):
             raise ValueError("primary entry does not belong to the workflow snapshot")
         selected = primary or all_entries[0]
-        leaves = tuple(item._journal._entry_snapshot(item) for item in all_entries)
+        if primary_metadata is not None and (
+            primary is None or primary_metadata.invocation_id != primary.identity.invocation_id
+        ):
+            raise ValueError("primary metadata does not match the selected journal entry")
+        leaves = tuple(
+            primary_metadata
+            if primary_metadata is not None and item is primary
+            else item._journal._entry_snapshot(item)
+            for item in all_entries
+        )
         mutation_leaves = (
             tuple(
                 leaf
@@ -297,7 +307,11 @@ class OperationJournal:
             if CommitState.REJECTED in states
             else CommitState.NOT_SENT
         )
-        selected_leaf = selected._journal._entry_snapshot(selected)
+        selected_leaf = (
+            primary_metadata
+            if primary_metadata is not None
+            else selected._journal._entry_snapshot(selected)
+        )
         return replace(
             selected_leaf,
             commit_state=state,
@@ -506,18 +520,60 @@ def attach_operation_journal(
     """Attach an immutable workflow-wide aggregate while preserving every send."""
 
     existing = getattr(exc, "operation_metadata", None)
-    if existing is not None and primary is not None:
-        primary.remember_resource_ids(*existing.known_resource_ids)
-        primary.source_id = primary.source_id or existing.source_id
-        primary.stage = primary.stage or existing.stage
-        primary.reconciliation = primary.reconciliation or existing.reconciliation
-        primary.batch_outcome = primary.batch_outcome or existing.batch_outcome
-        primary.prerequisite_ids = tuple(
-            dict.fromkeys((*primary.prerequisite_ids, *existing.prerequisite_ids))
+    exact_primary_metadata: OperationMetadata | None = None
+    if existing is not None and existing.invocation_id is not None:
+        escaping_leaf = next(
+            (
+                leaf
+                for leaf in existing.entries
+                if leaf.invocation_id == existing.invocation_id
+                and (existing.operation is None or leaf.operation == existing.operation)
+                and (existing.method is None or leaf.method == existing.method)
+                and (existing.phase is None or leaf.phase == existing.phase)
+                and (existing.member is None or leaf.member == existing.member)
+            ),
+            existing,
         )
-        if primary.recovery_action is RecoveryAction.NONE:
-            primary.recovery_action = existing.recovery_action
-    metadata = journal.snapshot(primary=primary, extra_entries=extra_entries)
+        candidates = (*journal.entries, *extra_entries)
+        matched = next(
+            (
+                entry
+                for entry in candidates
+                if entry.identity.invocation_id == existing.invocation_id
+                and (existing.operation is None or entry.identity.operation == existing.operation)
+                and (existing.method is None or entry.identity.method == existing.method)
+                and (existing.phase is None or entry.identity.phase == existing.phase)
+                and (existing.member is None or entry.identity.member == existing.member)
+            ),
+            None,
+        )
+        if matched is not None:
+            primary = matched
+            exact_primary_metadata = escaping_leaf
+    metadata = journal.snapshot(
+        primary=primary,
+        primary_metadata=exact_primary_metadata,
+        extra_entries=extra_entries,
+    )
+    if existing is not None and exact_primary_metadata is None:
+        metadata = replace(
+            metadata,
+            known_resource_ids=tuple(
+                dict.fromkeys((*metadata.known_resource_ids, *existing.known_resource_ids))
+            ),
+            source_id=metadata.source_id or existing.source_id,
+            stage=metadata.stage or existing.stage,
+            reconciliation=metadata.reconciliation or existing.reconciliation,
+            batch_outcome=metadata.batch_outcome or existing.batch_outcome,
+            prerequisite_ids=tuple(
+                dict.fromkeys((*metadata.prerequisite_ids, *existing.prerequisite_ids))
+            ),
+            recovery_action=(
+                existing.recovery_action
+                if metadata.recovery_action is RecoveryAction.NONE
+                else metadata.recovery_action
+            ),
+        )
     if recovery_action is not None:
         metadata = replace(metadata, recovery_action=recovery_action)
     return attach_operation_metadata(exc, metadata)

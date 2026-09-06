@@ -38,6 +38,7 @@ async def _client_operation(
     timeout: float | None,
     *,
     expected_epoch: int,
+    absolute_deadline: float | None = None,
 ) -> AsyncIterator[Any]:
     """Create a fresh server-owned client operation for detached adapter work."""
 
@@ -48,7 +49,10 @@ async def _client_operation(
             yield lease
         return
     async with operation_scope(
-        "detached adapter operation", timeout=timeout, expected_epoch=expected_epoch
+        "detached adapter operation",
+        timeout=timeout,
+        expected_epoch=expected_epoch,
+        _absolute_deadline=absolute_deadline,
     ) as lease:
         yield lease
 

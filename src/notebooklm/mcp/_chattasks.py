@@ -50,7 +50,7 @@ import os
 import secrets
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from .._adapter_support import (
@@ -182,6 +182,7 @@ class ChatTaskEntry:
     done_wall: float | None = None
     accepted_epoch: int | None = None
     absolute_deadline: float | None = None
+    cancel_requested: bool = field(default=False, repr=False)
 
 
 class ChatTaskRegistry(LoopBoundPrimitive):
@@ -291,32 +292,39 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         is recorded then re-raised, per asyncio's cancellation contract.
         """
         task = asyncio.current_task()
-        deadline_fired = False
+        queue_deadline_fired = False
 
         def _expire() -> None:
-            nonlocal deadline_fired
-            deadline_fired = True
+            nonlocal queue_deadline_fired
+            queue_deadline_fired = True
             if task is not None:
                 task.cancel()
 
-        timer = (
+        queue_timer = (
             None
             if entry.absolute_deadline is None
             else asyncio.get_running_loop().call_at(entry.absolute_deadline, _expire)
         )
         try:
             async with self._gate:
+                # The registry owns only the pacing-queue cancellation. Once a
+                # slot is held, a fresh supervisor operation owns the exact
+                # remainder of the acceptance-time budget and its metadata.
+                if queue_timer is not None:
+                    queue_timer.cancel()
+                    queue_timer = None
                 if client is not None and entry.accepted_epoch != client_generation_epoch(client):
                     raise RuntimeError("detached chat job belongs to a retired client generation")
                 loop = asyncio.get_running_loop()
-                entry.started_at = loop.time()
+                acquired_at = loop.time()
                 remaining = (
                     None
                     if entry.absolute_deadline is None
-                    else max(0.0, entry.absolute_deadline - entry.started_at)
+                    else max(0.0, entry.absolute_deadline - acquired_at)
                 )
                 if remaining == 0.0:
                     raise OperationTimeoutError("detached chat job expired in the registry queue")
+                entry.started_at = acquired_at
                 if client is None:
                     entry.result = await coro_factory()
                 else:
@@ -325,13 +333,19 @@ class ChatTaskRegistry(LoopBoundPrimitive):
                         client,
                         remaining,
                         expected_epoch=entry.accepted_epoch,
+                        absolute_deadline=entry.absolute_deadline,
                     ):
                         entry.result = await coro_factory()
         except asyncio.CancelledError:
-            if deadline_fired:
+            remaining_cancels: int | None = None
+            if queue_deadline_fired:
                 uncancel = getattr(task, "uncancel", None)
                 if callable(uncancel):
-                    uncancel()
+                    remaining_cancels = uncancel()
+            if entry.cancel_requested or (remaining_cancels is not None and remaining_cancels > 0):
+                entry.error = asyncio.CancelledError("chat task cancelled")
+                raise
+            if queue_deadline_fired:
                 entry.error = OperationTimeoutError(
                     "detached chat job exceeded NOTEBOOKLM_MCP_CHAT_JOB_TIMEOUT"
                 )
@@ -341,8 +355,8 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         except Exception as exc:  # noqa: BLE001 - terminal outcome capture, projected at read time
             entry.error = exc
         finally:
-            if timer is not None:
-                timer.cancel()
+            if queue_timer is not None:
+                queue_timer.cancel()
             if entry.result is None and entry.error is None:
                 # Only reachable while a non-Exception BaseException (SystemExit /
                 # KeyboardInterrupt) propagates — never report a bare "completed".
@@ -456,6 +470,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         entry = self.status(task_id)
         if entry is None or entry.done_at is not None or entry.task is None:
             return False
+        entry.cancel_requested = True
         entry.task.cancel()
         await asyncio.gather(entry.task, return_exceptions=True)
         if entry.done_at is None:
@@ -476,6 +491,7 @@ class ChatTaskRegistry(LoopBoundPrimitive):
         running = [e for e in self._tasks.values() if e.done_at is None and e.task is not None]
         for entry in running:
             assert entry.task is not None  # filtered above; narrows for mypy
+            entry.cancel_requested = True
             entry.task.cancel()
         if running:
             await asyncio.gather(*(e.task for e in running if e.task), return_exceptions=True)

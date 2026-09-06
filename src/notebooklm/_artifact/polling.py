@@ -271,6 +271,7 @@ class ArtifactPollingService:
             poll_task = await self._supervisor.spawn_child(
                 f"artifact-poll-{notebook_id}-{task_id}",
                 _leader,
+                inherit_operation=False,
             )
         except BaseException:
             self._poll_registry.pop(key)
