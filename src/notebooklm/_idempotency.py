@@ -278,7 +278,7 @@ class OperationJournal:
             return OperationMetadata(operation=self.operation)
         if primary is not None and not any(primary is item for item in all_entries):
             raise ValueError("primary entry does not belong to the workflow snapshot")
-        selected = primary or all_entries[0]
+        selected = primary or next(iter(all_entries))
         if primary_metadata is not None and (
             primary is None or primary_metadata.invocation_id != primary.identity.invocation_id
         ):
@@ -656,8 +656,8 @@ def claim_generation_entry(*, method: str, semantic_key: str) -> JournalEntry:
     """Claim or allocate the semantic send used by one backend generation."""
 
     task = asyncio.current_task()
-    stack = _GENERATION_BINDINGS.get()
-    binding = stack[-1] if stack and stack[-1].owner_task is task else None
+    binding = next(reversed(_GENERATION_BINDINGS.get()), None)
+    binding = binding if binding is None or binding.owner_task is task else None
     if binding is None:
         journal = OperationJournal("artifacts.generate")
         return journal.new_entry(method=method)
@@ -669,7 +669,7 @@ def claim_generation_entry(*, method: str, semantic_key: str) -> JournalEntry:
             ancestor.linked_entries.append(entry)
         return entry
     if binding.semantic_key == semantic_key and binding.entries:
-        return binding.entries[0]
+        return next(iter(binding.entries))
     binding.replay_disabled = True
     entry = binding.journal.new_entry(method=method, operation="artifacts.generate")
     binding.entries.append(entry)

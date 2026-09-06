@@ -56,7 +56,7 @@ def _assert_open_generation(core) -> int:
     """Return the lifecycle-created epoch after proving every owner agrees."""
     collaborators = core._collaborators
     web = core._web_runtime
-    lifecycle = collaborators.lifecycle
+    lifecycle = core._lifecycle
     generation = collaborators.call_supervisor._current
 
     assert lifecycle.is_open()
