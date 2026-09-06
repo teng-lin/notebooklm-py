@@ -3,11 +3,9 @@
 This is the executor half of the Click-free ``generate`` core: it owns the
 end-to-end :func:`execute_generation` dispatcher, the ``kind`` → API-method
 map, the per-kind call-kwargs builder, and the typed
-:class:`GenerationExecutionResult`. The plan-building half lives in
-:mod:`notebooklm._app.generate_plans` and the retry/wait half in
-:mod:`notebooklm._app.generate_retry`; this module re-exports their public
-surface so ``_app.generate`` stays the single import point each transport
-adapter (the Click CLI today, the FastMCP server / future HTTP later) drives.
+:class:`GenerationExecutionResult`. Frozen requests live in the sibling
+:mod:`notebooklm._app.generation_requests`; retry/wait orchestration lives in
+:mod:`notebooklm._app.generate_retry`.
 
 Two boundary seams are worth calling out:
 
@@ -35,33 +33,45 @@ This module is transport-neutral — no ``click`` / ``rich`` / ``cli`` /
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from ..types import MindMapKind
-from .generate_plans import (
-    GenerationKind,
-    GenerationPlan,
-    GenerationPlanValidationError,
-    NotebookResolver,
-    SourceResolver,
-    build_generation_plan,
-)
+from ..types import MindMap, MindMapKind, MindMapResult
 from .generate_retry import (
     RETRY_BACKOFF_MULTIPLIER,
     RETRY_INITIAL_DELAY,
     RETRY_MAX_DELAY,
     GenerationOutcome,
+    GenerationWaitStarted,
     calculate_backoff_delay,
     generate_with_retry,
     generation_outcome_from_status,
     handle_generation_result,
 )
+from .generation_requests import (
+    UNSET,
+    AudioGenerationRequest,
+    CinematicVideoGenerationRequest,
+    DataTableGenerationRequest,
+    FlashcardsGenerationRequest,
+    GenerationKind,
+    GenerationRequest,
+    InfographicGenerationRequest,
+    MindMapGenerationRequest,
+    QuizGenerationRequest,
+    ReportGenerationRequest,
+    ReviseSlideGenerationRequest,
+    SlideDeckGenerationRequest,
+    VideoGenerationRequest,
+)
 
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
+
+NotebookResolver = Callable[["NotebookLMClient", str], Awaitable[str]]
+SourceResolver = Callable[["NotebookLMClient", str, tuple[str, ...]], Awaitable[list[str] | None]]
 
 
 @dataclass(frozen=True)
@@ -69,9 +79,8 @@ class GenerationExecutionResult:
     """Typed generation executor result for command-layer rendering."""
 
     kind: GenerationKind
-    display_name: str
     generation: GenerationOutcome | None = None
-    mind_map: Any = None
+    mind_map: MindMap | MindMapResult | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -94,80 +103,77 @@ _KIND_TO_METHOD: Mapping[str, str] = {
 }
 
 
-def _build_call_kwargs(plan: GenerationPlan, *, notebook_id: str, sources: Any) -> dict[str, Any]:
-    """Build the kwargs dict passed to ``client.artifacts.<method>(notebook_id, **kwargs)``.
+def _set_optional(kwargs: dict[str, Any], name: str, value: object) -> None:
+    if value is not UNSET:
+        kwargs[name] = value
 
-    Common cross-kind kwargs (``source_ids``, ``language``, ``instructions``)
-    are merged with kind-specific ``plan.params``. ``revise-slide`` and
-    ``mind-map`` have bespoke shapes handled here.
-    """
-    if plan.kind == "revise-slide":
-        # revise_slide(notebook_id, *, artifact_id, slide_index, prompt)
+
+def _build_call_kwargs(request: GenerationRequest, *, sources: list[str] | None) -> dict[str, Any]:
+    """Build call kwargs by narrowing the frozen discriminated union."""
+
+    if isinstance(request, ReviseSlideGenerationRequest):
         return {
-            "artifact_id": plan.params["artifact_id"],
-            "slide_index": plan.params["slide_index"],
-            "prompt": plan.params["prompt"],
+            "artifact_id": request.artifact_id,
+            "slide_index": request.slide_index,
+            "prompt": request.prompt,
         }
-
-    if plan.kind == "mind-map":
-        return {
-            "source_ids": sources,
-            "language": plan.language,
-            "instructions": plan.params.get("instructions"),
-        }
-
-    if plan.kind == "cinematic-video":
-        # cinematic-video API: (notebook_id, *, source_ids, language, instructions)
-        return {
-            "source_ids": sources,
-            "language": plan.language,
-            "instructions": plan.description or None,
-        }
-
     base: dict[str, Any] = {"source_ids": sources}
-
-    # Language: only kinds that accept it (plan.language not None).
-    if plan.language is not None:
-        base["language"] = plan.language
-
-    # data-table requires ``instructions``; pass ``description`` (not
-    # ``description or None``) since the Click layer enforces ``required=True``.
-    if plan.kind == "data-table":
-        base["instructions"] = plan.description
-
-    # report packs report_format, custom_prompt, extra_instructions into
-    # plan.params; it does NOT carry ``instructions``.
-    elif plan.kind == "report":
-        base["report_format"] = plan.params["report_format"]
-        base["custom_prompt"] = plan.params["custom_prompt"]
-        base["extra_instructions"] = plan.params["extra_instructions"]
-
-    else:
-        # audio / video / slide-deck / quiz / flashcards / infographic all
-        # take ``instructions = description or None``.
-        base["instructions"] = plan.description or None
-
-    # Merge kind-specific params LAST so they win on key conflicts (none in
-    # practice, but defensive).
-    base.update(
-        {
-            k: v
-            for k, v in plan.params.items()
-            if k not in ("report_format", "custom_prompt", "extra_instructions")
-        }
-    )
+    if isinstance(request, AudioGenerationRequest):
+        _set_optional(base, "language", request.language)
+        _set_optional(base, "instructions", request.instructions)
+        base["audio_format"] = request.audio_format
+        base["audio_length"] = request.audio_length
+    elif isinstance(request, VideoGenerationRequest):
+        _set_optional(base, "language", request.language)
+        _set_optional(base, "instructions", request.instructions)
+        _set_optional(base, "style_prompt", request.style_prompt)
+        base["video_format"] = request.video_format
+        base["video_style"] = request.video_style
+    elif isinstance(request, CinematicVideoGenerationRequest):
+        _set_optional(base, "language", request.language)
+        _set_optional(base, "instructions", request.instructions)
+    elif isinstance(request, SlideDeckGenerationRequest):
+        _set_optional(base, "language", request.language)
+        _set_optional(base, "instructions", request.instructions)
+        base["slide_format"] = request.slide_format
+        base["slide_length"] = request.slide_length
+    elif isinstance(request, (QuizGenerationRequest, FlashcardsGenerationRequest)):
+        _set_optional(base, "instructions", request.instructions)
+        base["quantity"] = request.quantity
+        base["difficulty"] = request.difficulty
+    elif isinstance(request, InfographicGenerationRequest):
+        _set_optional(base, "language", request.language)
+        _set_optional(base, "instructions", request.instructions)
+        base["orientation"] = request.orientation
+        base["detail_level"] = request.detail_level
+        base["style"] = request.style
+    elif isinstance(request, DataTableGenerationRequest):
+        _set_optional(base, "language", request.language)
+        base["instructions"] = request.instructions
+    elif isinstance(request, MindMapGenerationRequest):
+        _set_optional(base, "language", request.language)
+        _set_optional(base, "instructions", request.instructions)
+    elif isinstance(request, ReportGenerationRequest):
+        _set_optional(base, "language", request.language)
+        _set_optional(base, "custom_prompt", request.custom_prompt)
+        _set_optional(base, "extra_instructions", request.extra_instructions)
+        base["report_format"] = request.report_format
+    else:  # pragma: no cover - closed union exhaustiveness
+        raise AssertionError(f"unhandled generation request: {request!r}")
     return base
 
 
 async def execute_generation(
-    plan: GenerationPlan,
+    request: GenerationRequest,
     client: NotebookLMClient,
     *,
     notebook_resolver: NotebookResolver,
     source_resolver: SourceResolver,
     retry_sink: Callable[[Any], None] | None = None,
-    wait_context: Callable[[str, str], AbstractAsyncContextManager[None]] | None = None,
-    wait_start_sink: Callable[[str], None] | None = None,
+    wait_context: (
+        Callable[[GenerationWaitStarted], AbstractAsyncContextManager[None]] | None
+    ) = None,
+    wait_start_sink: Callable[[GenerationWaitStarted], None] | None = None,
     mind_map_context: Callable[[], AbstractAsyncContextManager[None]] | None = None,
 ) -> GenerationExecutionResult:
     """Drive a single generation request end-to-end.
@@ -180,25 +186,28 @@ async def execute_generation(
     retry-with-backoff loop, and returns a typed result for the command layer
     to render.
     """
-    nb_id_resolved = await notebook_resolver(client, plan.notebook_id, json_output=plan.json_output)
+    nb_id_resolved = await notebook_resolver(client, request.notebook_id)
 
-    if plan.kind == "revise-slide":
-        # revise-slide never resolves source IDs.
-        sources: Any = None
+    if isinstance(request, ReviseSlideGenerationRequest):
+        sources: list[str] | None = None
     else:
-        sources = await source_resolver(
-            client, nb_id_resolved, plan.source_ids, json_output=plan.json_output
-        )
+        source_ids = request.source_ids
+        if source_ids is UNSET:
+            sources = None
+        elif not source_ids:
+            sources = []
+        else:
+            sources = await source_resolver(client, nb_id_resolved, source_ids)
 
-    method_name = _KIND_TO_METHOD[plan.kind]
+    method_name = _KIND_TO_METHOD[request.kind]
     api_method = getattr(client.artifacts, method_name)
-    call_kwargs = _build_call_kwargs(plan, notebook_id=nb_id_resolved, sources=sources)
+    call_kwargs = _build_call_kwargs(request, sources=sources)
 
     async def _generate() -> Any:
         return await api_method(nb_id_resolved, **call_kwargs)
 
-    if plan.kind == "mind-map":
-        if plan.params.get("kind") == "interactive":
+    if isinstance(request, MindMapGenerationRequest):
+        if request.map_kind is MindMapKind.INTERACTIVE:
             # The interactive kind is a studio artifact (CREATE_ARTIFACT,
             # variant 4); route through the unified mind-map API, which polls
             # the async generation to completion and returns a MindMap whose
@@ -206,45 +215,37 @@ async def execute_generation(
             async def _generate_mind_map() -> Any:
                 return await client.mind_maps.generate(
                     nb_id_resolved,
-                    source_ids=sources,
                     kind=MindMapKind.INTERACTIVE,
-                    language=plan.language,
-                    instructions=plan.params.get("instructions"),
+                    **call_kwargs,
                 )
         else:
             _generate_mind_map = _generate
-        if plan.json_output:
+        context = mind_map_context or contextlib.nullcontext
+        async with context():
             result = await _generate_mind_map()
-        else:
-            context = mind_map_context or contextlib.nullcontext
-            async with context():
-                result = await _generate_mind_map()
         return GenerationExecutionResult(
-            kind=plan.kind,
-            display_name=plan.display_name,
+            kind=request.kind,
             mind_map=result,
         )
 
     result = await generate_with_retry(
         _generate,
-        plan.max_retries,
-        plan.display_name,
+        request.max_retries,
         on_retry=retry_sink,
     )
     outcome = await handle_generation_result(
         client,
         nb_id_resolved,
         result,
-        plan.display_name,
-        plan.wait,
-        timeout=plan.timeout,
-        interval=plan.interval,
+        request.kind,
+        request.wait,
+        timeout=request.timeout,
+        interval=request.interval,
         wait_context=wait_context,
         wait_start_sink=wait_start_sink,
     )
     return GenerationExecutionResult(
-        kind=plan.kind,
-        display_name=plan.display_name,
+        kind=request.kind,
         generation=outcome,
     )
 
@@ -256,11 +257,10 @@ __all__ = [
     "GenerationExecutionResult",
     "GenerationKind",
     "GenerationOutcome",
-    "GenerationPlan",
-    "GenerationPlanValidationError",
+    "GenerationRequest",
+    "GenerationWaitStarted",
     "NotebookResolver",
     "SourceResolver",
-    "build_generation_plan",
     "calculate_backoff_delay",
     "execute_generation",
     "generate_with_retry",

@@ -1,6 +1,6 @@
 {
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 76
+    "_DOCUMENTED_PUBLIC_IMPORTS": 77
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
@@ -95,7 +95,6 @@
     "CLEANUP_INVENTORY": 32,
     "CONSTRUCTION_SIGNATURES": 140,
     "GUARDRAIL_DISPOSITIONS": 114,
-    "PRESENTATION_INVENTORY": 168,
     "PRIVATE_DEPENDENCY_DISPOSITIONS": 33,
     "PUBLIC_OPTION_DISPOSITIONS": 66,
     "REQUIRED_WORKFLOW_ENTRYPOINT_INVENTORY": 161,
@@ -108,10 +107,8 @@
     "EXCLUDED_FROM_REQUIRED": 28
   },
   "tests/_guardrails/test_generation_kind_exhaustiveness.py": {
-    "EXPECTED_DURATION_HINT_BEHAVIOR": 22,
     "KIND_TO_PAYLOAD_BUILDERS": 23,
-    "LOC": 42,
-    "_EXECUTOR_RAW_ARGS": 32
+    "LOC": 42
   },
   "tests/_guardrails/test_golden_decode_coverage.py": {
     "GOLDEN_COVERAGE": 54

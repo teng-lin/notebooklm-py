@@ -21,7 +21,16 @@ from typing import Any
 
 from mcp.types import ToolAnnotations
 
-__all__ = ["DESTRUCTIVE", "READ_ONLY", "needs_confirmation"]
+from .._app.resolve import FULL_ID_PATTERN
+from .._deprecation import DEPRECATION_SPECS, warn_registered_deprecation
+
+__all__ = [
+    "DESTRUCTIVE",
+    "READ_ONLY",
+    "confirmed_name_deprecation",
+    "needs_confirmation",
+    "with_confirmation_deprecation",
+]
 
 #: Annotation for tools that only read state (``*_list`` / ``*_describe`` /
 #: ``*_status`` / ``server_info``). ``readOnlyHint`` lets a host skip a
@@ -45,3 +54,27 @@ def needs_confirmation(preview: dict[str, Any]) -> dict[str, Any]:
         ``{"status": "needs_confirmation", "preview": preview}``.
     """
     return {"status": "needs_confirmation", "preview": preview}
+
+
+def confirmed_name_deprecation(*references: str) -> str | None:
+    """Warn once when a confirmed call still relies on mutable name resolution.
+
+    Call this only after the normal resolver has run. In strict-ID mode that
+    resolver rejects a name before this compatibility warning can fire.
+    """
+
+    if all(FULL_ID_PATTERN.fullmatch(reference.strip()) for reference in references):
+        return None
+    warn_registered_deprecation("mcp_confirmed_name_references")
+    return DEPRECATION_SPECS["mcp_confirmed_name_references"].message
+
+
+def with_confirmation_deprecation(
+    payload: dict[str, Any],
+    deprecation: str | None,
+) -> dict[str, Any]:
+    """Add the agent-visible migration note to a confirming result only."""
+
+    if deprecation is not None:
+        payload["deprecation"] = deprecation
+    return payload

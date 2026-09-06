@@ -58,30 +58,27 @@ async def test_verify_and_set_notebook_resolves_then_gets() -> None:
     result = await verify_and_set_notebook(
         client,
         "nb_full",
-        json_output=False,
         resolve_notebook_id=resolver,
     )
 
     assert isinstance(result, UseNotebookResult)
     assert result.notebook is notebook
     assert result.resolved_id == "nb_full_123"
-    # Resolver is called with the partial id + json-output forwarding.
-    resolver.assert_awaited_once_with(client, "nb_full", json_output=False)
+    resolver.assert_awaited_once_with(client, "nb_full")
     # The resolved (not partial) id is what's verified against the server.
     client.notebooks.get.assert_awaited_once_with("nb_full_123")
 
 
 @pytest.mark.asyncio
-async def test_verify_and_set_notebook_forwards_json_output_flag() -> None:
-    """``json_output`` is forwarded so the resolver routes diagnostics to stderr."""
+async def test_verify_and_set_notebook_calls_neutral_resolver_without_presentation_flags() -> None:
     client = MagicMock()
     client.notebooks = MagicMock()
     client.notebooks.get = AsyncMock(return_value=Notebook(id="nb_1", title="t"))
     resolver = AsyncMock(return_value="nb_1")
 
-    await verify_and_set_notebook(client, "nb", json_output=True, resolve_notebook_id=resolver)
+    await verify_and_set_notebook(client, "nb", resolve_notebook_id=resolver)
 
-    resolver.assert_awaited_once_with(client, "nb", json_output=True)
+    resolver.assert_awaited_once_with(client, "nb")
 
 
 @pytest.mark.asyncio
@@ -93,7 +90,7 @@ async def test_verify_and_set_notebook_propagates_resolver_error() -> None:
     resolver = AsyncMock(side_effect=ValueError("ambiguous"))
 
     with pytest.raises(ValueError, match="ambiguous"):
-        await verify_and_set_notebook(client, "nb", json_output=False, resolve_notebook_id=resolver)
+        await verify_and_set_notebook(client, "nb", resolve_notebook_id=resolver)
     # The server is never hit when resolution fails.
     client.notebooks.get.assert_not_awaited()
 
@@ -107,7 +104,7 @@ async def test_verify_and_set_notebook_propagates_get_error() -> None:
     resolver = AsyncMock(return_value="nb_1")
 
     with pytest.raises(RuntimeError, match="not found"):
-        await verify_and_set_notebook(client, "nb", json_output=False, resolve_notebook_id=resolver)
+        await verify_and_set_notebook(client, "nb", resolve_notebook_id=resolver)
 
 
 # ---------------------------------------------------------------------------

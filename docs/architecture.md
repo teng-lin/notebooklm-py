@@ -820,8 +820,9 @@ invariant is pinned by `tests/_guardrails/test_no_module_shadowing.py`.
 
 CLI services are organised by feature family; notable examples include
 `cli/services/login/` (browser-profile enumeration split across Chromium
-and Firefox cookie jars), `cli/services/source_*` (URL/file/research
-source flows), and `cli/services/generate.py`. The CLI
+and Firefox cookie jars) and `cli/services/source_*` (URL/file/research
+source flows). Generation now constructs typed requests directly in
+`cli/generate_cmd.py`. The CLI
 service-layer boundary is guarded by
 [`tests/unit/cli/test_services_boundary.py`](../tests/unit/cli/test_services_boundary.py):
 new service modules must either be fully cleaned of Click/rendering/exit
@@ -1265,7 +1266,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_runtime/contracts.py` | Transport-neutral `LoopGuard` Protocol |
 | `_web/contracts.py` | Web-only `Kernel` and `RpcCaller` Protocols |
 | `options.py` | Import-light public frozen client construction options grouped by runtime, retry, backend, transfer, feature, and Web session ownership |
-| `outcomes.py` | Public bounded outcome vocabulary: `CommitState`, `RecoveryAction`, `OperationMetadata`, `BatchOutcome`, `BatchItemOutcome`, `ReconciliationReport`, `ReconciliationCandidate`, and `LookupSuggestion`; also owns the shared redacted CLI/MCP/REST projection |
+| `outcomes.py` | Public bounded outcome vocabulary: `CommitState`, `RecoveryAction`, `OperationMetadata`, `BatchOutcome`, `BatchItemOutcome`, public `SourceBatchItemOutcome`, `ReconciliationReport`, `ReconciliationCandidate`, and `LookupSuggestion`; also owns the shared redacted CLI/MCP/REST projection |
 | `_runtime/operation_context.py` | Supervisor-qualified task-local operation carrier: absolute monotonic deadline, owning task/loop/epoch, mutation-journal aggregation, and Python 3.10/3.11 cancellation attribution for `client.operation(...)` |
 | `_idempotency.py` | Transport-neutral private evidence journal (`OperationJournal`, stable `SendIdentity`, `JournalEntry`, ordered `AttemptRecord`), replay decision gate, one-shot mutation wrapper, and metadata attachment helpers; imports neither `_web` nor `rpc` |
 | `_web/policy.py` | Web RPC idempotency types, declarative per-RPC classifications, resolution, and the one production `IDEMPOTENCY_REGISTRY` seed. Holds the load-bearing two-pass order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
@@ -1341,7 +1342,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/artifact/table.py` | Web positional data-table row extraction |
 | `_web/params/artifacts.py` | Stable web artifact RPC request payload builders |
 | `_web/sources/add.py` | Core service layer for adding text, URL, or Google Drive sources |
-| `_web/sources/batch.py` | True-batch URL `ADD_SOURCE` service for the existing MCP/REST batch endpoints: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
+| `_web/sources/batch.py` | True-batch URL `ADD_SOURCE` service behind public `SourcesAPI.add_urls_batch` and the MCP/REST consumers: typed positional outcomes, omitted-row reconciliation, and fail-closed transport/duplicate ambiguity policy |
 | `_web/sources/transfers.py` | `SourceTransferService`: `AddSourcesAsync` (non-blocking batch add), `AppendSource` (in-place text append) and `CopySourcesAsync` (cross-notebook copy) — unconfirmed-on-transport-loss writes behind `WebSourcesAPI.add_urls_async` / `append_text` / `copy` (#2283) |
 | `_web/sources/drive_import.py` | Auto-route add-from-Drive (#1884): download + upload the upload-only Drive types (epub/docx/txt/…); native import (`add_drive`) instead takes Docs/Slides/Sheets + PDF by reference; header-first cookie-authed streaming fetch behind injected seams |
 | `_web/sources/content.py` | Core service layer for fetching source HTML/markdown content |
@@ -1454,9 +1455,9 @@ src/notebooklm/
 │   ├── download_specs.py        # Canonical artifact-download registry: type/binding + per-format extension/MIME descriptors; derives DownloadTypeSpec projections, MIME lookup, and adapter schema enums
 │   ├── errors.py                # classify(exc) -> ClassifiedError (category + retriable); class-sensitive
 │   ├── events.py                # ProgressEvent + ProgressSink Protocol (neutral progress seam)
-│   ├── generate.py              # Click-free `generate` executor: execute_generation (injected notebook/source resolvers preserve the RPC fast paths) + GenerationExecutionResult; re-exports the plan/retry surface so `_app.generate` is the single import point
-│   ├── generate_plans.py        # Click-free `generate` plan-building: enum/format maps, GenerationPlan/GenerationKind/GenerationPlanValidationError, build_generation_plan + per-kind builders (parameter_explicit/language_resolver injected)
-│   ├── generate_retry.py        # Click-free `generate` retry/wait: GenerationOutcome, generate_with_retry, handle_generation_result, status extractors, spinner status-line formatter (wait_context/wait_start_sink neutral seams)
+│   ├── generate.py              # Click-free typed generation executor: validates and dispatches the exact request variant, resolves sources/language, and returns GenerationExecutionResult
+│   ├── generation_requests.py   # Frozen eleven-kind discriminated request union, explicit UNSET sentinel, shared option validation, and named request factory
+│   ├── generate_retry.py        # Click-free generation retry/wait: semantic GenerationOutcome and GenerationWaitStarted events, with no adapter strings or exit policy
 │   ├── labels.py                # Click-free label core: create/sources/generate/rename/emoji/add/remove/delete + the composite resolve_label_id (<id|name>) resolver + LabelResolutionError (injected notebook/source resolvers; members→titles JOIN render stays in cli/services/label_listing.py)
 │   ├── collections.py           # Click-free collection core: list/notebooks/create/rename/add/remove/delete + the composite resolve_collection_id (<id|name>) resolver + CollectionResolutionError (account-level; no notebook scope)
 │   ├── language.py              # Click-free language core: SUPPORTED_LANGUAGES catalog + is_supported_language + LanguageConfigStore (injected config-path/home/atomic-update; get/save/get_language/set_language)
@@ -1475,7 +1476,7 @@ src/notebooklm/
 │   ├── sharing.py               # Click-free sharing core: status/set_public/set_view_level/add_user/update_user/remove_user (injected resolve_notebook_id; permission/view-level display + str→enum parse stay in cli/share_cmd.py)
 │   ├── skill.py                 # Click-free skill-install core: TARGETS/SCOPES catalog + path/version helpers + classify_target (create/up_to_date/overwrite) + report_mixed_no_clobber_up_to_date (CLI owns the atomic write + packaged-source loader)
 │   ├── source_add.py            # Click-free `source add` core: input detection + URL SSRF/upload-path validation + add workflow (SourceAddPlan/Result; CLI builds the --json source-summary from the typed result via the neutral serialize.source_summary helper)
-│   ├── source_batch.py          # Transport-neutral batch-add policy shared by the MCP tool + REST route (#1871): MAX_BATCH_URLS cap + batch_item_is_fatal (fatal auth/rate-limit/5xx classification via _app.errors.classify → abort the batch; per-URL 4xx-input failures isolate). Neutral frozenset, not server's CATEGORY_STATUS (the _app boundary forbids fastapi); parity pinned by tests/server/test_source_batch_parity.py
+│   ├── source_batch.py          # Transport-neutral source-batch limit plus typed local-validation/remapping helpers; continuation comes from public commit-state evidence, never HTTP/category policy
 │   ├── source_clean.py          # Click-free `source clean` core: junk-source classification + batched-deletion orchestration (SourceCleanResult; injected list/delete/confirm callables)
 │   ├── source_content.py        # Click-free read-only source-content fetchers for get/fulltext/guide/stale (typed plan/result pairs)
 │   ├── source_listing.py        # Click-free `source list` fetch core: fetch_sources (label_filter resolution; label_resolver injected)
@@ -1828,8 +1829,9 @@ src/notebooklm/
 │   ├── _clientprovider.py       # ClientProvider: lazy, single-flight ownership of the process-wide NotebookLMClient (#2330). The lifespan start()s the open in the BACKGROUND and yields at once, so MCP initialize is never gated on the auth round-trip (15s RotateCookies poke + 30s CSRF fetch + cold-recovery ladder > the client's 30s handshake deadline → CONNECT_TIMEOUT); get() joins the in-flight open under asyncio.shield (a cancelled waiter never aborts it), a failed open is retried by the next call (mid-session re-login recovers), aclose() cancels/closes
 │   ├── _context.py              # AppState dataclass (client_provider + optional file_transfer + cancelled_research + chat_tasks) + async get_client(ctx) (awaits the lazy open) / get_file_transfer(ctx) / get_cancelled_research(ctx) / get_chat_tasks(ctx) (lifespan-bound) + async get_client_from_app(request) (the guarded private-attr accessor for the bare-Request custom routes)
 │   ├── _errors.py               # Structured tool-error projection (CATEGORY_TABLE/ERROR_CODES/mcp_errors/to_tool_error/tool_error_payload) over _app.errors.classify
+│   ├── _batch.py                # MCP projection of public source-batch outcomes; carries commit state without deriving policy from HTTP/category
 │   ├── _resolve.py              # resolve_notebook/resolve_source/resolve_note/resolve_artifact — name + partial-id resolution over _app.resolve plus exact-title matching
-│   ├── _confirm.py              # needs_confirmation() both-mode envelope + READ_ONLY/DESTRUCTIVE ToolAnnotations
+│   ├── _confirm.py              # Confirmation envelope/annotations plus the single registered warning emitter for legacy names on successful confirming calls
 │   ├── _coerce.py               # coerce_list(value) — tolerant list-param normalizer (real list/tuple, JSON-array string, comma string, scalar → list[str]; None stays None for the "all sources" contract); used by studio_generate/chat_ask source_ids
 │   ├── _paginate.py             # paginate(items, limit) — bounded page + {total, has_more} for the *_list tools (client-side slice; RPCs don't page); DEFAULT_LIMIT=50
 │   └── tools/                   # Per-domain tool modules; each exposes register(mcp) wired by server.register_all
@@ -1883,6 +1885,7 @@ src/notebooklm/
     ├── label_cmd.py             # label list/sources/generate/create/rename/emoji/add/remove/delete
     ├── collection_cmd.py        # collection list/notebooks/create/rename/add/remove/delete (account-level)
     ├── language_cmd.py          # Language configuration CLI commands
+    ├── _generate_render.py      # Generation spinner/status wording, duration hints, retry/resume guidance, and CLI exit policy
     ├── master_token_login.py    # Command driver for `login --master-token[-refresh]` (ADR-0023)
     ├── mcp_cmd.py               # `mcp install <client>` command — thin Click adapter over `_app/mcp_install.py`; resolves the client config path (`--config-path` override) and applies the merge inside `notebooklm.io.atomic_update_json` (locked, crash-safe, merge-not-clobber)
     ├── notebook_cmd.py          # list, create, delete, rename
@@ -1907,7 +1910,6 @@ src/notebooklm/
         ├── auth_source.py       # Single source of truth for the active CLI auth source (Click-context precedence resolver; stays in cli/ — reads ctx.obj + NOTEBOOKLM_AUTH_JSON)
         ├── confirming_mutation.py # Shared confirmed-mutation pipeline for CLI resources
         ├── download.py          # CLI adapter over _app/download.py: re-exports plan/spec types, injects cli.resolve resolvers (keeps resolve_notebook_id patch seam), projects DownloadResult → envelope dict
-        ├── generate.py          # `generate` CLI adapter over `_app/generate.py` — re-exports plan/result/error + build_generation_plan; injects cli.resolve resolve_notebook_id/resolve_source_ids (read at call time, preserving the resolve_module monkeypatch seam) into the neutral execute_generation; re-exports _INFOGRAPHIC_STYLE_MAP from `_app/generate_plans.py` for generate_cmd
         ├── label_listing.py     # `label list` members→titles join service; re-exports resolve_label_id + LabelResolutionError from _app/labels.py
         ├── listing.py           # Shared list-command pipeline for CLI resources
         ├── login/               # Browser-cookie login helper package

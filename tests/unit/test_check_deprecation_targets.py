@@ -205,6 +205,10 @@ def _install_registered_tree(
             replacement='"notebooklm.NotebookLMClient.labels"',
         ),
         _spec_entry(
+            "mcp_confirmed_name_references",
+            replacement='"notebooklm.NotebookLMClient"',
+        ),
+        _spec_entry(
             "notebook_from_api_response",
             replacement='"notebooklm.NotebookLMClient.notebooks"',
         ),
@@ -240,6 +244,7 @@ def _install_registered_tree(
         'warn_registered_deprecation("client_legacy_from_storage_options", detail="timeout")',
         'warn_registered_deprecation("collection_from_api_response")',
         'warn_registered_deprecation("label_from_api_response")',
+        'warn_registered_deprecation("mcp_confirmed_name_references")',
         'warn_registered_deprecation("notebook_from_api_response")',
         'warn_registered_deprecation("share_status_from_api_response")',
         'warn_registered_deprecation("shared_user_from_api_response")',

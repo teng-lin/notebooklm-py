@@ -84,9 +84,10 @@ async def preserve_readback(
         return await awaitable
     except asyncio.CancelledError as error:
         if entries:
+            primary = next(iter(entries))
             attach_journal_entry(
                 error,
-                entries[0],
+                primary,
                 recovery_action=(
                     RecoveryAction.INSPECT_AND_RECONCILE
                     if any(entry.commit_state is CommitState.UNKNOWN for entry in entries)
@@ -127,14 +128,16 @@ def _batch_outcome(
             selected = registration if registration.commit_state is state else commit
             selected.reconciliation = report
             selected.recovery_action = RecoveryAction.INSPECT_AND_RECONCILE
+        known_id = next(iter(known_ids), None)
         items.append(
             BatchItemOutcome(
                 member=index,
                 input=url,
                 commit_state=state,
                 resource_id=(
-                    known_ids[0]
-                    if known_ids and state in (CommitState.CONFIRMED, CommitState.UNKNOWN)
+                    known_id
+                    if known_id is not None
+                    and state in (CommitState.CONFIRMED, CommitState.UNKNOWN)
                     else None
                 ),
                 error=None if state is CommitState.CONFIRMED else error,
@@ -221,13 +224,14 @@ class AndroidSourceBatchMixin:
                         expected_epoch=lease.epoch,
                     )
             except (asyncio.CancelledError, KeyboardInterrupt, SystemExit, AuthError) as exc:
+                primary = next(iter(registration_entries))
                 _attach_failure(
                     exc,
                     journal,
                     registration_entries,
                     commit_entries,
                     snapshot,
-                    primary=registration_entries[0],
+                    primary=primary,
                 )
                 raise
             except (RateLimitError, ServerError, NetworkError, DecodingError) as exc:
@@ -277,13 +281,14 @@ class AndroidSourceBatchMixin:
                     )
                 return outcomes
             except BaseException as exc:
+                primary = next(iter(registration_entries))
                 _attach_failure(
                     exc,
                     journal,
                     registration_entries,
                     commit_entries,
                     snapshot,
-                    primary=registration_entries[0],
+                    primary=primary,
                 )
                 raise
 
@@ -309,13 +314,14 @@ class AndroidSourceBatchMixin:
                             expected_epoch=lease.epoch,
                         )
                 except BaseException as exc:
+                    first_index, _, _ = next(iter(indexed_entries))
                     _attach_failure(
                         exc,
                         journal,
                         registration_entries,
                         commit_entries,
                         snapshot,
-                        primary=commit_entries[indexed_entries[0][0]],
+                        primary=commit_entries[first_index],
                     )
                     raise
 

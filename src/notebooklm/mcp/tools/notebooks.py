@@ -24,7 +24,13 @@ from fastmcp import Context
 from ..._app import notebooks as core
 from ..._app.serialize import to_jsonable
 from ..._app.views import notebook_view as _notebook_view
-from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
+from .._confirm import (
+    DESTRUCTIVE,
+    READ_ONLY,
+    confirmed_name_deprecation,
+    needs_confirmation,
+    with_confirmation_deprecation,
+)
 from .._context import get_client
 from .._errors import mcp_errors
 from .._paginate import DEFAULT_LIMIT, paginate
@@ -152,7 +158,7 @@ def register(mcp: Any) -> None:
 
         Two-step confirmation: called with ``confirm=False`` (the default) it does
         NOT delete — it returns a ``needs_confirmation`` preview of the resolved
-        notebook. Call again with ``confirm=True`` to perform the delete.
+        notebook. Re-submit its canonical ``notebook_id`` with ``confirm=True``.
         """
         with mcp_errors():
             client = await get_client(ctx)
@@ -163,4 +169,7 @@ def register(mcp: Any) -> None:
                     {"action": "delete_notebook", "notebook_id": nb_id, "title": title}
                 )
             await core.execute_notebook_delete(client, nb_id)
-            return {"status": "deleted", "notebook_id": nb_id}
+            return with_confirmation_deprecation(
+                {"status": "deleted", "notebook_id": nb_id},
+                confirmed_name_deprecation(notebook),
+            )

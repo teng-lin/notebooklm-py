@@ -720,7 +720,6 @@ async def test_auth_check_test_recomputes_after_normal_recovery(
         has_home_env=False,
         auth_source_label="file",
         test_fetch=True,
-        json_output=False,
     )
 
     async def heal(_path: Path, _profile: str) -> tuple[str, str]:
@@ -754,7 +753,6 @@ async def test_auth_check_passive_continues_but_keeps_local_route_failure(
         has_home_env=False,
         auth_source_label="file",
         test_fetch=True,
-        json_output=False,
         passive=True,
     )
     passive = AsyncMock(return_value=("csrf", "session"))

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,6 +13,7 @@ from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.rows.sources import unwrap_add_source_rows
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.batch import SourceBatchAddService
 from notebooklm.exceptions import (
     AuthError,
@@ -26,6 +27,7 @@ from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import SourceStatus
 from notebooklm.types import Source
+from tests._fixtures.fake_core import make_fake_core
 
 
 def _extract_youtube_video_id(_url: str) -> None:
@@ -120,6 +122,22 @@ async def test_true_batch_uses_one_add_sources_rpc_and_preserves_order() -> None
         }
     ]
     list_sources.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_web_public_facade_uses_one_batch_rpc_and_public_outcomes() -> None:
+    urls = ["https://a.example.com", "https://b.example.com"]
+    rpc = RecordingRpc([_url_row("src-a", urls[0]), _url_row("src-b", urls[1])])
+    api = WebSourcesAPI(rpc, supervisor=make_fake_core(), uploader=MagicMock())
+
+    outcomes = await api.add_urls_batch("nb-1", urls)
+
+    assert [item.input for item in outcomes] == urls
+    assert [item.outcome.commit_state for item in outcomes if item.outcome] == [
+        CommitState.CONFIRMED,
+        CommitState.CONFIRMED,
+    ]
+    assert len(rpc.calls) == 1
 
 
 @pytest.mark.asyncio

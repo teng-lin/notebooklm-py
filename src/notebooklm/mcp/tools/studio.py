@@ -3,12 +3,9 @@
 Thin adapters over the transport-neutral artifact cores:
 
 * ``studio_list`` reads ``client.artifacts.list`` directly (like ``source_list``).
-* ``studio_generate`` is a hybrid over the neutral ``generate`` core: it builds a
-  :class:`~notebooklm._app.generate.GenerationPlan` via ``build_generation_plan``
-  (which enum-maps + validates the per-kind options) and drives
-  ``execute_generation`` with **pass-through** notebook/source resolvers (MCP has
-  already resolved the notebook id and supplies full source ids). Each ``type``
-  routes to the matching ``client.artifacts.generate_*`` method.
+* ``studio_generate`` constructs one frozen per-kind generation request and drives
+  the neutral ``execute_generation`` core with already-resolved notebook/source
+  IDs. Each ``type`` routes to the matching ``client.artifacts.generate_*`` method.
 * ``studio_status`` is the **stateless** poll path (``_app.artifacts.poll_artifact``
   → ``client.artifacts.poll_status``) so an agent can poll a ``task_id`` across
   separate tool calls without holding server state.
@@ -23,6 +20,7 @@ from the canonical neutral ``_app.download_specs`` registry through
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -32,6 +30,7 @@ from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
 from ..._app import generate as generate_core
 from ..._app import notes as note_core
+from ..._app.generation_requests import UNSET, build_generation_request
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
@@ -48,7 +47,13 @@ from ...exceptions import (
     ValidationError,
 )
 from .._coerce import coerce_list
-from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
+from .._confirm import (
+    DESTRUCTIVE,
+    READ_ONLY,
+    confirmed_name_deprecation,
+    needs_confirmation,
+    with_confirmation_deprecation,
+)
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors
 from .._paginate import DEFAULT_LIMIT, paginate
@@ -81,100 +86,6 @@ from ._studio_payloads import _artifact_rename_payload, _generation_payload
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
-
-#: Per-kind default option values mirroring the CLI ``generate`` Click ``Choice``
-#: defaults, so a bare ``studio_generate(notebook, type=…)`` succeeds without
-#: the agent restating every enum. The agent can override any of these by passing
-#: the matching keyword; ``build_generation_plan`` enum-maps + validates them.
-_KIND_DEFAULTS: dict[str, dict[str, Any]] = {
-    "audio": {"audio_format": "deep-dive", "audio_length": "default"},
-    "video": {"video_format": "explainer", "style": "auto"},
-    "cinematic-video": {},
-    "slide-deck": {"deck_format": "detailed", "deck_length": "default"},
-    "quiz": {"quantity": "standard", "difficulty": "medium"},
-    "flashcards": {"quantity": "standard", "difficulty": "medium"},
-    "infographic": {"orientation": "landscape", "detail": "standard", "style": "auto"},
-    "data-table": {},
-    "mind-map": {"map_kind": "interactive"},
-    "report": {"report_format": "briefing-doc"},
-}
-
-#: Per-kind agent-settable options → their accepted choices. ``None`` choices mean
-#: free text (only ``style_prompt``). This single table drives all three things the
-#: agent-facing override path needs:
-#:
-#: * **Choice validation** up front, so a bad value surfaces as a clean ``VALIDATION``
-#:   error rather than a raw ``KeyError`` from a generate-core display-name lookup that
-#:   runs before its own choice validation (the CLI never hits this — Click validates
-#:   the ``Choice`` first).
-#: * **The ``style`` collision** — ``video`` and ``infographic`` both take a ``style``
-#:   kwarg but with DIFFERENT choice sets (overlapping only on ``auto``/``anime``/
-#:   ``kawaii``); keying choices by ``artifact_type`` keeps them apart.
-#: * **Wrong-kind rejection** — an option valid for some other kind (e.g. ``orientation``
-#:   passed to ``quiz``) is rejected here, because the neutral core silently *ignores*
-#:   irrelevant extras (``build_generation_plan`` "picks the relevant subset"), which
-#:   would otherwise be a confusing silent no-op for an agent.
-#:
-#: The literal choice tuples are DUPLICATED from the neutral core's private ``_*_MAP``
-#: maps (MCP must not import them — the CLI/MCP boundary rule); a guardrail test pins
-#: these tuples equal to the core maps so they can't silently drift. ``map_kind`` has no
-#: core map (the core reads it raw and any non-``interactive`` value routes note-backed),
-#: so it is validated here ONLY.
-_KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
-    "audio": {
-        "audio_format": ("deep-dive", "brief", "critique", "debate"),
-        "audio_length": ("short", "default", "long"),
-    },
-    "video": {
-        "video_format": ("explainer", "brief", "cinematic", "short"),
-        "style": (
-            "auto",
-            "custom",
-            "classic",
-            "whiteboard",
-            "kawaii",
-            "anime",
-            "watercolor",
-            "retro-print",
-            "heritage",
-            "paper-craft",
-        ),
-        "style_prompt": None,
-    },
-    "cinematic-video": {},
-    "slide-deck": {
-        "deck_format": ("detailed", "presenter"),
-        "deck_length": ("default", "short"),
-    },
-    "quiz": {
-        "quantity": ("fewer", "standard", "more"),
-        "difficulty": ("easy", "medium", "hard"),
-    },
-    "flashcards": {
-        "quantity": ("fewer", "standard", "more"),
-        "difficulty": ("easy", "medium", "hard"),
-    },
-    "infographic": {
-        "orientation": ("landscape", "portrait", "square"),
-        "detail": ("concise", "standard", "detailed"),
-        "style": (
-            "auto",
-            "sketch-note",
-            "professional",
-            "bento-grid",
-            "editorial",
-            "instructional",
-            "bricks",
-            "clay",
-            "anime",
-            "kawaii",
-            "scientific",
-        ),
-    },
-    "data-table": {},
-    "mind-map": {"map_kind": ("interactive", "note-backed")},
-    "report": {"report_format": ("briefing-doc", "study-guide", "blog-post", "custom")},
-}
 
 
 async def _passthrough_sources(
@@ -331,10 +242,8 @@ def register(mcp: Any) -> None:
         # Finite-choice per-kind options are typed as ``Literal`` so FastMCP/Pydantic
         # emits a JSON-schema ``enum`` (agents discover valid values from the schema,
         # not by trial-and-error) and rejects out-of-enum values at the boundary. The
-        # members are DUPLICATED from the neutral core's private ``_*_MAP`` maps via
-        # ``_KIND_OPTIONS`` (the CLI/MCP boundary forbids importing them); a guardrail
-        # test pins each ``enum`` equal to ``_KIND_OPTIONS`` (itself pinned to the core
-        # maps) so they can't drift. ``style_prompt``/``language`` stay free text.
+        # members mirror the neutral option contract; schema parity tests pin every
+        # ``enum`` to that authority. ``style_prompt``/``language`` stay free text.
         report_format: Literal["briefing-doc", "study-guide", "blog-post", "custom"] | None = None,
         audio_format: Literal["deep-dive", "brief", "critique", "debate"] | None = None,
         audio_length: Literal["short", "default", "long"] | None = None,
@@ -343,9 +252,8 @@ def register(mcp: Any) -> None:
         video_format: Literal["explainer", "brief", "cinematic", "short"] | None = None,
         # ``style`` is shared by ``video`` and ``infographic`` with DIFFERENT value
         # sets (overlap only auto/anime/kawaii). One param carries one Literal, so this
-        # is the UNION of both kinds' values; the runtime ``_KIND_OPTIONS`` loop narrows
-        # it per-kind (a video-only value on infographic, or vice versa, is rejected
-        # there with a clean VALIDATION error).
+        # is the UNION of both kinds' values; the neutral request builder narrows it
+        # per kind after schema parsing.
         style: Literal[
             # full video set (auto/kawaii/anime also valid for infographic)
             "auto",
@@ -433,49 +341,33 @@ def register(mcp: Any) -> None:
             if language is not None and not is_supported_language(language):
                 raise ValidationError(f"Unsupported language {language!r}")
 
-            # Validate caller-supplied per-kind overrides FIRST — before resolving the
-            # notebook — so a wrong-kind or invalid option fails fast without a wasted
-            # notebook-resolution round-trip. Each option is validated against the choice
-            # set for THIS ``artifact_type`` (see ``_KIND_OPTIONS``): an option not accepted
-            # by this kind is rejected (the core would otherwise silently ignore it), and a
-            # bad value surfaces a clean VALIDATION error. ``style_prompt`` (choices
-            # ``None``) is free text — the core enforces the ``style=custom`` ⇔
-            # ``style_prompt`` combination rules.
-            allowed = _KIND_OPTIONS[artifact_type]
-            overrides: dict[str, Any] = {}
-            for key, value in (
-                ("report_format", report_format),
-                ("audio_format", audio_format),
-                ("audio_length", audio_length),
-                ("quantity", quantity),
-                ("difficulty", difficulty),
-                ("video_format", video_format),
-                ("style", style),
-                ("style_prompt", style_prompt),
-                ("deck_format", deck_format),
-                ("deck_length", deck_length),
-                ("orientation", orientation),
-                ("detail", detail),
-                ("map_kind", map_kind),
-            ):
-                if value is None:
-                    continue
-                if key not in allowed:
-                    accepts = (
-                        f"this kind accepts {sorted(allowed)}"
-                        if allowed
-                        else "this kind accepts no per-kind options"
-                    )
-                    raise ValidationError(
-                        f"option {key!r} is not valid for artifact_type {artifact_type!r}; "
-                        f"{accepts}"
-                    )
-                choices = allowed[key]
-                if choices is not None and value not in choices:
-                    raise ValidationError(
-                        f"Invalid {key} {value!r}; expected one of {list(choices)}"
-                    )
-                overrides[key] = value
+            # Construct the typed request before name resolution so shared
+            # wrong-kind/value validation still fails before any remote lookup.
+            # The canonical IDs are installed immutably after resolution.
+            normalized_instructions = instructions or None
+            request = build_generation_request(
+                artifact_type,
+                notebook_id=notebook,
+                source_ids=UNSET,
+                language=language or "en",
+                instructions=normalized_instructions,
+                option_values={
+                    "report_format": report_format,
+                    "audio_format": audio_format,
+                    "audio_length": audio_length,
+                    "quantity": quantity,
+                    "difficulty": difficulty,
+                    "video_format": video_format,
+                    "style": style,
+                    "style_prompt": style_prompt,
+                    "deck_format": deck_format,
+                    "deck_length": deck_length,
+                    "orientation": orientation,
+                    "detail": detail,
+                    "map_kind": map_kind,
+                },
+                extra_instructions=None,
+            )
 
             client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
@@ -487,26 +379,17 @@ def register(mcp: Any) -> None:
             resolved_source_ids = (
                 await resolve_sources(client, nb_id, source_ids) if source_ids else None
             )
-            raw_args: dict[str, Any] = dict(_KIND_DEFAULTS[artifact_type])
-            raw_args.update(
-                {
-                    "notebook_id": nb_id,
-                    "description": instructions or "",
-                    # ``mind-map`` reads ``raw_args["instructions"]`` (every other kind
-                    # reads ``description``); set it so mind-map instructions actually
-                    # reach the client — the extra key is ignored by the other builders.
-                    "instructions": instructions or None,
-                    "source_ids": tuple(resolved_source_ids or ()),
-                    "language": language,
-                    "wait": False,
-                    "json_output": True,
-                }
+            request = replace(
+                request,
+                notebook_id=nb_id,
+                source_ids=(
+                    UNSET  # type: ignore[arg-type]
+                    if resolved_source_ids is None
+                    else tuple(resolved_source_ids)
+                ),
             )
-            raw_args.update(overrides)
-
-            plan = generate_core.build_generation_plan(artifact_type, raw_args)
             result = await generate_core.execute_generation(
-                plan,
+                request,
                 client,
                 notebook_resolver=passthrough_notebook_id,
                 source_resolver=_passthrough_sources,
@@ -908,8 +791,8 @@ def register(mcp: Any) -> None:
         hard-removing it — Google may garbage collect it later).
 
         Two-step confirmation: with ``confirm=False`` (default) it returns a
-        ``needs_confirmation`` preview of the resolved item without deleting; call
-        again with ``confirm=True`` to perform the delete. Deleting an already-absent
+        ``needs_confirmation`` preview without deleting; re-submit its canonical
+        ``notebook_id``/``item_id`` with ``confirm=True``. Deleting an already-absent
         full id is idempotent (no error) — it routes down the artifact path (a
         present note would have been found in the list).
         """
@@ -942,13 +825,16 @@ def register(mcp: Any) -> None:
                         }
                     )
                 was_note_backed = await artifact_core.delete_artifact(client, nb_id, item)
-                return {
-                    "status": "deleted",
-                    "notebook_id": nb_id,
-                    "item_id": item,
-                    "type": "mind-map" if was_note_backed else "unknown",
-                    "was_note_backed": was_note_backed,
-                }
+                return with_confirmation_deprecation(
+                    {
+                        "status": "deleted",
+                        "notebook_id": nb_id,
+                        "item_id": item,
+                        "type": "mind-map" if was_note_backed else "unknown",
+                        "was_note_backed": was_note_backed,
+                    },
+                    confirmed_name_deprecation(notebook, item),
+                )
             if not confirm:
                 return needs_confirmation(
                     {
@@ -961,20 +847,26 @@ def register(mcp: Any) -> None:
                 )
             if resolved.type == "note":
                 await note_core.execute_note_delete(client, nb_id, resolved.item_id)
-                return {
+                return with_confirmation_deprecation(
+                    {
+                        "status": "deleted",
+                        "notebook_id": nb_id,
+                        "item_id": resolved.item_id,
+                        "type": "note",
+                        # Always present for a stable wire shape (a text note is never a
+                        # note-backed mind-map artifact).
+                        "was_note_backed": False,
+                    },
+                    confirmed_name_deprecation(notebook, item),
+                )
+            was_note_backed = await artifact_core.delete_artifact(client, nb_id, resolved.item_id)
+            return with_confirmation_deprecation(
+                {
                     "status": "deleted",
                     "notebook_id": nb_id,
                     "item_id": resolved.item_id,
-                    "type": "note",
-                    # Always present for a stable wire shape (a text note is never a
-                    # note-backed mind-map artifact).
-                    "was_note_backed": False,
-                }
-            was_note_backed = await artifact_core.delete_artifact(client, nb_id, resolved.item_id)
-            return {
-                "status": "deleted",
-                "notebook_id": nb_id,
-                "item_id": resolved.item_id,
-                "type": resolved.type,
-                "was_note_backed": was_note_backed,
-            }
+                    "type": resolved.type,
+                    "was_note_backed": was_note_backed,
+                },
+                confirmed_name_deprecation(notebook, item),
+            )

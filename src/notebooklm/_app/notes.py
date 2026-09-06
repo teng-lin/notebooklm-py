@@ -79,7 +79,6 @@ async def execute_note_create(
     content: str,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> NoteCreateResult:
     """Resolve the notebook + create a note via the typed facade.
 
@@ -87,7 +86,7 @@ async def execute_note_create(
     on failure, so this core simply trusts the contract — no RPC-shape
     extraction happens above the facade.
     """
-    nb_id_resolved = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    nb_id_resolved = await resolve_notebook_id(client, notebook_id)
     note = await client.notes.create(nb_id_resolved, title, content)
     return NoteCreateResult(
         notebook_id=nb_id_resolved,
@@ -127,11 +126,10 @@ async def execute_note_get(
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
     resolve_note_id: ResolveNoteIdFn,
-    json_output: bool = False,
 ) -> NoteGetResult:
     """Resolve the notebook + note ids and fetch the note content."""
-    nb_id_resolved = await resolve_notebook_id(client, notebook_id, json_output=json_output)
-    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id, json_output=json_output)
+    nb_id_resolved = await resolve_notebook_id(client, notebook_id)
+    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
     note = await client.notes.get_or_none(nb_id_resolved, resolved_id)
     return NoteGetResult(
         notebook_id=nb_id_resolved,
@@ -162,7 +160,6 @@ async def execute_note_save(
     content: str | None,
     resolve_notebook_id: ResolveNotebookIdFn,
     resolve_note_id: ResolveNoteIdFn,
-    json_output: bool = False,
 ) -> NoteSaveResult:
     """Resolve the notebook + note ids and update the note.
 
@@ -170,8 +167,8 @@ async def execute_note_save(
     early return so it can avoid a network round-trip and render its own no-op
     envelope; this core is only reached once at least one field is supplied.
     """
-    nb_id_resolved = await resolve_notebook_id(client, notebook_id, json_output=json_output)
-    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id, json_output=json_output)
+    nb_id_resolved = await resolve_notebook_id(client, notebook_id)
+    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
     # ``update`` is typed ``content/title: str`` but the RPC + facade accept
     # ``None`` for "leave unchanged" (the historical CLI relied on this); the
     # ``--title``/``--content`` early-return guard in the command layer ensures
@@ -213,7 +210,6 @@ async def execute_note_rename(
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
     resolve_note_id: ResolveNoteIdFn,
-    json_output: bool = False,
 ) -> NoteRenameResult:
     """Resolve + rename a note, preserving its content (``resolve_note_content``).
 
@@ -222,8 +218,8 @@ async def execute_note_rename(
     ``note delete`` won the race), reports ``found=False`` so the CLI emits the
     typed not-found error rather than a misleading success.
     """
-    nb_id_resolved = await resolve_notebook_id(client, notebook_id, json_output=json_output)
-    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id, json_output=json_output)
+    nb_id_resolved = await resolve_notebook_id(client, notebook_id)
+    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
     note = await client.notes.get_or_none(nb_id_resolved, resolved_id)
     if not isinstance(note, Note):
         return NoteRenameResult(
@@ -256,11 +252,10 @@ async def resolve_note_for_delete(
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
     resolve_note_id: ResolveNoteIdFn,
-    json_output: bool = False,
 ) -> tuple[str, str]:
     """Resolve the notebook + note ids for a delete, returning ``(nb_id, note_id)``."""
-    nb_id_resolved = await resolve_notebook_id(client, notebook_id, json_output=json_output)
-    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id, json_output=json_output)
+    nb_id_resolved = await resolve_notebook_id(client, notebook_id)
+    resolved_id = await resolve_note_id(client, nb_id_resolved, note_id)
     return nb_id_resolved, resolved_id
 
 

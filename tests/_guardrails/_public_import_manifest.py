@@ -68,6 +68,7 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "ReconciliationCandidate",
         "ReconciliationReport",
         "RecoveryAction",
+        "SourceBatchItemOutcome",
     ],
     "notebooklm.options": [
         "AndroidBackendConfig",

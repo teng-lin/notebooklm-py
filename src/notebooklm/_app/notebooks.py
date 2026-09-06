@@ -173,7 +173,6 @@ async def execute_notebook_copy(
     title: str,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> NotebookCopyResult:
     """Resolve + copy a notebook, including its sources and Studio artifacts.
 
@@ -182,7 +181,7 @@ async def execute_notebook_copy(
     policy lives in the backend implementation; this workflow preserves it by
     issuing exactly one copy call after resolution.
     """
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     notebook = await client.notebooks.copy(resolved_id, title)
     return NotebookCopyResult(source_notebook_id=resolved_id, notebook=notebook)
 
@@ -223,14 +222,13 @@ async def execute_notebook_rename(
     new_title: str,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> NotebookRenameResult:
     """Resolve + rename a notebook.
 
     ``resolve_notebook_id`` is injected so this core stays free of the
     ``rich``-coupled resolver and the CLI's ``monkeypatch`` seam keeps landing.
     """
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     await client.notebooks.rename(resolved_id, new_title)
     return NotebookRenameResult(notebook_id=resolved_id, new_title=new_title)
 
@@ -257,10 +255,9 @@ async def execute_notebook_describe(
     notebook_id: str,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> NotebookDescribeResult:
     """Resolve + fetch a notebook's AI-generated description."""
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     description = await client.notebooks.get_description(resolved_id)
     return NotebookDescribeResult(notebook_id=resolved_id, description=description)
 
@@ -287,10 +284,9 @@ async def execute_notebook_metadata(
     notebook_id: str,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> NotebookMetadataResult:
     """Resolve + fetch a notebook's metadata (details + sources list)."""
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     metadata = await client.notebooks.get_metadata(resolved_id)
     return NotebookMetadataResult(notebook_id=resolved_id, metadata=metadata)
 

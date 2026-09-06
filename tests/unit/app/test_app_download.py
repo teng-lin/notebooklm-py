@@ -28,6 +28,7 @@ import pytest
 
 from notebooklm._app.download import (
     FORMAT_EXTENSIONS,
+    DownloadEvent,
     DownloadOutcome,
     DownloadPlan,
     DownloadPlanValidationError,
@@ -195,8 +196,9 @@ class TestArtifactSelection:
             {"id": "a1", "title": "Audio 1", "created_at": 1000},
         ]
 
-        with pytest.raises(ValueError, match="Cannot specify both"):
+        with pytest.raises(DownloadPlanValidationError) as exc:
             select_artifact(artifacts, latest=True, earliest=True)
+        assert exc.value.reason == "conflicting_selection_order"
 
 
 class TestFilenameGeneration:
@@ -448,33 +450,38 @@ def _artifact_resolver_identity(_artifacts, partial: str) -> str:
 
 class TestBuildDownloadPlanValidation:
     def test_force_and_no_clobber_conflict(self):
-        with pytest.raises(DownloadPlanValidationError, match="--force and --no-clobber"):
-            build_download_plan(
-                _AUDIO_SPEC, {"force": True, "no_clobber": True, "notebook_id": "n"}
-            )
-
-    def test_latest_and_earliest_conflict(self):
-        with pytest.raises(DownloadPlanValidationError, match="--latest and --earliest"):
-            build_download_plan(_AUDIO_SPEC, {"latest": True, "earliest": True, "notebook_id": "n"})
-
-    def test_all_and_artifact_conflict(self):
-        with pytest.raises(DownloadPlanValidationError, match="--all and --artifact"):
-            build_download_plan(
-                _AUDIO_SPEC,
-                {"download_all": True, "artifact_id": "art_1", "notebook_id": "n"},
-            )
-
-    def test_validation_error_carries_validation_code(self):
         with pytest.raises(DownloadPlanValidationError) as exc:
             build_download_plan(
                 _AUDIO_SPEC, {"force": True, "no_clobber": True, "notebook_id": "n"}
             )
-        assert exc.value.code == "VALIDATION_ERROR"
+        assert exc.value.reason == "conflicting_overwrite_policy"
+
+    def test_latest_and_earliest_conflict(self):
+        with pytest.raises(DownloadPlanValidationError) as exc:
+            build_download_plan(_AUDIO_SPEC, {"latest": True, "earliest": True, "notebook_id": "n"})
+        assert exc.value.reason == "conflicting_selection_order"
+
+    def test_all_and_artifact_conflict(self):
+        with pytest.raises(DownloadPlanValidationError) as exc:
+            build_download_plan(
+                _AUDIO_SPEC,
+                {"download_all": True, "artifact_id": "art_1", "notebook_id": "n"},
+            )
+        assert exc.value.reason == "all_with_artifact"
+
+    def test_validation_error_carries_semantic_reason(self):
+        with pytest.raises(DownloadPlanValidationError) as exc:
+            build_download_plan(
+                _AUDIO_SPEC, {"force": True, "no_clobber": True, "notebook_id": "n"}
+            )
+        assert exc.value.reason == "conflicting_overwrite_policy"
+        assert "--" not in str(exc.value)
 
     def test_missing_notebook_id_raises_by_default_hook(self):
         """The default ``_identity_notebook`` hook fails loud on a blank id."""
-        with pytest.raises(DownloadPlanValidationError, match="notebook_id is required"):
+        with pytest.raises(DownloadPlanValidationError) as exc:
             build_download_plan(_AUDIO_SPEC, {"notebook_id": None})
+        assert exc.value.reason == "missing_notebook"
 
     def test_notebook_required_hook_is_applied(self):
         """The injected ``notebook_required`` hook can rewrite the id (env/context fallback)."""
@@ -540,8 +547,9 @@ class TestFormatExtensionResolution:
         ext, warnings = _resolve_format_extension(_SLIDE_SPEC, "deck.pdf", "pptx")
         assert ext == ".pptx"
         assert len(warnings) == 1
-        assert "deck.pdf" in warnings[0]
-        assert ".pptx" in warnings[0]
+        assert warnings[0].output_path == "deck.pdf"
+        assert warnings[0].expected_extension == ".pptx"
+        assert warnings[0].format_choice == "pptx"
 
     def test_matching_output_path_no_warning(self):
         _ext, warnings = _resolve_format_extension(_SLIDE_SPEC, "deck.pptx", "pptx")
@@ -582,8 +590,9 @@ class TestExecuteDownload:
         )
         assert result.outcome is DownloadOutcome.NO_ARTIFACTS
         assert result.has_error
-        assert "No completed audio" in result.error
-        assert result.suggestion is not None
+        assert result.failure is not None
+        assert result.failure.reason == "no_artifacts"
+        assert result.failure.artifact_type == "audio"
 
     @pytest.mark.asyncio
     async def test_single_dry_run_does_not_download(self, tmp_path):
@@ -641,8 +650,9 @@ class TestExecuteDownload:
         )
         assert result.outcome is DownloadOutcome.ERROR
         assert result.has_error
-        assert "File exists" in result.error
-        assert result.suggestion is not None
+        assert result.failure is not None
+        assert result.failure.reason == "file_exists"
+        assert result.failure.path == str(existing)
         facade.artifacts.download_audio.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -657,7 +667,9 @@ class TestExecuteDownload:
             artifact_resolver=_artifact_resolver_identity,
         )
         assert result.outcome is DownloadOutcome.ERROR
-        assert "boom" in result.error
+        assert result.failure is not None
+        assert result.failure.reason == "download_failed"
+        assert result.failure.detail == "boom"
 
     @pytest.mark.asyncio
     async def test_single_download_auth_error_is_not_swallowed(self, tmp_path):
@@ -714,17 +726,23 @@ class TestExecuteDownload:
             {"notebook_id": "nb_1", "download_all": True, "output_path": str(tmp_path / "out")},
             cwd=tmp_path,
         )
+        progress = MagicMock()
         result = await execute_download(
             plan,
             facade,
             notebook_resolver=_passthrough_notebook_resolver(),
             artifact_resolver=_artifact_resolver_identity,
+            progress=progress,
         )
         assert result.outcome is DownloadOutcome.ALL_EXECUTED
         assert result.is_failure is True
         assert result.has_error  # ANY per-item failure surfaces a non-zero exit
         assert result.failed_count == 1
         assert result.succeeded_count == 1
+        assert [call.args[0] for call in progress.emit.call_args_list] == [
+            DownloadEvent("ITEM_STARTED", index=1, total=2, title="First"),
+            DownloadEvent("ITEM_STARTED", index=2, total=2, title="Second"),
+        ]
 
     @pytest.mark.asyncio
     async def test_all_auth_failure_keeps_rows_and_typed_guidance(self, tmp_path):
@@ -749,9 +767,9 @@ class TestExecuteDownload:
 
         assert result.outcome is DownloadOutcome.ALL_EXECUTED
         assert [row["status"] for row in result.artifacts] == ["failed", "downloaded"]
-        assert result.error_code == "AUTH_ERROR"
-        assert result.message == "Authentication error: expired"
-        assert result.hint is not None and "notebooklm login" in result.hint
+        assert result.failure is not None
+        assert result.failure.reason == "authentication"
+        assert result.failure.detail == "expired"
 
     @pytest.mark.asyncio
     async def test_all_name_filter_no_match_errors(self, tmp_path):
@@ -768,7 +786,9 @@ class TestExecuteDownload:
             artifact_resolver=_artifact_resolver_identity,
         )
         assert result.outcome is DownloadOutcome.ERROR
-        assert "No artifacts matching 'nope'" in result.error
+        assert result.failure is not None
+        assert result.failure.reason == "name_not_found"
+        assert result.failure.name == "nope"
 
     @pytest.mark.asyncio
     async def test_notebook_resolver_is_invoked(self, tmp_path):

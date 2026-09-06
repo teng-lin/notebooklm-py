@@ -5,12 +5,21 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Iterator
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
 
 from notebooklm._app.generate import GenerationExecutionResult
 from notebooklm._app.generate_retry import GenerationOutcome
+from notebooklm._app.generation_requests import (
+    UNSET,
+    AudioGenerationRequest,
+    GenerationKind,
+    ReportGenerationRequest,
+    VideoGenerationRequest,
+    generation_option_choices,
+)
 from notebooklm._types.artifacts import GenerationState
 from notebooklm.server._pending import PendingRegistry
 from notebooklm.server.routes import artifacts as artifacts_route
@@ -47,6 +56,57 @@ def test_generate_valid_body_still_202(authed_client: TestClient) -> None:
         json={"type": "audio", "instructions": "Keep it short", "language": "en"},
     )
     assert resp.status_code == 202
+
+
+@pytest.mark.parametrize(
+    "body,request_type,source_ids,language",
+    [
+        ({"type": "audio"}, AudioGenerationRequest, UNSET, "en"),
+        ({"type": "audio", "source_ids": []}, AudioGenerationRequest, UNSET, "en"),
+        (
+            {"type": "audio", "source_ids": ["source-1"], "language": "fr"},
+            AudioGenerationRequest,
+            ("source-1",),
+            "fr",
+        ),
+        ({"type": "video"}, VideoGenerationRequest, UNSET, "en"),
+        ({"type": "report"}, ReportGenerationRequest, UNSET, "en"),
+    ],
+)
+def test_generate_builds_typed_requests_with_preserved_rest_defaults(
+    authed_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    body: dict[str, object],
+    request_type: type[object],
+    source_ids: object,
+    language: str,
+) -> None:
+    """REST normalizes transport defaults before constructing the typed union."""
+    captured: list[object] = []
+
+    async def execute(request, *_args, **_kwargs):
+        captured.append(request)
+        return GenerationExecutionResult(
+            kind=request.kind,
+            generation=GenerationOutcome(status="pending", kind=request.kind, task_id="task-1"),
+        )
+
+    monkeypatch.setattr(artifacts_route.generate_core, "execute_generation", execute)
+    response = authed_client.post("/v1/notebooks/nb-1/artifacts", json=body)
+
+    assert response.status_code == 202
+    assert len(captured) == 1
+    request = captured[0]
+    assert isinstance(request, request_type)
+    if source_ids is UNSET:
+        assert request.source_ids is UNSET
+    else:
+        assert request.source_ids == source_ids
+    assert request.language == language
+    if isinstance(request, VideoGenerationRequest):
+        assert request.style_prompt is None
+    if isinstance(request, ReportGenerationRequest):
+        assert request.extra_instructions is None
 
 
 def test_poll_known_task_not_found_is_200_pending(
@@ -185,6 +245,8 @@ def test_download_not_ready_is_409(authed_client: TestClient) -> None:
     # No artifacts exist → NO_ARTIFACTS → 409, not 500.
     resp = authed_client.post("/v1/notebooks/nb-1/artifacts/download", json={"type": "audio"})
     assert resp.status_code == 409
+    assert "notebooklm " not in resp.text
+    assert "--" not in resp.text
 
 
 def test_download_caller_path_field_is_ignored(
@@ -343,9 +405,7 @@ def test_cleanup_missing_path_is_noop(tmp_path: object) -> None:
 
 def test_generation_payload_mind_map_returns_inline() -> None:
     # A mind-map renders synchronously: no task_id, the map is inlined.
-    result = GenerationExecutionResult(
-        kind="mind-map", display_name="Mind map", mind_map={"root": 1}
-    )
+    result = GenerationExecutionResult(kind="mind-map", mind_map={"root": 1})
     payload = artifacts_route._generation_payload("nb-1", result, PendingRegistry())
     assert payload["mind_map"] == {"root": 1}
     assert "task_id" not in payload
@@ -353,7 +413,7 @@ def test_generation_payload_mind_map_returns_inline() -> None:
 
 def test_generation_payload_without_outcome() -> None:
     # No generation outcome and no mind map → bare {notebook_id, kind}.
-    result = GenerationExecutionResult(kind="audio", display_name="Audio", generation=None)
+    result = GenerationExecutionResult(kind="audio", generation=None)
     payload = artifacts_route._generation_payload("nb-1", result, PendingRegistry())
     assert payload == {"notebook_id": "nb-1", "kind": "audio"}
 
@@ -361,8 +421,8 @@ def test_generation_payload_without_outcome() -> None:
 def test_generation_payload_outcome_without_task_id_is_not_recorded() -> None:
     # A falsy task_id is projected but never recorded in the pending registry.
     pending = PendingRegistry()
-    outcome = GenerationOutcome(status="ok", artifact_type="audio", task_id="")
-    result = GenerationExecutionResult(kind="audio", display_name="Audio", generation=outcome)
+    outcome = GenerationOutcome(status="completed", kind="audio", task_id="")
+    result = GenerationExecutionResult(kind="audio", generation=outcome)
     payload = artifacts_route._generation_payload("nb-1", result, pending)
     assert payload["task_id"] == ""
     assert not pending.knows("nb-1", "")
@@ -657,6 +717,10 @@ def test_generate_wrong_kind_option_is_400(authed_client: TestClient) -> None:
         "/v1/notebooks/nb-1/artifacts", json={"type": "audio", "orientation": "landscape"}
     )
     assert resp.status_code == 400
+    assert resp.json()["error"]["message"] == (
+        "option 'orientation' is not valid for generation kind 'audio'; "
+        "this kind accepts ['audio_format', 'audio_length']"
+    )
 
 
 def test_generate_optionless_kind_rejects_any_option(authed_client: TestClient) -> None:
@@ -714,67 +778,39 @@ def test_generate_mind_map_forwards_instructions(
     assert fake_client.last_mind_map_generate["instructions"] == "group by theme"
 
 
-def test_kind_options_match_core_maps() -> None:
-    """The REST per-kind option table is pinned to the neutral core's choice maps.
-
-    Duplicated (the server layer must not import the core privates) but pinned so
-    a core-map change surfaces here — the same guardrail the MCP ``_KIND_OPTIONS``
-    table carries.
-    """
-    import notebooklm._app.generate_plans as gp
-    from notebooklm.server.routes.artifacts import _KIND_OPTIONS
-
-    assert _KIND_OPTIONS["audio"]["audio_format"] == tuple(gp._AUDIO_FORMAT_MAP)
-    assert _KIND_OPTIONS["audio"]["audio_length"] == tuple(gp._AUDIO_LENGTH_MAP)
-    assert _KIND_OPTIONS["video"]["video_format"] == tuple(gp._VIDEO_FORMAT_MAP)
-    assert _KIND_OPTIONS["video"]["style"] == tuple(gp._VIDEO_STYLE_MAP)
-    assert _KIND_OPTIONS["slide-deck"]["deck_format"] == tuple(gp._SLIDE_FORMAT_MAP)
-    assert _KIND_OPTIONS["slide-deck"]["deck_length"] == tuple(gp._SLIDE_LENGTH_MAP)
-    assert _KIND_OPTIONS["quiz"]["quantity"] == tuple(gp._QUIZ_QUANTITY_MAP)
-    assert _KIND_OPTIONS["quiz"]["difficulty"] == tuple(gp._QUIZ_DIFFICULTY_MAP)
-    assert _KIND_OPTIONS["flashcards"]["quantity"] == tuple(gp._QUIZ_QUANTITY_MAP)
-    assert _KIND_OPTIONS["flashcards"]["difficulty"] == tuple(gp._QUIZ_DIFFICULTY_MAP)
-    assert _KIND_OPTIONS["infographic"]["orientation"] == tuple(gp._INFOGRAPHIC_ORIENTATION_MAP)
-    assert _KIND_OPTIONS["infographic"]["detail"] == tuple(gp._INFOGRAPHIC_DETAIL_MAP)
-    assert _KIND_OPTIONS["infographic"]["style"] == tuple(gp._INFOGRAPHIC_STYLE_MAP)
-    assert _KIND_OPTIONS["report"]["report_format"] == tuple(gp._REPORT_FORMAT_MAP)
-
-
-def test_kind_options_exact_mcp_parity() -> None:
-    """The REST and MCP ``_KIND_OPTIONS`` tables must be byte-for-byte identical.
-
-    Both are duplicated from the neutral core (the CLI/MCP/server boundary forbids
-    importing the core privates); pinning them EQUAL to each other guarantees the
-    two agent surfaces validate the SAME per-kind options with the SAME choices.
-    """
+def test_adapters_do_not_define_generation_semantic_tables() -> None:
+    """REST and MCP consume the neutral authority instead of duplicating it."""
     import pytest
 
     pytest.importorskip("fastmcp")  # MCP tools need the ``mcp`` extra
-    from notebooklm.mcp.tools.studio import _KIND_OPTIONS as mcp_options
-    from notebooklm.server.routes.artifacts import _KIND_OPTIONS as rest_options
+    from notebooklm.mcp.tools import studio
 
-    assert rest_options == mcp_options
+    assert not hasattr(artifacts_route, "_KIND_OPTIONS")
+    assert not hasattr(studio, "_KIND_OPTIONS")
 
 
 def test_kind_options_cover_every_generate_type() -> None:
-    """Every ``GENERATE_TYPES`` kind has a ``_KIND_OPTIONS`` entry, and the
+    """Every ``GENERATE_TYPES`` kind has a neutral option-contract entry, and the
     per-kind-only keys (``map_kind``, ``style_prompt``) + optionless kinds are
     exactly as expected — so a new generate kind can't silently ship without its
     option contract."""
-    from notebooklm.server.routes.artifacts import _KIND_OPTIONS
+
+    kind_options = {
+        kind: generation_option_choices(cast(GenerationKind, kind)) for kind in GENERATE_TYPES
+    }
 
     # Exhaustive over the generate surface (no missing / extra kinds).
-    assert set(_KIND_OPTIONS) == set(GENERATE_TYPES)
+    assert set(kind_options) == set(GENERATE_TYPES)
     # ``map_kind`` is validated at the boundary ONLY (no core map) — it must exist
     # on mind-map and nowhere else.
-    assert "map_kind" in _KIND_OPTIONS["mind-map"]
-    assert all("map_kind" not in opts for k, opts in _KIND_OPTIONS.items() if k != "mind-map")
+    assert "map_kind" in kind_options["mind-map"]
+    assert all("map_kind" not in opts for k, opts in kind_options.items() if k != "mind-map")
     # ``style_prompt`` (free text, choices None) belongs to video only.
-    assert _KIND_OPTIONS["video"]["style_prompt"] is None
-    assert all("style_prompt" not in opts for k, opts in _KIND_OPTIONS.items() if k != "video")
+    assert kind_options["video"]["style_prompt"] is None
+    assert all("style_prompt" not in opts for k, opts in kind_options.items() if k != "video")
     # Optionless kinds carry an explicit empty map (so a stray option is rejected).
-    assert _KIND_OPTIONS["cinematic-video"] == {}
-    assert _KIND_OPTIONS["data-table"] == {}
+    assert kind_options["cinematic-video"] == {}
+    assert kind_options["data-table"] == {}
 
 
 def test_download_spec_exhaustiveness() -> None:

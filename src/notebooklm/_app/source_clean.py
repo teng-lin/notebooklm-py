@@ -46,6 +46,15 @@ class SourceCleanResult:
         return len(self.candidates)
 
 
+@dataclass(frozen=True)
+class SourceCleanPreview:
+    """Immutable cleanup target set prepared before adapter authorization."""
+
+    notebook_id: str
+    dry_run: bool
+    candidates: tuple[CleanCandidate, ...]
+
+
 _GATEWAY_TITLE_PATTERN = re.compile(
     r"^\s*(access denied|403|404|forbidden|not found|502"
     r"|just a moment|attention required|security check|captcha)",
@@ -112,57 +121,59 @@ def candidates_payload(candidates: Sequence[CleanCandidate]) -> list[dict[str, s
     ]
 
 
-async def run_source_clean(
+async def prepare_source_clean(
     *,
     notebook_id: str,
     dry_run: bool,
-    yes: bool,
     list_sources: Callable[[str], Awaitable[list[Source]]],
-    delete_source: Callable[[str, str], Awaitable[object]],
-    confirm_delete: Callable[[int], bool],
-    on_candidates: Callable[[list[CleanCandidate]], None] | None = None,
-    on_delete_start: Callable[[int], None] | None = None,
     classify_sources: Callable[[list[Source]], list[CleanCandidate]] = classify_junk_sources,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-) -> SourceCleanResult:
-    """Classify and optionally delete junk sources."""
+) -> SourceCleanPreview:
+    """Classify junk sources without deleting or consulting presentation policy."""
     sources = await list_sources(notebook_id)
     candidates = classify_sources(sources)
+    return SourceCleanPreview(notebook_id, dry_run, tuple(candidates))
 
-    if not candidates:
+
+def skip_source_clean(preview: SourceCleanPreview, *, cancelled: bool = False) -> SourceCleanResult:
+    """Project a prepared no-op, dry run, or adapter-declined cleanup."""
+    if not preview.candidates:
         return SourceCleanResult(
-            notebook_id=notebook_id,
+            notebook_id=preview.notebook_id,
             status="already_clean",
             candidates=(),
         )
-
-    if on_candidates is not None:
-        on_candidates(candidates)
-
-    if dry_run:
+    if preview.dry_run:
         return SourceCleanResult(
-            notebook_id=notebook_id,
+            notebook_id=preview.notebook_id,
             status="dry_run",
-            candidates=tuple(candidates),
+            candidates=preview.candidates,
         )
-
-    if not yes and not confirm_delete(len(candidates)):
+    if cancelled:
         return SourceCleanResult(
-            notebook_id=notebook_id,
+            notebook_id=preview.notebook_id,
             status="cancelled",
-            candidates=tuple(candidates),
+            candidates=preview.candidates,
         )
+    raise ValueError("non-empty cleanup preview requires execution or cancellation")
 
-    if on_delete_start is not None:
-        on_delete_start(len(candidates))
 
-    delete_list = [candidate[0] for candidate in candidates]
+async def execute_source_clean(
+    preview: SourceCleanPreview,
+    *,
+    delete_source: Callable[[str, str], Awaitable[object]],
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> SourceCleanResult:
+    """Delete the exact immutable target set an adapter already authorized."""
+    if preview.dry_run or not preview.candidates:
+        return skip_source_clean(preview)
+
+    delete_list = [candidate[0] for candidate in preview.candidates]
     chunk_size = 10
     deleted = 0
     failures: list[CleanFailure] = []
     for i in range(0, len(delete_list), chunk_size):
         chunk = delete_list[i : i + chunk_size]
-        delete_tasks = [delete_source(notebook_id, sid) for sid in chunk]
+        delete_tasks = [delete_source(preview.notebook_id, sid) for sid in chunk]
         results = await asyncio.gather(*delete_tasks, return_exceptions=True)
         for sid, result in zip(chunk, results, strict=True):
             # ``return_exceptions=True`` also captures non-``Exception``
@@ -179,9 +190,9 @@ async def run_source_clean(
             await sleep(0.5)
 
     return SourceCleanResult(
-        notebook_id=notebook_id,
+        notebook_id=preview.notebook_id,
         status="completed",
-        candidates=tuple(candidates),
+        candidates=preview.candidates,
         deleted_count=deleted,
         failures=tuple(failures),
     )
@@ -192,8 +203,11 @@ __all__ = [
     "CleanFailure",
     "CleanStatus",
     "SourceCleanResult",
+    "SourceCleanPreview",
     "candidates_payload",
     "classify_junk_sources",
     "normalize_url_for_dedup",
-    "run_source_clean",
+    "execute_source_clean",
+    "prepare_source_clean",
+    "skip_source_clean",
 ]

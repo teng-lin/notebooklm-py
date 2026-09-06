@@ -3,8 +3,8 @@
 The kind/type axis (audio, video, cinematic-video, slide-deck, revise-slide,
 quiz, flashcards, infographic, data-table, mind-map, report) is spread across
 parallel tables that nothing previously tied together: the ``GenerationKind``
-Literal (the single source of truth, ``_app/generate_plans.py``), the per-kind
-plan builders (``_BUILDERS``), the display-name map (``_DISPLAY_NAME``), the
+Literal and frozen request union (the single source of truth,
+``_app/generation_requests.py``), the CLI display-name map (``_DISPLAY_NAME``), the
 executor dispatch table (``_KIND_TO_METHOD``), the spinner duration hints
 (``_TYPICAL_DURATIONS``), the hand-written ``generate <kind>`` Click leaves,
 the ``DOWNLOAD_SPECS`` registry (which itself derives the ``download <kind>``
@@ -42,19 +42,8 @@ exception sets can only shrink). Cross-axis facts baked in as exceptions:
   observed creation/download row shape yet, so they are listable without being
   generation kinds or download-spec entries.
 
-KNOWN PARITY BUG (baselined, not fixed here — see
-:func:`test_duration_hint_behavior_baseline_known_bug`):
-``_TYPICAL_DURATIONS`` is keyed by *kind* names but the runtime lookup
-(``_format_status_message`` via ``handle_generation_result``) receives the
-plan's *display name* ("slide deck", "data table", "briefing document", ...).
-Five keys are therefore unreachable today and their hints never render;
-cinematic-video waits show the standard-video hint. The baseline is
-**behavioral**: it drives the REAL ``execute_generation`` end-to-end (real
-``build_generation_plan`` plan, stub client) and pins the spinner message the
-executor actually emits per kind, so it self-drains on ANY fix path —
-re-keying the table by display names, changing the lookup inside
-``_format_status_message``, OR switching the executor call-site argument to
-``plan.kind``.
+Generation wait events carry semantic kinds. The CLI alone maps those events
+to display names and duration hints.
 
 Anti-vacuity: the axis floor (>= 11 kinds) is asserted so a broken derivation
 cannot pass silently, and pure-detector self-checks prove a planted
@@ -70,22 +59,25 @@ import re
 import typing
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from notebooklm._app.generate import _KIND_TO_METHOD, execute_generation
-from notebooklm._app.generate_plans import (
-    _BUILDERS,
-    _DISPLAY_NAME,
-    _REPORT_DISPLAY,
+from notebooklm._app.generate_retry import GenerationWaitStarted
+from notebooklm._app.generation_requests import (
     GenerationKind,
-    build_generation_plan,
+    GenerationRequest,
+    build_generation_request,
 )
-from notebooklm._app.generate_retry import _TYPICAL_DURATIONS, _format_status_message
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._types.artifacts import _ARTIFACT_TYPE_CODE_MAP
 from notebooklm._web.params import artifacts as artifact_params
 from notebooklm.cli import artifact_cmd
 from notebooklm.cli._download_specs import DOWNLOAD_SPECS
+from notebooklm.cli._generate_render import (
+    _DISPLAY_NAME,
+    _TYPICAL_DURATIONS,
+    format_generation_wait,
+)
 from notebooklm.cli.download_cmd import download as download_group
 from notebooklm.cli.generate_cmd import generate as generate_group
 from notebooklm.cli.rendering import cli_name_to_artifact_type
@@ -123,11 +115,11 @@ def _loc(rel: str, pattern: str) -> str:
 
 
 LOC: Mapping[str, str] = {
-    "GenerationKind": _loc("_app/generate_plans.py", r"^GenerationKind = Literal"),
-    "_BUILDERS": _loc("_app/generate_plans.py", r"^_BUILDERS"),
-    "_DISPLAY_NAME": _loc("_app/generate_plans.py", r"^_DISPLAY_NAME"),
+    "GenerationKind": _loc("_app/generation_requests.py", r"^GenerationKind: TypeAlias"),
+    "GenerationRequest": _loc("_app/generation_requests.py", r"^GenerationRequest: TypeAlias"),
+    "_DISPLAY_NAME": _loc("cli/_generate_render.py", r"^_DISPLAY_NAME"),
     "_KIND_TO_METHOD": _loc("_app/generate.py", r"^_KIND_TO_METHOD"),
-    "_TYPICAL_DURATIONS": _loc("_app/generate_retry.py", r"^_TYPICAL_DURATIONS"),
+    "_TYPICAL_DURATIONS": _loc("cli/_generate_render.py", r"^_TYPICAL_DURATIONS"),
     "generate group": _loc("cli/generate_cmd.py", r"^def generate\("),
     "download registration": _loc("cli/download_cmd.py", r"^for _spec in DOWNLOAD_SPECS"),
     "DOWNLOAD_SPECS": _loc("cli/_download_specs.py", r"^DOWNLOAD_SPECS"),
@@ -322,41 +314,6 @@ PAYLOAD_BUILDER_EXTRAS: Mapping[str, str] = {
     ),
 }
 
-#: KNOWN BUG BASELINE (FIXME — see module docstring): the per-kind duration-hint
-#: behavior OBSERVED by running the REAL ``execute_generation`` end-to-end
-#: (real ``build_generation_plan`` plan, stub client) and parsing the spinner
-#: message it emits into the injected ``wait_context`` — classified against the
-#: hint ``_TYPICAL_DURATIONS`` *intends* for that kind:
-#:
-#: * ``correct``          — the intended hint renders.
-#: * ``missing``          — an intended hint never renders (FIXME: the kind-named
-#:                          key can't match the display-name lookup).
-#: * ``wrong-hint``       — a different kind's hint renders (FIXME:
-#:                          cinematic-video displays as "video" and gets the
-#:                          standard-video estimate).
-#: * ``no-hint-intended`` — no hint recorded; graceful fallback (revise-slide).
-#: * ``never-waits``      — the kind never enters the wait loop (mind-map renders
-#:                          synchronously; FIXME: its hint key is dead weight).
-#:
-#: Behavioral on purpose: ANY fix path — re-keying ``_TYPICAL_DURATIONS`` by
-#: display names, fixing the lookup inside ``_format_status_message``, or
-#: passing ``plan.kind`` at the executor call site — changes the emitted
-#: message, flips outcomes to ``correct``, and fails this pin, forcing the
-#: baseline to drain.
-EXPECTED_DURATION_HINT_BEHAVIOR: Mapping[str, str] = {
-    "audio": "correct",
-    "video": "correct",
-    "cinematic-video": "wrong-hint",  # FIXME: shows the standard-video hint
-    "slide-deck": "missing",  # FIXME: key "slide-deck" vs display "slide deck"
-    "revise-slide": "no-hint-intended",
-    "quiz": "correct",
-    "flashcards": "correct",
-    "infographic": "correct",
-    "data-table": "missing",  # FIXME: key "data-table" vs display "data table"
-    "mind-map": "never-waits",  # FIXME: hint key exists but the kind never waits
-    "report": "missing",  # FIXME: key "report" vs per-format displays
-}
-
 ALL_DOCUMENTED_REASON_TABLES: Mapping[str, Mapping[str, str]] = {
     "DISPLAY_NAME_EXCEPTIONS": DISPLAY_NAME_EXCEPTIONS,
     "TYPICAL_DURATION_EXCEPTIONS": TYPICAL_DURATION_EXCEPTIONS,
@@ -395,13 +352,16 @@ def test_axis_floor_holds() -> None:
 # --- per-table parity gates -------------------------------------------------------
 
 
-def test_plan_builders_cover_every_kind() -> None:
-    """``_BUILDERS`` (plan construction) covers the axis exactly — no exceptions.
+def test_frozen_request_union_covers_every_kind_exactly() -> None:
+    """The discriminated request union has exactly one frozen variant per kind."""
 
-    ``build_generation_plan`` raises ``Unknown generation kind`` for any kind
-    missing here, so a gap is an immediate runtime break for that kind.
-    """
-    _assert_parity(_check_kind_table(_BUILDERS, table=f"_BUILDERS ({LOC['_BUILDERS']})"))
+    variants = typing.get_args(GenerationRequest)
+    variant_kinds = [variant.__dataclass_fields__["kind"].default for variant in variants]
+    _assert_parity(
+        _check_kind_table(variant_kinds, table=f"GenerationRequest ({LOC['GenerationRequest']})")
+    )
+    assert len(variants) == len(KINDS) == len(set(variant_kinds)) == 11
+    assert all(variant.__dataclass_params__.frozen for variant in variants)
 
 
 def test_display_names_cover_every_kind_except_report() -> None:
@@ -479,138 +439,65 @@ class _StubClient:
         self.mind_maps = _StubMindMapsAPI()
 
 
-#: Kind-specific raw args ``build_generation_plan`` requires (the values the
-#: Click layer would default to). Kinds absent here need only the common keys.
-_EXECUTOR_RAW_ARGS: Mapping[str, dict[str, Any]] = {
-    "audio": {"audio_format": "deep-dive", "audio_length": "default"},
-    "slide-deck": {"deck_format": "detailed", "deck_length": "default"},
-    "revise-slide": {"artifact_id": "artifact-1", "slide_index": 1},
-    "quiz": {"quantity": "standard", "difficulty": "medium"},
-    "flashcards": {"quantity": "standard", "difficulty": "medium"},
-    "infographic": {"orientation": "landscape", "detail": "standard", "style": "auto"},
-}
+def _executor_request(kind: str) -> GenerationRequest:
+    """Construct the minimum valid frozen request for one axis member."""
+
+    return build_generation_request(
+        cast(GenerationKind, kind),
+        notebook_id="nb-1",
+        wait=True,
+        artifact_id="artifact-1",
+        slide_index=1,
+        instructions="prompt" if kind in {"data-table", "revise-slide"} else None,
+    )
 
 
-def _plan_variants(kind: str) -> list[dict[str, Any]]:
-    """Raw-arg variants to drive per kind — report fans out over its formats."""
-    if kind != "report":
-        return [dict(_EXECUTOR_RAW_ARGS.get(kind, {}))]
-    variants: list[dict[str, Any]] = [
-        {"report_format": fmt} for fmt in _REPORT_DISPLAY if fmt != "custom"
-    ]
-    variants.append({"description": "custom report prompt"})  # smart-custom path
-    return variants
+def _executor_wait_event(kind: str) -> GenerationWaitStarted | None:
+    captured: list[GenerationWaitStarted] = []
 
-
-def _executor_wait_message(kind: str, extra_args: dict[str, Any]) -> str | None:
-    """Run the REAL executor for ``kind``; return the spinner message it emits.
-
-    Builds the plan via the real ``build_generation_plan`` and awaits the real
-    ``execute_generation`` against a stub client, capturing the first argument
-    of the injected ``wait_context`` — exactly the string a user's spinner
-    shows. ``None`` means the kind never entered the wait loop.
-    """
-    raw_args: dict[str, Any] = {"notebook_id": "nb-1", "wait": True, **extra_args}
-    plan = build_generation_plan(kind, raw_args)
-    captured: list[str] = []
-
-    def wait_context(message: str, _resume_hint: str) -> contextlib.nullcontext[None]:
-        captured.append(message)
-        return contextlib.nullcontext()
-
-    async def _resolve_notebook(_client: Any, notebook_id: str, **_kw: Any) -> str:
+    async def _resolve_notebook(_client: Any, notebook_id: str) -> str:
         return notebook_id
 
-    async def _resolve_sources(_client: Any, _nb: str, source_ids: Any, **_kw: Any) -> Any:
-        return list(source_ids) or None
+    async def _resolve_sources(_client: Any, _nb: str, source_ids: tuple[str, ...]) -> Any:
+        return list(source_ids)
 
     asyncio.run(
         execute_generation(
-            plan,
+            _executor_request(kind),
             _StubClient(),  # type: ignore[arg-type]
             notebook_resolver=_resolve_notebook,
             source_resolver=_resolve_sources,
-            wait_context=wait_context,
+            wait_context=lambda event: contextlib.nullcontext(captured.append(event)),
             mind_map_context=contextlib.nullcontext,
         )
     )
     return captured[0] if captured else None
 
 
-def _hint_from_message(message: str) -> str | None:
-    """Parse the parenthesized duration hint out of a spinner status message."""
-    match = re.search(r" generation \((.+)\)\.\.\.$", message)
-    return match.group(1) if match else None
+def test_executor_wait_event_carries_request_kind() -> None:
+    """Every polling kind emits its semantic kind without a display-name bridge."""
+
+    for kind in sorted(KINDS - {"mind-map"}):
+        event = _executor_wait_event(kind)
+        assert event is not None
+        assert event.kind == kind
+        assert event.task_id == "task-1"
+    assert _executor_wait_event("mind-map") is None
 
 
-def _classify_hint(intended: str | None, observed: str | None) -> str:
-    """Classify one kind's hint behavior: intended (per ``_TYPICAL_DURATIONS``) vs observed."""
-    if intended is None:
-        return "no-hint-intended" if observed is None else "unintended-hint"
-    if observed is None:
-        return "missing"
-    return "correct" if observed == intended else "wrong-hint"
+def test_cli_formatter_renders_duration_for_each_axis_kind() -> None:
+    """The CLI consumes semantic events and owns all duration wording."""
 
-
-def _hint_behavior(kind: str) -> str:
-    """Observed duration-hint behavior for ``kind`` through the production chain.
-
-    Runs the real executor for every plan variant of the kind and classifies
-    the emitted spinner message(s). ``never-waits`` means no variant entered
-    the wait loop; ``inconsistent`` (never expected) means variants disagreed.
-    """
-    messages = [_executor_wait_message(kind, extra) for extra in _plan_variants(kind)]
-    if all(m is None for m in messages):
-        return "never-waits"
-    if any(m is None for m in messages):
-        return "inconsistent"
-    observed = {_hint_from_message(m) for m in messages if m is not None}
-    if len(observed) != 1:
-        return "inconsistent"
-    return _classify_hint(_TYPICAL_DURATIONS.get(kind), observed.pop())
-
-
-def test_duration_hint_behavior_baseline_known_bug() -> None:
-    """FIXME baseline: per-kind hint behavior is pinned BEHAVIORALLY (keying bug).
-
-    ``_format_status_message`` looks hints up by the plan's *display name*
-    (``execute_generation`` passes ``plan.display_name`` into
-    ``handle_generation_result``), but ``_TYPICAL_DURATIONS`` is keyed by
-    *kind* names. So slide-deck/data-table/report waits render no hint and
-    cinematic-video renders the standard-video hint. This is REAL,
-    pre-existing drift — baselined here (guardrail-only change), not silently
-    fixed.
-
-    The pin is computed by running the REAL ``execute_generation`` end-to-end
-    (real plan builder, stub client) and parsing the spinner message it
-    actually emits, so it self-drains on ANY fix path: re-keying
-    ``_TYPICAL_DURATIONS`` by display names, fixing the lookup inside
-    ``_format_status_message``, or passing ``plan.kind`` at the executor call
-    site — each changes the emitted message, flips outcomes to "correct", and
-    fails this pin; update EXPECTED_DURATION_HINT_BEHAVIOR (drain the FIXMEs)
-    in the fix commit. A NEW "missing"/"wrong-hint" means a new hint shipped
-    with the same bug — fix it instead of baselining more debt.
-    """
-    # The pin itself is axis-keyed: a new kind must take an explicit position.
-    _assert_parity(
-        _check_kind_table(
-            EXPECTED_DURATION_HINT_BEHAVIOR,
-            table="EXPECTED_DURATION_HINT_BEHAVIOR (this guardrail)",
-        )
-    )
-    observed = {kind: _hint_behavior(kind) for kind in sorted(KINDS)}
-    assert observed == dict(EXPECTED_DURATION_HINT_BEHAVIOR), (
-        f"Per-kind duration-hint behavior changed (_TYPICAL_DURATIONS at "
-        f"{LOC['_TYPICAL_DURATIONS']}, lookup in _format_status_message).\n"
-        f"  baselined: {dict(sorted(EXPECTED_DURATION_HINT_BEHAVIOR.items()))}\n"
-        f"  observed:  {observed}\n"
-        "missing/wrong-hint -> correct: the keying bug was (partly) FIXED — drain "
-        "those FIXME entries from EXPECTED_DURATION_HINT_BEHAVIOR.\n"
-        "correct -> missing/wrong-hint: a hint regressed — key the entry so the "
-        "production lookup (display name today) actually reaches it.\n"
-        "Fix paths that drain this baseline: re-key _TYPICAL_DURATIONS by display "
-        "names, or pass plan.kind through to the lookup instead of plan.display_name."
-    )
+    for kind in sorted(KINDS):
+        event = GenerationWaitStarted(kind=cast(GenerationKind, kind), task_id="task-1", elapsed=0)
+        rendered = format_generation_wait(event)
+        hint = _TYPICAL_DURATIONS.get(cast(GenerationKind, kind))
+        if kind == "revise-slide":
+            assert hint is None
+            assert "typically" not in rendered
+        else:
+            assert hint is not None
+            assert hint in rendered
 
 
 def test_cli_generate_group_has_a_leaf_per_kind() -> None:
@@ -1030,23 +917,6 @@ def test_detector_flags_extra_that_joined_the_axis() -> None:
         )
         == []
     )
-
-
-def test_hint_classifier_covers_all_categories() -> None:
-    """The behavioral-baseline classifier distinguishes every category it pins.
-
-    Pure-input proof that the categories EXPECTED_DURATION_HINT_BEHAVIOR pins
-    are actually computable and distinct — including 'unintended-hint', the
-    never-expected shape that would mean a hint renders with no intended entry.
-    """
-    assert _classify_hint(None, None) == "no-hint-intended"
-    assert _classify_hint(None, "typically 1 min") == "unintended-hint"
-    assert _classify_hint("typically 1 min", None) == "missing"
-    assert _classify_hint("typically 1 min", "typically 1 min") == "correct"
-    assert _classify_hint("typically 1 min", "typically 9 min") == "wrong-hint"
-    # The extractor reads the REAL formatter output shapes: hint and no-hint.
-    assert _hint_from_message(_format_status_message("audio")) == _TYPICAL_DURATIONS["audio"]
-    assert _hint_from_message(_format_status_message("slide deck")) is None
 
 
 def test_detector_accepts_a_clean_table() -> None:

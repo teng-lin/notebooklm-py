@@ -282,6 +282,19 @@ DEPRECATION_SPECS: Mapping[str, DeprecationSpec] = MappingProxyType(
             removal="1.0",
             stacklevel=3,
         ),
+        "mcp_confirmed_name_references": DeprecationSpec(
+            key="mcp_confirmed_name_references",
+            message=(
+                "Using a name or partial id on a confirmed MCP mutation is deprecated; "
+                "pass the canonical notebook and target ids returned by the confirmation "
+                "preview. Confirmed calls using names or partial ids will be rejected in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=4,
+        ),
         "artifact_poll_follower_options": DeprecationSpec(
             key="artifact_poll_follower_options",
             message=(

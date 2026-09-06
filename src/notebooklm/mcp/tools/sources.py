@@ -35,21 +35,41 @@ from ..._app import source_mutations as mut_core
 from ..._app import source_wait as wait_core
 from ..._app.resolve import FULL_ID_PATTERN, validate_id
 from ..._app.serialize import to_jsonable
-from ..._app.source_batch import MAX_BATCH_URLS, batch_item_is_fatal
+from ..._app.source_batch import (
+    MAX_BATCH_URLS,
+    remap_source_batch_item,
+    unattempted_source_batch_item,
+    unknown_source_batch_item,
+)
 from ..._app.views import source_view as _source_view
+from ..._source.batch import preserve_batch_call_failure, preserve_batch_projection_failure
 from ...exceptions import (
     RPCError,
     SourceNotFoundError,
     ValidationError,
 )
+from ...outcomes import SourceBatchItemOutcome
 from ...types import source_status_to_str
 from ...urls import is_youtube_url
+from .._batch import project_source_batch_item
 from .._coerce import coerce_list
-from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
+from .._confirm import (
+    DESTRUCTIVE,
+    READ_ONLY,
+    confirmed_name_deprecation,
+    needs_confirmation,
+    with_confirmation_deprecation,
+)
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors, tool_error_payload
 from .._paginate import DEFAULT_LIMIT, paginate
-from .._resolve import partition_source_refs, resolve_notebook, resolve_source, resolve_sources
+from .._resolve import (
+    partition_source_refs,
+    reject_non_canonical_id,
+    resolve_notebook,
+    resolve_source,
+    resolve_sources,
+)
 from ._content_sanity import _annotate_thin_warnings
 from ._fileupload import _add_bytes, _add_one, _broker_upload, _decode_upload_b64
 from ._passthrough import passthrough_child_id
@@ -374,9 +394,7 @@ def register(mcp: Any) -> None:
             src_id = await resolve_source(client, nb_id, source)
             result = await mut_core.execute_source_rename(
                 client,
-                mut_core.SourceRenamePlan(
-                    notebook_id=nb_id, source_id=src_id, new_title=new_title, json_output=False
-                ),
+                mut_core.SourceRenamePlan(notebook_id=nb_id, source_id=src_id, new_title=new_title),
                 resolve_source_id=passthrough_child_id,
             )
             return {"status": "renamed", **to_jsonable(result)}
@@ -390,7 +408,7 @@ def register(mcp: Any) -> None:
         confirm: bool = False,
     ) -> dict[str, Any]:
         """Delete sources. ``source`` XOR ``sources``. Preview: omit both.
-        Confirm: pass those previewed ids.
+        Confirm with the preview's canonical ``notebook_id`` and source id(s).
         """
         with mcp_errors():
             # Input guards fire BEFORE any I/O (fail-fast, like source_wait):
@@ -426,6 +444,9 @@ def register(mcp: Any) -> None:
                         "confirm=True requires canonical source ids returned by the preview; "
                         "names and prefixes can resolve to different sources"
                     )
+            if coerced is not None:
+                for ref in coerced:
+                    reject_non_canonical_id(ref, "source")
 
             client = await get_client(ctx)
 
@@ -447,7 +468,10 @@ def register(mcp: Any) -> None:
                         }
                     )
                 await client.sources.delete(nb_id, src_id)
-                return {"status": "deleted", "notebook_id": nb_id, "source_id": src_id}
+                return with_confirmation_deprecation(
+                    {"status": "deleted", "notebook_id": nb_id, "source_id": src_id},
+                    confirmed_name_deprecation(notebook, source),
+                )
 
             nb_id = await resolve_notebook(client, notebook)
             snapshot = await client.sources.list(nb_id)
@@ -475,7 +499,7 @@ def register(mcp: Any) -> None:
             if src_ids:
                 await client.sources.delete_many(nb_id, src_ids)
             deleted = [{"source_id": sid} for sid in src_ids]
-            return {
+            payload = {
                 "status": "deleted",
                 "notebook_id": nb_id,
                 "deleted": deleted,
@@ -484,6 +508,10 @@ def register(mcp: Any) -> None:
                 "not_found_count": len(not_found),
                 "total_count": len(deleted) + len(not_found),
             }
+            return with_confirmation_deprecation(
+                payload,
+                confirmed_name_deprecation(notebook, *(coerced or ())),
+            )
 
     @mcp.tool(annotations=READ_ONLY)
     async def source_wait(
@@ -646,16 +674,11 @@ def register(mcp: Any) -> None:
                          {"input": "<url>", "status": "error",
                           "error": {"code": …, "message": …, "retriable": …, "hint"?: …}}]}
 
-        ``results`` is positional (``results[i]`` is for ``urls[i]``); ``status`` is
-        ``"added"`` or ``"error"`` (the ADD outcome). An ``"added"`` item also carries the
-        source's ``status_label`` and, when the add response already reflects a failed
-        import, an inline ``warning`` — same failure-signaling as single mode. A per-URL
-        **input** failure (bad URL / 404 / SSRF-blocked host) isolates as an ``error``
-        item; a **fatal** service failure (expired auth, rate limit, upstream 5xx) aborts
-        the whole call. Batch is URL-only: a non-URL entry (plain text, a local path,
-        ``file://``/``ftp://``) is reported as a per-item ``VALIDATION`` error. The
-        single-mode named inputs (incl. ``bytes_base64``/``filename``/``wait``) are not
-        valid with ``urls``; ``allow_internal`` applies to every entry.
+        ``results[i]`` corresponds to ``urls[i]`` and includes ``commit_state``
+        (confirmed/rejected/unknown/not_sent). Batch is URL-only; invalid entries are
+        not_sent errors. Escaping failures retain settled members as ``batch_outcome``.
+        Single-mode inputs and ``wait`` are invalid with ``urls``; ``allow_internal``
+        applies to every entry.
         """
         with mcp_errors():
             # Mode selection (fail-closed) BEFORE any notebook I/O, so a malformed
@@ -996,6 +1019,7 @@ async def _add_url_batch(
     surface the warning later via ``source_wait``.
     """
     results: list[dict[str, Any] | None] = [None] * len(urls)
+    settled: list[SourceBatchItemOutcome | None] = [None] * len(urls)
     valid_positions: list[int] = []
     valid_urls: list[str] = []
     for index, entry in enumerate(urls):
@@ -1013,71 +1037,66 @@ async def _add_url_batch(
                 allow_internal=allow_internal,
             )
         except Exception as exc:  # noqa: BLE001 - positional input isolation
-            if batch_item_is_fatal(exc):
-                raise
-            results[index] = {
-                "input": entry,
-                "status": "error",
-                "error": tool_error_payload(exc),
-            }
+            settled[index] = unattempted_source_batch_item(entry, exc, member=index)
         else:
             valid_positions.append(index)
             valid_urls.append(entry)
 
-    outcomes = await client.sources._add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+    try:
+        outcomes = (
+            await client.sources.add_urls_batch(notebook_id, valid_urls) if valid_urls else []
+        )
+    except BaseException as exc:
+        preserve_batch_call_failure(
+            exc,
+            local_items=settled,
+            valid_positions=valid_positions,
+            valid_inputs=valid_urls,
+        )
+        raise
+    for index, outcome in zip(valid_positions, outcomes, strict=False):
+        settled[index] = remap_source_batch_item(outcome, member=index)
     if len(outcomes) != len(valid_urls):
-        raise RPCError(
+        error = RPCError(
             "Internal source batch result count did not match validated input count",
         )
+        for index in valid_positions[len(outcomes) :]:
+            settled[index] = unknown_source_batch_item(urls[index], error, member=index)
+        known = [item for item in settled if item is not None]
+        preserve_batch_projection_failure(error, known)
+        raise error
+
+    finalized_outcomes = [item for item in settled if item is not None]
+    if len(finalized_outcomes) != len(urls):
+        error = RPCError("Internal source batch settlement lost positional outcomes")
+        preserve_batch_projection_failure(error, finalized_outcomes)
+        raise error
 
     # Keep each added item's Source alongside its result dict so a synchronously-ready
     # web-page item can be annotated with the content-sanity warning after the loop,
     # concurrently — never N×fetch in-loop (reuses :func:`_annotate_thin_warnings`).
     ready_pairs: list[tuple[dict[str, Any], Source]] = []
-    for index, outcome in zip(valid_positions, outcomes, strict=True):
-        if outcome.error is not None:
-            if batch_item_is_fatal(outcome.error):
-                raise outcome.error
-            results[index] = {
-                "input": outcome.url,
-                "status": "error",
-                "error": tool_error_payload(outcome.error),
-            }
-        else:
-            src = outcome.source
-            if src is None:  # pragma: no cover - SourceUrlBatchItem invariant
-                raise RPCError(
-                    "Internal source batch outcome had neither source nor error",
-                )
-            # Deliberately NOT a ``_source_view`` row: this is a per-input
-            # RESULT record for a source that was just created, so Drive health
-            # (#2111) carries no signal yet — read it back with ``source_list`` /
-            # ``source_read``, which do project it. The REST ``/sources/batch``
-            # echo mirrors this shape for the same reason.
-            item: dict[str, Any] = {
-                "input": outcome.url,
-                "status": "added",
-                "source_id": src.id,
-                "title": src.title,
-                "status_label": source_status_to_str(src.status),
-            }
-            if src.is_error:
-                item["warning"] = (
-                    "Import failed: the source row was created but processing errored "
-                    "(status_label='error'). Delete it with source_delete, or list "
-                    "failures via source_list(status='error')."
-                )
-            elif src.is_ready:
-                ready_pairs.append((item, src))
-            results[index] = item
-    finalized = [item for item in results if item is not None]
-    if len(finalized) != len(urls):
-        raise RPCError(
-            "Internal source batch projection lost positional outcomes",
-        )
-    # Annotate any synchronously-ready web-page items with a thin / soft-404 warning
-    # (concurrent; web-page-filtered; degrades any fetch failure to no warning).
-    await _annotate_thin_warnings(client, notebook_id, ready_pairs)
+    try:
+        for index, outcome in enumerate(finalized_outcomes):
+            projected, ready_source = project_source_batch_item(
+                outcome,
+                error_payload=tool_error_payload,
+            )
+            results[index] = projected
+            if ready_source is not None:
+                ready_pairs.append((projected, ready_source))
+        finalized = [item for item in results if item is not None]
+        if len(finalized) != len(urls):
+            raise RPCError(
+                "Internal source batch projection lost positional outcomes",
+            )
+        # Annotate any synchronously-ready web-page items with a thin / soft-404 warning
+        # (concurrent; web-page-filtered; degrades any ordinary fetch failure to no warning).
+        # Cancellation still propagates with the already-settled batch evidence attached.
+        await _annotate_thin_warnings(client, notebook_id, ready_pairs)
+    except BaseException as exc:
+        preserve_batch_projection_failure(exc, finalized_outcomes)
+        raise
     # Derive the tallies from `results` (single source of truth) rather than
     # maintaining parallel counters that must be kept in sync with each append.
     added = sum(1 for item in finalized if item["status"] == "added")

@@ -41,10 +41,9 @@ async def execute_share_status(
     notebook_id: str,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> ShareStatus:
     """Resolve the notebook + fetch its sharing status."""
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     return await client.sharing.get_status(resolved_id)
 
 
@@ -54,10 +53,9 @@ async def execute_share_set_public(
     enable: bool,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> ShareStatus:
     """Resolve the notebook + enable/disable public link sharing."""
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     return await client.sharing.set_public(resolved_id, enable)
 
 
@@ -67,7 +65,6 @@ async def execute_share_set_view_level(
     view_level: ShareViewLevel,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> tuple[str, ShareStatus]:
     """Resolve the notebook + set what viewers can access.
 
@@ -75,7 +72,7 @@ async def execute_share_set_view_level(
     envelope keys ``notebook_id`` off the resolved id (not ``status``), so it is
     surfaced alongside the returned status.
     """
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     status = await client.sharing.set_view_level(resolved_id, view_level)
     return resolved_id, status
 
@@ -89,10 +86,9 @@ async def execute_share_add_user(
     notify: bool,
     welcome_message: str,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> str:
     """Resolve the notebook + share it with a user. Returns the resolved id."""
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     await client.sharing.add_user(
         resolved_id,
         email,
@@ -110,10 +106,9 @@ async def execute_share_update_user(
     permission: SharePermission,
     *,
     resolve_notebook_id: ResolveNotebookIdFn,
-    json_output: bool = False,
 ) -> str:
     """Resolve the notebook + update a user's permission. Returns the resolved id."""
-    resolved_id = await resolve_notebook_id(client, notebook_id, json_output=json_output)
+    resolved_id = await resolve_notebook_id(client, notebook_id)
     await client.sharing.update_user(resolved_id, email, permission)
     return resolved_id
 

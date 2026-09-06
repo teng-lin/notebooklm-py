@@ -140,7 +140,9 @@ def test_download_error_releases_slot(monkeypatch, mock_client, config) -> None:
     async def fake(plan, client, *, notebook_resolver, artifact_resolver, progress=None):
         return _fileroutes.download_core.DownloadResult(
             outcome=_fileroutes.download_core.DownloadOutcome.NO_ARTIFACTS,
-            error="none yet",
+            failure=_fileroutes.download_core.DownloadFailure(
+                "no_artifacts", artifact_type="audio"
+            ),
         )
 
     monkeypatch.setattr(_fileroutes.download_core, "execute_download", fake)
@@ -395,7 +397,9 @@ def test_download_not_ready_409(monkeypatch, mock_client, config) -> None:
     async def fake(plan, client, *, notebook_resolver, artifact_resolver, progress=None):
         return _fileroutes.download_core.DownloadResult(
             outcome=_fileroutes.download_core.DownloadOutcome.NO_ARTIFACTS,
-            error="none yet",
+            failure=_fileroutes.download_core.DownloadFailure(
+                "no_artifacts", artifact_type="audio"
+            ),
         )
 
     monkeypatch.setattr(_fileroutes.download_core, "execute_download", fake)
@@ -1113,7 +1117,9 @@ def test_download_returned_error_outcome_stays_409_and_hides_detail(
     async def fake(plan, client, *, notebook_resolver, artifact_resolver, progress=None):
         return _fileroutes.download_core.DownloadResult(
             outcome=_fileroutes.download_core.DownloadOutcome.ERROR,
-            error="boom /home/secretuser/leak.json",
+            failure=_fileroutes.download_core.DownloadFailure(
+                "download_failed", detail="boom /home/secretuser/leak.json"
+            ),
         )
 
     monkeypatch.setattr(_fileroutes.download_core, "execute_download", fake)

@@ -16,12 +16,9 @@ domain artifact), not a presentation envelope, so they stay neutral.
 
 Boundary-imposed seams worth calling out:
 
-* **Status prose is emitted into an injected :class:`ProgressSink`, never
-  printed.** The conversation-selection status lines (``"Continuing
-  conversation ..."`` etc.) and the save-as-note status lines carry Rich markup
-  but are emitted as :class:`ProgressEvent` messages so the CLI adapter routes
-  them through its markup-aware ``cli_print`` / ``emit_status`` (honoring root
-  ``--quiet`` / JSON-stdout purity). This module never touches a console.
+* **Semantic events are emitted into an injected sink, never printed.** The
+  adapter maps typed event codes and data onto its own status wording and
+  output routing. This module never carries Rich markup or console policy.
 
 * **The cached-context reads are injected.** :func:`determine_conversation_id`
   takes the cached notebook/conversation values as plain arguments so the CLI
@@ -46,11 +43,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from ..exceptions import ValidationError
 from ..types import ChatGoal, ChatMode, ChatResponseLength
-from .events import ProgressEvent, ProgressSink
 
 if TYPE_CHECKING:
     from ..types import AskResult
@@ -58,10 +54,48 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _emit(progress: ProgressSink | None, message: str, *, kind: str = "status") -> None:
-    """Best-effort status emission into the optional sink."""
-    if progress is not None:
-        progress.emit(ProgressEvent(message=message, kind=kind))
+ChatEventKind = Literal[
+    "NOTEBOOK_CHANGED",
+    "HISTORY_CONTINUING",
+    "HISTORY_UNAVAILABLE",
+    "NOTE_NO_ANSWER",
+    "NOTE_PLAIN_TEXT_FALLBACK",
+    "NOTE_SAVED",
+    "NOTE_SAVE_FAILED",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ChatEvent:
+    """Semantic chat workflow event for adapter-owned rendering."""
+
+    kind: ChatEventKind
+    conversation_id: str | None = None
+    note_id: str | None = None
+    note_title: str | None = None
+    detail: str | None = None
+
+
+@runtime_checkable
+class ChatEventSink(Protocol):
+    """Consumer for semantic chat events."""
+
+    def emit(self, event: ChatEvent) -> None: ...
+
+
+def _emit(events: ChatEventSink | None, event: ChatEvent) -> None:
+    if events is not None:
+        events.emit(event)
+
+
+class ChatValidationError(ValidationError):
+    """Typed validation record whose wording belongs to each adapter."""
+
+    code: Literal["NEW_WITH_CONVERSATION_ID"] = "NEW_WITH_CONVERSATION_ID"
+
+    def __init__(self, *, conversation_id: str) -> None:
+        self.conversation_id = conversation_id
+        super().__init__("new conversation and explicit conversation cannot be combined")
 
 
 # ---------------------------------------------------------------------------
@@ -82,10 +116,7 @@ def validate_ask_flags(*, new_conversation: bool, conversation_id: str | None) -
             supplied (the command layer maps this to its own envelope / exit).
     """
     if new_conversation and conversation_id:
-        raise ValidationError(
-            "--new and --conversation-id are mutually exclusive: "
-            "--new starts a fresh conversation while --conversation-id resumes a specific one."
-        )
+        raise ChatValidationError(conversation_id=conversation_id)
 
 
 def determine_conversation_id(
@@ -95,7 +126,7 @@ def determine_conversation_id(
     resolved_notebook_id: str,
     cached_notebook_id: Callable[[], str | None],
     cached_conversation_id: Callable[[], str | None],
-    progress: ProgressSink | None = None,
+    progress: ChatEventSink | None = None,
 ) -> str | None:
     """Select the conversation ID to continue for the ``ask`` command.
 
@@ -113,7 +144,7 @@ def determine_conversation_id(
     ``--conversation-id`` reads neither helper, and the notebook-switch branch
     reads only the notebook helper — exactly as the pre-relocation command did
     (no extra context-file touches on those paths). Status prose is emitted into
-    the optional :class:`ProgressSink`.
+    the optional :class:`ChatEventSink`.
     """
     if explicit_conversation_id:
         return explicit_conversation_id
@@ -122,7 +153,7 @@ def determine_conversation_id(
     # the cached notebook when an explicit one was supplied (matches the
     # historical lazy read; ``and`` short-circuits before the callable fires).
     if explicit_notebook_id and (cached := cached_notebook_id()) and resolved_notebook_id != cached:
-        _emit(progress, "[dim]Different notebook specified, starting new conversation...[/dim]")
+        _emit(progress, ChatEvent("NOTEBOOK_CHANGED"))
         return None
 
     return cached_conversation_id()
@@ -132,7 +163,7 @@ async def get_latest_conversation_from_server(
     client: Any,
     notebook_id: str,
     *,
-    progress: ProgressSink | None = None,
+    progress: ChatEventSink | None = None,
 ) -> str | None:
     """Fetch the most recent conversation ID from the server.
 
@@ -144,7 +175,7 @@ async def get_latest_conversation_from_server(
     try:
         conv_id = await client.chat.get_conversation_id(notebook_id)
         if conv_id:
-            _emit(progress, f"[dim]Continuing conversation {conv_id[:8]}...[/dim]")
+            _emit(progress, ChatEvent("HISTORY_CONTINUING", conversation_id=conv_id))
             return conv_id
     except Exception as e:
         logger.debug("Failed to fetch last conversation (%s): %s", type(e).__name__, e)
@@ -154,7 +185,7 @@ async def get_latest_conversation_from_server(
     # diagnostic, and emitting it inside the handler would trip the error-path
     # heuristic in the CLI quiet-enforcement test.
     if history_unavailable:
-        _emit(progress, "[dim]Starting new conversation (history unavailable)[/dim]")
+        _emit(progress, ChatEvent("HISTORY_UNAVAILABLE"))
     return None
 
 
@@ -167,15 +198,12 @@ async def get_latest_conversation_from_server(
 class SaveNoteOutcome:
     """Outcome of the ``ask --save-as-note`` secondary action.
 
-    Exactly one of ``note`` / ``error`` is populated. ``status_message`` carries
-    the (Rich-markup) status line the adapter emits; it is set on the success,
-    plain-text-fallback, and no-answer paths. The two booleans let the adapter
-    reproduce the historical ordering of its status emissions.
+    Exactly one of ``note`` / ``error`` is populated. Semantic events let each
+    adapter reproduce status ordering without carrying rendered strings.
     """
 
     note: dict[str, str] | None = None
     error: str | None = None
-    status_message: str | None = None
     plain_text_fallback: bool = False
 
 
@@ -186,7 +214,7 @@ async def save_answer_as_note(
     *,
     note_title: str | None,
     question: str,
-    progress: ProgressSink | None = None,
+    progress: ChatEventSink | None = None,
 ) -> SaveNoteOutcome:
     """Save an ``ask`` answer as a note, preserving citations when present.
 
@@ -201,11 +229,10 @@ async def save_answer_as_note(
     * Any exception → folded into the outcome's ``error`` so the chat response
       payload still prints (save-as-note is a non-fatal secondary action).
 
-    Status prose is emitted into the optional sink; the adapter also reads
-    :attr:`SaveNoteOutcome.status_message` for the JSON-envelope merge.
+    Semantic events are emitted into the optional sink.
     """
     if not result.answer:
-        _emit(progress, "[yellow]Warning: No answer to save as note[/yellow]")
+        _emit(progress, ChatEvent("NOTE_NO_ANSWER"))
         return SaveNoteOutcome(error="No answer to save as note")
 
     try:
@@ -218,20 +245,18 @@ async def save_answer_as_note(
         else:
             # No citations to preserve -- fall back to the plain-text path so the
             # save still succeeds.
-            _emit(progress, "[dim]No citations in answer; saving as plain-text note.[/dim]")
+            _emit(progress, ChatEvent("NOTE_PLAIN_TEXT_FALLBACK"))
             note = await client.notes.create(notebook_id, title, result.answer)
             plain_text_fallback = True
-        saved_status = f"\n[dim]Saved as note: {note.title} ({note.id[:8]}...)[/dim]"
-        _emit(progress, saved_status)
+        _emit(progress, ChatEvent("NOTE_SAVED", note_id=note.id, note_title=note.title))
         return SaveNoteOutcome(
             note={"id": note.id, "title": note.title},
-            status_message=saved_status,
             plain_text_fallback=plain_text_fallback,
         )
     except Exception as e:
         # Non-fatal: the chat response payload must still print, so the error is
         # returned (not raised) for the adapter to render as a warning.
-        _emit(progress, f"[yellow]Warning: Failed to save note: {e}[/yellow]")
+        _emit(progress, ChatEvent("NOTE_SAVE_FAILED", detail=str(e)))
         return SaveNoteOutcome(error=str(e))
 
 
@@ -472,6 +497,10 @@ def execute_clear_cache(client: Any) -> ClearCacheResult:
 
 
 __all__ = [
+    "ChatEvent",
+    "ChatEventKind",
+    "ChatEventSink",
+    "ChatValidationError",
     "ChatModeChoice",
     "ClearCacheResult",
     "ConfigureResult",

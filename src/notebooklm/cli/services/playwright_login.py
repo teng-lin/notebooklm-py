@@ -192,13 +192,13 @@ def repair_playwright_account_metadata(
     quiet: bool = False,
 ) -> bool:
     """Run app-owned repair while retaining CLI rendering and async execution."""
+    emit_event = (lambda _event: None) if quiet else partial(render_browser_login_event, io=io)
     try:
         return repair_account_metadata(
             storage_path,
-            emit_event=partial(render_browser_login_event, io=io),
+            emit_event=emit_event,
             run_async=io.run_async,
             page_html=page_html,
-            quiet=quiet,
         )
     finally:
         del storage_path, io, page_html

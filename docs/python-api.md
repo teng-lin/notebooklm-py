@@ -1292,6 +1292,7 @@ print(url)
 | `get_fulltext(notebook_id, source_id, *, output_format="text")` | `str, str, *, output_format: Literal["text", "markdown"]` | `SourceFulltext` | Get full content; `"markdown"` requires the optional `markdownify` extra |
 | `get_guide(notebook_id, source_id)` | `str, str` | `SourceGuide` | Get AI-generated `summary` + `keywords`; use attribute access (`guide.summary`) |
 | `add_url(notebook_id, url, *, wait=False, wait_timeout=120.0)` | `str, str, *, bool, float` | `Source` | Add URL source (autodetects YouTube URLs and routes them appropriately). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
+| `add_urls_batch(notebook_id, urls)` | `str, list[str]` | `list[SourceBatchItemOutcome]` | Add validated URL inputs in one non-replayed backend batch and return one ordered public outcome per input. Inspect `item.outcome.commit_state`: `confirmed` carries `item.source`, `rejected` is a definite refusal, `unknown` carries reconciliation guidance, and `not_sent` is positive zero-send evidence. An escaping whole-request error retains settled progress in its additive `batch_outcome` operation metadata. |
 | `add_text(notebook_id, title, content, *, wait=False, wait_timeout=120.0, idempotent=False)` | `str, str, str, *, bool, float, bool` | `Source` | Add text content. `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). |
 | `add_file(notebook_id, file_path, mime_type=None, *, wait=False, wait_timeout=120.0, title=None, on_progress=None)` | `str, str \| Path, str \| None, *, bool, float, str \| None, Callable \| None` | `Source` | Upload file. `mime_type` is a **supported** parameter — it overrides filename-extension inference to set the resumable-upload content-type header (omit it to infer from the extension). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). `title` sets the display name via a post-upload `UPDATE_SOURCE` and forces a brief registration wait even when `wait=False`. `on_progress(bytes_sent, total_bytes)` may be sync or async. |
 | `add_drive(notebook_id, file_id, title, mime_type="application/vnd.google-apps.document", *, wait=False, wait_timeout=120.0)` | `str, str, str, str, *, bool, float` | `Source` | Add Google Drive doc. `mime_type` defaults to Google Docs; override for Slides/Sheets/PDF via `DriveMimeType` (see `notebooklm.types`). `wait` / `wait_timeout` are keyword-only (the positional-wait shim was removed in v0.7.0). NotebookLM's backend re-derives the display title from live Drive metadata for native Drive imports, discarding the requested `title`; the method now issues an automatic best-effort follow-up `rename()` so an explicit `title` still wins (non-fatal — a rename failure logs a warning and keeps the added source under its upstream title; issue #1960). |
@@ -1316,6 +1317,11 @@ from pathlib import Path
 # Add various source types
 await client.sources.add_url(nb_id, "https://example.com/article")
 await client.sources.add_url(nb_id, "https://youtube.com/watch?v=...")  # YouTube URLs autodetected
+batch = await client.sources.add_urls_batch(
+    nb_id, ["https://example.com/a", "https://example.com/b"]
+)
+for item in batch:
+    print(item.input, item.outcome.commit_state, item.source and item.source.id)
 await client.sources.add_text(nb_id, "My Notes", "Content here...")
 await client.sources.add_file(nb_id, Path("./document.pdf"))
 

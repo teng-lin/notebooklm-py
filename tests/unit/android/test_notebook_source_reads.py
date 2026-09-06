@@ -248,7 +248,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     )
     assert AndroidNotebooksAPI.__abstractmethods__ == frozenset()
     assert AndroidSourcesAPI.__abstractmethods__ == frozenset()
-    assert "_add_urls_batch" in AndroidSourcesAPI.__dict__
+    assert "add_urls_batch" in AndroidSourcesAPI.__dict__
 
 
 def test_notebook_public_callable_manifest_is_exact() -> None:

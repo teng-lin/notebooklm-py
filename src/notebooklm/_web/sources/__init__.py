@@ -339,18 +339,17 @@ class WebSourcesAPI(SourcesAPI):
                 logger,
             )
 
-    async def _add_urls_batch(
+    async def add_urls_batch(
         self,
         notebook_id: str,
         urls: builtins.list[str],
     ) -> builtins.list[SourceUrlBatchItem]:
         """Add validated URL entries with one batch-capable ``ADD_SOURCE`` RPC.
 
-        Internal adapter seam for the existing MCP/REST batch endpoints.  The
-        public single-item :meth:`add_url` contract remains unchanged; both
+        The public single-item :meth:`add_url` contract remains unchanged; both
         paths send the mutation once. This bulk path never replays an uncertain
-        write and returns typed positional
-        outcomes after reconciling silently omitted failures.
+        write and returns typed positional outcomes after reconciling silently
+        omitted failures.
         """
         async with self._supervisor.operation_scope("source.add_urls_batch"):
             return await self._batch_adder.add_urls(

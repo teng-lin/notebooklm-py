@@ -189,6 +189,11 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 
 All `source` subcommands also accept `-n/--notebook ID` (resolves via flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
+`source add-async` intentionally remains the distinct non-blocking `AddSourcesAsync`
+command; it is not changed into the public settled `sources.add_urls_batch()` workflow.
+When any CLI command receives an escaping exception with public batch metadata, both
+text and JSON error output preserve the per-item commit states and partial resource IDs.
+
 `source search <query>` searches the indexed passages of every source in the
 notebook and orders matches by global relevance rank (lower is better). Repeat
 `-s/--source ID` to restrict the search; full IDs and unique prefixes are both

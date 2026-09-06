@@ -1,33 +1,28 @@
-"""Anti-drift gate: the neutral ``_app.source_batch`` fatal set matches REST's status table.
-
-``_app.source_batch`` cannot import the FastAPI-tainted ``CATEGORY_STATUS`` (the
-``_app`` import boundary forbids ``server``/``fastapi``), so it expresses "fatal" as
-an explicit ``frozenset[ErrorCategory]``. This gate — which CAN import both, since it
-lives under ``tests/server`` — proves that frozenset equals the categories whose
-``CATEGORY_STATUS`` projection is 401 / 429 / >=500. If a future taxonomy change
-diverges the two, this fails loudly.
-"""
+"""Public source-batch outcome parity across both backend adapters."""
 
 from __future__ import annotations
 
-import pytest
+from typing import get_args, get_type_hints
 
-# CATEGORY_STATUS lives in the fastapi-importing server module.
-pytest.importorskip("fastapi")
-
-from notebooklm._app.errors import ErrorCategory  # noqa: E402 - after importorskip guard
-from notebooklm._app.source_batch import _FATAL_CATEGORIES  # noqa: E402 - after importorskip guard
-from notebooklm.server._errors import CATEGORY_STATUS  # noqa: E402 - after importorskip guard
+from notebooklm._android.sources import AndroidSourcesAPI
+from notebooklm._sources import SourcesAPI
+from notebooklm._web.sources import WebSourcesAPI
+from notebooklm.outcomes import SourceBatchItemOutcome
 
 
-def test_fatal_categories_match_rest_status_partition() -> None:
-    expected = {
-        category
-        for category, status in CATEGORY_STATUS.items()
-        if status in (401, 429) or status >= 500
-    }
-    assert expected == _FATAL_CATEGORIES
+def _return_item_type(owner: type[SourcesAPI]) -> object:
+    annotation = get_type_hints(owner.add_urls_batch)["return"]
+    container_args = get_args(annotation)
+    assert len(container_args) == 1
+    return container_args[0]
 
 
-def test_fatal_categories_are_all_real_categories() -> None:
-    assert set(ErrorCategory) >= _FATAL_CATEGORIES
+def test_both_backends_expose_the_public_source_batch_outcome() -> None:
+    assert _return_item_type(SourcesAPI) is SourceBatchItemOutcome
+    assert _return_item_type(WebSourcesAPI) is SourceBatchItemOutcome
+    assert _return_item_type(AndroidSourcesAPI) is SourceBatchItemOutcome
+
+
+def test_both_backends_override_the_public_capability() -> None:
+    assert "add_urls_batch" in WebSourcesAPI.__dict__
+    assert "add_urls_batch" in AndroidSourcesAPI.__dict__

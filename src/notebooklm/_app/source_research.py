@@ -34,7 +34,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
-from ..exceptions import ValidationError
+from .research import ResearchValidationError
 
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
@@ -76,10 +76,9 @@ class ResearchImportOutcome(Protocol):
     def cited_selection(self) -> Any: ...
 
 
-#: Signature of the injected source importer (the CLI passes
-#: ``cli.research_import.import_research_sources``). Keyword arguments
-#: (``report`` / ``cited_only`` / ``max_elapsed`` / ``json_output``) are
-#: forwarded verbatim, so this stays ``Callable[..., Awaitable[...]]``.
+#: Signature of the injected source importer. Neutral execution forwards only
+#: report/selection/deadline data; adapters may pre-bind their own presentation
+#: options before supplying the callable.
 ImportSourcesFn = Callable[..., Awaitable[ResearchImportOutcome]]
 
 
@@ -95,7 +94,6 @@ class SourceAddResearchPlan:
     cited_only: bool
     no_wait: bool
     timeout: int
-    json_output: bool = False
 
 
 @dataclass(frozen=True)
@@ -143,17 +141,13 @@ def validate_add_research_flags(*, import_all: bool, cited_only: bool, no_wait: 
     re-raises the Click-shaped error per ADR-0015.
     """
     if cited_only and not import_all:
-        raise ValidationError("--cited-only requires --import-all")
+        raise ResearchValidationError("cited_requires_import")
     if no_wait and import_all:
         # Both follow-ups are named because they differ in kind, not just in
         # spelling: ``research wait --import-all`` blocks until the run lands,
         # ``research import`` refuses a run that has not (#2206). Pointing only
         # at the blocking one left ``--no-wait`` with no non-blocking route.
-        raise ValidationError(
-            "--import-all requires --wait (the default), or after --no-wait a "
-            "separate 'research wait --import-all' (blocks) or 'research import' "
-            "(imports an already-completed run, never blocks)."
-        )
+        raise ResearchValidationError("import_requires_wait")
 
 
 async def execute_source_add_research(
@@ -251,8 +245,6 @@ async def execute_source_add_research(
                 "cited_only": plan.cited_only,
                 "max_elapsed": plan.timeout,
             }
-            if plan.json_output:
-                import_kwargs["json_output"] = True
             import_result = await import_sources(
                 client,
                 plan.notebook_id,

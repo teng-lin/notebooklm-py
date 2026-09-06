@@ -124,7 +124,6 @@ def _build_spec(
             notebook_id,
             label_filter=label_filter,
             label_resolver=resolve_label_id,
-            json_output=json_output,
             status_filter=status_filter,
         )
 

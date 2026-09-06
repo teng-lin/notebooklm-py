@@ -171,7 +171,6 @@ def register(mcp: Any) -> None:
                 has_home_env=False,
                 auth_source_label=f"file ({storage_path})",
                 test_fetch=False,
-                json_output=True,
             )
             result = await run_auth_check(plan, read_env_auth_json=_no_env_auth_json)
             info: dict[str, Any] = {

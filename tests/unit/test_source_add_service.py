@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -729,9 +730,9 @@ class TestValidateUrlScheme:
         with pytest.raises(cli_source_add.SourceAddValidationError) as exc_info:
             cli_source_add.validate_url(url, allow_internal=False)
 
-        msg = str(exc_info.value)
-        assert "scheme" in msg.lower()
-        assert "http and https" in msg.lower()
+        assert exc_info.value.reason == "unsupported_url_scheme"
+        assert exc_info.value.url == url
+        assert exc_info.value.scheme == urlsplit(url).scheme
 
     @pytest.mark.parametrize(
         "url",
@@ -750,7 +751,9 @@ class TestValidateUrlScheme:
         with pytest.raises(cli_source_add.SourceAddValidationError) as exc_info:
             cli_source_add.validate_url(url, allow_internal=True)
 
-        assert "scheme" in str(exc_info.value).lower()
+        assert exc_info.value.reason == "unsupported_url_scheme"
+        assert exc_info.value.url == url
+        assert exc_info.value.scheme == urlsplit(url).scheme
 
     @pytest.mark.parametrize(
         "url",
@@ -767,14 +770,20 @@ class TestValidateUrlScheme:
         cli_source_add.validate_url(url, allow_internal=False)
 
     def test_empty_url_is_rejected(self) -> None:
-        with pytest.raises(cli_source_add.SourceAddValidationError):
+        with pytest.raises(cli_source_add.SourceAddValidationError) as exc_info:
             cli_source_add.validate_url("", allow_internal=False)
+
+        assert exc_info.value.reason == "unsupported_url_scheme"
+        assert exc_info.value.url == ""
+        assert exc_info.value.scheme == ""
 
     def test_url_without_host_is_rejected(self) -> None:
         with pytest.raises(cli_source_add.SourceAddValidationError) as exc_info:
             cli_source_add.validate_url("http:///path", allow_internal=False)
 
-        assert "no host" in str(exc_info.value).lower()
+        assert exc_info.value.reason == "url_missing_host"
+        assert exc_info.value.url == "http:///path"
+        assert exc_info.value.host is None
 
 
 class TestValidateUrlInternalHost:
@@ -819,9 +828,12 @@ class TestValidateUrlInternalHost:
         with pytest.raises(cli_source_add.SourceAddValidationError) as exc_info:
             cli_source_add.validate_url(url, allow_internal=False)
 
-        msg = str(exc_info.value).lower()
-        assert "internal" in msg or "local" in msg
-        assert "--allow-internal" in str(exc_info.value)
+        expected_reason = (
+            "local_host_disallowed" if "localhost" in url.lower() else "internal_ip_disallowed"
+        )
+        assert exc_info.value.reason == expected_reason
+        assert exc_info.value.url == url
+        assert exc_info.value.host == urlsplit(url).hostname
 
     @pytest.mark.parametrize(
         "url",
