@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,7 +27,10 @@ from fastmcp import Client  # noqa: E402 - after importorskip guard
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
 from notebooklm import ChatSessionStatus  # noqa: E402 - after importorskip guard
-from notebooklm.exceptions import ChatError  # noqa: E402 - after importorskip guard
+from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
+    ChatError,
+    OperationTimeoutError,
+)
 from notebooklm.mcp._chattasks import (  # noqa: E402 - after importorskip guard
     ChatTaskCapacityError,
     ChatTaskRegistry,
@@ -172,6 +177,79 @@ async def test_registry_queues_past_concurrency_and_autostarts() -> None:
     assert first.result == {"answer": "ok"}
     assert second.result == {"answer": "ok"}  # auto-started after k1 freed the slot
     assert second.started_at is not None and second.started_at >= first.created_at
+
+
+class _EpochOwner:
+    def __init__(self, epoch: int) -> None:
+        self.epoch = epoch
+
+    def active_epoch(self) -> int:
+        return self.epoch
+
+
+class _DetachedClient:
+    def __init__(self, epoch: int = 1) -> None:
+        self.owner = _EpochOwner(epoch)
+        self._collaborators = SimpleNamespace(call_supervisor=self.owner)
+
+    @asynccontextmanager
+    async def operation(self, timeout: float | None = None):
+        del timeout
+        yield self
+
+
+async def test_registry_job_timeout_includes_queue_and_prevents_dispatch() -> None:
+    registry = ChatTaskRegistry(concurrency=1, job_timeout=0.01)
+    client = _DetachedClient()
+    first_started = asyncio.Event()
+    second_calls = 0
+
+    async def _first() -> dict[str, Any]:
+        first_started.set()
+        await asyncio.Event().wait()
+        return {}
+
+    async def _second() -> dict[str, Any]:
+        nonlocal second_calls
+        second_calls += 1
+        return {}
+
+    first, _ = registry.start("deadline-1", _first, client=client)
+    second, _ = registry.start("deadline-2", _second, client=client)
+    await first_started.wait()
+    assert first.task is not None and second.task is not None
+    await asyncio.gather(first.task, second.task)
+    assert isinstance(first.error, OperationTimeoutError)
+    assert isinstance(second.error, OperationTimeoutError)
+    assert second.started_at is None
+    assert second_calls == 0
+
+
+async def test_registry_fences_queued_job_from_reopened_client_epoch() -> None:
+    registry = ChatTaskRegistry(concurrency=1)
+    client = _DetachedClient()
+    release = asyncio.Event()
+    second_calls = 0
+
+    async def _first() -> dict[str, Any]:
+        await release.wait()
+        return {}
+
+    async def _second() -> dict[str, Any]:
+        nonlocal second_calls
+        second_calls += 1
+        return {}
+
+    first, _ = registry.start("epoch-1", _first, client=client)
+    second, _ = registry.start("epoch-2", _second, client=client)
+    await asyncio.sleep(0)
+    client.owner.epoch = 2
+    release.set()
+    assert first.task is not None and second.task is not None
+    await asyncio.gather(first.task, second.task)
+    assert isinstance(second.error, RuntimeError)
+    assert "retired client generation" in str(second.error)
+    assert second_calls == 0
 
 
 async def test_registry_capacity_fuse_when_all_slots_unfinished() -> None:

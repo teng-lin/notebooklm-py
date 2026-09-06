@@ -82,6 +82,8 @@ _REGISTERED_SPEC_KEYS = frozenset(
         "auth_tokens_sync_storage_construction",
         "artifact_from_api_response",
         "artifact_from_mind_map",
+        "artifact_poll_follower_callback",
+        "artifact_poll_follower_options",
         "client_rpc_call_android",
         "client_rpc_call_web",
         "client_legacy_constructor_options",

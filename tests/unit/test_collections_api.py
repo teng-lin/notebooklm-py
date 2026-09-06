@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.collections import WebCollectionsAPI
 from notebooklm.exceptions import (
     CollectionError,
@@ -60,11 +61,8 @@ class FakeRpc:
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
         raise_on_null_status: bool = False,
-        journal_entry: Any = None,
-        journal_entries: Any = None,
     ) -> Any:
-        assert journal_entries is None
-        if journal_entry is not None:
+        for journal_entry in bound_operation_journal_entries():
             journal_entry.mark_dispatched()
         self.calls.append(
             SimpleNamespace(
@@ -252,7 +250,7 @@ async def test_collection_mutation_cancellation_retains_create_journal(
         if method is RPCMethod.LIST_LABELS:
             return _list_env()
         assert method is RPCMethod.CREATE_LABEL
-        entry = kwargs["journal_entry"]
+        (entry,) = bound_operation_journal_entries()
         if dispatched:
             entry.mark_dispatched()
         raise cancellation

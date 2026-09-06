@@ -34,6 +34,7 @@ from notebooklm._android.source_transfers import (
     COPY_SOURCES_ASYNC_METHOD,
 )
 from notebooklm._android.sources import AndroidSourcesAPI
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.collections import WebCollectionsAPI
 from notebooklm._web.labels import WebLabelsAPI
@@ -301,9 +302,7 @@ def _build_web_api(namespace: str, side_effect: Any) -> Any:
 
     async def terminal(*args: Any, **kwargs: Any) -> Any:
         del args
-        journal_entry = kwargs.get("journal_entry")
-        journal_entries = kwargs.get("journal_entries")
-        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         if not outcomes:
             raise AssertionError("web test terminal exhausted")

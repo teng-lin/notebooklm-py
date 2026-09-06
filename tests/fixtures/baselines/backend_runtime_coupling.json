@@ -47,7 +47,7 @@
             "android": 49,
             "auth": 32,
             "root": 61,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16
           },
           "module_delta": [
@@ -181,6 +181,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -273,7 +274,7 @@
             "android": 49,
             "auth": 32,
             "root": 61,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16
           },
           "module_delta": [
@@ -407,6 +408,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -516,7 +518,7 @@
             "auth": 32,
             "root": 61,
             "rpc": 3,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16,
             "web": 92
           },
@@ -676,6 +678,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -889,7 +892,7 @@
           "module_counts": {
             "auth": 32,
             "root": 60,
-            "runtime": 8,
+            "runtime": 9,
             "types": 16
           },
           "module_delta": [
@@ -973,6 +976,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -1059,7 +1063,7 @@
             "android": 74,
             "auth": 32,
             "root": 61,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16
           },
           "module_delta": [
@@ -1218,6 +1222,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -1366,7 +1371,7 @@
             "android": 74,
             "auth": 32,
             "root": 61,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16
           },
           "module_delta": [
@@ -1525,6 +1530,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -1701,7 +1707,7 @@
             "auth": 32,
             "root": 60,
             "rpc": 3,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16,
             "web": 92
           },
@@ -1787,6 +1793,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -1996,7 +2003,7 @@
             "auth": 32,
             "root": 60,
             "rpc": 3,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16,
             "web": 92
           },
@@ -2082,6 +2089,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -2228,7 +2236,7 @@
           "module_counts": {
             "auth": 32,
             "root": 60,
-            "runtime": 8,
+            "runtime": 9,
             "types": 16
           },
           "module_delta": [
@@ -2312,6 +2320,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -2420,7 +2429,7 @@
             "auth": 32,
             "root": 60,
             "rpc": 3,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16,
             "web": 92
           },
@@ -2506,6 +2515,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -2717,7 +2727,7 @@
             "auth": 32,
             "root": 60,
             "rpc": 3,
-            "runtime": 9,
+            "runtime": 10,
             "types": 16,
             "web": 92
           },
@@ -2803,6 +2813,7 @@
             "notebooklm._runtime.helpers",
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
+            "notebooklm._runtime.operation_context",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -2958,7 +2969,7 @@
         "android": 4,
         "auth": 32,
         "root": 60,
-        "runtime": 8,
+        "runtime": 9,
         "types": 16
       },
       "module_delta": [
@@ -3046,6 +3057,7 @@
         "notebooklm._runtime.helpers",
         "notebooklm._runtime.init",
         "notebooklm._runtime.lifecycle",
+        "notebooklm._runtime.operation_context",
         "notebooklm._secrets",
         "notebooklm._settings",
         "notebooklm._sharing",
@@ -3089,7 +3101,7 @@
       "module_counts": {
         "auth": 32,
         "root": 60,
-        "runtime": 8,
+        "runtime": 9,
         "types": 16
       },
       "module_delta": [
@@ -3173,6 +3185,7 @@
         "notebooklm._runtime.helpers",
         "notebooklm._runtime.init",
         "notebooklm._runtime.lifecycle",
+        "notebooklm._runtime.operation_context",
         "notebooklm._secrets",
         "notebooklm._settings",
         "notebooklm._sharing",
@@ -3216,7 +3229,7 @@
       "module_counts": {
         "auth": 32,
         "root": 60,
-        "runtime": 8,
+        "runtime": 9,
         "types": 16,
         "web": 3
       },
@@ -3301,6 +3314,7 @@
         "notebooklm._runtime.helpers",
         "notebooklm._runtime.init",
         "notebooklm._runtime.lifecycle",
+        "notebooklm._runtime.operation_context",
         "notebooklm._secrets",
         "notebooklm._settings",
         "notebooklm._sharing",
@@ -3347,7 +3361,7 @@
       "module_counts": {
         "auth": 32,
         "root": 60,
-        "runtime": 8,
+        "runtime": 9,
         "types": 16
       },
       "module_delta": [
@@ -3431,6 +3445,7 @@
         "notebooklm._runtime.helpers",
         "notebooklm._runtime.init",
         "notebooklm._runtime.lifecycle",
+        "notebooklm._runtime.operation_context",
         "notebooklm._secrets",
         "notebooklm._settings",
         "notebooklm._sharing",
@@ -3474,7 +3489,7 @@
       "module_counts": {
         "auth": 32,
         "root": 60,
-        "runtime": 8,
+        "runtime": 9,
         "types": 16
       },
       "module_delta": [
@@ -3558,6 +3573,7 @@
         "notebooklm._runtime.helpers",
         "notebooklm._runtime.init",
         "notebooklm._runtime.lifecycle",
+        "notebooklm._runtime.operation_context",
         "notebooklm._secrets",
         "notebooklm._settings",
         "notebooklm._sharing",
@@ -3602,7 +3618,7 @@
         "auth": 32,
         "root": 60,
         "rpc": 3,
-        "runtime": 8,
+        "runtime": 9,
         "types": 16,
         "web": 2
       },
@@ -3687,6 +3703,7 @@
         "notebooklm._runtime.helpers",
         "notebooklm._runtime.init",
         "notebooklm._runtime.lifecycle",
+        "notebooklm._runtime.operation_context",
         "notebooklm._secrets",
         "notebooklm._settings",
         "notebooklm._sharing",

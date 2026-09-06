@@ -13,9 +13,9 @@ from typing import Any
 
 from . import research as _research_pub
 from ._idempotency import (
-    JournalEntry,
     OperationJournal,
     attach_reconciliation_report,
+    bind_operation_journal_entries,
     mark_unconfirmed,
     reconciliation_report,
 )
@@ -322,12 +322,12 @@ class BaseResearchAPI(ABC):
         if not batch.items:
             return []
         entry = OperationJournal("research.import_sources").new_entry(method="import_sources")
-        return await self._send_import(
-            notebook_id,
-            batch,
-            _remaining_budget=_remaining_budget,
-            journal_entry=entry,
-        )
+        with bind_operation_journal_entries(entry):
+            return await self._send_import(
+                notebook_id,
+                batch,
+                _remaining_budget=_remaining_budget,
+            )
 
     @abstractmethod
     async def _send_import(
@@ -336,7 +336,6 @@ class BaseResearchAPI(ABC):
         batch: _ResearchImportBatch,
         *,
         _remaining_budget: float | None,
-        journal_entry: JournalEntry | None = None,
     ) -> list[dict[str, str]]:
         """Encode, send, and decode one backend import mutation."""
 

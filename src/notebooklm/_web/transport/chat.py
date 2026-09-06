@@ -26,6 +26,8 @@ from ..._env import get_default_bl
 from ..._idempotency import (
     JournalEntry,
     attach_journal_entry,
+    bind_operation_journal_entries,
+    bound_operation_journal_entry,
     mark_commit_state,
     mark_unconfirmed,
 )
@@ -91,7 +93,6 @@ async def chat_aware_authed_post(
     read_timeout: float | None = None,
     max_response_bytes: int | None = None,
     disable_read_timeout_retries: bool = False,
-    journal_entry: JournalEntry | None = None,
 ) -> httpx.Response:
     """Chat-side semantic owner around :meth:`RuntimeTransport.perform_authed_post`.
 
@@ -120,18 +121,19 @@ async def chat_aware_authed_post(
         max_response_bytes: Optional per-call response-size cap forwarded to
             the shared streaming transport.
     """
+    journal_entry = bound_operation_journal_entry()
     # ``CallSupervisor`` wraps ``perform_authed_post`` and receives this
     # chat-friendly label, so admission failures retain useful diagnostics
     # without explicit bracketing here.
     try:
-        return await transport.perform_authed_post(
-            build_request=build_request,
-            log_label=parse_label,
-            read_timeout=read_timeout,
-            max_response_bytes=max_response_bytes,
-            disable_read_timeout_retries=disable_read_timeout_retries,
-            journal_entry=journal_entry,
-        )
+        with bind_operation_journal_entries(journal_entry):
+            return await transport.perform_authed_post(
+                build_request=build_request,
+                log_label=parse_label,
+                read_timeout=read_timeout,
+                max_response_bytes=max_response_bytes,
+                disable_read_timeout_retries=disable_read_timeout_retries,
+            )
     except TransportAuthExpired as exc:
         error = ChatError(
             f"{parse_label} failed: authentication expired and refresh did not recover"

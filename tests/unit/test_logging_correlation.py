@@ -252,8 +252,6 @@ async def test_retry_inherits_parent_request_id():
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
-        journal_entry=None,
-        journal_entries=None,
         _refresh_budget=None,
         _retry_deadline=None,
         _resource_epoch: int | None = None,
@@ -268,8 +266,6 @@ async def test_retry_inherits_parent_request_id():
                 source_path,
                 allow_null,
                 _is_retry=True,
-                journal_entry=journal_entry,
-                journal_entries=journal_entries,
                 _resource_epoch=_resource_epoch,
             )
         return "ok"

@@ -16,9 +16,18 @@ import httpx
 from ..._auth.account import format_authuser_value
 from ..._deadline import RuntimeDeadline
 from ..._env import get_base_url, get_default_language
-from ..._idempotency import JournalEntry, ReplayGrant, attach_journal_entry, mark_unconfirmed
+from ..._idempotency import (
+    JournalEntry,
+    ReplayGrant,
+    attach_journal_entry,
+    bind_operation_journal_entries,
+    bound_operation_journal_entries,
+    bound_operation_journal_entry,
+    mark_unconfirmed,
+)
 from ..._logging import get_request_id, reset_request_id, set_request_id
 from ..._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
+from ..._runtime.operation_context import adopt_operation_journal_entry
 from ...exceptions import DecodingError, NotebookLMError
 from ...outcomes import CommitState, RecoveryAction
 from ...rpc import (
@@ -136,8 +145,68 @@ class RpcExecutor:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
+        _refresh_budget: RefreshBudget | None = None,
+        _retry_deadline: RuntimeDeadline | None = None,
+        _resource_epoch: int | None = None,
+    ) -> Any:
+        """Bind an active workflow's conservative entry around one logical RPC."""
+
+        entries = bound_operation_journal_entries()
+        adopted: JournalEntry | None = None
+        if not entries and not _is_retry:
+            policy = IDEMPOTENCY_REGISTRY.get_entry(
+                method,
+                operation_variant=operation_variant,
+            ).policy
+            if replay_grant_for(policy) is ReplayGrant.NO_REPLAY:
+                adopted = adopt_operation_journal_entry(
+                    self._call_supervisor,
+                    method=method.value,
+                    operation=method.name.lower(),
+                )
+        if adopted is not None:
+            with bind_operation_journal_entries(adopted):
+                return await self._rpc_call_bound(
+                    method,
+                    params,
+                    source_path,
+                    allow_null,
+                    _is_retry,
+                    disable_internal_retries=disable_internal_retries,
+                    operation_variant=operation_variant,
+                    read_timeout=read_timeout,
+                    raise_on_null_status=raise_on_null_status,
+                    _refresh_budget=_refresh_budget,
+                    _retry_deadline=_retry_deadline,
+                    _resource_epoch=_resource_epoch,
+                )
+        return await self._rpc_call_bound(
+            method,
+            params,
+            source_path,
+            allow_null,
+            _is_retry,
+            disable_internal_retries=disable_internal_retries,
+            operation_variant=operation_variant,
+            read_timeout=read_timeout,
+            raise_on_null_status=raise_on_null_status,
+            _refresh_budget=_refresh_budget,
+            _retry_deadline=_retry_deadline,
+            _resource_epoch=_resource_epoch,
+        )
+
+    async def _rpc_call_bound(
+        self,
+        method: RPCMethod,
+        params: list[Any],
+        source_path: str = "/",
+        allow_null: bool = False,
+        _is_retry: bool = False,
+        *,
+        disable_internal_retries: bool = False,
+        operation_variant: str | None = None,
+        read_timeout: float | None = None,
+        raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
         _resource_epoch: int | None = None,
@@ -190,6 +259,8 @@ class RpcExecutor:
         :func:`notebooklm._web.wire.decoder.decode_response` for why it is opt-in per
         call site (#2188).
         """
+        journal_entry = bound_operation_journal_entry()
+
         # Only the outer call mints a request id; the decode-time retry path
         # (``_is_retry=True``) inherits the parent's id so a single
         # decode-error → refresh → retry sequence appears under one
@@ -208,8 +279,6 @@ class RpcExecutor:
                     operation_variant=operation_variant,
                     read_timeout=read_timeout,
                     raise_on_null_status=raise_on_null_status,
-                    journal_entry=journal_entry,
-                    journal_entries=journal_entries,
                     _refresh_budget=_refresh_budget,
                     _retry_deadline=_retry_deadline,
                     _resource_epoch=_resource_epoch,
@@ -237,8 +306,6 @@ class RpcExecutor:
                 operation_variant=operation_variant,
                 read_timeout=read_timeout,
                 raise_on_null_status=raise_on_null_status,
-                journal_entry=journal_entry,
-                journal_entries=journal_entries,
                 _refresh_budget=_refresh_budget,
                 _retry_deadline=_retry_deadline,
                 _resource_epoch=_resource_epoch,
@@ -262,8 +329,6 @@ class RpcExecutor:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
         _resource_epoch: int | None = None,
@@ -343,8 +408,6 @@ class RpcExecutor:
                 read_timeout=read_timeout,
                 expected_epoch=resource_epoch,
                 epoch_observer=_bind_resource_epoch,
-                journal_entry=journal_entry,
-                journal_entries=journal_entries,
             )
         except TransportAuthExpired as exc:
             # Preserve the historical raw transport exception on refresh failure.
@@ -470,8 +533,6 @@ class RpcExecutor:
                     operation_variant=operation_variant,
                     read_timeout=read_timeout,
                     raise_on_null_status=raise_on_null_status,
-                    journal_entry=journal_entry,
-                    journal_entries=journal_entries,
                     _refresh_budget=_refresh_budget,
                     _retry_deadline=_retry_deadline,
                     _resource_epoch=resource_epoch,
@@ -654,8 +715,6 @@ class RpcExecutor:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
         _refresh_budget: RefreshBudget,
         _retry_deadline: RuntimeDeadline | None = None,
         _resource_epoch: int | None = None,
@@ -738,8 +797,6 @@ class RpcExecutor:
             operation_variant=operation_variant,
             read_timeout=read_timeout,
             raise_on_null_status=raise_on_null_status,
-            journal_entry=journal_entry,
-            journal_entries=journal_entries,
             _refresh_budget=_refresh_budget,
             _retry_deadline=_retry_deadline,
             _resource_epoch=_resource_epoch,

@@ -32,6 +32,7 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "NextStepSuggestion",
         "NonIdempotentRetryError",
         "NotebookLMClient",
+        "OperationTimeoutError",
         "PremiumFeatureInfo",
         "QuizDifficulty",
         "QuizQuantity",

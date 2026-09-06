@@ -98,6 +98,7 @@ from .exceptions import (
     NoteNotFoundError,
     # Cross-domain umbrellas
     NotFoundError,
+    OperationTimeoutError,
     # Domain: Sources
     PlayBookNotExportableError,
     RateLimitError,
@@ -372,6 +373,7 @@ __all__ = [
     "CollectionNotFoundError",
     # Cross-domain umbrella: wait/poll timeouts
     "WaitTimeoutError",
+    "OperationTimeoutError",
     # Warnings
     "UnknownTypeWarning",
     # User-facing type enums (str enums for .kind property)

@@ -38,6 +38,7 @@ __all__ = [
     # Cross-domain umbrellas
     "NotFoundError",
     "WaitTimeoutError",
+    "OperationTimeoutError",
     # Validation/Config
     "ValidationError",
     "ConfigurationError",
@@ -266,6 +267,22 @@ class WaitTimeoutError(NotebookLMError, TimeoutError):
         still a ``TimeoutError``) is backward-compatible for ``except
         TimeoutError`` callers and newly catchable via the umbrella.
     """
+
+
+class OperationTimeoutError(WaitTimeoutError):
+    """An opt-in whole-operation deadline expired.
+
+    Unlike feature-owned polling and RPC timeout subclasses, this error covers
+    the complete admitted workflow: queueing, auth, retry sleeps, transport,
+    reconciliation, polling, and required settlement. Mutation evidence remains
+    available through :attr:`NotebookLMError.operation_metadata`.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({str(self)!r})"
 
 
 # =============================================================================

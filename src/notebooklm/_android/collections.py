@@ -13,6 +13,7 @@ from .._idempotency import (
     OperationJournal,
     attach_journal_entry,
     attach_operation_journal,
+    bind_operation_journal_entries,
     reconciliation_report,
 )
 from .._runtime.call_supervisor import OperationLease
@@ -95,15 +96,15 @@ class AndroidCollectionsAPI(CollectionsAPI):
             journal = OperationJournal("collections.create")
             entry = journal.new_entry(method=CREATE_LABEL_METHOD)
             try:
-                response = await create_manual(
-                    self._transport,
-                    kind="collection",
-                    name=name,
-                    emoji="",
-                    notebook_id=None,
-                    expected_epoch=lease.epoch,
-                    journal_entry=entry,
-                )
+                with bind_operation_journal_entries(entry):
+                    response = await create_manual(
+                        self._transport,
+                        kind="collection",
+                        name=name,
+                        emoji="",
+                        notebook_id=None,
+                        expected_epoch=lease.epoch,
+                    )
             except asyncio.CancelledError as error:
                 attach_journal_entry(
                     error,

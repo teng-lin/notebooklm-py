@@ -10,7 +10,11 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-from .._idempotency import JournalEntry, call_unconfirmed_on_transport_loss, mark_unconfirmed
+from .._idempotency import (
+    bound_operation_journal_entry,
+    call_unconfirmed_on_transport_loss,
+    mark_unconfirmed,
+)
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._research_import import (
@@ -508,8 +512,8 @@ class WebResearchAPI(BaseResearchAPI):
         batch: _ResearchImportBatch,
         *,
         _remaining_budget: float | None,
-        journal_entry: JournalEntry | None = None,
     ) -> list[dict[str, str]]:
+        journal_entry = bound_operation_journal_entry()
         source_array = [
             self._build_report_import_entry(item.source.title, item.source.report_markdown)
             if item.kind == "report"
@@ -527,7 +531,6 @@ class WebResearchAPI(BaseResearchAPI):
                 override=self._import_research_timeout,
                 remaining_budget=_remaining_budget,
             ),
-            journal_entry=journal_entry,
         )
         imported = []
         # ``unwrap_import_rows`` centralises the ``[[src1, ...]]`` envelope probe

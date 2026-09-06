@@ -113,7 +113,6 @@ async def test_chat_aware_authed_post_returns_response_and_balances_bookkeeping(
         read_timeout=None,
         max_response_bytes=None,
         disable_read_timeout_retries=False,
-        journal_entry=None,
     )
 
 
@@ -137,7 +136,6 @@ async def test_chat_aware_authed_post_forwards_response_cap():
         read_timeout=None,
         max_response_bytes=123,
         disable_read_timeout_retries=False,
-        journal_entry=None,
     )
 
 

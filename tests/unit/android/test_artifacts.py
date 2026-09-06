@@ -45,6 +45,7 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import artifa
 from notebooklm._android.session import AndroidSession
 from notebooklm._artifacts import ArtifactsAPI
 from notebooklm._client_metrics import ClientMetrics
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._notebook_metadata import NotebookSourceIdProvider
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._types.common import UnknownTypeWarning
@@ -102,9 +103,8 @@ class FakeSession:
         yield _Lease()
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.pop("journal_entry", None)
-        if journal_entry is not None:
-            journal_entry.mark_dispatched()
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         error = self.errors.get(method)
         if error is not None:

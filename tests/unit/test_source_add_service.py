@@ -12,7 +12,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app import source_add as cli_source_add
-from notebooklm._idempotency import JournalEntry, mark_commit_state
+from notebooklm._idempotency import (
+    bound_operation_journal_entries,
+    mark_commit_state,
+)
 from notebooklm._sources import SourcesAPI, _validate_add_text_idempotency
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.sources import WebSourcesAPI
@@ -45,11 +48,8 @@ class RecordingRpc:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> Any:
-        assert journal_entries is None
-        if journal_entry is not None:
+        for journal_entry in bound_operation_journal_entries():
             journal_entry.mark_dispatched()
         self.calls.append(
             {
@@ -68,11 +68,7 @@ def dispatched_response(response: Any) -> AsyncMock:
     async def _respond(
         _notebook_id: str,
         _value: str,
-        *,
-        journal_entry: JournalEntry | None = None,
     ) -> Any:
-        if journal_entry is not None:
-            journal_entry.mark_dispatched()
         return response
 
     return AsyncMock(side_effect=_respond)

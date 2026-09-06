@@ -45,7 +45,7 @@ _MODULE_HASHES = {
     "psidts_recovery.py": "7a4f6891a1a46bd43eff61f3665f1b818d9ced281cabfc381b366cfefa50e03b",
     "recovery.py": "7a728071e7f763b13f68639b86be263c200c1c88c338599df0a692d00f15b4f7",
     "refresh.py": "edeed1f338dda8f2d5add4f3c1dccfb7e069477c5d019b9dbf687202849da60a",
-    "single_flight.py": "8e298fe515dd667a3dfc95449165ab45345d327381951e98474aafa67510f246",
+    "single_flight.py": "b48c3efeeaff9d03ddce7c3f50c60ead2e60cfe9f5bd6832a7a7632b03714e44",
     "storage.py": "7c106fc41e4945c82d95fd57c7e29855b7e862e02d8d81db931df3df133f8b1e",
 }
 
@@ -57,7 +57,7 @@ _NODE_HASHES = {
     (
         "single_flight.py",
         "SingleFlight",
-    ): "661fa857608b0fcd03ce7f4328ed8339bf6d879b2f1d3faecea627ee0c8d17ad",
+    ): "5a644ba6c0ea8524436302d3d1a328fbf89186a2b3deb33167ec9ed1fee6b9a1",
     (
         "single_flight.py",
         "read_success_epoch",

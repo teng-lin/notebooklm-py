@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._artifact import validation as _artifact_validation
-from .._idempotency import JournalEntry, attach_journal_entry, unresolved_commit_error
+from .._idempotency import (
+    attach_journal_entry,
+    bound_operation_journal_entry,
+    unresolved_commit_error,
+)
 from .._types.enums import (
     ArtifactTypeCode,
     InfographicDetail,
@@ -77,10 +81,10 @@ async def create_artifact_once(
     request: Any,
     *,
     expected_epoch: int | None = None,
-    journal_entry: JournalEntry | None = None,
 ) -> Any:
     """Send ``CreateArtifact`` once and preserve an ambiguous commit outcome."""
 
+    journal_entry = bound_operation_journal_entry()
     epoch_kwargs: dict[str, Any] = (
         {} if expected_epoch is None else {"expected_epoch": expected_epoch}
     )
@@ -90,7 +94,6 @@ async def create_artifact_once(
             request,
             replay_safe=False,
             response_type=_PROTO.CreateArtifactResponse,
-            journal_entry=journal_entry,
             **epoch_kwargs,
         )
     except (NetworkError, RateLimitError, ServerError) as exc:

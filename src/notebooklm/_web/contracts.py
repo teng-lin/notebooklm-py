@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any, Protocol
 
 import httpx
 
 from ..rpc.types import RPCMethod
-
-if TYPE_CHECKING:
-    from .._idempotency import JournalEntry
 
 
 class Kernel(Protocol):
@@ -50,8 +47,6 @@ class RpcCaller(Protocol):
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> Any: ...
 
 
