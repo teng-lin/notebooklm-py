@@ -1453,8 +1453,10 @@ async def test_admitted_shutdown_fails_before_state_or_close_wave_changes(
         assert generation is not None
         admission_before = generation.state
 
+        # Keep shutdown in the admitted task. Python 3.10/3.11 ``wait_for``
+        # would wrap this coroutine in an independent, unadmitted Task.
         with pytest.raises(RuntimeError, match=f"Cannot {action.split('-')[-1]}"):
-            await asyncio.wait_for(_invoke_shutdown(lifecycle, action), timeout=0.1)
+            await _invoke_shutdown(lifecycle, action)
 
         assert lifecycle._state is state_before
         assert lifecycle._close_wave is wave_before
