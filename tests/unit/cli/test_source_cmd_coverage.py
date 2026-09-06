@@ -260,3 +260,49 @@ class TestSourceAddValidationErrorJson:
         assert result.exit_code == 1
         payload = json.loads(result.output)
         assert payload["code"] == "VALIDATION_ERROR"
+        assert payload["message"] == "Error: URL has no host component: http://"
+
+    @pytest.mark.parametrize(
+        ("url", "expected_message"),
+        [
+            (
+                "file:///etc/passwd",
+                "Error: URL scheme 'file' is not allowed; only http and https URLs "
+                "are accepted as sources. Got: file:///etc/passwd",
+            ),
+            (
+                "http://localhost",
+                "Error: URL targets the local host 'localhost'; pass --allow-internal "
+                "to override. Got: http://localhost",
+            ),
+            (
+                "http://127.0.0.1",
+                "Error: URL targets an internal IP address 127.0.0.1; pass --allow-internal "
+                "to override. Got: http://127.0.0.1",
+            ),
+        ],
+    )
+    def test_cli_renders_legacy_url_validation_messages(
+        self,
+        runner,
+        mock_auth,
+        url: str,
+        expected_message: str,
+    ) -> None:
+        with patch.object(
+            auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
+        ) as mock_fetch:
+            mock_fetch.return_value = ("csrf", "session")
+            result = runner.invoke(
+                cli,
+                ["source", "add", url, "--type", "url", "-n", "nb_123", "--json"],
+                obj=inject_client(create_mock_client()),
+            )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload == {
+            "error": True,
+            "code": "VALIDATION_ERROR",
+            "message": expected_message,
+        }

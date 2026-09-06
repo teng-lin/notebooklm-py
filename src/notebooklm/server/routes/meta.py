@@ -135,7 +135,6 @@ async def server_info(
         has_home_env=False,
         auth_source_label=f"file ({storage_path})",
         test_fetch=False,
-        json_output=True,
     )
     account_client: NotebookLMClient | None = None
     if include_account:

@@ -23,9 +23,9 @@ from notebooklm._app.source_wait import (
 from notebooklm.cli import _source_render, source_cmd
 from notebooklm.cli.services import source_mutations, source_research
 from notebooklm.cli.services.source_mutations import (
+    CliSourceMutationError,
     SourceDeletePlan,
     SourceIdResolution,
-    SourceMutationError,
     SourceRenamePlan,
     execute_source_delete,
     execute_source_rename,
@@ -113,7 +113,7 @@ async def test_source_delete_noninteractive_without_approval_uses_cli_confirmati
         )
     )
 
-    with pytest.raises(SourceMutationError) as exc_info:
+    with pytest.raises(CliSourceMutationError) as exc_info:
         await run_source_delete(
             client,
             notebook_id="nb_1",
