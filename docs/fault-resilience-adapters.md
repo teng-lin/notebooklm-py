@@ -1,10 +1,10 @@
 # Adapter resilience fault-coverage contract
 
-**Status:** F0 inventory for R14. The six RPC mapping cases are implemented as
-`adapter_rest_*`, `adapter_mcp_*`, and `adapter_cli_*` Web-registry siblings;
-the transfer and caller-disconnect cases remain pending the global
-construction-seam audit. This work does not change retry policy, adapter wire
-contracts, or runtime ownership.
+**Status:** R14 implemented: six RPC mapping cases and three live caller-disconnect
+cases are registered under `adapter_rest_*`, `adapter_mcp_*`, and `adapter_cli_*`.
+The live cases use the audited instance-owned transfer factory, production Web
+client and decoders, and real uvicorn listeners. Retry policy, adapter wire
+contracts, and runtime ownership retain their existing behavior.
 
 **Baseline:** `65dbd21d70f5be8c892da40a3660987b4118cd1c` (2026-09-06).
 This is the R14 inventory from the resilience plan. The current portable
@@ -45,12 +45,12 @@ composition over sockets:
 
 | Surface | Existing mapping evidence | Existing socket evidence | R14 gap |
 | --- | --- | --- | --- |
-| REST | `tests/server/test_errors.py`, `test_notes.py`, and `test_integration_real_client.py` exercise envelopes through `TestClient` and VCR/fakes. | `tests/_fault_server/adapter_scenarios.py` now drives the REST read/create routes over the loopback Web client. | The live downstream transfer disconnect remains pending. |
-| MCP tools | `tests/unit/mcp/test_errors.py` and `test_notebooks.py`; `tests/integration/mcp_vcr/test_error_contract.py` uses an in-memory FastMCP client and VCR. | `tests/_fault_server/adapter_scenarios.py` now drives `notebook_list` and `notebook_create` over the loopback Web client. | The live signed-download and detached-job disconnects remain pending. |
+| REST | `tests/server/test_errors.py`, `test_notes.py`, and `test_integration_real_client.py` exercise envelopes through `TestClient` and VCR/fakes. | `tests/_fault_server/adapter_scenarios.py` now drives the REST read/create routes over the loopback Web client. | `adapter_rest_download_disconnect` proves downstream cleanup over a live listener. |
+| MCP tools | `tests/unit/mcp/test_errors.py` and `test_notebooks.py`; `tests/integration/mcp_vcr/test_error_contract.py` uses an in-memory FastMCP client and VCR. | `tests/_fault_server/adapter_scenarios.py` now drives `notebook_list` and `notebook_create` over the loopback Web client. | `adapter_mcp_download_disconnect` and `adapter_mcp_chat_start_disconnect` prove both live disconnect contracts. |
 | CLI | `tests/unit/cli/test_error_handler.py` pins the `UNCONFIRMED_WRITE` override; `tests/integration/cli_vcr/test_error_contract.py` uses recorded failures. | `tests/_fault_server/adapter_scenarios.py` now drives public Click commands over the loopback Web client. | The CLI's scope closes after each command; its failure factory runs a same-client recovery before close. |
-| REST artifact response | `tests/server/test_artifacts.py::test_cleanup_file_response_cleans_on_disconnect` calls the response ASGI object directly. | None; the test simulates `http.disconnect`. | Use a real loopback ASGI listener and close the downstream client after the first body chunk. |
-| MCP signed download | `tests/unit/mcp/test_fileroutes.py::test_slot_held_response_releases_on_stream_abort` directly raises from `FileResponse.__call__`. | None; `TestClient` consumes the response. | Use a real FastMCP HTTP listener and abort `GET /files/dl/{token}` after a body prefix. |
-| MCP detached chat | Unit tool/registry tests cover start, status, cancellation, TTL, and shutdown. | None for a caller disconnect. | Disconnect an actual MCP `chat_start` caller after the task has been accepted, then prove the server-owned task completes or is explicitly cancelled during teardown. |
+| REST artifact response | `tests/server/test_artifacts.py::test_cleanup_file_response_cleans_on_disconnect` calls the response ASGI object directly. | A live uvicorn listener observes the caller socket close after a body prefix. | Implemented: baseline, held spool, actual disconnect, finalizer and recovery. |
+| MCP signed download | `tests/unit/mcp/test_fileroutes.py::test_slot_held_response_releases_on_stream_abort` directly raises from `FileResponse.__call__`. | A live FastMCP HTTP listener serves the signed route. | Implemented: slot held through prefix, real disconnect, slot/spool release and recovery. |
+| MCP detached chat | Unit tool/registry tests cover start, status, cancellation, TTL, and shutdown. | A real streamable-HTTP request closes after acceptance while the production ask is gated upstream. | Implemented: the detached job survives, a duplicate attaches, status completes and provider recovers. |
 
 VCR files remain evidence of RPC shape and adapter mapping. They cannot prove
 connection-close timing, a downstream ASGI disconnect, or whether an
@@ -127,16 +127,48 @@ The following checks are mandatory for the whole R14 set:
   bearer values, signed-link tokens, full local paths, request objects, or raw
   exception locals.
 
-## Scope and sequencing decision
+## Executed live ownership evidence
 
-R14 is an F4 adapter-boundary addition. The first six cases can use the existing
-RPC-only loopback server once the shared factory adapter is added. The three
-disconnect cases are blocked on the F1 transfer routing/assembly audit and,
-for the REST/MCP download cases, valid F2 transfer fixtures. `chat_start` may be
-implemented after the live MCP listener helper exists, but it must retain the
-same F4 cleanup contract.
+`adapter_lifecycle.py` launches each live cohort in its own process. This retains
+MCP's current process-owned counter without deriving exact counts from other
+cohorts. The environment is supplied once at process creation; no parent global
+or environment substitution spans an await. CLI mapping cases remain separately
+isolated for Click's process-global output capture.
 
-No F1 code should be started from this inventory. In particular, direct asset
-client routing, the transfer-capable fault service, a live adapter listener, and
-any temp-path or limiter observer need the global seam audit's selected
-instance-owned design first.
+`adapter_listener.py` hosts the actual ASGI application on an ephemeral loopback
+socket. Its per-request gate forwards 128 response bytes, records the listener's
+real `http.disconnect`, and releases the real response owner's remaining sends.
+It does not synthesize cancellation or replace a response finalizer. A receive
+pump forwards all original request messages to the application. The listener
+settles handlers and lifespan under a separate two-second close watchdog.
+
+Each download case first completes a production-decoded audio download with a
+valid 128 KiB PCM WAV body. The second request verifies the complete spool before
+closing its caller after a prefix; the finalizer removes the observed private
+spool. REST's limiter and MCP's accepted slot return to their original capacity.
+A third complete download proves recovery: exactly three artifact-list RPCs and
+three asset fetches, with all real transfer clients closed. The private spool
+factories belong to the REST application or MCP `FileTransferConfig` instance;
+`None` keeps the existing `tempfile.mkdtemp` allocation.
+
+The detached-chat case uses FastMCP's real stateless streamable-HTTP JSON mode.
+After a successful production chat decode, the caller closes a `chat_start`
+response while the accepted job is held at the upstream query gate. The same
+client epoch and generating job survive, a duplicate start returns the same task
+id, and status returns the decoded answer after gate release. There are exactly
+two upstream asks including the baseline, one detached task, and a successful
+same-provider notebook-list recovery. The child process supplies a three-second
+job budget at launch. Shutdown closes the registry before the provider; reports
+require no remaining owned task or unhandled task exception.
+
+Live cases have a six-second operation watchdog, two-second individual cleanup
+watchdogs, and a twelve-second integration wrapper (the stress runner retains
+its larger outer scenario budget). Reports contain byte counts/digests and
+boolean resource evidence, never signed tokens or temporary paths. Child failure
+reports preserve partial checks and events; a failed/missing report cannot count
+as coverage.
+
+Validation: the nine R14 integration cases pass; the affected REST/MCP artifact,
+file-route, file-link, chat and adapter-boundary suites pass (302 tests). Focused
+mypy and Ruff checks pass. Full-program stress and CI measurements are recorded
+with the consolidated integration results.

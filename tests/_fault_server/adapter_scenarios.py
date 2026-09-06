@@ -24,6 +24,7 @@ from fastmcp.exceptions import ToolError
 from notebooklm.mcp.server import create_server
 from notebooklm.server.app import create_app
 
+from .adapter_lifecycle import IMPLEMENTATIONS as _LIVE_IMPLEMENTATIONS
 from .common import ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route
 from .web import build_fault_client, list_response
@@ -35,6 +36,7 @@ _CLOSE_TIMEOUT = 2.0
 SCENARIOS: tuple[str, ...] = tuple(
     sorted(
         (
+            *_LIVE_IMPLEMENTATIONS,
             "adapter_cli_ambiguous_create",
             "adapter_cli_transient_read",
             "adapter_mcp_ambiguous_create",
@@ -382,6 +384,7 @@ async def _cli_create(result: ScenarioResult) -> None:
 
 
 _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
+    **_LIVE_IMPLEMENTATIONS,
     "adapter_cli_ambiguous_create": _cli_create,
     "adapter_cli_transient_read": _cli_read,
     "adapter_mcp_ambiguous_create": _mcp_create,
@@ -405,7 +408,13 @@ async def run_scenario(
         result = ScenarioResult("web", name, operation_id)
     elif (result.backend, result.scenario, result.operation_id) != ("web", name, operation_id):
         raise ValueError("supplied ScenarioResult identity does not match adapter scenario")
-    fault = "create:commit+disconnect" if "create" in name else "read:503"
+    fault = (
+        "caller:disconnect"
+        if name in _LIVE_IMPLEMENTATIONS
+        else "create:commit+disconnect"
+        if "create" in name
+        else "read:503"
+    )
     _, adapter, _ = name.split("_", 2)
     result.record(
         "plan",
