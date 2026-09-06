@@ -1212,18 +1212,29 @@ class SourceUploadPipeline(RequestPolicyOwner, EpochFenced):
                         # cancel against reopened resources.
                         raise cancelled from None
                     raise
-                try:
-                    outcome = await asyncio.shield(finalize_task)
-                    if outcome.error is not None:
+                while True:
+                    try:
+                        outcome = await asyncio.shield(finalize_task)
+                    except asyncio.CancelledError:
+                        # A second caller cancellation must not abandon the
+                        # already-dispatched finalize or its body descriptor.
+                        # Forced close may instead cancel the child itself;
+                        # its completed cancellation already proves settlement.
+                        if finalize_task.done():
+                            break
+                    except Exception as exc:  # noqa: BLE001
                         logger.debug(
                             "Background finalize POST failed before cancellation propagated: %r",
-                            outcome.error,
+                            exc,
                         )
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug(
-                        "Background finalize POST failed before cancellation propagated: %r",
-                        exc,
-                    )
+                        break
+                    else:
+                        if outcome.error is not None:
+                            logger.debug(
+                                "Background finalize POST failed before cancellation propagated: %r",
+                                outcome.error,
+                            )
+                        break
                 raise
         except BaseException:
             if not close_wired and path_fallback is None:

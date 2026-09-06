@@ -44,6 +44,33 @@ MEDIA = bytes.fromhex(
 )
 
 
+class _ObservedClient:
+    """Observe actual generator-owned files while retaining the real transport."""
+
+    def __init__(self, client: httpx.AsyncClient, bodies: list[Any]) -> None:
+        self._client = client
+        self._bodies = bodies
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+    async def __aenter__(self) -> _ObservedClient:
+        await self._client.__aenter__()
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        await self._client.__aexit__(*args)
+
+    async def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        # The real Web body iterator closes over the opened descriptor. Keep
+        # only that object for settlement checks; never replace or consume it.
+        frame = getattr(kwargs.get("content"), "ag_frame", None)
+        body = None if frame is None else frame.f_locals.get("file_obj")
+        if body is not None:
+            self._bodies.append(body)
+        return await self._client.post(url, **kwargs)
+
+
 class _GatedEnterClient:
     """Hold one constructed real client before finalize's dispatch checkpoint."""
 
@@ -163,7 +190,12 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
             action = _finalize(payload, "uploaded", Disconnect())
         elif variant in {"finalize_401", "finalize_403"}:
             action = Transfer(response=Reply(int(variant.rsplit("_", 1)[1])))
-        elif variant in {"cancel_before_dispatch", "cancel_after_prefix", "close_reopen"}:
+        elif variant in {
+            "cancel_before_dispatch",
+            "cancel_after_prefix",
+            "cancel_repeated",
+            "close_reopen",
+        }:
             action = Transfer(
                 prefix_bytes=4096,
                 gates={"body_prefix": "held-body"},
@@ -180,6 +212,7 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
     entered = asyncio.Event()
     entered_release = asyncio.Event()
     clients_created = 0
+    observed_bodies: list[Any] = []
 
     def transfer_factory(**kwargs: Any) -> Any:
         nonlocal clients_created
@@ -187,7 +220,7 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
         client = server.client_factory(**kwargs)
         if variant == "cancel_before_dispatch" and clients_created == 4:
             return _GatedEnterClient(client, entered, entered_release)
-        return client
+        return _ObservedClient(client, observed_bodies)
 
     with tempfile.TemporaryDirectory(prefix="fault-web-upload-") as directory:
         source = Path(directory) / "source.txt"
@@ -202,18 +235,23 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
             first = await client.sources.add_file(NOTEBOOK, source)
             result.require("successful_upload_baseline", first.id == "baseline-source")
             source.write_bytes(payload)
+            upload_semaphore = client._web_runtime.source_uploader._upload_semaphore
             task = asyncio.create_task(client.sources.add_file(NOTEBOOK, source))
             if variant == "cancel_before_dispatch":
                 await asyncio.wait_for(entered.wait(), 2.0)
                 await _wait_for_finalize_shield(task)
                 task.cancel()
-            if variant in {"cancel_after_prefix", "close_reopen"}:
+            if variant in {"cancel_after_prefix", "cancel_repeated", "close_reopen"}:
                 await server.wait_for_event("body_prefix")
-                if variant == "cancel_after_prefix":
+                if variant in {"cancel_after_prefix", "cancel_repeated"}:
                     task.cancel()
                     # Shielded Web finalize still owns the request until it settles.
                     await asyncio.sleep(0)
                     result.require("cancel_waits_for_finalize", not task.done())
+                    if variant == "cancel_repeated":
+                        task.cancel()
+                        await asyncio.sleep(0)
+                        result.require("repeat_cancel_waits_for_finalize", not task.done())
                     server.release("held-body")
                 else:
                     await client.close(drain=False)
@@ -224,7 +262,12 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
                 error = exc
             if variant == "success":
                 result.require("uploaded_identity", error is None and uploaded.id == SOURCE)
-            elif variant in {"cancel_before_dispatch", "cancel_after_prefix", "close_reopen"}:
+            elif variant in {
+                "cancel_before_dispatch",
+                "cancel_after_prefix",
+                "cancel_repeated",
+                "close_reopen",
+            }:
                 result.require("upload_cancelled", isinstance(error, asyncio.CancelledError))
                 if variant == "close_reopen":
                     await client.__aenter__()
@@ -254,6 +297,18 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
             uploader = client._web_runtime.source_uploader
             result.require("upload_children_settled", not uploader._transport_tasks)
             result.require("upload_clients_settled", not uploader._transport_clients)
+            expected_bodies = (
+                1
+                if variant.startswith("start_")
+                or variant in {"registration_failure", "cancel_before_dispatch"}
+                else 2
+            )
+            result.require("body_descriptors_observed", len(observed_bodies) == expected_bodies)
+            result.require("body_descriptors_closed", all(body.closed for body in observed_bodies))
+            result.require(
+                "upload_permit_returned",
+                upload_semaphore._value == uploader._max_concurrent_uploads,
+            )
             await _recover(result, client)
             server.release("held-body")
         result.require("one_registration_per_upload", len(_requests(server, REGISTER)) == 2)
@@ -265,7 +320,12 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
             sum(len(_requests(server, route)) for route in (UPLOAD, FINAL, BASE_FINAL))
             == expected_posts,
         )
-        expected_commit = variant in {"success", "commit_loss", "cancel_after_prefix"}
+        expected_commit = variant in {
+            "success",
+            "commit_loss",
+            "cancel_after_prefix",
+            "cancel_repeated",
+        }
         result.require(
             "independent_commit_evidence",
             server.committed == (["baseline", "uploaded"] if expected_commit else ["baseline"]),
@@ -421,9 +481,79 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
         _require_clean(result, server)
 
 
+async def credential_redirect_case(result: ScenarioResult, *, trusted: bool, batch: bool) -> None:
+    from .web_scenarios import _cohort, _requests, _require_clean
+
+    initial = Route("GET", "notebook.google.com", "/fault-cookie-asset")
+    initial_url = "https://notebook.google.com/fault-cookie-asset?capability=fault-cookie-secret"
+    server = HttpFaultServer(hosts=["storage.googleapis.com"])
+    good = Reply(body=MEDIA, headers={"content-type": "audio/wav"})
+    server.enqueue(
+        initial,
+        good,
+        Reply(
+            302, headers={"location": TARGET_URL if trusted else "https://untrusted.example/asset"}
+        ),
+    )
+    if trusted:
+        server.enqueue(TARGET, good)
+    if not batch:
+        server.enqueue(
+            LIST_ASSETS,
+            *[
+                Reply(body=rpc_response(LIST_ASSETS.rpc_id or "", [_audio_rows(initial_url)]))
+                for _ in range(2)
+            ],
+        )
+    _probe(server)
+    with tempfile.TemporaryDirectory(prefix="fault-web-credentials-") as directory:
+        destination = Path(directory) / "asset.wav"
+        async with _cohort(result, server, transfer_timeout=0.2, record_sleep=False) as client:
+            await _download(client, destination, batch=batch, url=initial_url)
+            result.require("credential_download_baseline", destination.read_bytes() == MEDIA)
+            destination.write_bytes(b"existing")
+            error: BaseException | None = None
+            outcome = None
+            try:
+                outcome = await _download(client, destination, batch=batch, url=initial_url)
+            except BaseException as exc:
+                error = exc
+            if trusted:
+                result.require(
+                    "trusted_redirect_succeeded",
+                    error is None and destination.read_bytes() == MEDIA,
+                )
+                result.require(
+                    "capability_hop_uncredentialed", not _requests(server, TARGET)[0].cookie_values
+                )
+            else:
+                result.require(
+                    "untrusted_redirect_refused",
+                    (error is None and len(outcome.failed) == 1)
+                    if batch
+                    else isinstance(error, ArtifactDownloadError),
+                )
+                result.require("untrusted_hop_never_dispatched", not _requests(server, TARGET))
+                result.require(
+                    "credential_failure_preserves_file", destination.read_bytes() == b"existing"
+                )
+            result.require(
+                "initial_hop_received_live_cookie",
+                len(_requests(server, initial)) == 2
+                and all(
+                    record.cookie_values.get(COOKIE_NAME) == OLD_COOKIE
+                    for record in _requests(server, initial)
+                ),
+            )
+            await _recover(result, client)
+        _transfer_trace(result, server)
+        _require_clean(result, server)
+
+
 UPLOAD_VARIANTS = (
     "registration_failure",
     "cancel_before_dispatch",
+    "cancel_repeated",
     "success",
     "start_failure",
     "prefix_disconnect",
@@ -452,6 +582,13 @@ DOWNLOAD_VARIANTS = (
     "redirect_loop",
 )
 IMPLEMENTATIONS = {
+    **{
+        f"download_{'batch_' if batch else ''}cookie_{'trusted' if trusted else 'untrusted'}_redirect": partial(
+            credential_redirect_case, trusted=trusted, batch=batch
+        )
+        for trusted in (True, False)
+        for batch in (True, False)
+    },
     **{f"upload_{case}": partial(upload_case, variant=case) for case in UPLOAD_VARIANTS},
     **{f"download_{case}": partial(download_case, variant=case) for case in DOWNLOAD_VARIANTS},
     **{

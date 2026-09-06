@@ -292,8 +292,8 @@ owned by the companion whole-program inventory.
 
 ## Implemented Web evidence
 
-`tests/_fault_server/web_transfers.py` registers 13 upload and 26 download cases;
-`web_streaming.py` registers five chat cases. The resulting Web registry has 60
+`tests/_fault_server/web_transfers.py` registers 14 upload and 30 download cases;
+`web_streaming.py` registers five chat cases. The resulting Web registry has 65
 scenarios including the original 16. Each new case performs a valid baseline and
 same-client read recovery, or reopens the same object for intentional close.
 Public audio cases obtain artifact rows through real LIST_ARTIFACTS RPC decoding;
@@ -310,3 +310,15 @@ malformed framing is still a service failure. The Web socket cases and exact
 construction signature guardrail passed together: 135 tests in 5.01 seconds.
 This does not claim optional curl faults, repeated-cancellation variants, or other
 backend families are complete.
+
+
+Repeated caller cancellation initially failed the socket assertion that upload
+children had settled before public cancellation escaped. The Web finalize owner
+now re-shields its existing child until it finishes, preserving the original
+cancellation and existing close behavior. The regression observes closed body
+descriptors and returned upload admission. Four additional redirect cases start
+with a real synthetic cookie on a Google host, then either drop it on an allowed
+capability host or reject an untrusted hop before dispatch. The strengthened Web,
+legacy cancellation and uploader tests passed together: 166 tests in 2.55 seconds.
+Two concurrent decks of the new transfer/chat cases (four active cohorts) also
+passed, including exported-event scans for the synthetic credential values.
