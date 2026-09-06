@@ -15,8 +15,10 @@ pytestmark = pytest.mark.allow_no_vcr
 
 @pytest.mark.parametrize("scenario", SCENARIOS)
 async def test_curl_fault_scenario(scenario: str) -> None:
-    result = await asyncio.wait_for(run_scenario(scenario, operation_id=f"pytest-{scenario}"), 8)
+    result = await asyncio.wait_for(run_scenario(scenario, operation_id=f"pytest-{scenario}"), 20)
     assert result.checks and all(result.checks.values())
+    assert any(event["kind"] == "cleanup" for event in result.events)
+    assert set(result.events[0]["required_checks"]) <= result.checks.keys()
     transport = next(event for event in result.events if event["kind"] == "transport")
     assert transport["selected"] == "curl_cffi"
     assert transport["tls_peer_verified"] and transport["tls_hostname_verified"]

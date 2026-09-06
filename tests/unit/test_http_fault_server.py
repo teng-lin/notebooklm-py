@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 import httpx
 import pytest
 
@@ -116,6 +119,41 @@ async def test_cohort_rejects_client_that_silently_remains_open(monkeypatch) -> 
     assert result.checks["client_closed"] is False
     with pytest.raises(RuntimeError, match="not running"):
         _ = server.address
+
+
+@pytest.mark.parametrize(
+    "primary_type", [ValueError, asyncio.CancelledError, KeyboardInterrupt, SystemExit]
+)
+async def test_cohort_preserves_primary_when_cleanup_also_fails(monkeypatch, primary_type) -> None:
+    result = ScenarioResult("web", "cleanup", "dual-failure")
+    server = HttpFaultServer()
+    primary = primary_type("SENTINEL_PRIMARY_CAPABILITY")
+    fake = _FakeClient(close_error=RuntimeError("SENTINEL_CLOSE_CAPABILITY"))
+    monkeypatch.setattr(web_scenarios, "build_fault_client", lambda *_a, **_kw: fake)
+    with pytest.raises(primary_type) as caught:
+        async with web_scenarios._cohort(result, server):
+            raise primary
+    assert caught.value is primary
+    cleanup = result.events[-1]
+    assert cleanup["primary_error"] == primary_type.__name__
+    assert cleanup["close_error"] == "RuntimeError"
+    assert "SENTINEL" not in json.dumps(result.events)
+    assert server.active_handlers == 0
+
+
+async def test_web_checks_reject_consumed_action_with_unobserved_required_gate() -> None:
+    from tests._fault_server.http import Reply, Route, Transfer
+
+    server = HttpFaultServer()
+    route = Route("POST", "notebook.google.com", "/prefix")
+    server.enqueue(
+        route, Transfer(prefix_bytes=10, gates={"body_prefix": "required"}, response=Reply())
+    )
+    async with server, server.client_factory() as client:
+        await client.post("https://notebook.google.com/prefix", content=b"short")
+    assert server.remaining() == 0
+    with pytest.raises(AssertionError, match="unobserved required"):
+        web_scenarios._require_clean(ScenarioResult("web", "gate", "missing"), server)
 
 
 async def test_transfer_chunked_body_commits_only_after_digest_validation() -> None:

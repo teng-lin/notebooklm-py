@@ -146,6 +146,17 @@ async def _cohort(
     client: NotebookLMClient | None = None
     close_error: BaseException | None = None
     server_close_error: BaseException | None = None
+    primary_error: BaseException | None = None
+    result.record(
+        "configuration",
+        transport="httpx",
+        rpc_timeout=timeout,
+        transfer_timeout=transfer_timeout,
+        rate_limit_max_retries=rate_retries,
+        server_error_max_retries=server_retries,
+        retry_sleep="record_only" if record_sleep else "real_clock",
+        cleanup_timeout=_CLOSE_TIMEOUT,
+    )
     await server.__aenter__()
     try:
 
@@ -165,6 +176,9 @@ async def _cohort(
         )
         await client.__aenter__()
         yield client
+    except BaseException as exc:
+        primary_error = exc
+        raise
     finally:
         if client is not None:
             try:
@@ -186,12 +200,19 @@ async def _cohort(
             ),
             server_errors=list(server.errors),
             remaining_actions=server.remaining(),
+            primary_error=None if primary_error is None else type(primary_error).__name__,
         )
-        if close_error is not None:
-            raise close_error
-        if server_close_error is not None:
-            raise server_close_error
-        result.require("client_closed", client is None or not client._lifecycle.is_open())
+        for cleanup_error in (close_error, server_close_error):
+            if cleanup_error is not None and (
+                primary_error is None
+                or (
+                    isinstance(primary_error, Exception)
+                    and not isinstance(cleanup_error, Exception)
+                )
+            ):
+                raise cleanup_error
+        if primary_error is None:
+            result.require("client_closed", client is None or not client._lifecycle.is_open())
 
 
 def _requests(server: HttpFaultServer, route: Route) -> list[Any]:
@@ -241,6 +262,8 @@ def _record_http_trace(result: ScenarioResult, server: HttpFaultServer) -> None:
 
 
 def _require_clean(result: ScenarioResult, server: HttpFaultServer) -> None:
+    server.assert_drained()
+    result.require("server_required_gates_observed", True)
     result.require("server_plan_consumed", server.remaining() == 0)
     result.require("server_had_no_errors", not server.errors)
     result.require("server_handlers_drained", server.active_handlers == 0)
@@ -620,6 +643,76 @@ _PLANS.update(TRANSFER_PLANS)
 SCENARIOS = tuple(sorted((*_IMPLEMENTATIONS, *_ADAPTER_SCENARIOS, *WORKFLOW_SCENARIOS)))
 
 
+def _required_checks(name: str) -> list[str]:
+    checks = [
+        "client_closed",
+        "server_required_gates_observed",
+        "server_plan_consumed",
+        "server_had_no_errors",
+        "server_handlers_drained",
+    ]
+    if name.startswith("upload_") or name == "connection_slow_upload_consumer":
+        checks += [
+            "successful_upload_baseline",
+            "one_registration_per_upload",
+            "no_duplicate_transfer",
+            "independent_commit_evidence",
+            "body_descriptors_observed",
+            "body_descriptors_closed",
+            "upload_children_settled",
+            "upload_clients_settled",
+            "upload_permit_returned",
+            "same_client_recovery",
+            "credential_policy_preserved",
+        ]
+    elif name.startswith("download_"):
+        checks += ["same_client_recovery", "credential_policy_preserved"]
+        if "cookie_" in name:
+            checks += ["credential_download_baseline", "initial_hop_received_live_cookie"]
+        else:
+            checks += [
+                "successful_download_baseline",
+                "staging_removed",
+                "writer_settled",
+                "asset_clients_settled",
+                "asset_tasks_settled",
+                "asset_responses_closed",
+                "bounded_asset_requests",
+                "asset_hop_cookie_policy",
+            ]
+    elif name.startswith("chat_"):
+        checks += [
+            "valid_chat_baseline",
+            "no_partial_public_answer",
+            "chat_never_replayed",
+            "same_client_recovery",
+            "credential_policy_preserved",
+        ]
+        if name == "chat_multibyte_fragmented_success":
+            checks += [
+                "multibyte_prefix_received",
+                "partial_codepoint_waits_for_continuation",
+                "fragmented_bytes_reassembled",
+            ]
+    elif name in {"connection_peer_close", "connection_server_restart"}:
+        checks += [
+            "actual_connection_reuse",
+            "same_client_recovered",
+            "new_connection_after_peer_loss",
+            "exact_read_dispatches",
+            "no_mutation_commits",
+        ]
+    elif name == "connection_slow_read_consumer":
+        checks += [
+            "request_prefix_observed",
+            "read_progress_after_release",
+            "body_consumption_completed",
+            "same_client_recovery",
+            "bounded_read_requests",
+        ]
+    return checks
+
+
 async def run_scenario(
     name: str,
     *,
@@ -645,6 +738,8 @@ async def run_scenario(
         "plan",
         faults=list(faults),
         cohort_ids=[f"{operation_id}:{index}" for index in range(cohort_count)],
+        transport="httpx",
+        required_checks=_required_checks(name),
     )
     await implementation(result)
     return result

@@ -406,15 +406,36 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
     _probe(server)
     successful = variant in {"success", "trusted_redirect"}
     error: BaseException | None = None
+    responses: list[httpx.Response] = []
+    response_headers = asyncio.Event()
+
+    async def observe_response(response: httpx.Response) -> None:
+        responses.append(response)
+        if len(responses) >= 2:
+            response_headers.set()
+
+    def transfer_factory(**kwargs: Any) -> httpx.AsyncClient:
+        kwargs["timeout"] = httpx.Timeout(0.2)
+        hooks = dict(kwargs.pop("event_hooks", {}))
+        hooks["response"] = [*hooks.get("response", []), observe_response]
+        return server.client_factory(event_hooks=hooks, **kwargs)
+
     with tempfile.TemporaryDirectory(prefix="fault-web-download-") as directory:
         destination = Path(directory) / f"{Path(directory).name}.wav"
-        async with _cohort(result, server, transfer_timeout=0.2, record_sleep=False) as client:
+        async with _cohort(
+            result,
+            server,
+            transfer_timeout=0.2,
+            record_sleep=False,
+            transfer_client_factory=transfer_factory,
+        ) as client:
             await _download(client, destination, batch=batch)
             result.require("successful_download_baseline", destination.read_bytes() == MEDIA)
             destination.write_bytes(b"old destination")
             task = asyncio.create_task(_download(client, destination, batch=batch))
             if variant in {"cancel", "close_reopen"}:
                 await server.wait_for_event("response_prefix")
+                await asyncio.wait_for(response_headers.wait(), 1)
                 if variant == "cancel":
                     task.cancel()
                 else:
@@ -462,6 +483,16 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
                 ),
             )
             result.require("asset_clients_settled", not client.artifacts._asset_downloads._clients)
+            result.require("asset_tasks_settled", not client.artifacts._asset_downloads._tasks)
+            result.record(
+                "response_cleanup",
+                observed=len(responses),
+                closed=[response.is_closed for response in responses],
+            )
+            result.require(
+                "asset_responses_closed",
+                len(responses) >= 2 and all(response.is_closed for response in responses),
+            )
             await _recover(result, client)
             server.release("held-response")
         attempts = len(_requests(server, ASSET))

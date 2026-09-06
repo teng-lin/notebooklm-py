@@ -39,35 +39,60 @@ from .web_transfers import (
 async def _cohort(result: ScenarioResult, server: CurlFaultServer) -> AsyncIterator[Any]:
     from .web_scenarios import _record_http_trace
 
-    await server.__aenter__()
-    routing = CurlRouting(server)
-    client = build_curl_client(routing)
+    routing = None
+    client = None
+    primary_error: BaseException | None = None
+    cleanup_errors: dict[str, BaseException] = {}
     try:
+        await server.__aenter__()
+        routing = CurlRouting(server)
+        client = build_curl_client(routing)
         await client.__aenter__()
         yield client
+    except BaseException as exc:
+        primary_error = exc
+        raise
     finally:
-        try:
-            await asyncio.wait_for(client.close(drain=False), 4)
-        finally:
+        for label, resource in (("client", client), ("routing", routing), ("server", server)):
+            if resource is None:
+                continue
             try:
-                await asyncio.wait_for(routing.aclose(), 4)
-            finally:
-                await server.aclose()
+                close = resource.close(drain=False) if label == "client" else resource.aclose()
+                await asyncio.wait_for(close, 4)
+            except BaseException as exc:
+                cleanup_errors[label] = exc
         _record_http_trace(result, server)
         result.record(
             "transport",
             selected="curl_cffi",
-            sessions=len(routing.sessions),
-            upload_handles=len(routing.handles),
-            body_descriptors=len(routing.body_descriptors),
+            sessions=0 if routing is None else len(routing.sessions),
+            upload_handles=0 if routing is None else len(routing.handles),
+            body_descriptors=0 if routing is None else len(routing.body_descriptors),
             tls_peer_verified=True,
             tls_hostname_verified=True,
         )
         result.record("transfer_trace", phases=server.events, commits=server.committed)
-        result.require("real_curl_session_used", len(routing.sessions) > 0)
-        result.require("curl_resources_settled", routing._closed)
-        result.require("server_requests_expected", not server.errors and server.remaining() == 0)
-        result.require("server_handlers_settled", server.active_handlers == 0)
+        result.record(
+            "cleanup",
+            primary_error=None if primary_error is None else type(primary_error).__name__,
+            errors={label: type(error).__name__ for label, error in cleanup_errors.items()},
+            client_closed=client is None or not client._lifecycle.is_open(),
+            routing_closed=routing is None or routing._closed,
+            active_handlers=server.active_handlers,
+        )
+        for error in cleanup_errors.values():
+            if primary_error is None or (
+                isinstance(primary_error, Exception) and not isinstance(error, Exception)
+            ):
+                raise error
+        if primary_error is None:
+            result.require(
+                "real_curl_session_used", routing is not None and len(routing.sessions) > 0
+            )
+            result.require("curl_resources_settled", routing is not None and routing._closed)
+            server.assert_drained()
+            result.require("server_requests_expected", True)
+            result.require("server_handlers_settled", server.active_handlers == 0)
 
 
 def _read_reply() -> Reply:
@@ -261,10 +286,40 @@ async def run_scenario(
         result = ScenarioResult("web", name, operation_id)
     elif (result.backend, result.scenario, result.operation_id) != ("web", name, operation_id):
         raise ValueError("curl result identity mismatch")
+    required = [
+        "real_curl_session_used",
+        "curl_resources_settled",
+        "server_requests_expected",
+        "server_handlers_settled",
+        "same_client_recovery",
+    ]
+    if name.startswith("curl_upload_"):
+        required += [
+            "successful_upload_baseline",
+            "curl_upload_children_settled",
+            "curl_upload_clients_settled",
+            "one_finalize_per_session",
+            "curl_independent_commit",
+        ]
+    elif name.startswith("curl_download_"):
+        required += [
+            "successful_download_baseline",
+            "curl_staging_removed",
+            "curl_download_not_replayed",
+        ]
+    else:
+        required += ["successful_read_baseline", "read_failure_typed", "read_dispatch_count"]
     result.record(
         "plan",
         faults=["curl:valid-baseline", name, "same-client:recovery"],
         cohort_ids=[f"{operation_id}:0"],
+        transport="curl_cffi",
+        rpc_timeout=0.5,
+        transfer_timeout=0.5,
+        rate_limit_max_retries=0,
+        server_error_max_retries=0,
+        cleanup_timeout=4,
+        required_checks=required,
     )
     await _IMPLEMENTATIONS[name](result)
     return result
