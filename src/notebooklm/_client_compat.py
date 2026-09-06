@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from ._runtime.lifecycle import ClientLifecycle
-
 if TYPE_CHECKING:
     import httpx
 
-    from ._client_contracts import BackendAssembly
-    from ._runtime.init import SharedRuntimeConfig
+    from ._runtime.init import SharedRuntime, SharedRuntimeConfig
+    from ._web.transport.seams import ClientSeams
     from .auth import AuthTokens
-    from .client import NotebookLMClient
 
 _NOT_OPEN = "Client not initialized. Use 'async with' context."
 
@@ -29,56 +25,81 @@ class WebSeamOverrides:
     sleep: Callable[[float], Awaitable[Any]] | None
     is_auth_error: Callable[[Exception], bool] | None
 
+    def install(self, seams: ClientSeams) -> None:
+        """Publish resolved callables without replacing the client-held carrier."""
 
-def _install_android_web_compatibility(
-    client: NotebookLMClient,
-    assembly: BackendAssembly,
-    *,
-    auth: AuthTokens,
-    shared_config: SharedRuntimeConfig,
-    seam_overrides: WebSeamOverrides,
-    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None,
-    use_default_refresh_callback: bool,
-    timeout: float,
-    refresh_retry_delay: float,
-    rate_limit_max_retries: int,
-    server_error_max_retries: int,
-    max_concurrent_uploads: int | None,
-    async_client_factory: Callable[..., httpx.AsyncClient] | None,
-) -> None:
-    """Add the root-owned 0.x sidecar without teaching Android about Web."""
+        self.decode_response = seams.decode_response
+        self.sleep = seams.sleep
+        self.is_auth_error = seams.is_auth_error
+
+    def decode(self, *args: Any, **kwargs: Any) -> Any:
+        """Delegate through the client-held decoder's current binding."""
+
+        decode_response = self.decode_response
+        if decode_response is None:  # pragma: no cover - installed before runtime publication
+            raise RuntimeError("Web compatibility decoder is not installed")
+        return decode_response(*args, **kwargs)
+
+    async def delay(self, seconds: float) -> Any:
+        """Delegate through the client-held sleep callable's current binding."""
+
+        sleep = self.sleep
+        if sleep is None:  # pragma: no cover - installed before runtime publication
+            raise RuntimeError("Web compatibility sleep seam is not installed")
+        return await sleep(seconds)
+
+    def classify_auth_error(self, error: Exception) -> bool:
+        """Delegate through the client-held classifier's current binding."""
+
+        is_auth_error = self.is_auth_error
+        if is_auth_error is None:  # pragma: no cover - installed before runtime publication
+            raise RuntimeError("Web compatibility auth classifier is not installed")
+        return is_auth_error(error)
+
+
+@dataclass(frozen=True)
+class CompatibilitySpec:
+    """Frozen settings needed if the deprecated Web sidecar is materialized."""
+
+    auth: AuthTokens
+    shared_config: SharedRuntimeConfig
+    read_timeout: float | None
+    write_timeout: float | None
+    pool_timeout: float | None
+    refresh_retry_delay: float
+    rate_limit_max_retries: int
+    server_error_max_retries: int
+    max_concurrent_uploads: int | None
+
+
+@dataclass(frozen=True)
+class CompatibilityDependencies:
+    """Private dependencies retained by an inert compatibility sidecar."""
+
+    seam_overrides: WebSeamOverrides
+    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None
+    use_default_refresh_callback: bool
+    async_client_factory: Callable[..., httpx.AsyncClient] | None
+
+
+def build_compatibility_sidecar(
+    shared: SharedRuntime,
+    spec: CompatibilitySpec,
+    deps: CompatibilityDependencies,
+) -> LazyWebSidecar:
+    """Return an inert sidecar without reading or mutating a public client."""
 
     def build_sidecar_runtime() -> Any:
         from ._web.assembly import build_compatibility_runtime
 
-        runtime, resolved_seams = build_compatibility_runtime(
-            auth=auth,
-            refresh_callback=refresh_callback,
-            use_default_refresh_callback=use_default_refresh_callback,
-            shared=assembly.collaborators,
-            shared_config=shared_config,
-            seam_overrides=seam_overrides,
-            timeout=timeout,
-            refresh_retry_delay=refresh_retry_delay,
-            rate_limit_max_retries=rate_limit_max_retries,
-            server_error_max_retries=server_error_max_retries,
-            max_concurrent_uploads=max_concurrent_uploads,
-            async_client_factory=async_client_factory,
+        runtime = build_compatibility_runtime(
+            shared=shared,
+            spec=spec,
+            deps=deps,
         )
-        client._seams = resolved_seams
-        runtime.composed.bind_runtime_collaborators(client._collaborators)
         return runtime
 
-    sidecar = LazyWebSidecar(build_sidecar_runtime)
-    client._web_sidecar = sidecar
-    lifecycle = ClientLifecycle(
-        supervisor=assembly.collaborators.call_supervisor,
-        transports=(*assembly.transports, sidecar),
-        loop_participants=(*assembly.loop_participants, sidecar),
-    )
-    client._collaborators = dataclasses.replace(assembly.collaborators, _lifecycle=lifecycle)
-    client._backends = assembly.backends
-    client._rpc_call_deprecation_warned = False
+    return LazyWebSidecar(build_sidecar_runtime)
 
 
 class LazyWebSidecar:
@@ -320,4 +341,10 @@ class LazyWebSidecar:
             raise failure
 
 
-__all__ = ["LazyWebSidecar", "WebSeamOverrides"]
+__all__ = [
+    "CompatibilityDependencies",
+    "CompatibilitySpec",
+    "LazyWebSidecar",
+    "WebSeamOverrides",
+    "build_compatibility_sidecar",
+]

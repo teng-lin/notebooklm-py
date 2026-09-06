@@ -806,7 +806,7 @@ class TestDownloadAuthPropagation:
 
 
 def test_download_envelope_projects_bulk_auth_fields() -> None:
-    from notebooklm._app.download import DownloadOutcome, DownloadResult
+    from notebooklm._app.download import DownloadFailure, DownloadOutcome, DownloadResult
 
     result = DownloadResult(
         outcome=DownloadOutcome.ALL_EXECUTED,
@@ -814,9 +814,7 @@ def test_download_envelope_projects_bulk_auth_fields() -> None:
         succeeded_count=1,
         failed_count=1,
         is_failure=True,
-        error_code="AUTH_ERROR",
-        message="Authentication error: expired",
-        hint="Run 'notebooklm login' to re-authenticate.",
+        failure=DownloadFailure("authentication", detail="expired"),
         artifacts=(
             {"id": "a1", "status": "failed"},
             {"id": "a2", "status": "downloaded"},

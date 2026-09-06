@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import mimetypes
 import os
 import shutil
@@ -42,6 +41,7 @@ from .drive_staging import DriveStagingTransfer, ImportDriveFile
 from .errors import sanitize_escaping_exception
 from .evidence import ANDROID_EVIDENCE_PROFILE
 from .session import AndroidSession
+from .upload_deadlines import _component_sum, _resolve_upload_timeouts
 
 if TYPE_CHECKING:
     from .._sources import _UploadedSourceFinalizer
@@ -205,44 +205,6 @@ def _validate_drive_metadata(metadata: Any, ref: DriveRef) -> tuple[str, str]:
     return filename, mime_type
 
 
-def _resolve_upload_timeouts(
-    configured: httpx.Timeout | float | None,
-) -> tuple[float, httpx.Timeout | None]:
-    """Resolve one public upload timeout into aggregate and per-request budgets.
-
-    ``httpx.Timeout`` is preserved wholesale for both HTTP legs, matching the
-    Web uploader's public contract.  The aggregate lifecycle fence is deliberately
-    wider than either leg so registration, queueing, and finalization can complete
-    without silently replacing the caller's component-specific values.
-    """
-
-    if configured is None:
-        return 300.0, None
-    if isinstance(configured, httpx.Timeout):
-        components = [
-            component
-            for component in (
-                configured.connect,
-                configured.read,
-                configured.write,
-                configured.pool,
-            )
-            if component is not None
-        ]
-        for component in components:
-            if not math.isfinite(float(component)) or float(component) <= 0.0:
-                raise ValueError("upload_timeout components must be finite positive numbers")
-        # A fully-unbounded httpx timeout remains unbounded at each HTTP request;
-        # retain the historical 300s lifecycle fence for the surrounding control
-        # plane rather than manufacturing arbitrary component values.
-        aggregate = 300.0 if not components else max(300.0, 2.0 * sum(components))
-        return aggregate, configured
-    numeric = float(configured)
-    if not math.isfinite(numeric) or numeric <= 0.0:
-        raise ValueError("upload_timeout must be a finite positive number")
-    return numeric, None
-
-
 class _RetiredEpochError(RuntimeError):
     """Private signal for lifecycle fencing, never an HTTP transport failure."""
 
@@ -404,9 +366,9 @@ def _upload_failure(filename: str, state: _UploadState, detail: str) -> SourceAd
         message=f"Android file upload failed during {state.stage}: {detail}.",
     )
     error.cause = None
-    cast(Any, error).stage = state.stage
+    error.stage = state.stage
     if state.source_id is not None:
-        cast(Any, error).source_id = state.source_id
+        error.source_id = state.source_id
     return error
 
 
@@ -460,6 +422,9 @@ class AndroidUploadPipeline(EpochFenced):
         session: AndroidSession,
         bearer_provider: BearerProvider,
         upload_timeout: httpx.Timeout | float | None = None,
+        start_timeout: httpx.Timeout | None = None,
+        finalize_timeout: httpx.Timeout | None = None,
+        drive_timeout: httpx.Timeout | None = None,
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         record_upload_queue_wait: Callable[[float], None] | None = None,
         async_client_factory: AndroidHTTPClientFactory | None = None,
@@ -472,10 +437,25 @@ class AndroidUploadPipeline(EpochFenced):
             assert_loop=True,
         )
         aggregate_timeout, http_timeout = _resolve_upload_timeouts(upload_timeout)
+        drive_aggregate_timeout = aggregate_timeout
+        if upload_timeout is not None:
+            start_timeout = start_timeout or http_timeout
+            finalize_timeout = finalize_timeout or http_timeout
+            drive_timeout = drive_timeout or http_timeout
+        if start_timeout is not None or finalize_timeout is not None:
+            aggregate_timeout = max(
+                300.0,
+                _component_sum(start_timeout) + _component_sum(finalize_timeout),
+            )
+        if drive_timeout is not None:
+            drive_aggregate_timeout = max(300.0, 2.0 * _component_sum(drive_timeout))
         self._transport = session
         self._bearer_provider = bearer_provider
         self._upload_timeout = aggregate_timeout
-        self._http_timeout = http_timeout
+        self._drive_timeout = drive_aggregate_timeout
+        self._start_http_timeout = start_timeout
+        self._finalize_http_timeout = finalize_timeout
+        self._drive_http_timeout = drive_timeout
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._record_upload_queue_wait = record_upload_queue_wait
         self._async_client_factory = async_client_factory
@@ -593,6 +573,7 @@ class AndroidUploadPipeline(EpochFenced):
             response,
             filename=f"fetching Drive file {ref.file_id}",
             chain=False,
+            mutation=False,
         )
         if status >= 300:
             raise ValidationError(
@@ -737,7 +718,7 @@ class AndroidUploadPipeline(EpochFenced):
         """Finish credential-bearing Drive I/O before returning a temporary file."""
 
         ref = parse_drive_ref(document_id)
-        deadline = RuntimeDeadline.start(self._upload_timeout, monotonic=self._monotonic)
+        deadline = RuntimeDeadline.start(self._drive_timeout, monotonic=self._monotonic)
         temp_dir: Path | None = None
         client: Any | None = None
         try:
@@ -755,7 +736,7 @@ class AndroidUploadPipeline(EpochFenced):
                 client = self._client_factory()(
                     cookies=None,
                     follow_redirects=False,
-                    timeout=self._http_timeout or deadline.remaining(),
+                    timeout=self._drive_http_timeout or deadline.remaining(),
                 )
                 self._transport_clients.add(client)
                 async with client:
@@ -797,8 +778,8 @@ class AndroidUploadPipeline(EpochFenced):
             assert_epoch=self._assert_epoch,
             track_client=self._transport_clients.add,
             untrack_client=self._transport_clients.discard,
-            upload_timeout=self._upload_timeout,
-            http_timeout=self._http_timeout,
+            upload_timeout=self._drive_timeout,
+            http_timeout=self._drive_http_timeout,
             monotonic=self._monotonic,
             bounded=partial(await_with_deadline, on_timeout=TimeoutError),
         )
@@ -1121,8 +1102,8 @@ class AndroidUploadPipeline(EpochFenced):
                 raise _upload_failure(filename, state, "request failed")
             if start.status_code == 401:
                 error = AuthError(f"Authentication failed uploading {filename!r} (HTTP 401)")
-                error.source_id = state.source_id  # type: ignore[attr-defined]
-                error.stage = state.stage  # type: ignore[attr-defined]
+                error.source_id = state.source_id
+                error.stage = state.stage
                 raise error
             if start.status_code != 200 or start.upload_status != "active":
                 raise _upload_failure(filename, state, f"HTTP status {start.status_code}")
@@ -1150,8 +1131,8 @@ class AndroidUploadPipeline(EpochFenced):
                 raise _upload_failure(filename, state, "request failed")
             if final.status_code == 401:
                 error = AuthError(f"Authentication failed uploading {filename!r} (HTTP 401)")
-                error.source_id = state.source_id  # type: ignore[attr-defined]
-                error.stage = state.stage  # type: ignore[attr-defined]
+                error.source_id = state.source_id
+                error.stage = state.stage
                 raise error
             if final.status_code != 200 or final.upload_status != "final":
                 raise _upload_failure(filename, state, f"HTTP status {final.status_code}")
@@ -1244,7 +1225,7 @@ class AndroidUploadPipeline(EpochFenced):
             client = self._client_factory()(
                 cookies=None,
                 follow_redirects=False,
-                timeout=self._http_timeout or deadline.remaining(),
+                timeout=self._start_http_timeout or deadline.remaining(),
             )
             self._assert_epoch(expected_epoch)
             self._transport_clients.add(client)
@@ -1311,7 +1292,7 @@ class AndroidUploadPipeline(EpochFenced):
             client = self._client_factory()(
                 cookies=None,
                 follow_redirects=False,
-                timeout=self._http_timeout or deadline.remaining(),
+                timeout=self._finalize_http_timeout or deadline.remaining(),
             )
             self._assert_epoch(expected_epoch)
             self._transport_clients.add(client)

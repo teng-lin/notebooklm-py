@@ -10,18 +10,37 @@ import yaml
 
 pytestmark = pytest.mark.repo_lint
 
-WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "test.yml"
-AUTH_PATCH_AUDIT_WORKFLOW = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "auth-patch-audit.yml"
-)
-NIGHTLY_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "nightly.yml"
-VERIFY_PACKAGE_WORKFLOW = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "verify-package.yml"
-)
-PUBLISH_WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "publish.yml"
-TESTPYPI_PUBLISH_WORKFLOW = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "testpypi-publish.yml"
-)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "test.yml"
+AUTH_PATCH_AUDIT_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "auth-patch-audit.yml"
+NIGHTLY_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "nightly.yml"
+VERIFY_PACKAGE_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "verify-package.yml"
+PYPROJECT = PROJECT_ROOT / "pyproject.toml"
+REFACTOR_QUALIFICATION_FILES = {
+    PROJECT_ROOT / "tests" / "unit" / "test_client_lifecycle_waves.py",
+    PROJECT_ROOT / "tests" / "_guardrails" / "test_client_operation_contract_inventory.py",
+    PROJECT_ROOT / "tests" / "_guardrails" / "test_backend_coupling_observability.py",
+}
+PR_LIFECYCLE_CONTRACTS = {
+    PROJECT_ROOT / "tests" / "unit" / "test_runtime_lifecycle.py": (
+        "test_root_open_is_idempotent_and_preserves_transport_generation",
+        "test_root_close_runs_hooks_before_transport_resource_teardown",
+        "test_root_construction_is_loop_agnostic_and_freezes_ownership_graph",
+    ),
+    PROJECT_ROOT / "tests" / "unit" / "test_session_close.py": (
+        "test_client_close_default_drain_is_true",
+        "test_client_close_drain_false_skips_drain",
+    ),
+    PROJECT_ROOT / "tests" / "unit" / "test_call_supervisor.py": (
+        "test_record_started_keeps_phase_a_counting_before_drain_rejection",
+        "test_lifecycle_transitions_gate_top_level_nested_and_child_work",
+    ),
+    PROJECT_ROOT / "tests" / "unit" / "test_backend_selection.py": (
+        "test_selection_construction_reads_no_files_tokens_or_network",
+    ),
+}
+PUBLISH_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "publish.yml"
+TESTPYPI_PUBLISH_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "testpypi-publish.yml"
 SUPPORTED_OSES = ["ubuntu-latest", "macos-latest", "windows-latest"]
 SUPPORTED_PYTHONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 GENERATION_E2E = Path(__file__).resolve().parents[1] / "e2e" / "test_generation.py"
@@ -132,7 +151,10 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     test_job = workflow["jobs"]["test"]
 
-    marker_filter = "not repo_lint and not requires_playwright and not requires_chromium"
+    marker_filter = (
+        "not repo_lint and not refactor_qualification and not requires_playwright "
+        "and not requires_chromium"
+    )
     suite_step = _step(test_job, "Run tests without coverage")
     suite_command = str(suite_step["run"])
     assert "if" not in suite_step
@@ -167,7 +189,9 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
 
     playwright_command = str(_step(test_job, "Run Playwright-dependent unit tests serially")["run"])
     assert "tests/unit" in playwright_command
-    assert "(requires_playwright or requires_chromium) and not reality" in playwright_command
+    assert (
+        "(requires_playwright or requires_chromium) and not reality and not refactor_qualification"
+    ) in playwright_command
     assert "-n 0" in playwright_command
     assert "--no-cov" in playwright_command
 
@@ -198,6 +222,71 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "-m requires_playwright" in smoke_command
     assert "-n 0" in smoke_command
     assert "--no-cov" in smoke_command
+
+
+def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lanes() -> None:
+    """Exhaustive migration tests run once per supported Python, not in every PR cell."""
+    assert '"refactor_qualification:' in PYPROJECT.read_text(encoding="utf-8")
+    for path in REFACTOR_QUALIFICATION_FILES:
+        assert "pytest.mark.refactor_qualification" in path.read_text(encoding="utf-8")
+    for path, contract_names in PR_LIFECYCLE_CONTRACTS.items():
+        source = path.read_text(encoding="utf-8")
+        assert "pytest.mark.refactor_qualification" not in source
+        assert "pytestmark = pytest.mark.repo_lint" not in source
+        for contract_name in contract_names:
+            assert f"def {contract_name}(" in source
+
+    pr = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    pr_test = pr["jobs"]["test"]
+    ordinary_pr = str(_step(pr_test, "Run tests without coverage")["run"])
+    playwright_pr = str(_step(pr_test, "Run Playwright-dependent unit tests serially")["run"])
+    assert "not refactor_qualification" in ordinary_pr
+    assert "not refactor_qualification" in playwright_pr
+
+    manual = pr["jobs"]["repo-lint"]
+    assert manual["if"] == "github.event_name == 'workflow_dispatch'"
+    manual_command = str(_step(manual, "Run refactor qualification tests")["run"])
+    assert "-m refactor_qualification" in manual_command
+    assert "--no-cov" in manual_command
+
+    nightly = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
+    compatibility = nightly["jobs"]["compatibility"]
+    ordinary_nightly = str(_step(compatibility, "Run compatibility tests without coverage")["run"])
+    assert "not refactor_qualification" in ordinary_nightly
+    qualifier = _step(compatibility, "Run refactor qualification on every supported Python")
+    assert qualifier["if"] == "matrix.os == 'ubuntu-latest'"
+    assert "-m refactor_qualification" in str(qualifier["run"])
+    assert compatibility["strategy"]["matrix"]["python-version"] == SUPPORTED_PYTHONS
+
+    coverage = nightly["jobs"]["coverage"]
+    assert "not refactor_qualification" in str(
+        _step(coverage, "Run ordinary tests with coverage")["run"]
+    )
+    assert "not refactor_qualification" in str(
+        _step(coverage, "Append Playwright-dependent unit coverage")["run"]
+    )
+    assert "not refactor_qualification" in str(
+        _step(nightly["jobs"]["repo-lint"], "Run repository lint tests")["run"]
+    )
+
+    for release_path in (PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW):
+        release = yaml.safe_load(release_path.read_text(encoding="utf-8"))
+        release_job = release["jobs"]["build-and-test"]
+        install = str(
+            _step(release_job, "Install built wheel + release-smoke extras in a clean venv")["run"]
+        )
+        assert "mcp" in install
+        assert "server" in install
+        assert "not refactor_qualification" in str(
+            _step(release_job, "Run routine unit tests against wheel")["run"]
+        )
+        assert "-m refactor_qualification" in str(
+            _step(release_job, "Run refactor qualification against wheel")["run"]
+        )
+
+    verify = yaml.safe_load(VERIFY_PACKAGE_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["verify"]
+    assert "not refactor_qualification" in str(_step(verify, "Run routine unit tests")["run"])
+    assert "-m refactor_qualification" in str(_step(verify, "Run refactor qualification")["run"])
 
 
 def test_auth_patch_coverage_delta_is_release_gated_and_manually_dispatchable() -> None:
@@ -328,7 +417,10 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     suite_command = str(_step(job, "Run compatibility tests without coverage")["run"])
     assert "-n auto" in suite_command
     assert "--dist loadgroup" in suite_command
-    assert "not repo_lint and not requires_playwright and not requires_chromium" in suite_command
+    assert (
+        "not repo_lint and not refactor_qualification and not requires_playwright "
+        "and not requires_chromium"
+    ) in suite_command
     assert "--no-cov" in suite_command
 
 
@@ -397,7 +489,10 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
     ordinary_command = str(ordinary_step["run"])
     assert "-n auto" in ordinary_command
     assert "--dist loadgroup" in ordinary_command
-    assert "not repo_lint and not requires_playwright and not requires_chromium" in ordinary_command
+    assert (
+        "not repo_lint and not refactor_qualification and not requires_playwright "
+        "and not requires_chromium"
+    ) in ordinary_command
     assert "--cov=src/notebooklm" in ordinary_command
     assert "--cov-report=" in ordinary_command
     assert "--cov-fail-under=0" in ordinary_command
@@ -405,7 +500,9 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
     playwright_step = _step(job, "Append Playwright-dependent unit coverage")
     playwright_command = str(playwright_step["run"])
     assert "tests/unit" in playwright_command
-    assert "(requires_playwright or requires_chromium) and not reality" in playwright_command
+    assert (
+        "(requires_playwright or requires_chromium) and not reality and not refactor_qualification"
+    ) in playwright_command
     assert "-n 0" in playwright_command
     assert "--cov=src/notebooklm" in playwright_command
     assert "--cov-append" in playwright_command
@@ -543,13 +640,13 @@ def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() 
 
 
 @pytest.mark.parametrize("workflow_path", [PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW])
-def test_release_publish_smokes_install_impersonate_extra(workflow_path: Path) -> None:
-    """Published-wheel unit smoke must install every CI-required transport."""
+def test_release_publish_smokes_install_required_adapter_extras(workflow_path: Path) -> None:
+    """Published-wheel smoke must satisfy unconditional unit-test imports."""
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     job = workflow["jobs"]["build-and-test"]
     install = str(_step(job, "Install built wheel + release-smoke extras in a clean venv")["run"])
 
-    assert '"${WHEEL}[browser,dev,markdown,impersonate]"' in install
+    assert '"${WHEEL}[browser,dev,markdown,impersonate,mcp,server]"' in install
 
 
 def test_pr_and_release_workflows_verify_clean_base_wheel() -> None:
@@ -595,7 +692,7 @@ def test_repository_lint_is_a_bounded_manual_only_job() -> None:
     assert "needs" not in job
 
     command = str(_step(job, "Run repository lint tests")["run"])
-    assert "-m repo_lint" in command
+    assert '-m "repo_lint and not refactor_qualification"' in command
     assert "-n auto" in command
     assert "--timeout=180" in command
     assert "--no-cov" in command
@@ -619,7 +716,7 @@ def test_repository_lint_is_scheduled_once_in_nightly() -> None:
     assert checkout["with"]["ref"] == "${{ needs.resolve-target.outputs.sha }}"
 
     command = str(_step(job, "Run repository lint tests")["run"])
-    assert "-m repo_lint" in command
+    assert '-m "repo_lint and not refactor_qualification"' in command
     assert "-n auto" in command
     assert "--timeout=180" in command
     assert "--no-cov" in command

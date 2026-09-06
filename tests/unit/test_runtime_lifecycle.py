@@ -29,6 +29,9 @@ from tests._helpers.client_factory import build_client_shell_for_tests
 class _Supervisor:
     events: list[str] = field(default_factory=list)
 
+    def assert_shutdown_allowed(self, action: str) -> None:
+        del action
+
     def set_bound_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.events.append("bind:supervisor")
 
@@ -139,7 +142,9 @@ def _make_web(
         auth_coord=auth_coord,
         cookie_persistence=persistence,
         kernel=kernel,
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         keepalive_interval=keepalive_interval,
@@ -542,7 +547,7 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     client = build_client_shell_for_tests(auth)
     collaborators = client._collaborators
     web = client._web_runtime
-    lifecycle = collaborators.lifecycle
+    lifecycle = client._lifecycle
 
     assert lifecycle._supervisor is collaborators.call_supervisor
     assert lifecycle._transports == (
@@ -561,5 +566,3 @@ def test_production_assembly_freezes_exact_root_ownership_graph() -> None:
     assert web.source_uploader._supervisor is collaborators.call_supervisor
     assert web.source_uploader._rpc is web.executor
     assert web.source_uploader._kernel is web.kernel
-    assert web.composed.runtime_collaborators is collaborators
-    assert web.composed.runtime_collaborators.lifecycle is lifecycle

@@ -10,8 +10,9 @@ after ``SourcesAPI`` is built (mirrors ``NotebooksAPI``). No ``LabelService``, n
 from __future__ import annotations
 
 import builtins
+import contextlib
 import logging
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from .._idempotency import call_unconfirmed_on_transport_loss
 from .._labels import LabelsAPI, ListSources
@@ -27,6 +28,9 @@ from .params.labels import (
     build_update_label_params,
 )
 from .rows.labels import decode_label
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 # Preserve the historical logger key across the whole-module move.
 logger = logging.getLogger("notebooklm._labels")
@@ -52,13 +56,26 @@ class WebLabelsAPI(LabelsAPI):
     _property_readback_miss_method_id = RPCMethod.LIST_LABELS.value
     _delete_method_id = RPCMethod.DELETE_LABEL.value
 
-    def __init__(self, rpc: RpcCaller, *, list_sources: ListSources) -> None:
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral label workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
+    def __init__(
+        self,
+        rpc: RpcCaller,
+        *,
+        list_sources: ListSources,
+        supervisor: CallSupervisor,
+    ) -> None:
         """``list_sources`` is ``client.sources.list`` (wired in ``_client_assembly.py``
         after the ``SourcesAPI`` is constructed) — needed for the
         membership→Source join in ``sources()``. Same client/bound loop, so no
         loop-affinity concern (ADR-0004)."""
         super().__init__(list_sources=list_sources)
         self._rpc = rpc
+        self._supervisor = supervisor
 
     # -- internal -----------------------------------------------------------
 
@@ -156,35 +173,39 @@ class WebLabelsAPI(LabelsAPI):
         new id appears — the ambiguity (a concurrent create) is intentionally loud,
         mirroring the ``ADD_SOURCE_FILE`` baseline-diff precedent.
         """
-        before_ids = {label.id for label in await self.list(notebook_id)}
-        result = await call_unconfirmed_on_transport_loss(
-            lambda: self._rpc.rpc_call(
-                RPCMethod.CREATE_LABEL,
-                build_create_label_params(notebook_id, name, emoji),
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-                # #2290: a status-tagged null is a server rejection, not an empty success.
-                raise_on_null_status=True,
-            ),
-            method=RPCMethod.CREATE_LABEL,
-            what="the manual label create",
-        )
-        after = self._labels_from_envelope(
-            result, notebook_id=notebook_id, method_id=RPCMethod.CREATE_LABEL.value, index=1
-        )
-        new = [label for label in after if label.id not in before_ids]
-        if len(new) != 1:
-            raise LabelError(
-                f"create(name={name!r}) expected exactly 1 new label, found {len(new)} "
-                f"(concurrent label creation can cause this — retry from a fresh list)"
+        async with self._operation_scope("labels.create"):
+            before_ids = {label.id for label in await self.list(notebook_id)}
+            result = await call_unconfirmed_on_transport_loss(
+                lambda: self._rpc.rpc_call(
+                    RPCMethod.CREATE_LABEL,
+                    build_create_label_params(notebook_id, name, emoji),
+                    source_path=f"/notebook/{notebook_id}",
+                    allow_null=True,
+                    # #2290: a status-tagged null is a server rejection, not an empty success.
+                    raise_on_null_status=True,
+                ),
+                method=RPCMethod.CREATE_LABEL,
+                what="the manual label create",
             )
-        # ``new`` is a list[Label] (typed dataclass instances), not a decoded
-        # RPC payload — positional RPC-row decode already happened in
-        # ``_labels_from_envelope``/``LabelRow``. Tuple unpacking avoids the
-        # type-blind single-level ``name[int]`` guardrail false-positive that a
-        # ``new[0]`` index would trip, while asserting exactly-one semantics.
-        (label,) = new  # exactly one (guarded); unpack avoids the name[int] ratchet
-        return label
+            after = self._labels_from_envelope(
+                result,
+                notebook_id=notebook_id,
+                method_id=RPCMethod.CREATE_LABEL.value,
+                index=1,
+            )
+            new = [label for label in after if label.id not in before_ids]
+            if len(new) != 1:
+                raise LabelError(
+                    f"create(name={name!r}) expected exactly 1 new label, found {len(new)} "
+                    f"(concurrent label creation can cause this — retry from a fresh list)"
+                )
+            # ``new`` is a list[Label] (typed dataclass instances), not a decoded
+            # RPC payload — positional RPC-row decode already happened in
+            # ``_labels_from_envelope``/``LabelRow``. Tuple unpacking avoids the
+            # type-blind single-level ``name[int]`` guardrail false-positive that a
+            # ``new[0]`` index would trip, while asserting exactly-one semantics.
+            (label,) = new  # exactly one (guarded); unpack avoids the name[int] ratchet
+            return label
 
     # -- mutate (all UPDATE_LABEL) ------------------------------------------
 

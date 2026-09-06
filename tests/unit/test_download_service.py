@@ -70,10 +70,10 @@ def resolved_notebook(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_build_download_plan_rejects_force_and_no_clobber() -> None:
     spec = DOWNLOAD_SPECS_BY_NAME["audio"]
 
-    with pytest.raises(
-        DownloadPlanValidationError, match="Cannot specify both --force and --no-clobber"
-    ):
+    with pytest.raises(DownloadPlanValidationError) as exc_info:
         build_download_plan(spec, _args(force=True, no_clobber=True))
+
+    assert exc_info.value.reason == "conflicting_overwrite_policy"
 
 
 def test_build_download_plan_applies_registry_format_extension_and_warning() -> None:
@@ -87,9 +87,10 @@ def test_build_download_plan_applies_registry_format_extension_and_warning() -> 
 
     assert plan.file_extension == ".pptx"
     assert plan.format_choice == "pptx"
-    assert list(plan.warnings) == [
-        "Warning: output path 'deck.pdf' does not end with '.pptx' but --format pptx was requested."
-    ]
+    assert len(plan.warnings) == 1
+    assert plan.warnings[0].output_path == "deck.pdf"
+    assert plan.warnings[0].expected_extension == ".pptx"
+    assert plan.warnings[0].format_choice == "pptx"
 
 
 @pytest.mark.asyncio

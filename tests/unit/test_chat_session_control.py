@@ -15,6 +15,7 @@ from notebooklm._web.params.chat_session import (
 from notebooklm._web.rows.chat import unwrap_chat_session_status
 from notebooklm.exceptions import AuthError, UnknownRPCMethodError
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.fake_core import make_fake_core
 
 
 def _api() -> tuple[WebChatAPI, MagicMock, MagicMock]:
@@ -22,6 +23,7 @@ def _api() -> tuple[WebChatAPI, MagicMock, MagicMock]:
     guard = MagicMock(spec=["assert_bound_loop"])
     api = WebChatAPI(
         rpc=rpc,
+        supervisor=make_fake_core(),
         transport=MagicMock(),
         reqid=MagicMock(),
         loop_guard=guard,

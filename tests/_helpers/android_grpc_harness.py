@@ -97,7 +97,7 @@ class CassetteValues:
 
 
 def _fresh_correlations() -> tuple[str, ...]:
-    from notebooklm._android.sources import _CORRELATION_PREFIX
+    from notebooklm._android.source_transfers import _CORRELATION_PREFIX
 
     return tuple(f"{_CORRELATION_PREFIX}{uuid4().hex}" for _ in range(CORRELATION_BUDGET))
 

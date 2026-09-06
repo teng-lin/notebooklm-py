@@ -132,7 +132,7 @@ def _enumerate_one_jar(
             raw_cookies=raw_cookies,
             browser_name=browser_name,
             browser_profile=browser_profile,
-            quiet=quiet,
+            abort_on_network_error=quiet,
             validate_before_probe=validate_before_probe,
         )
         probe_runner = cast(ProbeRunner, resolved_io.run_async)

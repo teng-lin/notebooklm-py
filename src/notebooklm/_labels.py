@@ -39,12 +39,12 @@ class LabelsAPI(ABC):
     _filter_existing_on_delete = False
     _dedupe_deletes = False
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
-
-        return contextlib.nullcontext(None)
+        raise NotImplementedError
 
     def __init__(self, *, list_sources: ListSources) -> None:
         self._list_sources = list_sources

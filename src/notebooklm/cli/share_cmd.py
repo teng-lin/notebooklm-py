@@ -9,6 +9,8 @@ Commands:
     remove       Remove user's access
 """
 
+from functools import partial
+
 import click
 from rich.table import Table
 
@@ -87,8 +89,7 @@ def share_status(ctx, notebook_id, json_output, client_auth):
             status = await execute_share_status(
                 client,
                 nb_id,
-                resolve_notebook_id=resolve_notebook_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
             )
 
             if json_output:
@@ -204,8 +205,7 @@ def share_public(ctx, notebook_id, enable, json_output, client_auth):
                 client,
                 nb_id,
                 enable,
-                resolve_notebook_id=resolve_notebook_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
             )
 
             if json_output:
@@ -256,8 +256,7 @@ def share_view_level(ctx, level, notebook_id, json_output, client_auth):
                 client,
                 nb_id,
                 view_level,
-                resolve_notebook_id=resolve_notebook_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
             )
 
             if json_output:
@@ -314,8 +313,7 @@ def share_add(ctx, email, notebook_id, permission, no_notify, message, json_outp
                 permission=perm,
                 notify=not no_notify,
                 welcome_message=message,
-                resolve_notebook_id=resolve_notebook_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
             )
 
             if json_output:
@@ -367,8 +365,7 @@ def share_update(ctx, email, notebook_id, permission, json_output, client_auth):
                 nb_id,
                 email,
                 perm,
-                resolve_notebook_id=resolve_notebook_id,
-                json_output=json_output,
+                resolve_notebook_id=partial(resolve_notebook_id, json_output=json_output),
             )
 
             if json_output:

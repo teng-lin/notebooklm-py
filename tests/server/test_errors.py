@@ -106,7 +106,7 @@ def _client_with_real_notebooks(error: BaseException) -> TestClient:
     fake = FakeClient()
     core = make_fake_core(rpc_call=AsyncMock(side_effect=error))
     fake.notebooks = WebNotebooksAPI(  # type: ignore[assignment]
-        core.rpc_executor, sources_api=MagicMock()
+        core.rpc_executor, supervisor=core, sources_api=MagicMock()
     )
 
     @asynccontextmanager
@@ -335,13 +335,37 @@ def test_unconfirmed_create_is_surfaced_in_the_rest_body() -> None:
     override the caller gets a bare message and ``retriable: false`` with
     nothing indicating a source may already exist.
     """
-    from notebooklm._app.errors import UNCONFIRMED_HINT
+    from notebooklm._app.errors import unconfirmed_hint
     from notebooklm._idempotency import mark_unconfirmed
     from notebooklm.server._errors import error_item
 
-    body = error_item(mark_unconfirmed(exc.NetworkError("connection reset")))
+    error = mark_unconfirmed(exc.NetworkError("connection reset"))
+    body = error_item(error)
 
     assert body["unconfirmed"] is True
     assert body["retriable"] is False
-    assert body["hint"] == UNCONFIRMED_HINT
+    assert body["hint"] == unconfirmed_hint(error)
     assert "unconfirmed" not in error_item(exc.NetworkError("connection reset"))
+
+
+@pytest.mark.parametrize("operation", ["sources.add_url", "sources.add_drive", "sources.add_text"])
+def test_source_add_unknown_operations_project_reconciliation_guidance(operation: str) -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+    from notebooklm.server._errors import error_item
+
+    error = mark_unconfirmed(exc.SourceAddError("input"), operation=operation)
+    body = error_item(error)
+
+    assert body["unconfirmed"] is True
+    assert body["retriable"] is False
+    assert "source list" in body["hint"]
+
+
+def test_chat_unknown_operation_projects_conversation_history_guidance() -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+    from notebooklm.server._errors import error_item
+
+    body = error_item(mark_unconfirmed(exc.NetworkError("stream lost"), operation="chat"))
+
+    assert body["unconfirmed"] is True
+    assert "conversation history" in body["hint"]

@@ -130,24 +130,35 @@ many files and add ~30–45s to the local `tests/unit tests/integration` loop.
 They're marked `@pytest.mark.repo_lint` so you can opt out while iterating:
 
 ```bash
-# Fast feedback loop — drops repo_lint audits (~40s savings).
-uv run pytest tests/unit tests/integration -m "not repo_lint"
+# Fast feedback loop — drops repo_lint audits and exhaustive refactor qualification.
+uv run pytest tests/unit tests/integration -m "not repo_lint and not refactor_qualification"
 
 # Run only the repo_lint audits (what you'd typically skip above).
 uv run pytest tests/unit tests/integration -m "repo_lint"
 ```
 
-Run the full suite (including `repo_lint`) before pushing. PR CI does **not**
-run `repo_lint` in bulk: every matrix cell passes `-m "not repo_lint"`, so of
-the marker itself only the guards named by node id in the `Run critical
-contract guards` step of `.github/workflows/test.yml` are merge-blocking (the
-ordinary non-`repo_lint` suite blocks merge as always, and the Code Quality job
-independently runs some of the same scripts several `repo_lint` tests wrap).
+Run the full routine suite (including `repo_lint`, excluding
+`refactor_qualification`) before pushing. PR CI does **not** run `repo_lint` in
+bulk: every matrix cell excludes both slower markers, so of `repo_lint` itself
+only the guards named by node id in the `Run critical contract guards` step of
+`.github/workflows/test.yml` are merge-blocking (the ordinary suite blocks merge
+as always, and the Code Quality job independently runs some of the same scripts
+several `repo_lint` tests wrap).
 The rest of the marker runs in the manual `repo-lint` job (`workflow_dispatch`)
 and nightly, so a `repo_lint` failure with no promoted node id and no
 Code-Quality mirror can reach `main` unnoticed until the next nightly. The
 default `uv run pytest` invocation does not filter the marker out; `make gates`
 runs the marker with CI's shape.
+
+Exhaustive concurrency wave matrices and migration-only inventories use the
+`refactor_qualification` marker. Routine PR CI excludes this marker while keeping
+compact public-contract and boundary guards merge-blocking. Run it explicitly
+when validating a refactor; manual CI, nightly qualification on every supported
+Python, and the PyPI/TestPyPI release smoke also run it:
+
+```bash
+uv run pytest -m refactor_qualification --timeout=180 --no-cov
+```
 
 Quick guidance:
 

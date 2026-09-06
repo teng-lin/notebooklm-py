@@ -46,6 +46,7 @@ from notebooklm._android.upload import (
     validate_upload_session_url,
 )
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._types.sources import _UPLOAD_FILE_EXTENSIONS
 from notebooklm.exceptions import (
     AuthError,
@@ -90,11 +91,21 @@ class FakeSession:
         self.scopes.append(label)
         yield _Lease(self.epoch)
 
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct session tests."""
+        return asyncio.create_task(factory(), name=label)
+
     def assert_epoch(self, expected_epoch: int) -> None:
         if expected_epoch != self.epoch:
             raise RuntimeError("retired fake epoch")
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         result = self.handlers[method]
         if isinstance(result, deque):
@@ -408,7 +419,7 @@ async def test_pdf_synthetic_branch_pins_wire_headers_body_progress_and_fresh_be
     assert result.id == SOURCE_ID
     assert result.title == path.name
     assert result.status is SourceStatus.PROCESSING
-    assert session.scopes == ["Android source upload"]
+    assert session.scopes == ["source.add_file", "Android source upload"]
     assert [call[0] for call in session.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
     registration = session.calls[0][1]
     assert registration.tentative_sources_metadata[0].name == path.name
@@ -1324,8 +1335,8 @@ async def test_docx_stages_through_drive_and_removes_the_staged_copy(tmp_path: P
 
 
 @pytest.mark.asyncio
-async def test_drive_staged_copy_is_removed_when_registration_fails(tmp_path: Path) -> None:
-    """Staging happens before registration, so its failure must still clean up."""
+async def test_drive_staged_copy_is_retained_when_registration_is_ambiguous(tmp_path: Path) -> None:
+    """An ambiguous registration may still be reading the staged Drive file."""
     harness = HTTPHarness()
     session, _, pipeline, api = await _graph(harness)
     session.handlers[ADD_TENTATIVE_SOURCES_METHOD] = ServerError("rejected", rpc_code=13)
@@ -1336,8 +1347,7 @@ async def test_drive_staged_copy_is_removed_when_registration_fails(tmp_path: Pa
         await api.add_file(NOTEBOOK_ID, path, wait=True, wait_timeout=30.0)
 
     deletes = [c for c in harness.calls if c.method == "DELETE"]
-    assert len(deletes) == 1
-    assert DRIVE_STAGED_ID in deletes[0].url
+    assert deletes == []
     del pipeline
 
 

@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .._artifact import validation as _artifact_validation
-from .._idempotency import unresolved_commit_error
+from .._idempotency import (
+    attach_journal_entry,
+    bound_operation_journal_entry,
+    unresolved_commit_error,
+)
 from .._types.enums import (
     ArtifactTypeCode,
     InfographicDetail,
@@ -80,6 +84,7 @@ async def create_artifact_once(
 ) -> Any:
     """Send ``CreateArtifact`` once and preserve an ambiguous commit outcome."""
 
+    journal_entry = bound_operation_journal_entry()
     epoch_kwargs: dict[str, Any] = (
         {} if expected_epoch is None else {"expected_epoch": expected_epoch}
     )
@@ -93,7 +98,7 @@ async def create_artifact_once(
         )
     except (NetworkError, RateLimitError, ServerError) as exc:
         rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
-        raise unresolved_commit_error(
+        error = unresolved_commit_error(
             CREATE_ARTIFACT_METHOD,
             "CreateArtifact",
             RPCError(
@@ -103,7 +108,10 @@ async def create_artifact_once(
                 rpc_code=rpc_code,
             ),
             preserve_exception=True,
-        ) from None
+        )
+        if journal_entry is not None:
+            attach_journal_entry(error, journal_entry)
+        raise error from None
 
 
 def _enum_code(value: Any, enum_type: type[Any], parameter: str, default: int) -> int:

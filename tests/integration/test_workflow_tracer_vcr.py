@@ -137,9 +137,8 @@ class TestWorkflowTracerBullet:
         "did not raise" since deletion semantics are exercised by other
         cassettes (``test_vcr_comprehensive``).
         """
-        # Use a UUID-suffixed title so a hypothetical retry in record mode
-        # cannot collide with a pre-existing notebook with the same title
-        # (the ``idempotent_create`` probe would otherwise be ambiguous).
+        # Use a UUID-suffixed title so repeated record-mode runs remain easy to
+        # identify and clean up if a response is lost after the create lands.
         # During replay, the cassette drives the response regardless of the
         # title we pass, so the UUID is purely a record-mode safety hatch.
         title = f"T8.E3 tracer-bullet {uuid.uuid4().hex[:8]}"

@@ -36,8 +36,6 @@ from tests._guardrails._ast_reach_in import (
     _call_keyword_value,
     _facade_construction_lines,
     _module_function_body,
-    _owned_attr_assignment,
-    _owned_attr_name,
     _RuntimeImportVisitor,
 )
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -259,18 +257,22 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     """Client wiring must avoid hidden SourcesAPI construction inside NotebooksAPI.
 
     The wiring lives in :func:`notebooklm._web.assembly.assemble_web_backend`
-    (the single construction seam ``NotebookLMClient.__init__`` and the
-    canonical test factory both run), where the client instance is bound to
-    the ``client`` parameter — hence the ``owner="client"`` matchers.
+    (the typed builder selected by both production and the canonical test
+    factory). It wires local values and returns them as a complete graph.
     """
     assembly_tree = ast.parse((SRC_ROOT / "_web" / "assembly.py").read_text(encoding="utf-8"))
     assembly_body = _module_function_body(assembly_tree, "assemble_web_backend")
-    sources_index, sources_assignment = _owned_attr_assignment(
-        assembly_body, "sources", owner="client"
-    )
-    notebooks_index, notebook_assignment = _owned_attr_assignment(
-        assembly_body, "notebooks", owner="client"
-    )
+
+    def local_assignment(name: str) -> tuple[int, ast.Assign]:
+        for index, statement in enumerate(assembly_body):
+            if isinstance(statement, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == name for target in statement.targets
+            ):
+                return index, statement
+        raise AssertionError(f"local {name} assignment not found")
+
+    sources_index, sources_assignment = local_assignment("sources")
+    notebooks_index, notebook_assignment = local_assignment("notebooks")
 
     assert sources_index < notebooks_index
 
@@ -285,10 +287,9 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     assert isinstance(notebooks_call.func, ast.Name)
     assert notebooks_call.func.id == "WebNotebooksAPI"
 
-    assert (
-        _owned_attr_name(_call_keyword_value(notebooks_call, "sources_api"), owner="client")
-        == "sources"
-    )
+    source_input = _call_keyword_value(notebooks_call, "sources_api")
+    assert isinstance(source_input, ast.Name)
+    assert source_input.id == "sources"
 
 
 @pytest.fixture
@@ -337,6 +338,7 @@ def test_artifacts_rejects_legacy_notes_api_kwarg(mock_auth: AuthTokens) -> None
 
     core = MagicMock()
     notes = WebNotesAPI(
+        supervisor=make_fake_core(),
         notes=MagicMock(spec=NoteService),
         mind_maps=MagicMock(spec=NoteBackedMindMapService),
     )
@@ -373,6 +375,7 @@ def test_artifacts_before_notes_construction_order(mock_auth: AuthTokens) -> Non
 
     def _make_notes() -> WebNotesAPI:
         return WebNotesAPI(
+            supervisor=make_fake_core(),
             notes=MagicMock(spec=NoteService),
             mind_maps=MagicMock(spec=NoteBackedMindMapService),
         )

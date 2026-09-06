@@ -26,6 +26,7 @@ from notebooklm._runtime.contracts import LoopGuard
 from notebooklm._web.chat import WebChatAPI
 from notebooklm._web.contracts import RpcCaller
 from notebooklm.rpc import RPCMethod
+from tests._fixtures.fake_core import make_fake_core
 
 
 @pytest.fixture
@@ -45,6 +46,7 @@ def mock_rpc() -> MagicMock:
 def api(mock_rpc: MagicMock) -> ChatAPI:
     return WebChatAPI(
         rpc=mock_rpc,
+        supervisor=make_fake_core(),
         transport=MagicMock(),
         reqid=MagicMock(),
         # ``delete_conversation`` calls ``loop_guard.assert_bound_loop()`` up

@@ -403,3 +403,87 @@ async def test_share_remove_user_confirmed(mcp_call, mock_client) -> None:
         "email": "a@b.com",
     }
     mock_client.sharing.remove_user.assert_awaited_once_with(NB_ID, "a@b.com")
+
+
+async def test_all_three_confirmed_sharing_tools_warn_for_legacy_parent_name(
+    mcp_call, mock_client
+) -> None:
+    mock_client.notebooks.list = AsyncMock(
+        return_value=[type("NB", (), {"id": NB_ID, "title": "Team Notes"})()]
+    )
+    mock_client.sharing.set_public = AsyncMock(
+        return_value=FakeShareStatus(is_public=True, access=ShareAccess.ANYONE_WITH_LINK)
+    )
+    mock_client.sharing.add_user = AsyncMock(return_value=FakeShareStatus())
+    mock_client.sharing.remove_user = AsyncMock()
+    calls = [
+        ("share_set_access", {"notebook": "Team Notes", "public": True, "confirm": True}),
+        (
+            "share_set_user",
+            {"notebook": "Team Notes", "email": "a@b.com", "confirm": True},
+        ),
+        (
+            "share_remove_user",
+            {"notebook": "Team Notes", "email": "a@b.com", "confirm": True},
+        ),
+    ]
+
+    for tool, arguments in calls:
+        result = await mcp_call(tool, arguments)
+        assert "deprecation" in result.structured_content
+
+
+async def test_sharing_preview_canonical_parent_survives_name_replacement(
+    mcp_call, mock_client
+) -> None:
+    replacement = "22222222-2222-2222-2222-222222222222"
+    mock_client.notebooks.list = AsyncMock(
+        return_value=[type("NB", (), {"id": NB_ID, "title": "Team Notes"})()]
+    )
+    mock_client.sharing.remove_user = AsyncMock()
+
+    preview = await mcp_call("share_remove_user", {"notebook": "Team Notes", "email": "a@b.com"})
+    assert preview.structured_content["preview"]["notebook_id"] == NB_ID
+    mock_client.notebooks.list.return_value = [
+        type("NB", (), {"id": replacement, "title": "Team Notes"})()
+    ]
+
+    await mcp_call(
+        "share_remove_user",
+        {"notebook": NB_ID, "email": "a@b.com", "confirm": True},
+    )
+    mock_client.sharing.remove_user.assert_awaited_once_with(NB_ID, "a@b.com")
+    mock_client.notebooks.list.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "mutation"),
+    [
+        (
+            "share_set_access",
+            {"notebook": "Team Notes", "public": True, "confirm": True},
+            "set_public",
+        ),
+        (
+            "share_set_user",
+            {"notebook": "Team Notes", "email": "a@b.com", "confirm": True},
+            "add_user",
+        ),
+        (
+            "share_remove_user",
+            {"notebook": "Team Notes", "email": "a@b.com", "confirm": True},
+            "remove_user",
+        ),
+    ],
+)
+async def test_strict_confirmed_sharing_name_rejected_before_list_or_mutation(
+    monkeypatch, mcp_call, mock_client, tool, arguments, mutation
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_MCP_STRICT_IDS", "1")
+    setattr(mock_client.sharing, mutation, AsyncMock())
+
+    with pytest.raises(ToolError, match="NOTEBOOKLM_MCP_STRICT_IDS"):
+        await mcp_call(tool, arguments)
+
+    mock_client.notebooks.list.assert_not_called()
+    getattr(mock_client.sharing, mutation).assert_not_called()

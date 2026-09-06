@@ -8,6 +8,7 @@ import logging
 import os
 import subprocess
 import sys
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -19,6 +20,7 @@ from pytest_httpx import HTTPXMock
 import notebooklm._android.auth as android_auth
 import notebooklm._auth.psidts_recovery as psidts_recovery
 import notebooklm._auth.refresh as auth_refresh
+import notebooklm.client as client_module
 from notebooklm._android.artifacts import AndroidArtifactsAPI
 from notebooklm._android.chat import AndroidChatAPI
 from notebooklm._android.collections import AndroidCollectionsAPI
@@ -33,6 +35,7 @@ from notebooklm._android.sources import AndroidSourcesAPI
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.mint_service import MintedOAuthToken
 from notebooklm._auth.profile_store import ProfileStore
+from notebooklm._auth.tokens import InlineLoadedAuth
 from notebooklm._client_assembly import BackendPreference, resolve_backend_preference
 from notebooklm._web.transport.cookie_persistence import CookiePersistence
 from notebooklm._web.transport.kernel import Kernel
@@ -242,6 +245,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
             "list_play_books",
             "add_text",
             "add_url",
+            "add_urls_batch",
             "add_urls_async",
             "append_text",
             "copy",
@@ -409,7 +413,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
     }
 
     assert observed_names == expected_names
-    assert sum(map(len, observed_names.values())) == 159
+    assert sum(map(len, observed_names.values())) == 160
 
 
 @pytest.mark.parametrize("backend", [None, "web"])
@@ -692,9 +696,7 @@ def test_android_assembly_accepts_only_narrow_primary_credentials() -> None:
     parameters = inspect.signature(assemble_android_backend).parameters
 
     assert "auth" not in parameters
-    assert "profile_path" in parameters
-    assert "master_token_reader" in parameters
-    assert "oauth_minter" in parameters
+    assert tuple(parameters) == ("shared", "config", "credentials", "deps")
 
 
 async def test_selected_android_open_binds_auth_and_session_without_eager_channel(
@@ -796,7 +798,7 @@ async def test_android_primary_auth_uses_only_explicit_reader_and_minter(
 
 def test_android_selection_extends_the_frozen_lifecycle_ownership_graph() -> None:
     client = NotebookLMClient(_auth(), backend="android")
-    lifecycle = client._collaborators.lifecycle
+    lifecycle = client._lifecycle
     assert client._android_runtime is not None
     android = client._android_runtime
     assert client._web_runtime is None
@@ -867,6 +869,368 @@ def test_from_storage_freezes_environment_preference_at_wrapper_construction(
     monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
 
     assert wrapper._kwargs["backend_preference"] == BackendPreference("android", "env")
+
+
+async def test_from_storage_handoff_skips_nested_client_in_subclass_constructor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class ClientWithNestedConstruction(NotebookLMClient):
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            self.nested = NotebookLMClient(_auth(), timeout=31.0)
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    wrapper = ClientWithNestedConstruction.from_storage()
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await wrapper._build()
+
+    assert isinstance(client, ClientWithNestedConstruction)
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client.nested._backend_preference == BackendPreference("web", "env")
+    assert len(caught) == 1
+    assert "legacy NotebookLMClient tuning arguments" in str(caught[0].message)
+    assert caught[0].filename == __file__
+
+
+async def test_from_storage_handoff_is_claimed_by_only_the_outer_same_subclass_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class SameSubclassNestedClient(NotebookLMClient):
+        constructing_nested = False
+
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            if not type(self).constructing_nested:
+                type(self).constructing_nested = True
+                try:
+                    nested_kwargs = {**kwargs, "backend": "web"}
+                    self.nested = type(self)(auth, **nested_kwargs)  # type: ignore[arg-type]
+                finally:
+                    type(self).constructing_nested = False
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    with pytest.warns(DeprecationWarning, match="legacy NotebookLMClient.from_storage"):
+        wrapper = SameSubclassNestedClient.from_storage(timeout=60.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await wrapper._build()
+
+    assert isinstance(client, SameSubclassNestedClient)
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert client.nested.preference_after_super == BackendPreference("web", "explicit")
+    assert client.nested._backend_preference == BackendPreference("web", "explicit")
+    assert len(caught) == 1
+    assert "legacy NotebookLMClient tuning arguments" in str(caught[0].message)
+    assert "backend, timeout" in str(caught[0].message)
+    assert caught[0].filename == __file__
+
+
+async def test_from_storage_handoff_supports_non_cooperative_subclass_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class NonCooperativeNewClient(NotebookLMClient):
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> NonCooperativeNewClient:
+            instance = object.__new__(cls)
+            instance.allocated_auth = auth
+            instance.allocated_backend = kwargs["backend"]
+            return instance
+
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    with pytest.warns(DeprecationWarning, match="legacy NotebookLMClient.from_storage"):
+        context = NonCooperativeNewClient.from_storage(timeout=60.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await context._build()
+
+    assert isinstance(client, NonCooperativeNewClient)
+    assert client.allocated_auth is loaded_auth
+    assert client.allocated_backend == "android"
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert caught == []
+
+
+async def test_from_storage_handoff_survives_recursive_construction_inside_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class RecursiveNewClient(NotebookLMClient):
+        allocating_outer = False
+        nested: RecursiveNewClient
+
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> RecursiveNewClient:
+            if not cls.allocating_outer:
+                cls.allocating_outer = True
+                try:
+                    nested_kwargs = {**kwargs, "backend": "web"}
+                    cls.nested = cls(auth, **nested_kwargs)  # type: ignore[arg-type]
+                finally:
+                    cls.allocating_outer = False
+            return object.__new__(cls)
+
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    with pytest.warns(DeprecationWarning, match="legacy NotebookLMClient.from_storage"):
+        context = RecursiveNewClient.from_storage(timeout=60.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await context._build()
+
+    assert isinstance(client, RecursiveNewClient)
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert RecursiveNewClient.nested.preference_after_super == BackendPreference("web", "explicit")
+    assert RecursiveNewClient.nested._backend_preference == BackendPreference("web", "explicit")
+    assert len(caught) == 1
+    assert "Offending arguments: backend, timeout." in str(caught[0].message)
+    assert caught[0].filename == __file__
+
+
+async def test_from_storage_handoff_survives_cooperative_recursive_subclass_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class CooperativeRecursiveNewClient(NotebookLMClient):
+        allocating_outer = False
+        nested: CooperativeRecursiveNewClient
+
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> CooperativeRecursiveNewClient:
+            if not cls.allocating_outer:
+                cls.allocating_outer = True
+                try:
+                    nested_kwargs = {**kwargs, "backend": "web"}
+                    cls.nested = cls(auth, **nested_kwargs)  # type: ignore[arg-type]
+                finally:
+                    cls.allocating_outer = False
+            return super().__new__(cls, auth, **kwargs)
+
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    with pytest.warns(DeprecationWarning, match="legacy NotebookLMClient.from_storage"):
+        context = CooperativeRecursiveNewClient.from_storage(timeout=60.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await context._build()
+
+    assert isinstance(client, CooperativeRecursiveNewClient)
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert CooperativeRecursiveNewClient.nested.preference_after_super == BackendPreference(
+        "web", "explicit"
+    )
+    assert CooperativeRecursiveNewClient.nested._backend_preference == BackendPreference(
+        "web", "explicit"
+    )
+    assert len(caught) == 1
+    assert "Offending arguments: backend, timeout." in str(caught[0].message)
+    assert caught[0].filename == __file__
+
+
+async def test_from_storage_passes_auth_and_options_to_mi_allocator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class RequiredArgsAllocator:
+        def __new__(
+            cls, auth: AuthTokens, timeout: float, **_kwargs: object
+        ) -> RequiredArgsAllocator:
+            instance = super().__new__(cls)
+            instance.allocator_auth = auth
+            instance.allocator_marker = timeout
+            return instance
+
+    class MultiInheritanceClient(NotebookLMClient, RequiredArgsAllocator):
+        pass
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = MultiInheritanceClient.from_storage(timeout=47.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    client = await context._build()
+
+    assert isinstance(client, MultiInheritanceClient)
+    assert client.allocator_auth is loaded_auth
+    assert client.allocator_marker == 47.0
+    assert client._backend_preference == BackendPreference("web", "env")
+
+
+async def test_from_storage_handoff_wraps_mixin_first_inherited_allocator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class NonCooperativeAllocatorMixin:
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> NonCooperativeAllocatorMixin:
+            instance = object.__new__(cls)
+            instance.allocator_auth = auth
+            instance.allocator_backend = kwargs["backend"]
+            return instance
+
+    class MixinFirstClient(NonCooperativeAllocatorMixin, NotebookLMClient):
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> None:
+            super().__init__(auth, **kwargs)  # type: ignore[arg-type]
+            self.preference_after_super = self._backend_preference
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+    with pytest.warns(DeprecationWarning, match="legacy NotebookLMClient.from_storage"):
+        context = MixinFirstClient.from_storage(timeout=60.0)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        client = await context._build()
+
+    assert isinstance(client, MixinFirstClient)
+    assert client.allocator_auth is loaded_auth
+    assert client.allocator_backend == "android"
+    assert client.preference_after_super == BackendPreference("android", "env")
+    assert client._backend_preference == BackendPreference("android", "env")
+    assert caught == []
+
+
+async def test_from_storage_preserves_custom_metaclass_call_hook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+    calls: list[tuple[object, object]] = []
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class TrackingMeta(type):
+        def __call__(cls, *args: object, **kwargs: object) -> object:
+            calls.append((args[0], kwargs["backend"]))
+            return super().__call__(*args, **kwargs)
+
+    class MetaclassClient(NotebookLMClient, metaclass=TrackingMeta):
+        pass
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = MetaclassClient.from_storage()
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    client = await context._build()
+
+    assert isinstance(client, MetaclassClient)
+    assert calls == [(loaded_auth, "web")]
+    assert type(calls[0][1]) is str
+    assert client._backend_preference == BackendPreference("web", "env")
+
+
+async def test_from_storage_ignores_adversarial_instancecheck_for_non_client_sentinel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+    sentinel = object()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class LyingInstanceMeta(type):
+        def __instancecheck__(cls, instance: object) -> bool:
+            del cls, instance
+            return True
+
+        def __call__(cls, *args: object, **kwargs: object) -> object:
+            del cls, args, kwargs
+            return sentinel
+
+    class SentinelClient(NotebookLMClient, metaclass=LyingInstanceMeta):
+        pass
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+
+    assert isinstance(sentinel, SentinelClient)
+    assert await SentinelClient.from_storage()._build() is sentinel
+
+
+async def test_from_storage_mirrors_non_instance_new_and_non_none_init_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded_auth = _auth()
+    sentinel = object()
+
+    async def load_stored_auth(**_kwargs: object) -> InlineLoadedAuth:
+        return InlineLoadedAuth(loaded_auth)
+
+    class NonInstanceClient(NotebookLMClient):
+        def __new__(cls, auth: AuthTokens, **kwargs: object) -> object:
+            del cls, auth, kwargs
+            return sentinel
+
+    class NonNoneInitClient(NotebookLMClient):
+        def __init__(self, auth: AuthTokens, **kwargs: object) -> int:
+            del self, auth, kwargs
+            return 1
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_stored_auth)
+
+    assert await NonInstanceClient.from_storage()._build() is sentinel
+    with pytest.raises(TypeError, match="__init__.*should return None, not 'int'"):
+        await NonNoneInitClient.from_storage()._build()
 
 
 async def test_from_storage_threads_explicit_backend(

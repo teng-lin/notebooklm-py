@@ -11,9 +11,8 @@ These pin the relocated ``source clean`` business logic at the ``_app`` boundary
   neutral symbol with no behaviour change.
 * :func:`normalize_url_for_dedup` — fragment-only stripping + scheme/host lower.
 * :func:`candidates_payload` — the JSON payload shape projection.
-* :func:`run_source_clean` — the classify → confirm → batched-delete orchestration
-  (already-clean short-circuit, dry-run, cancellation, chunked deletion with
-  partial-failure capture) driven by injected list/delete/confirm callables.
+* the prepare → adapter authorization → execute split, including chunked
+  deletion and partial-failure capture.
 
 Pure-service tests (no Click / CliRunner): the command-layer wiring is exercised
 in ``tests/unit/cli/test_source.py::TestSourceCleanCommand``.
@@ -22,15 +21,17 @@ in ``tests/unit/cli/test_source.py::TestSourceCleanCommand``.
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from notebooklm._app.source_clean import (
     candidates_payload,
     classify_junk_sources,
+    execute_source_clean,
     normalize_url_for_dedup,
-    run_source_clean,
+    prepare_source_clean,
+    skip_source_clean,
 )
 from notebooklm.types import Source, SourceStatus
 
@@ -233,7 +234,7 @@ def test_candidates_payload_empty() -> None:
 
 
 # ===========================================================================
-# run_source_clean — orchestration
+# prepare / skip / execute orchestration
 # ===========================================================================
 
 
@@ -246,17 +247,15 @@ def _junk_sources() -> list[Source]:
 
 
 @pytest.mark.asyncio
-async def test_run_clean_already_clean_short_circuits() -> None:
+async def test_prepare_clean_already_clean_short_circuits() -> None:
     list_sources = AsyncMock(return_value=[_src("src_ok", title="Page", url="https://ex.com/a")])
     delete_source = AsyncMock()
-    result = await run_source_clean(
+    preview = await prepare_source_clean(
         notebook_id="nb_1",
         dry_run=False,
-        yes=True,
         list_sources=list_sources,
-        delete_source=delete_source,
-        confirm_delete=lambda n: True,
     )
+    result = skip_source_clean(preview)
     assert result.status == "already_clean"
     assert result.candidates == ()
     assert result.candidate_count == 0
@@ -264,69 +263,54 @@ async def test_run_clean_already_clean_short_circuits() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_clean_dry_run_skips_delete() -> None:
+async def test_prepare_clean_dry_run_skips_delete() -> None:
     list_sources = AsyncMock(return_value=_junk_sources())
     delete_source = AsyncMock()
-    seen: list[object] = []
-    result = await run_source_clean(
+    preview = await prepare_source_clean(
         notebook_id="nb_1",
         dry_run=True,
-        yes=False,
         list_sources=list_sources,
-        delete_source=delete_source,
-        confirm_delete=lambda n: True,
-        on_candidates=seen.append,
     )
+    result = skip_source_clean(preview)
     assert result.status == "dry_run"
     assert result.candidate_count == 2
     assert result.deleted_count == 0
     delete_source.assert_not_called()
-    # on_candidates fires once with the classified list.
-    assert len(seen) == 1
 
 
 @pytest.mark.asyncio
-async def test_run_clean_declined_confirmation_cancels() -> None:
+async def test_adapter_declined_preview_projects_cancelled_result() -> None:
     list_sources = AsyncMock(return_value=_junk_sources())
     delete_source = AsyncMock()
-    result = await run_source_clean(
+    preview = await prepare_source_clean(
         notebook_id="nb_1",
         dry_run=False,
-        yes=False,
         list_sources=list_sources,
-        delete_source=delete_source,
-        confirm_delete=lambda n: False,
     )
+    result = skip_source_clean(preview, cancelled=True)
     assert result.status == "cancelled"
     assert result.candidate_count == 2
     delete_source.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_run_clean_yes_deletes_all_candidates() -> None:
+async def test_execute_clean_deletes_exact_prepared_candidates() -> None:
     list_sources = AsyncMock(return_value=_junk_sources())
     delete_source = AsyncMock()
-    confirm = MagicMock()  # never consulted under yes=True
-    started: list[int] = []
-    result = await run_source_clean(
+    preview = await prepare_source_clean(
         notebook_id="nb_1",
         dry_run=False,
-        yes=True,
         list_sources=list_sources,
-        delete_source=delete_source,
-        confirm_delete=confirm,
-        on_delete_start=started.append,
     )
+    result = await execute_source_clean(preview, delete_source=delete_source)
     assert result.status == "completed"
     assert result.deleted_count == 2
     assert result.failure_count == 0
     assert delete_source.await_count == 2
-    confirm.assert_not_called()
-    assert started == [2]
 
 
 @pytest.mark.asyncio
-async def test_run_clean_captures_partial_failures() -> None:
+async def test_execute_clean_captures_partial_failures() -> None:
     list_sources = AsyncMock(return_value=_junk_sources())
 
     async def fake_delete(notebook_id: str, sid: str) -> None:
@@ -334,14 +318,12 @@ async def test_run_clean_captures_partial_failures() -> None:
             raise RuntimeError("boom")
 
     delete_source = AsyncMock(side_effect=fake_delete)
-    result = await run_source_clean(
+    preview = await prepare_source_clean(
         notebook_id="nb_1",
         dry_run=False,
-        yes=True,
         list_sources=list_sources,
-        delete_source=delete_source,
-        confirm_delete=lambda n: True,
     )
+    result = await execute_source_clean(preview, delete_source=delete_source)
     assert result.status == "completed"
     assert result.deleted_count == 1
     assert result.failure_count == 1
@@ -350,7 +332,7 @@ async def test_run_clean_captures_partial_failures() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_clean_batches_with_sleep_between_chunks() -> None:
+async def test_execute_clean_batches_with_sleep_between_chunks() -> None:
     # 12 dup sources → two chunks of 10 + 2; sleep fires once between chunks.
     dups = [
         _src(f"src_{i}", url="https://ex.com/a", created_at=datetime(2024, 1, i + 1))
@@ -359,13 +341,14 @@ async def test_run_clean_batches_with_sleep_between_chunks() -> None:
     list_sources = AsyncMock(return_value=dups)
     delete_source = AsyncMock()
     sleep = AsyncMock()
-    result = await run_source_clean(
+    preview = await prepare_source_clean(
         notebook_id="nb_1",
         dry_run=False,
-        yes=True,
         list_sources=list_sources,
+    )
+    result = await execute_source_clean(
+        preview,
         delete_source=delete_source,
-        confirm_delete=lambda n: True,
         sleep=sleep,
     )
     # Oldest of the 12 is kept; the other 11 are duplicates deleted.
@@ -376,19 +359,16 @@ async def test_run_clean_batches_with_sleep_between_chunks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_clean_uses_injected_classifier() -> None:
+async def test_prepare_clean_uses_injected_classifier() -> None:
     # An injected classifier overrides the default so callers can pre-classify.
     sentinel_candidates = [("src_x", "T", "ready", "error_status")]
     list_sources = AsyncMock(return_value=[_src("src_x", title="T")])
-    delete_source = AsyncMock()
-    result = await run_source_clean(
+    preview = await prepare_source_clean(
         notebook_id="nb_1",
         dry_run=True,
-        yes=False,
         list_sources=list_sources,
-        delete_source=delete_source,
-        confirm_delete=lambda n: True,
         classify_sources=lambda srcs: sentinel_candidates,
     )
+    result = skip_source_clean(preview)
     assert result.status == "dry_run"
     assert result.candidates == tuple(sentinel_candidates)

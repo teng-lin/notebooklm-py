@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
+from .._idempotency import ReplayGrant, replay_allowed
 from ..raw import (
     GrpcMetadata,
     GrpcUnaryMethod,
@@ -21,6 +22,10 @@ from ..raw import (
 from .errors import sanitize_async_boundary, sanitize_escaping_exception
 
 _DEFAULT_RAW_STREAM_MAX_RESPONSE_BYTES = 50 * 1024 * 1024
+
+
+def _raw_replay_grant(policy: ReplayPolicy) -> ReplayGrant:
+    return ReplayGrant.REPLAY_SAFE if policy is ReplayPolicy.SAFE_READ else ReplayGrant.NO_REPLAY
 
 
 class AndroidRawAPI:
@@ -42,7 +47,12 @@ class AndroidRawAPI:
 
         safe_metadata = _validated_metadata(metadata)
         wire_request = _serialize_request(method, request)
-        replay_safe = method.replay_policy is ReplayPolicy.SAFE_READ
+        replay_safe = replay_allowed(
+            None,
+            grant=_raw_replay_grant(method.replay_policy),
+            disabled=False,
+            remaining=None,
+        )
 
         from .session import classify_raw_replay
 
@@ -99,7 +109,12 @@ class AndroidRawAPI:
                 raise ValueError("max_response_bytes must be >= 1 when supplied")
             safe_metadata = _validated_metadata(metadata)
             wire_request = _serialize_request(method, request)
-            replay_safe = method.replay_policy is ReplayPolicy.SAFE_READ
+            replay_safe = replay_allowed(
+                None,
+                grant=_raw_replay_grant(method.replay_policy),
+                disabled=False,
+                remaining=None,
+            )
 
             from .session import classify_raw_replay
 

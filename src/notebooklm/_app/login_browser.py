@@ -184,14 +184,12 @@ def repair_playwright_account_metadata(
     emit_event: BrowserLoginEventSink,
     run_async: RunAsync,
     page_html: str | None = None,
-    quiet: bool = False,
 ) -> bool:
     """Populate persisted account metadata when the active account is unambiguous."""
     operation = None
     result = None
     try:
-        if not quiet:
-            emit_event(BrowserLoginEvent("ACCOUNT_IDENTIFYING"))
+        emit_event(BrowserLoginEvent("ACCOUNT_IDENTIFYING"))
         operation = repair_playwright_account(
             ProfileRepairRequest(storage_path=storage_path, page_html=page_html)
         )
@@ -203,18 +201,15 @@ def repair_playwright_account_metadata(
                     operation.close()
                 raise
         except (OSError, ValueError, RuntimeError, httpx.HTTPError) as exc:
-            if not quiet:
-                emit_event(BrowserLoginEvent("ACCOUNT_ERROR", detail=str(exc)))
+            emit_event(BrowserLoginEvent("ACCOUNT_ERROR", detail=str(exc)))
             return False
         if result.status == "WRITTEN":
-            if not quiet:
-                emit_event(BrowserLoginEvent("ACCOUNT_WRITTEN", value=result.email))
+            emit_event(BrowserLoginEvent("ACCOUNT_WRITTEN", value=result.email))
             return True
-        if not quiet:
-            kind: BrowserLoginEventKind = (
-                "ACCOUNT_ERROR" if result.status == "ERROR" else "ACCOUNT_UNRESOLVED"
-            )
-            emit_event(BrowserLoginEvent(kind, detail=result.detail))
+        kind: BrowserLoginEventKind = (
+            "ACCOUNT_ERROR" if result.status == "ERROR" else "ACCOUNT_UNRESOLVED"
+        )
+        emit_event(BrowserLoginEvent(kind, detail=result.detail))
         return False
     finally:
         del storage_path, emit_event, run_async, page_html, operation, result

@@ -257,6 +257,68 @@ DEPRECATION_SPECS: Mapping[str, DeprecationSpec] = MappingProxyType(
             removal="1.0",
             stacklevel=3,
         ),
+        "client_legacy_constructor_options": DeprecationSpec(
+            key="client_legacy_constructor_options",
+            message=(
+                "Non-default legacy NotebookLMClient tuning arguments are deprecated; "
+                "group them under config=ClientConfig(...). They will be removed in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.options.ClientConfig",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=3,
+        ),
+        "client_legacy_from_storage_options": DeprecationSpec(
+            key="client_legacy_from_storage_options",
+            message=(
+                "Non-default legacy NotebookLMClient.from_storage tuning arguments are "
+                "deprecated; group them under config=ClientConfig(...). They will be removed "
+                "in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.options.ClientConfig",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=3,
+        ),
+        "mcp_confirmed_name_references": DeprecationSpec(
+            key="mcp_confirmed_name_references",
+            message=(
+                "Using a name or partial id on a confirmed MCP mutation is deprecated; "
+                "pass the canonical notebook and target ids returned by the confirmation "
+                "preview. Confirmed calls using names or partial ids will be rejected in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=4,
+        ),
+        "artifact_poll_follower_options": DeprecationSpec(
+            key="artifact_poll_follower_options",
+            message=(
+                "ArtifactsAPI.wait_for_completion follower polling options are leader-only "
+                "today and ignored while another waiter leads; they become per-waiter in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=5,
+        ),
+        "artifact_poll_follower_callback": DeprecationSpec(
+            key="artifact_poll_follower_callback",
+            message=(
+                "ArtifactsAPI.wait_for_completion follower on_status_change currently receives "
+                "only the final status; in v1.0 it will receive every observed status."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=5,
+        ),
     }
 )
 
@@ -329,7 +391,11 @@ def warn_deprecated(message: str, *, removal: str | None = None, stacklevel: int
     warnings.warn(text, DeprecationWarning, stacklevel=stacklevel)
 
 
-def warn_registered_deprecation(key: str) -> None:
-    """Emit one registered deprecation at its frozen public-boundary depth."""
+def warn_registered_deprecation(key: str, *, detail: str | None = None) -> None:
+    """Emit one registered deprecation with optional bounded non-sensitive detail."""
     spec = DEPRECATION_SPECS[key]
-    warn_deprecated(spec.message, removal=spec.removal, stacklevel=spec.stacklevel + 1)
+    message = spec.message
+    if detail:
+        bounded = " ".join(detail.split())[:300]
+        message = f"{message} {bounded}"
+    warn_deprecated(message, removal=spec.removal, stacklevel=spec.stacklevel + 1)

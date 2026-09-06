@@ -356,6 +356,33 @@ class TestGenerateVideo:
         assert kwargs["video_style"].name == "CUSTOM"
         assert kwargs["style_prompt"] == "Use hand-drawn diagrams"
 
+    def test_generate_video_cinematic_format_ignores_custom_style(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        mock_client = create_mock_client()
+        mock_client.artifacts.generate_cinematic_video = AsyncMock(
+            return_value={"artifact_id": "cin_123", "status": "processing"}
+        )
+        result = runner.invoke(
+            cli,
+            [
+                "generate",
+                "video",
+                "--format",
+                "cinematic",
+                "--style",
+                "custom",
+                "-n",
+                "nb_123",
+            ],
+            obj=inject_client(mock_client),
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.artifacts.generate_cinematic_video.assert_awaited_once()
+        kwargs = mock_client.artifacts.generate_cinematic_video.await_args.kwargs
+        assert "video_style" not in kwargs
+        assert "style_prompt" not in kwargs
+
     def test_generate_video_custom_style_requires_prompt(
         self, runner, mock_auth, mock_fetch_tokens
     ):
@@ -469,6 +496,24 @@ class TestGenerateCinematicVideo:
         # Per ADR-0015, post-parse validation exits 1 via ``output_error``.
         assert result.exit_code == 1
         assert "--style-prompt cannot be used with cinematic video" in result.output
+
+    def test_generate_cinematic_video_ignores_custom_style(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        mock_client = create_mock_client()
+        mock_client.artifacts.generate_cinematic_video = AsyncMock(
+            return_value={"artifact_id": "cin_123", "status": "processing"}
+        )
+        result = runner.invoke(
+            cli,
+            ["generate", "cinematic-video", "--style", "custom", "-n", "nb_123"],
+            obj=inject_client(mock_client),
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.artifacts.generate_cinematic_video.assert_awaited_once()
+        kwargs = mock_client.artifacts.generate_cinematic_video.await_args.kwargs
+        assert "video_style" not in kwargs
+        assert "style_prompt" not in kwargs
 
     def test_generate_cinematic_video_rejects_non_cinematic_format(
         self, runner, mock_auth, mock_fetch_tokens
@@ -1328,7 +1373,7 @@ class TestOutputGenerationOutcomeDirect:
     def test_json_completed_with_url(self):
         outcome = GenerationOutcome(
             status="completed",
-            artifact_type="audio",
+            kind="audio",
             task_id="task_123",
             url="https://example.com/audio.mp3",
         )
@@ -1339,9 +1384,7 @@ class TestOutputGenerationOutcomeDirect:
         )
 
     def test_json_failed(self):
-        outcome = GenerationOutcome(
-            status="failed", artifact_type="audio", error="Something went wrong"
-        )
+        outcome = GenerationOutcome(status="failed", kind="audio", error="Something went wrong")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1351,7 +1394,7 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Something went wrong", "GENERATION_FAILED", True, 1)
 
     def test_json_failed_no_error_message(self):
-        outcome = GenerationOutcome(status="failed", artifact_type="audio")
+        outcome = GenerationOutcome(status="failed", kind="audio")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1361,7 +1404,7 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", True, 1)
 
     def test_json_pending_with_task_id(self):
-        outcome = GenerationOutcome(status="pending", artifact_type="audio", task_id="task_456")
+        outcome = GenerationOutcome(status="pending", kind="audio", task_id="task_456")
         with patch.object(self.generate_module, "json_output_response") as mock_json:
             self.generate_module._output_generation_outcome(outcome, json_output=True)
         mock_json.assert_called_once_with({"task_id": "task_456", "status": "pending"})
@@ -1369,7 +1412,7 @@ class TestOutputGenerationOutcomeDirect:
     def test_text_completed_with_url(self):
         outcome = GenerationOutcome(
             status="completed",
-            artifact_type="audio",
+            kind="audio",
             task_id="task_123",
             url="https://example.com/audio.mp3",
         )
@@ -1380,15 +1423,13 @@ class TestOutputGenerationOutcomeDirect:
         )
 
     def test_text_completed_without_url(self):
-        outcome = GenerationOutcome(status="completed", artifact_type="audio", task_id="task_123")
+        outcome = GenerationOutcome(status="completed", kind="audio", task_id="task_123")
         with patch.object(self.generate_module, "console") as mock_console:
             self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once_with("[green]Audio ready[/green]")
 
     def test_text_failed(self):
-        outcome = GenerationOutcome(
-            status="failed", artifact_type="audio", error="Transcription error"
-        )
+        outcome = GenerationOutcome(status="failed", kind="audio", error="Transcription error")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1398,7 +1439,7 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Transcription error", "GENERATION_FAILED", False, 1)
 
     def test_text_failed_no_error_message(self):
-        outcome = GenerationOutcome(status="failed", artifact_type="audio")
+        outcome = GenerationOutcome(status="failed", kind="audio")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1408,14 +1449,14 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", False, 1)
 
     def test_text_pending_with_task_id(self):
-        outcome = GenerationOutcome(status="pending", artifact_type="audio", task_id="task_789")
+        outcome = GenerationOutcome(status="pending", kind="audio", task_id="task_789")
         with patch.object(self.generate_module, "console") as mock_console:
             self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once_with("[yellow]Started:[/yellow] task_789")
 
     def test_text_pending_without_task_id_shows_raw_status(self):
         raw_status = object()
-        outcome = GenerationOutcome(status="pending", artifact_type="audio", raw_status=raw_status)
+        outcome = GenerationOutcome(status="pending", kind="audio", raw_status=raw_status)
         with patch.object(self.generate_module, "console") as mock_console:
             self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once()

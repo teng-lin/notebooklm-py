@@ -6,6 +6,7 @@ Quizzes, Flashcards, Infographics, Slide Decks, Data Tables, and Mind Maps.
 """
 
 import builtins
+import contextlib
 import logging
 import reprlib
 from pathlib import Path
@@ -55,7 +56,7 @@ from .rows.customization import unwrap_customization_choices
 from .rows.transfers import CopiedArtifactRow, unwrap_mapping_rows
 
 if TYPE_CHECKING:
-    from .._runtime.call_supervisor import CallSupervisor
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 logger = logging.getLogger("notebooklm._artifacts")
 
@@ -75,6 +76,12 @@ class WebArtifactsAPI(ArtifactsAPI):
             artifacts = await client.artifacts.list(notebook_id)
             await client.artifacts.rename(notebook_id, artifact_id, "New Title")
     """
+
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager["OperationLease"]:
+        """Return the backend's scope for one multi-call workflow."""
+        return self._supervisor.operation_scope(label)
 
     def __init__(
         self,
@@ -231,12 +238,13 @@ class WebArtifactsAPI(ArtifactsAPI):
         ``mind_map`` (parsed structure, or ``None`` on an empty response) and
         ``note_id`` (the persisted note id, or ``None``).
         """
-        return await self._generation.generate_mind_map(
-            notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-        )
+        async with self._operation_scope("artifacts.generate_mind_map"):
+            return await self._generation.generate_mind_map(
+                notebook_id,
+                source_ids=source_ids,
+                language=language,
+                instructions=instructions,
+            )
 
     # =========================================================================
     # Download Operations
@@ -251,9 +259,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download an Audio Overview to a file."""
-        return await self._downloads.download_audio(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_audio"):
+            return await self._downloads.download_audio(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_video(
         self,
@@ -264,9 +273,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a Video Overview to a file."""
-        return await self._downloads.download_video(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_video"):
+            return await self._downloads.download_video(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_infographic(
         self,
@@ -277,9 +287,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download an Infographic to a file."""
-        return await self._downloads.download_infographic(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_infographic"):
+            return await self._downloads.download_infographic(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_slide_deck(
         self,
@@ -291,9 +302,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a slide deck as PDF or PPTX."""
-        return await self._downloads.download_slide_deck(
-            notebook_id, output_path, artifact_id, output_format, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_slide_deck"):
+            return await self._downloads.download_slide_deck(
+                notebook_id, output_path, artifact_id, output_format, artifacts_data=artifacts_data
+            )
 
     async def _download_interactive_artifact(
         self,
@@ -319,9 +331,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a report artifact as markdown."""
-        return await self._downloads.download_report(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_report"):
+            return await self._downloads.download_report(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_mind_map(
         self,
@@ -333,13 +346,14 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a mind map as JSON."""
-        return await self._downloads.download_mind_map(
-            notebook_id,
-            output_path,
-            artifact_id,
-            mind_maps=mind_maps,
-            artifacts_data=artifacts_data,
-        )
+        async with self._operation_scope("artifacts.download_mind_map"):
+            return await self._downloads.download_mind_map(
+                notebook_id,
+                output_path,
+                artifact_id,
+                mind_maps=mind_maps,
+                artifacts_data=artifacts_data,
+            )
 
     async def download_data_table(
         self,
@@ -350,9 +364,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts_data: builtins.list[Any] | None = None,
     ) -> str:
         """Download a data table as CSV."""
-        return await self._downloads.download_data_table(
-            notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
-        )
+        async with self._operation_scope("artifacts.download_data_table"):
+            return await self._downloads.download_data_table(
+                notebook_id, output_path, artifact_id, artifacts_data=artifacts_data
+            )
 
     async def download_quiz(
         self,
@@ -364,9 +379,10 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts: builtins.list[Artifact] | None = None,
     ) -> str:
         """Download quiz questions."""
-        return await self._download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "quiz", artifacts=artifacts
-        )
+        async with self._operation_scope("artifacts.download_quiz"):
+            return await self._download_interactive_artifact(
+                notebook_id, output_path, artifact_id, output_format, "quiz", artifacts=artifacts
+            )
 
     async def download_flashcards(
         self,
@@ -378,9 +394,15 @@ class WebArtifactsAPI(ArtifactsAPI):
         artifacts: builtins.list[Artifact] | None = None,
     ) -> str:
         """Download flashcard deck."""
-        return await self._download_interactive_artifact(
-            notebook_id, output_path, artifact_id, output_format, "flashcards", artifacts=artifacts
-        )
+        async with self._operation_scope("artifacts.download_flashcards"):
+            return await self._download_interactive_artifact(
+                notebook_id,
+                output_path,
+                artifact_id,
+                output_format,
+                "flashcards",
+                artifacts=artifacts,
+            )
 
     # =========================================================================
     # Management Operations
@@ -439,26 +461,27 @@ class WebArtifactsAPI(ArtifactsAPI):
             :class:`ArtifactNotFoundError` instead of silently returning
             ``None`` (#1362).
         """
-        params = [[artifact_id, new_title], [["title"]]]
-        await self._rpc.rpc_call(
-            RPCMethod.RENAME_ARTIFACT,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
-        )
-        # Resolve via studio artifacts only — never public ``get()`` (#1247) nor
-        # the merged listing (a note-backed mind-map id no-ops on RENAME_ARTIFACT
-        # — use ``mind_maps.rename``). v0.8.0 (#1362): the lookup runs on
-        # ``False`` too so a missing target is detected, but ``False`` still
-        # returns ``None`` on success.
-        artifact = await self._listing.get_studio_only(
-            notebook_id, artifact_id, list_raw=self._list_raw
-        )
-        if artifact is None:
-            raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.RENAME_ARTIFACT.value)
-        return None if not return_object else artifact
+        async with self._operation_scope("artifacts.rename"):
+            params = [[artifact_id, new_title], [["title"]]]
+            await self._rpc.rpc_call(
+                RPCMethod.RENAME_ARTIFACT,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            )
+            # Resolve via studio artifacts only — never public ``get()`` (#1247) nor
+            # the merged listing (a note-backed mind-map id no-ops on RENAME_ARTIFACT
+            # — use ``mind_maps.rename``). v0.8.0 (#1362): the lookup runs on
+            # ``False`` too so a missing target is detected, but ``False`` still
+            # returns ``None`` on success.
+            artifact = await self._listing.get_studio_only(
+                notebook_id, artifact_id, list_raw=self._list_raw
+            )
+            if artifact is None:
+                raise ArtifactNotFoundError(artifact_id, method_id=RPCMethod.RENAME_ARTIFACT.value)
+            return None if not return_object else artifact
 
     # =========================================================================
     # Export Operations

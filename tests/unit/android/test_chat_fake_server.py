@@ -22,6 +22,9 @@ from notebooklm._android.session import AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm.exceptions import AuthError
+from notebooklm.mcp._errors import tool_error_payload
+from notebooklm.outcomes import CommitState
+from notebooklm.server._errors import error_item
 
 _SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 
@@ -239,7 +242,7 @@ async def test_android_session_accepts_stream_and_unary_larger_than_grpcio_defau
 async def test_android_stream_does_not_retry_after_midstream_auth_failure() -> None:
     service = _ChatService(fail_auth_after_partial=True)
     async with _running_api(service) as (api, _supervisor, bearer):
-        with pytest.raises(AuthError):
+        with pytest.raises(AuthError) as captured:
             await api._stream_answer(
                 notebook_id="notebook-1",
                 question="Question?",
@@ -250,3 +253,8 @@ async def test_android_stream_does_not_retry_after_midstream_auth_failure() -> N
 
     assert len(service.generate_requests) == 1
     assert bearer.invalidated == [1]
+    error = captured.value
+    assert error.commit_state is CommitState.UNKNOWN
+    assert error.operation == "chat"
+    assert "conversation history" in tool_error_payload(error)["hint"]
+    assert "conversation history" in error_item(error)["hint"]

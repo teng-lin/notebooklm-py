@@ -59,11 +59,31 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
+
+from notebooklm._idempotency import bound_operation_journal_entries
+
+
+def _journalize_rpc_mock(mock: AsyncMock) -> AsyncMock:
+    """Make a test RPC mock emulate the production terminal's dispatch handoff."""
+
+    if mock.__dict__.get("_notebooklm_journalized", False):
+        return mock
+    execute = mock._execute_mock_call
+
+    async def execute_with_journal(*args: Any, **kwargs: Any) -> Any:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
+        return await execute(*args, **kwargs)
+
+    mock._execute_mock_call = execute_with_journal
+    mock._notebooklm_journalized = True
+    return mock
 
 
 class FakeSession:
@@ -90,6 +110,36 @@ class FakeSession:
             setattr(self, name, value)
 
 
+@dataclass(frozen=True)
+class FakeOperationLease:
+    """Deliberate transport-free lease returned by the shared test supervisor."""
+
+    epoch: int = 1
+
+
+@asynccontextmanager
+async def declared_noop_operation_scope(label: str) -> AsyncIterator[FakeOperationLease]:
+    """Declare a transport-free scope for neutral workflow unit fakes."""
+    del label
+    yield FakeOperationLease()
+
+
+async def declared_spawn_child(
+    label: str,
+    factory: Any,
+    *,
+    inherit_operation: bool = True,
+) -> asyncio.Task[Any]:
+    """Declare a child task with the production supervisor's ownership contract.
+
+    The transport-free fake has no operation context to propagate or detach;
+    accepting the flag keeps test collaborators signature-compatible while the
+    returned task remains deliberately unowned.
+    """
+    del inherit_operation
+    return asyncio.create_task(factory(), name=label)
+
+
 def make_fake_core(**overrides: Any) -> FakeSession:
     """Return a :class:`FakeSession` with benign defaults overridden.
 
@@ -107,20 +157,10 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     Example::
 
         fake = make_fake_core(rpc_call=AsyncMock(return_value=[payload]))
-        api = WebNotebooksAPI(fake.rpc_executor)
+        api = WebNotebooksAPI(fake.rpc_executor, supervisor=fake)
         result = await api.list()
         fake.rpc_executor.rpc_call.assert_awaited_once()
     """
-
-    def _operation_scope(_label: str):
-        @asynccontextmanager
-        async def scope() -> AsyncIterator[SimpleNamespace]:
-            yield SimpleNamespace(epoch=1)
-
-        return scope()
-
-    async def _spawn_child(label: str, factory: Any) -> asyncio.Task[Any]:
-        return asyncio.create_task(factory(), name=label)
 
     live_cookies = httpx.Cookies()
     fake_http_client = SimpleNamespace(cookies=live_cookies)
@@ -140,7 +180,7 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     # ``fake.rpc_executor.rpc_call`` mirror so both attribute paths see
     # the same observed calls. Fresh list per call so tests can mutate
     # the response without bleeding into siblings.
-    rpc_call_mock = AsyncMock(side_effect=lambda *a, **kw: [])
+    rpc_call_mock = _journalize_rpc_mock(AsyncMock(side_effect=lambda *a, **kw: []))
 
     defaults: dict[str, Any] = {
         # AuthMetadata + Kernel — consumed by SourceUploadPipeline test sites.
@@ -158,8 +198,8 @@ def make_fake_core(**overrides: Any) -> FakeSession:
         # used by source upload tests.
         "assert_bound_loop": MagicMock(return_value=None),
         "is_closing": MagicMock(return_value=False),
-        "operation_scope": MagicMock(side_effect=_operation_scope),
-        "spawn_child": _spawn_child,
+        "operation_scope": MagicMock(side_effect=declared_noop_operation_scope),
+        "spawn_child": declared_spawn_child,
         # CallSupervisor owns close-time artifact hook registration. Keep
         # ``_drain_hooks`` as a public attribute on the fake so test sites can
         # inspect registrations without a real supervisor.
@@ -185,6 +225,8 @@ def make_fake_core(**overrides: Any) -> FakeSession:
     # the same mock so test idioms using either path observe the same
     # interactions.
     if "rpc_call" in overrides:
+        if isinstance(overrides["rpc_call"], AsyncMock):
+            overrides["rpc_call"] = _journalize_rpc_mock(overrides["rpc_call"])
         overrides["rpc_executor"] = SimpleNamespace(rpc_call=overrides["rpc_call"])
 
     # Validate overrides early so a typo like ``rpc_cal=`` fails loudly

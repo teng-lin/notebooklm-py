@@ -26,6 +26,7 @@ from notebooklm._auth.profile_store import (
 )
 from notebooklm._auth.storage import CookieSaveResult, snapshot_cookie_jar
 from notebooklm._auth.tokens import FileLoadedAuth, InlineLoadedAuth
+from notebooklm._client_assembly import BackendPreference
 from notebooklm._web.transport.cookie_persistence import CookiePersistence
 from notebooklm.auth import AuthTokens
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -576,6 +577,54 @@ async def test_file_loaded_client_registers_pair_inline_does_not_and_subclass_sk
     bare = cast(BareClient, await BareClient.from_storage(str(path))._build())
     assert bare.seen_auth is file_auth
     assert not hasattr(bare, "_collaborators")
+
+
+@pytest.mark.asyncio
+async def test_file_loaded_handoff_belongs_to_outer_when_nested_forwards_all_kwargs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "profile.json"
+    store = ProfileStore(path)
+    baseline = _typed("loaded")
+    file_auth = _auth(path)
+
+    async def load_file(**kwargs: Any) -> FileLoadedAuth:
+        return FileLoadedAuth(file_auth, store, baseline)
+
+    class ReentrantClient(client_module.NotebookLMClient):
+        constructing_nested = False
+
+        def __init__(self, auth: AuthTokens, **kwargs: Any) -> None:
+            self.observed_backend = kwargs["backend"]
+            kwargs["backend"] = str(kwargs["backend"])
+            if not type(self).constructing_nested:
+                type(self).constructing_nested = True
+                try:
+                    self.nested = type(self)(auth, **kwargs)
+                finally:
+                    type(self).constructing_nested = False
+            super().__init__(auth, **kwargs)
+
+    monkeypatch.setattr(client_module._auth_tokens, "_load_stored_auth", load_file)
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "web")
+    context = ReentrantClient.from_storage(str(path))
+    monkeypatch.setenv("NOTEBOOKLM_BACKEND", "android")
+
+    client = cast(ReentrantClient, await context._build())
+
+    outer_persistence = client._web_runtime.cookie_persistence
+    nested_persistence = client.nested._web_runtime.cookie_persistence
+    assert client._backend_preference == BackendPreference("web", "env")
+    assert client.nested._backend_preference == BackendPreference("web", "explicit")
+    assert type(client.observed_backend) is str
+    assert type(client.nested.observed_backend) is str
+    assert outer_persistence._default_store is store
+    assert nested_persistence._default_store is not store
+    assert nested_persistence._states == {}
+    assert isinstance(
+        outer_persistence._states[store.ordering_key].baseline,
+        persistence_module.ReadyBaseline,
+    )
 
 
 def test_deleted_default_saver_is_not_reexported() -> None:

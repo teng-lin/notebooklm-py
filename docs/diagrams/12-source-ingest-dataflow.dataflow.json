@@ -250,7 +250,7 @@
       "dot": "amber",
       "title": "Duplicate safety",
       "items": [
-        "Web URL and Drive mutations are probe-guarded by idempotent_create",
+        "Web URL and Drive mutations are sent once; ambiguous outcomes are never replayed",
         "Text and Play Book adds register through the selected backend"
       ]
     },

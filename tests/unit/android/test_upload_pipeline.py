@@ -337,6 +337,12 @@ async def _pipeline(
 
 
 @pytest.mark.asyncio
+async def test_private_numeric_timeout_keeps_both_legacy_aggregate_fences() -> None:
+    _session, _bearer, pipeline = await _pipeline(upload_timeout=45.0)
+    assert pipeline._upload_timeout == pipeline._drive_timeout == 45.0
+
+
+@pytest.mark.asyncio
 async def test_opening_on_a_loop_the_lifecycle_did_not_bind_is_refused() -> None:
     """``open`` must never adopt a loop behind ``ClientLifecycle``'s back."""
 
@@ -1243,7 +1249,7 @@ async def test_a_timeout_before_registration_reports_no_source_id(tmp_path: Path
     error = excinfo.value
     assert "failed during register: timed out" in str(error)
     assert error.stage == "register"
-    assert not hasattr(error, "source_id")
+    assert error.source_id is None
 
 
 @pytest.mark.asyncio

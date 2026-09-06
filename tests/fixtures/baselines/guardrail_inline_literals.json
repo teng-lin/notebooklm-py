@@ -1,6 +1,6 @@
 {
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 50
+    "_DOCUMENTED_PUBLIC_IMPORTS": 77
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
@@ -55,7 +55,7 @@
   "tests/_guardrails/test_auth_storage_compatibility.py": {
     "EXPECTED_ALIAS_CALLERS": 61,
     "EXPECTED_DIRECT_CALLERS": 64,
-    "EXPECTED_SIGNATURES": 561,
+    "EXPECTED_SIGNATURES": 564,
     "FACADE_INVENTORY_IDENTITIES": 23,
     "LIVE_SIGNATURES": 61
   },
@@ -73,7 +73,7 @@
   "tests/_guardrails/test_backend_abstract_contracts.py": {
     "BASE_ABSTRACT_CONTRACTS": 173,
     "_ANDROID_IMPLEMENTATIONS": 33,
-    "_ANDROID_INHERITED_WORKFLOWS": 103
+    "_ANDROID_INHERITED_WORKFLOWS": 102
   },
   "tests/_guardrails/test_backend_boundaries.py": {
     "LAZY_WEB_IMPORT_ALLOWLIST": 34
@@ -91,14 +91,24 @@
     "FEATURE_API_NAMES": 26,
     "WEB_ONLY_NAMESPACE_IMPORTS": 26
   },
+  "tests/_guardrails/test_client_operation_contract_inventory.py": {
+    "CLEANUP_INVENTORY": 32,
+    "CONSTRUCTION_SIGNATURES": 140,
+    "GUARDRAIL_DISPOSITIONS": 114,
+    "PRIVATE_DEPENDENCY_DISPOSITIONS": 33,
+    "PUBLIC_OPTION_DISPOSITIONS": 66,
+    "REQUIRED_WORKFLOW_ENTRYPOINT_INVENTORY": 161,
+    "RETRY_CALL_INVENTORY": 24,
+    "RETRY_INVENTORY": 36,
+    "WORKFLOW_INVENTORY": 132,
+    "WORKFLOW_SCOPE_CALL_INVENTORY": 222
+  },
   "tests/_guardrails/test_error_contract_catch_ordering.py": {
     "EXCLUDED_FROM_REQUIRED": 28
   },
   "tests/_guardrails/test_generation_kind_exhaustiveness.py": {
-    "EXPECTED_DURATION_HINT_BEHAVIOR": 22,
     "KIND_TO_PAYLOAD_BUILDERS": 23,
-    "LOC": 42,
-    "_EXECUTOR_RAW_ARGS": 32
+    "LOC": 42
   },
   "tests/_guardrails/test_golden_decode_coverage.py": {
     "GOLDEN_COVERAGE": 54
@@ -120,7 +130,7 @@
     "_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES": 32,
     "_REEXPORTED_RPC_ENUMS": 24,
     "_RPC_LEGACY_REEXPORTS": 47,
-    "_TOP_LEVEL_EXCEPTION_EXPORTS": 52,
+    "_TOP_LEVEL_EXCEPTION_EXPORTS": 53,
     "_TOP_LEVEL_TYPE_EXPORTS": 61
   },
   "tests/_guardrails/test_server_classify_consistency.py": {

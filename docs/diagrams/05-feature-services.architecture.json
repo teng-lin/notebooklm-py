@@ -335,7 +335,7 @@
       "items": [
         "The pipeline registers the file through ADD_SOURCE_FILE, then uploads with its own httpx client",
         "Upload uses epoch-fenced live Kernel cookies, not the RPC pipeline",
-        "URL and Drive adds wrap mutating RPCs in idempotent_create where a stable probe exists"
+        "URL and Drive adds send mutating RPCs once; ambiguous outcomes surface for reconciliation"
       ]
     },
     {

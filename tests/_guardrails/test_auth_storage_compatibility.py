@@ -62,7 +62,7 @@ _EXPECTED_LEGACY_RESULT_DEPENDENCIES = {
     "CookieSaveResult": frozenset(
         {
             "_auth/storage.py",
-            "_client_contracts.py",
+            "_types/common.py",
             "_web/transport/cookie_persistence.py",
             "auth.py",
         }
@@ -357,10 +357,11 @@ EXPECTED_SIGNATURES: dict[str, SignatureDescriptor] = {
             ("on_rpc_event", P, "Callable[[RpcTelemetryEvent], object] | None", "None"),
             ("cookie_saver", P, "CookieSaver | None", "None"),
             ("cookie_rotator", P, "CookieRotator | None", "None"),
-            ("chat_timeout", P, "float | None", "AUTO_READ_TIMEOUT"),
+            ("chat_timeout", P, "ReadWindow", "AUTO_READ_TIMEOUT"),
             ("chat_response_max_bytes", P, "int | None", "268435456"),
-            ("import_research_timeout", P, "float | None", "AUTO_READ_TIMEOUT"),
+            ("import_research_timeout", P, "ReadWindow", "AUTO_READ_TIMEOUT"),
             ("backend", K, "Literal['web', 'android'] | None", "None"),
+            ("config", K, "ClientConfig | None", "None"),
         ),
         None,
     ),
@@ -1121,7 +1122,7 @@ EXPECTED_DIRECT_CALLERS = {
         "src/notebooklm/__init__.py",
         "src/notebooklm/_client_assembly.py",
         "src/notebooklm/_client_compat.py",
-        "src/notebooklm/_web/assembly.py",
+        "src/notebooklm/_client_contracts.py",
         "src/notebooklm/_web/transport/auth.py",
         "src/notebooklm/_web/transport/cookie_persistence.py",
         "src/notebooklm/_web/transport/init.py",

@@ -33,6 +33,7 @@ from notebooklm._android.research import (
     START_FAST_METHOD,
     AndroidResearchAPI,
 )
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._types.research import RESEARCH_RESULT_TYPE_REPORT
 from notebooklm.exceptions import DecodingError, RateLimitError, ValidationError
 from notebooklm.types import Source
@@ -58,7 +59,9 @@ class _Transport:
         self.scopes.append(label)
         yield _Lease(17)
 
-    async def unary(self, method: str, request: Any, **_kwargs: Any) -> Any:
+    async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.calls.append((method, request))
         value = self.responses[method].popleft()
         if isinstance(value, BaseException):

@@ -38,7 +38,7 @@ from .add import (
     _validate_drive_file_id,
     honor_requested_title_if_fresh,
 )
-from .batch import SourceBatchAddService, SourceUrlBatchItem
+from .batch import SourceBatchAddService, SourceUrlBatchItem, validate_source_batch_occurrences
 from .content import SourceContentRenderer
 from .listing import SourceLister
 from .play_books import PlayBooksService
@@ -124,7 +124,7 @@ class WebSourcesAPI(SourcesAPI):
         self._lister = SourceLister(self._rpc)
         self._play_books = PlayBooksService(self._rpc)
         self._searcher = SourceSearchService(self._rpc, logger=logger)
-        super().__init__()
+        super().__init__(spawn_child=supervisor.spawn_child)
         self._upload_timeout = upload_timeout
         self._max_concurrent_uploads = max_concurrent_uploads
         self._supervisor = supervisor
@@ -331,29 +331,27 @@ class WebSourcesAPI(SourcesAPI):
                 logger=logger,
                 return_result=True,
             )
-            # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2204).
             return await honor_requested_title_if_fresh(
                 self.rename,
                 notebook_id,
                 result,
                 title,
                 logger,
-                probe_proves_freshness=True,
             )
 
-    async def _add_urls_batch(
+    async def add_urls_batch(
         self,
         notebook_id: str,
         urls: builtins.list[str],
     ) -> builtins.list[SourceUrlBatchItem]:
         """Add validated URL entries with one batch-capable ``ADD_SOURCE`` RPC.
 
-        Internal adapter seam for the existing MCP/REST batch endpoints.  The
-        public single-item :meth:`add_url` contract remains unchanged; in
-        particular, it retains precise probe-then-create recovery.  This bulk
-        path never replays an uncertain write and returns typed positional
-        outcomes after reconciling silently omitted failures.
+        The public single-item :meth:`add_url` contract remains unchanged; both
+        paths send the mutation once. This bulk path never replays an uncertain
+        write and returns typed positional outcomes after reconciling silently
+        omitted failures.
         """
+        validate_source_batch_occurrences(urls)
         async with self._supervisor.operation_scope("source.add_urls_batch"):
             return await self._batch_adder.add_urls(
                 notebook_id,
@@ -385,9 +383,7 @@ class WebSourcesAPI(SourcesAPI):
             idempotent: Opt-in safety flag that REFUSES the call rather
                 than risk silent duplication on retry. Text sources
                 lack a reliable server-side dedupe key (titles non-unique;
-                content not exposed in the source list), so the
-                probe-then-retry pattern used by ``add_url`` cannot be
-                applied here. When True, raises
+                content not exposed in the source list). When True, raises
                 :class:`NonIdempotentRetryError` immediately. Default
                 ``False`` no longer relies on the inner transport retry
                 loop — as of the variant-keyed idempotency rollout, the
@@ -490,9 +486,8 @@ class WebSourcesAPI(SourcesAPI):
                 logger=logger,
                 return_result=True,
             )
-            # Baseline-filtered probe ⇒ even a PROBED result is ours to rename (#2113).
             return await honor_requested_title_if_fresh(
-                self.rename, notebook_id, result, title, logger, probe_proves_freshness=True
+                self.rename, notebook_id, result, title, logger
             )
 
     async def add_drive_file(
@@ -616,6 +611,23 @@ class WebSourcesAPI(SourcesAPI):
             **Breaking change:** ``return_object=False`` now runs the existence
             preflight on a null echo too, raising on a miss (#1362).
         """
+        async with self._operation_scope("source.rename"):
+            return await self._rename_in_scope(
+                notebook_id,
+                source_id,
+                new_title,
+                return_object=return_object,
+            )
+
+    async def _rename_in_scope(
+        self,
+        notebook_id: str,
+        source_id: str,
+        new_title: str,
+        *,
+        return_object: bool,
+    ) -> Source | None:
+        """Run the source mutation and fallback hydration under one admission."""
         logger.debug("Renaming source %s to: %s", source_id, new_title)
         params = build_rename_source_params(source_id, new_title)
         result = await self._rpc.rpc_call(
@@ -832,8 +844,8 @@ class WebSourcesAPI(SourcesAPI):
 
         ``disable_internal_retries=True``: ADD_SOURCE is a
         mutating RPC that may have committed server-side even if the
-        client sees a 5xx / network error. The probe-then-retry loop
-        in ``add_url`` owns recovery via ``idempotent_create``.
+        client sees a 5xx / network error. ``add_url`` surfaces that
+        ambiguity without replaying the create.
         """
         # allow_null=False (mirrors _register_file_source): ADD_SOURCE returns the
         # new source row on success. A null result with a status code at wrb.fr[5]

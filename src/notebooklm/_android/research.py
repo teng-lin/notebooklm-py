@@ -7,7 +7,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
+from .._idempotency import (
+    bound_operation_journal_entry,
+    call_unconfirmed_on_transport_loss,
+    mark_unconfirmed,
+)
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._research_import import _ANDROID_RESEARCH_IMPORT_POLICY, _ResearchImportBatch
@@ -31,6 +35,7 @@ from ..exceptions import (
     ServerError,
     ValidationError,
 )
+from ..outcomes import CommitState
 from .codecs.research import (
     canonical_research_job_id,
     decode_discovered_source,
@@ -314,6 +319,7 @@ class AndroidResearchAPI(BaseResearchAPI):
         *,
         _remaining_budget: float | None,
     ) -> list[dict[str, str]]:
+        journal_entry = bound_operation_journal_entry()
         entries = [
             _source_proto().UserContent(
                 text_content=_source_proto().TextContent(
@@ -349,11 +355,18 @@ class AndroidResearchAPI(BaseResearchAPI):
                 response_type=_proto().FinishDiscoverSourcesRunResponse,
                 expected_epoch=lease.epoch,
             )
-            return [
+            imported = [
                 {"id": header.source_id.id, "title": header.title}
                 for header in response.sources
                 if header.HasField("source_id") and header.source_id.id
             ]
+            if journal_entry is not None:
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded research import",
+                    known_resource_ids=tuple(item["id"] for item in imported),
+                )
+            return imported
 
 
 __all__ = ["AndroidResearchAPI"]

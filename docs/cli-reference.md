@@ -245,6 +245,11 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 
 All `source` subcommands also accept `-n/--notebook ID` (resolves via flag > `NOTEBOOKLM_NOTEBOOK` env > active context).
 
+`source add-async` intentionally remains the distinct non-blocking `AddSourcesAsync`
+command; it is not changed into the public settled `sources.add_urls_batch()` workflow.
+When any CLI command receives an escaping exception with public batch metadata, both
+text and JSON error output preserve the per-item commit states and partial resource IDs.
+
 `source search <query>` searches the indexed passages of every source in the
 notebook and orders matches by global relevance rank (lower is better). Repeat
 `-s/--source ID` to restrict the search; full IDs and unique prefixes are both
@@ -362,6 +367,11 @@ Collections group whole **notebooks** into named, account-level buckets (playlis
 
 Collections are account-level, so — unlike `label` — the `collection` commands take **no** `-n/--notebook` option; their membership arguments *are* notebooks. `collection add` appends notebooks (existing members survive; a notebook may belong to multiple collections) and `collection remove` un-assigns a notebook from that collection only — the notebook is not deleted and stays in any other collection. `collection delete` (destructive, requires `-y/--yes`) removes the collection only, never its member notebooks. `notebook_id` arguments to `collection add`/`collection remove` accept partial-prefix matching like every other notebook-id command.
 
+`collection create` sends the mutation once, then exits with an unknown-write
+error because the current response does not identify which collection row
+belongs to this call. Inspect `collection list` and verify the intended ID before
+using it; reported IDs are reconciliation candidates, not ownership claims.
+
 ### Research Commands (`notebooklm research <cmd>`)
 
 | Command | Arguments | Options | Example |
@@ -388,6 +398,13 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 - `--language LANG` to override output language (precedence: `--language` > `NOTEBOOKLM_HL` env > config > `'en'`)
 
 `quiz`, `flashcards`, and `revise-slide` do not accept `--language`.
+
+All generation commands construct exact frozen request variants governed by the same neutral
+domain validation used by MCP and REST. The CLI maps its Click-owned inputs directly into most
+variants; video uses the shared builder for its cross-option rules. MCP and REST use that central
+builder and per-kind option table across generation kinds. The CLI still owns its presentation
+contract: option spelling, progress and wait messages, text/JSON rendering, and exit codes are not
+embedded in the request, event, or outcome types.
 
 | Command | Arguments | Type-specific options | Example |
 |---------|-----------|-----------------------|---------|
@@ -1151,7 +1168,7 @@ notebooklm source add-research [query] [OPTIONS]
 - `--import-all` - Automatically import all found sources (works with blocking mode)
 - `--cited-only` - With `--import-all`, import only cited sources
 - `--no-wait` - Start research and return immediately (non-blocking)
-- `--timeout SECONDS` - Per-phase seconds budget for (a) the research-completion poll loop and (b) the `--import-all` retry loop (default: 1800). Each phase gets the full budget independently, so worst-case total wall time is up to 2× this value. Matches `research wait --timeout` semantics. Before 0.4.2 the in-line poll was hardcoded to 5 minutes, so deep research that ran longer was silently abandoned and left an "Add sources?" modal hanging in the NotebookLM web UI — bump `--timeout` for long deep-research runs.
+- `--timeout SECONDS` - Per-phase seconds budget for (a) the research-completion poll loop and (b) bounded read-only candidate inspection after an unknown `--import-all` outcome (default: 1800). The import mutation is sent once. Each phase gets the full budget independently, so worst-case total wall time is up to 2× this value. Matches `research wait --timeout` semantics. Before 0.4.2 the in-line poll was hardcoded to 5 minutes, so deep research that ran longer was silently abandoned and left an "Add sources?" modal hanging in the NotebookLM web UI — bump `--timeout` for long deep-research runs.
 - `--prompt-file PATH` - Read query from a file (or `-` for stdin) instead of the positional argument
 
 > **Note:** `--mode deep` is only supported with `--from web` (the default). Combining `--mode deep --from drive` is rejected by the backend with `ValidationError("Deep Research only supports Web sources.")` — for Drive, stick with `--mode fast`.
@@ -1225,7 +1242,7 @@ notebooklm research wait [OPTIONS]
 - `-n, --notebook ID` - Notebook ID (uses current if not set)
 - `--run-id ID, --task-id ID` - Wait for one exact run. Omit it to preserve the historical
   notebook-level selection behavior.
-- `--timeout SECONDS` - Per-phase budget (default: 1800, matching `source add-research`). Deep runs regularly exceed the former 300s default — 374s live, 358s in the `research_deep_poll_long` cassette; fast runs settle in seconds, so the cap only ever binds on deep. With `--import-all` the poll loop and the import-retry loop each get the full budget independently, so worst-case wall time is up to 2× this value.
+- `--timeout SECONDS` - Per-phase budget (default: 1800, matching `source add-research`). Deep runs regularly exceed the former 300s default — 374s live, 358s in the `research_deep_poll_long` cassette; fast runs settle in seconds. With `--import-all` the poll loop and bounded read-only candidate inspection after an unknown import outcome each get the full budget independently; the import mutation itself is sent once.
 - `--interval SECONDS` - Seconds between status checks (default: 5)
 - `--import-all` - Import all found sources when done
 - `--cited-only` - With `--import-all`, import only cited sources
@@ -1270,12 +1287,12 @@ notebooklm research import [OPTIONS]
   notebook has **more than one** run this errors rather than guessing which you meant, so pass
   the id (`research status` shows it)
 - `--cited-only` - Import only report-cited sources (all of them, if no citation resolves — `cited_only_fallback` says which happened)
-- `--timeout SECONDS` - Seconds budget for the import retry loop (default: 1800)
+- `--timeout SECONDS` - Seconds budget for read-only candidate inspection after an unknown import outcome (default: 1800); the import mutation is never retried
 - `--max-sources N` - Import at most N sources (applied *after* `--cited-only` narrows)
 - `--allow-duplicate` - Re-add sources whose URL is already in the notebook
 - `--json` - Output as JSON
 
-**Never waits for the run.** This is the counterpart to `research wait --import-all`: if the run is still in progress (or failed, or found nothing), the command exits 1 with an explanation instead of polling. The import RPC itself is not instant — `IMPORT_RESEARCH` commonly outlives a single client timeout on deep payloads and is retried with reconciliation, bounded by `--timeout` (default 1800s, same vocabulary as `research wait --timeout`). That makes the fully composable flow expressible for the first time — you own the cadence:
+**Never waits for the run.** This is the counterpart to `research wait --import-all`: if the run is still in progress (or failed, or found nothing), the command exits 1 with an explanation instead of polling. The import RPC itself is not instant — `IMPORT_RESEARCH` commonly outlives a single client timeout on deep payloads. It is sent once; after an unknown outcome the command may perform bounded read-only reconciliation, but candidate rows are diagnostic and are not reported as successful imports. That makes the fully composable flow expressible — you own the cadence:
 
 ```bash
 notebooklm source add-research "AI safety" --mode deep --no-wait   # returns immediately

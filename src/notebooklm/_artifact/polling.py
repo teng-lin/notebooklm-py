@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .._backoff import compute_backoff_delay
 from .._callbacks import maybe_await_callback
 from .._deadline import Monotonic, RuntimeDeadline, Sleep
+from .._deprecation import warn_registered_deprecation
 from .._polling_registry import PollRegistry
+from .._runtime.operation_context import detached_operation_context
 from .._types.artifacts import _status_from_code
 from .._types.enums import ArtifactStatus, ArtifactTypeCode, artifact_status_to_str
 from ..exceptions import (
@@ -34,6 +37,16 @@ _IN_PROGRESS_STATUS = "in_progress"
 ListStudioCallback = Callable[[str, str], Awaitable[list[Artifact]]]
 PollStatusCallback = Callable[[str, str], Awaitable[GenerationStatus]]
 StatusChangeCallback = Callable[[GenerationStatus], object]
+
+
+@dataclass(frozen=True)
+class _PollKnobs:
+    initial_interval: float
+    max_interval: float
+    timeout: float
+    max_not_found: int
+    min_not_found_window: float
+
 
 _MEDIA_ARTIFACT_TYPE_CODES = frozenset(
     {
@@ -65,6 +78,7 @@ class ArtifactPollingService:
         self._poll_registry = poll_registry if poll_registry is not None else PollRegistry()
         self._sleep = sleep
         self._monotonic = monotonic
+        self._leader_knobs: dict[tuple[str, str], _PollKnobs] = {}
         self._supervisor.register_drain_hook("artifacts.polls", self.drain)
 
     @property
@@ -182,6 +196,13 @@ class ArtifactPollingService:
         self._supervisor.assert_bound_loop()
 
         key = (notebook_id, task_id)
+        follower_knobs = _PollKnobs(
+            initial_interval,
+            max_interval,
+            timeout,
+            max_not_found,
+            min_not_found_window,
+        )
 
         existing = self._poll_registry.get(key)
         if existing is not None:
@@ -191,6 +212,18 @@ class ArtifactPollingService:
             # ``asyncio.shield`` ensures that *this* caller's cancellation does
             # not propagate into the shared future; the leader's poll task
             # continues on behalf of every other follower.
+            leader_knobs = self._leader_knobs.get(key)
+            if leader_knobs is not None and follower_knobs != leader_knobs:
+                differing = [
+                    f"{name}={getattr(follower_knobs, name)!r} "
+                    f"(leader={getattr(leader_knobs, name)!r})"
+                    for name in _PollKnobs.__dataclass_fields__
+                    if getattr(follower_knobs, name) != getattr(leader_knobs, name)
+                ]
+                detail = "Ignored follower values: " + ", ".join(differing)
+                warn_registered_deprecation("artifact_poll_follower_options", detail=detail)
+            if on_status_change is not None:
+                warn_registered_deprecation("artifact_poll_follower_callback")
             shared_future, _poll_task = existing
             result = await asyncio.shield(shared_future)
             if on_status_change is not None:
@@ -217,28 +250,32 @@ class ArtifactPollingService:
 
         # Reserve the key before the admitted spawn await so a concurrent
         # follower attaches to this future instead of creating a second leader.
+        self._leader_knobs[key] = follower_knobs
         self._poll_registry.register(key, future, None)
 
         async def _leader() -> GenerationStatus:
-            return await self._run_poll_loop(
-                notebook_id,
-                task_id,
-                initial_interval=initial_interval,
-                max_interval=max_interval,
-                timeout=timeout,
-                max_not_found=max_not_found,
-                min_not_found_window=min_not_found_window,
-                poll_status=poll_status,
-                on_status_change=on_status_change,
-            )
+            with detached_operation_context():
+                return await self._run_poll_loop(
+                    notebook_id,
+                    task_id,
+                    initial_interval=initial_interval,
+                    max_interval=max_interval,
+                    timeout=timeout,
+                    max_not_found=max_not_found,
+                    min_not_found_window=min_not_found_window,
+                    poll_status=poll_status,
+                    on_status_change=on_status_change,
+                )
 
         try:
             poll_task = await self._supervisor.spawn_child(
                 f"artifact-poll-{notebook_id}-{task_id}",
                 _leader,
+                inherit_operation=False,
             )
         except BaseException:
             self._poll_registry.pop(key)
+            self._leader_knobs.pop(key, None)
             future.cancel()
             raise
         self._poll_registry.attach_task(key, poll_task)
@@ -248,6 +285,7 @@ class ArtifactPollingService:
             # arriving concurrently with completion either attaches to this
             # result or starts a fresh poll for a later generation.
             self._poll_registry.pop(key)
+            self._leader_knobs.pop(key, None)
             if future.done():
                 raise RuntimeError("BUG: future resolved before poll task done-callback")
             if task.cancelled():

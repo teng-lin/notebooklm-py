@@ -117,7 +117,7 @@
       "id": "addsvc",
       "type": "backend",
       "label": "SourceAddService",
-      "sublabel": "probe then create",
+      "sublabel": "one send · inspect if unknown",
       "pos": [
         806,
         260
@@ -300,7 +300,7 @@
       "dot": "rose",
       "title": "Duplicate safety",
       "items": [
-        "SourceAddService wraps URL and Drive mutations in idempotent_create",
+        "SourceAddService sends each mutation once; callers inspect only after an unknown outcome",
         "Text adds stay non-idempotent unless the caller dedupes externally"
       ]
     }

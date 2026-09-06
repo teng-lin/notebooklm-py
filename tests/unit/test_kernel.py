@@ -38,7 +38,9 @@ async def test_open_builds_http_client_and_captures_live_cookie_snapshot() -> No
 
     await kernel.open(
         auth=_auth_tokens(),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=captured.append,
@@ -58,7 +60,9 @@ async def test_open_is_idempotent() -> None:
 
     await kernel.open(
         auth=_auth_tokens(),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=captured.append,
@@ -66,7 +70,9 @@ async def test_open_is_idempotent() -> None:
     first_client = kernel.http_client
     await kernel.open(
         auth=_auth_tokens(),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=captured.append,
@@ -93,7 +99,9 @@ async def test_open_preserves_explicit_empty_cookie_jar(monkeypatch: pytest.Monk
             cookie_jar=httpx.Cookies(),
             storage_path=None,
         ),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=lambda _: None,
@@ -124,7 +132,9 @@ async def test_open_closes_client_when_cookie_snapshot_raises() -> None:
     with pytest.raises(RuntimeError, match="snapshot failed"):
         await kernel.open(
             auth=_auth_tokens(),
-            timeout=30.0,
+            read_timeout=30.0,
+            write_timeout=30.0,
+            pool_timeout=30.0,
             connect_timeout=10.0,
             limits=ConnectionLimits(),
             capture_cookie_snapshot=boom,
@@ -169,7 +179,9 @@ async def test_open_failure_arbitrates_client_cleanup_error(
     with pytest.raises(expected_type) as raised:
         await kernel.open(
             auth=_auth_tokens(),
-            timeout=30.0,
+            read_timeout=30.0,
+            write_timeout=30.0,
+            pool_timeout=30.0,
             connect_timeout=10.0,
             limits=ConnectionLimits(),
             capture_cookie_snapshot=fail_snapshot,
@@ -199,7 +211,9 @@ async def test_post_uses_live_http_client_streaming_post() -> None:
     kernel = Kernel(async_client_factory=async_client_factory)
     await kernel.open(
         auth=_auth_tokens(),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=lambda _: None,
@@ -238,7 +252,9 @@ async def test_post_read_timeout_override_preserves_other_timeout_slots() -> Non
     kernel = Kernel(async_client_factory=async_client_factory)
     await kernel.open(
         auth=_auth_tokens(),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=lambda _: None,
@@ -292,7 +308,9 @@ async def test_post_forwards_response_cap_to_streaming_helper(
     kernel = Kernel()
     await kernel.open(
         auth=_auth_tokens(),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=lambda _: None,
@@ -323,7 +341,9 @@ async def test_aclose_marks_kernel_closed_and_is_idempotent() -> None:
     kernel = Kernel()
     await kernel.open(
         auth=_auth_tokens(),
-        timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
         connect_timeout=10.0,
         limits=ConnectionLimits(),
         capture_cookie_snapshot=lambda _: None,

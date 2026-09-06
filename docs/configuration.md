@@ -233,6 +233,8 @@ accepted for source compatibility but are ignored when Android is selected.
 | `NOTEBOOKLM_MCP_PUBLIC_URL` | Public base URL for the remote MCP file upload/download signed-URL side-channel (falls back to `NOTEBOOKLM_MCP_OAUTH_BASE_URL`). Unset → `source_add type=file` / `artifact_download` return a "not configured" error. | - |
 | `NOTEBOOKLM_MCP_TRUST_PROXY` | Trust the proxy-set `CF-Connecting-IP` header as the self-hosted-OAuth login-throttle key. Only enable behind a trusted proxy (e.g. the Cloudflare tunnel); default off keys on the socket peer. | `0` |
 | `NOTEBOOKLM_MCP_STRICT_IDS` | Strict IDs-only mode for MCP tools: require a full canonical id for every `notebook`/`source`/`note`/`artifact` reference and reject names, titles, and short id prefixes (fail-fast, deterministic automation). | `0` |
+| `NOTEBOOKLM_MCP_CHAT_CONCURRENCY` | Concurrent detached `chat_start` generations; later accepted jobs queue FIFO. Clamped to 1–16. | `3` |
+| `NOTEBOOKLM_MCP_CHAT_JOB_TIMEOUT` | Optional aggregate seconds from detached-chat acceptance through queue and generation. Unset keeps jobs unbounded. | - |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The REST server refuses to start without it. | - |
 | `NOTEBOOKLM_SERVER_HOST` | REST server bind host; non-loopback refused unless `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND=1` | `127.0.0.1` |
 | `NOTEBOOKLM_SERVER_PORT` | REST server bind port | `8000` |
@@ -300,6 +302,8 @@ be audited from one location.
 | `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND` | Allow MCP HTTP transport to bind a non-loopback host. Use only behind a trusted proxy. | Literal `1` enables; all other values disabled. | `mcp.__main__._check_http_bind_allowed` → `_serving.check_bind_allowed` |
 | `NOTEBOOKLM_MCP_TRUST_PROXY` | Trust the proxy-set `CF-Connecting-IP` header as the self-hosted-OAuth login-throttle key. Enable only behind a trusted proxy (e.g. the Cloudflare tunnel); default off keys the throttle on the socket peer. | Literal `1` enables; all other values disabled. | `mcp._oauth.get_oauth_config` / `_client_ip` |
 | `NOTEBOOKLM_MCP_STRICT_IDS` | Strict IDs-only mode: MCP `notebook`/`source`/`note`/`artifact` references must be a full canonical id; names, titles, and short id prefixes are rejected before any list call (deterministic automation). Off by default → default name/prefix/title resolution is unchanged. | Literal `1` enables; all other values disabled. | `mcp._resolve._strict_ids_enabled` |
+| `NOTEBOOKLM_MCP_CHAT_CONCURRENCY` | Maximum concurrent detached chat generations; accepted excess work queues FIFO. | Env var → `3`, clamped to 1–16. | `mcp._chattasks._resolve_concurrency` |
+| `NOTEBOOKLM_MCP_CHAT_JOB_TIMEOUT` | Optional detached-chat aggregate deadline, anchored at registry acceptance and including queue time. | Positive finite seconds; unset/blank/invalid preserves unbounded behavior. | `mcp._chattasks._resolve_job_timeout` |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The server refuses to start when unset/empty. | `--token` flag → env var → startup failure | `server.__main__._check_token_configured` / `server._auth.require_auth` |
 | `NOTEBOOKLM_SERVER_HOST` | REST server bind host. Non-loopback refused unless `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND=1`. | `--host` flag → env var → `127.0.0.1` | `server.__main__._build_parser` / `_serving.check_bind_allowed` |
 | `NOTEBOOKLM_SERVER_PORT` | REST server bind port. | `--port` flag → env var → `8000` | `server.__main__._build_parser` / `_resolve_port` |
@@ -492,6 +496,21 @@ effect.** Remove it from your environment / CI config. See
 
 ### Timeouts
 
+For Python construction, prefer the owner-grouped `ClientConfig` facade in
+`notebooklm.options`. `WebTransportOptions` owns independent read/write/pool
+timeouts (connect remains an internal fixed default), `AndroidBackendConfig`
+owns the aggregate logical-RPC timeout, and `TransferOptions` owns resumable
+start/finalize plus Drive HTTP phases. Legacy `timeout=` still maps to all three
+Web components or the Android RPC budget; legacy `upload_timeout=` maps to Web
+start/finalize and to all three Android transfer phases. These flat tuning
+keywords remain functional in v0.x but non-default uses warn for their v1
+removal.
+
+`TransferOptions.drive_timeout` affects only Drive metadata/media/staging HTTP
+legs. It never changes registration or readiness RPC budgets. A whole-field
+`None` preserves backend phase defaults; `TimeoutOptions(None, None, None,
+None)` explicitly disables local HTTP component timers.
+
 Most batchexecute RPCs issued by the client (whether through `NotebookLMClient`
 or any of the CLI commands) use a **30-second** HTTP request timeout by default,
 with a tighter **10-second** connection-establishment timeout. The shorter
@@ -546,19 +565,11 @@ compose. Both kwargs read identically:
 A non-positive or non-finite value for either raises `ValueError` at
 construction rather than silently producing a window that times out instantly.
 
-Independently, an IMPORT_RESEARCH attempt made by
-`import_sources_with_verification` is clamped to whatever is left of that call's
-own `max_elapsed` retry budget, so a late retry cannot be *granted* a window
-larger than the budget it has left. Note what that does and does not promise:
-every timeout here is an `httpx` slot, and the read slot is an inactivity limit
-between socket reads — so `max_elapsed` bounds when a new attempt may *start*,
-not the wall-clock duration of one already in flight. Enforcing the latter would
-mean cancelling an in-flight non-idempotent POST, which risks duplicated sources
-the client can no longer see. When less than 10 seconds of that budget remains — too little for an
-attempt to outlast connection establishment — the loop stops instead of sending
-one: `IMPORT_RESEARCH` is non-idempotent, so an attempt whose result the client
-cannot observe can still commit sources server-side and duplicate them. The
-first attempt is exempt, so `max_elapsed=0` still means "try once".
+`import_sources_with_verification` sends `IMPORT_RESEARCH` once. Its
+`max_elapsed` value bounds only the optional read-only inspection performed
+after an unknown outcome; it never grants a second import attempt. Every timeout
+here remains an `httpx` slot, and the read slot is an inactivity limit between
+socket reads rather than a hard wall-clock cancellation deadline.
 
 ### Decoder strictness
 

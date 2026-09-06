@@ -10,6 +10,7 @@ from typing import Any, cast, get_type_hints
 import pytest
 from google.protobuf import text_format
 from google.protobuf.timestamp_pb2 import Timestamp
+from tests._fixtures.fake_core import declared_noop_operation_scope, declared_spawn_child
 
 from notebooklm._android.codecs.sources import decode_source
 from notebooklm._android.notebooks import (
@@ -86,6 +87,9 @@ class FakeSession:
         if self.error is not None:
             raise self.error
         return self.responses[method]
+
+    operation_scope = staticmethod(declared_noop_operation_scope)
+    spawn_child = staticmethod(declared_spawn_child)
 
 
 def _android_session(fake: FakeSession) -> AndroidSession:
@@ -203,6 +207,7 @@ def _graph(
 def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     assert NotebooksAPI.__abstractmethods__ == frozenset(
         {
+            "_operation_scope",
             "_send_copy",
             "_send_create",
             "delete",
@@ -220,6 +225,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     )
     assert SourcesAPI.__abstractmethods__ == frozenset(
         {
+            "_operation_scope",
             "_send_add_urls_async",
             "_send_append_text",
             "_send_copy",
@@ -242,7 +248,7 @@ def test_exact_abstract_sets_and_android_adapters_are_concrete() -> None:
     )
     assert AndroidNotebooksAPI.__abstractmethods__ == frozenset()
     assert AndroidSourcesAPI.__abstractmethods__ == frozenset()
-    assert "_add_urls_batch" in AndroidSourcesAPI.__dict__
+    assert "add_urls_batch" in AndroidSourcesAPI.__dict__
 
 
 def test_notebook_public_callable_manifest_is_exact() -> None:

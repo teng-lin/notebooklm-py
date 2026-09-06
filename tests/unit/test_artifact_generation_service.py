@@ -44,6 +44,9 @@ class _FakeRpc:
         self.calls: list[_RecordedCall] = []
 
     async def rpc_call(self, method, params, source_path="/", **kwargs):  # noqa: ANN001
+        journal_entry = kwargs.pop("journal_entry", None)
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         self.calls.append(_RecordedCall(method, params, {"source_path": source_path, **kwargs}))
         # An unscripted method answers with the standard accepted-task row.
         return self._results.get(method, [["artifact-1", None, None, None, 2]])

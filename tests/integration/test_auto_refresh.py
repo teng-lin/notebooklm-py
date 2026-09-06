@@ -386,13 +386,13 @@ class TestAutoRefreshIntegration:
     async def test_http_auth_error_does_not_replay_non_idempotent_write(self):
         """A mid-flight 401 on a non-idempotent create is NOT replayed.
 
-        Regression for issue #1157. ``CREATE_NOTEBOOK`` is PROBE_THEN_CREATE,
-        so ``resolve_effective_disable_internal_retries`` forces the effective
+        Regression for issue #1157. ``CREATE_NOTEBOOK`` is a one-send
+        non-idempotent mutation, so policy resolution forces the effective
         disable flag True. The server may have committed the notebook before
         the 401 surfaced, so ``AuthRefreshMiddleware`` must NOT refresh and
         re-POST — that would duplicate the notebook. The original auth error
-        propagates so ``NotebooksAPI.create``'s probe-then-create wrapper can
-        disambiguate. Driven through the public ``client.notebooks.create``
+        propagates with unknown commit evidence. Driven through the public
+        ``client.notebooks.create``
         surface so the regression is pinned end-to-end.
         """
         auth = AuthTokens(

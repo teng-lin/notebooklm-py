@@ -29,6 +29,7 @@ from notebooklm._android.research import (
 )
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.research import poll_and_classify
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._research import BaseResearchAPI
 from notebooklm._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -74,6 +75,8 @@ class _Transport:
         yield _Lease(17)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         value = self.responses[method].popleft()
         if isinstance(value, BaseException):
@@ -173,7 +176,7 @@ def test_exact_public_manifest_and_abstract_set() -> None:
         "select_cited_sources",
     }
     assert BaseResearchAPI.__abstractmethods__ == frozenset(
-        {"_send_import", "start", "discover", "poll", "cancel"}
+        {"_operation_scope", "_send_import", "start", "discover", "poll", "cancel"}
     )
     assert AndroidResearchAPI.__abstractmethods__ == frozenset()
     for name in (
@@ -713,7 +716,7 @@ async def test_already_present_side_channel_matches_web_shape_and_deduplicates_r
 
 
 @pytest.mark.asyncio
-async def test_allow_duplicate_timeout_requires_a_new_exact_source_before_success() -> None:
+async def test_allow_duplicate_timeout_exposes_new_exact_source_as_candidate_only() -> None:
     existing = Source(id="baseline-a", title="Existing A", url="https://example.com/a")
     duplicate = Source(id="source-a-2", title="New A", url="https://example.com/a")
     api, transport = _api(
@@ -721,22 +724,20 @@ async def test_allow_duplicate_timeout_requires_a_new_exact_source_before_succes
         _Lister([[existing], [existing, duplicate]]),
     )
 
-    result = await api.import_sources_with_verification(
-        "nb",
-        RUN_ID,
-        [ResearchSource("https://example.com/a", "A")],
-        allow_duplicate=True,
-    )
+    with pytest.raises(RPCTimeoutError) as caught:
+        await api.import_sources_with_verification(
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            allow_duplicate=True,
+        )
 
-    assert result == [{"id": "source-a-2", "title": "New A"}]
-    assert result.already_present == []
+    assert caught.value.reconciliation_candidates == ("source-a-2",)  # type: ignore[attr-defined]
     assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 
 @pytest.mark.asyncio
-async def test_timeout_then_failed_precondition_reconciles_each_exact_id_without_third_write() -> (
-    None
-):
+async def test_timeout_reports_first_visible_candidate_without_a_second_write() -> None:
     first = ResearchSource("https://example.com/a", "A")
     second = ResearchSource("https://example.com/b", "B")
     landed_first = Source(id="source-a", title="A", url=first.url)
@@ -751,15 +752,12 @@ async def test_timeout_then_failed_precondition_reconciles_each_exact_id_without
         _Lister([[], [landed_first], [landed_first, landed_second]]),
     )
 
-    result = await api.import_sources_with_verification(
-        "nb", RUN_ID, [first, second], initial_delay=0
-    )
+    with pytest.raises(RPCTimeoutError) as caught:
+        await api.import_sources_with_verification("nb", RUN_ID, [first, second], initial_delay=0)
 
-    assert result == [
-        {"id": "source-a", "title": "A"},
-        {"id": "source-b", "title": "B"},
-    ]
-    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 2
+    assert caught.value.reconciliation_candidates == ("source-a",)  # type: ignore[attr-defined]
+    assert caught.value.unresolved_inputs == (second.url,)  # type: ignore[attr-defined]
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 
 @pytest.mark.asyncio
@@ -785,12 +783,13 @@ async def test_retry_failed_precondition_without_new_exact_id_keeps_prior_write_
         await api.import_sources_with_verification("nb", RUN_ID, [first, second], initial_delay=0)
 
     assert caught.value is write_error
-    assert caught.value.__cause__ is failed_precondition
+    assert caught.value.__cause__ is None
     assert getattr(caught.value, "unconfirmed", False) is True
     classified = classify(caught.value)
     assert classified.category is ErrorCategory.RPC
     assert classified.retriable is False
-    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 2
+    assert caught.value.reconciliation_candidates == ("source-a",)  # type: ignore[attr-defined]
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 
 @pytest.mark.asyncio
@@ -810,10 +809,11 @@ async def test_retry_failed_precondition_probe_failure_keeps_prior_write_unconfi
         await api.import_sources_with_verification("nb", RUN_ID, [first, second], initial_delay=0)
 
     assert caught.value is write_error
-    assert caught.value.__cause__ is probe_error
+    assert caught.value.__cause__ is None
     assert getattr(caught.value, "unconfirmed", False) is True
     assert classify(caught.value).retriable is False
-    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 2
+    assert caught.value.reconciliation_candidates == ("source-a",)  # type: ignore[attr-defined]
+    assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 
 @pytest.mark.asyncio
@@ -853,12 +853,15 @@ async def test_finish_rate_limit_propagates_without_reconciliation_or_retry() ->
 
     with pytest.raises(RateLimitError) as caught:
         await api.import_sources_with_verification(
-            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=0,
         )
 
     assert caught.value is rate_limit
     assert caught.value.retry_after == 7
-    assert lister.calls == [("nb", False)]
+    assert lister.calls == [("nb", False), ("nb", False)]
     assert [call[0] for call in transport.calls] == [FINISH_RUN_METHOD]
 
 
@@ -912,11 +915,15 @@ async def test_failed_probe_marks_timeout_unconfirmed_without_resending_finish()
 
     with pytest.raises(RPCTimeoutError) as caught:
         await api.import_sources_with_verification(
-            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=0,
         )
 
     assert caught.value is write_error
-    assert caught.value.__cause__ is probe_error
+    assert caught.value.__cause__ is None
+    assert caught.value.reconciliation_candidates == ()  # type: ignore[attr-defined]
     assert getattr(caught.value, "unconfirmed", False) is True
     assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
@@ -940,11 +947,15 @@ async def test_probe_typed_failure_marks_write_unconfirmed_and_non_retriable(
 
     with pytest.raises(RPCTimeoutError, match="lost") as caught:
         await api.import_sources_with_verification(
-            "nb", RUN_ID, [ResearchSource("https://example.com/a", "A")]
+            "nb",
+            RUN_ID,
+            [ResearchSource("https://example.com/a", "A")],
+            max_elapsed=0,
         )
 
     assert caught.value is write_error
-    assert caught.value.__cause__ is probe_error
+    assert caught.value.__cause__ is None
+    assert caught.value.reconciliation_candidates == ()  # type: ignore[attr-defined]
     assert getattr(caught.value, "unconfirmed", False) is True
     classified = classify(caught.value)
     assert classified.category is ErrorCategory.RPC
@@ -966,7 +977,7 @@ async def test_import_rejects_cross_run_source_before_operation_scope() -> None:
 
 
 @pytest.mark.asyncio
-async def test_url_timeout_retries_only_proven_missing_subset() -> None:
+async def test_url_timeout_exposes_visible_subset_without_retrying_missing_inputs() -> None:
     first = ResearchSource("https://example.com/a", "A", research_task_id=RUN_ID)
     second = ResearchSource("https://example.com/b", "B", research_task_id=RUN_ID)
     lister = _Lister(
@@ -990,19 +1001,16 @@ async def test_url_timeout_retries_only_proven_missing_subset() -> None:
         },
         lister,
     )
-    result = await api.import_sources_with_verification(
-        "nb", RUN_ID, [first, second], initial_delay=0
-    )
-    assert result == [
-        {"id": "source-a", "title": "A"},
-        {"id": "source-b", "title": "B"},
-    ]
+    with pytest.raises(RPCTimeoutError) as caught:
+        await api.import_sources_with_verification("nb", RUN_ID, [first, second], initial_delay=0)
+    assert caught.value.reconciliation_candidates == ("source-a",)  # type: ignore[attr-defined]
+    assert caught.value.unresolved_inputs == (second.url,)  # type: ignore[attr-defined]
     finish_requests = [call[1] for call in transport.calls if call[0] == FINISH_RUN_METHOD]
     assert [entry.web_content.url for entry in finish_requests[0].user_content] == [
         first.url,
         second.url,
     ]
-    assert [entry.web_content.url for entry in finish_requests[1].user_content] == [second.url]
+    assert len(finish_requests) == 1
 
 
 @pytest.mark.asyncio
@@ -1016,21 +1024,24 @@ async def test_url_timeout_with_unrelated_concurrent_row_is_ambiguous_without_re
     api, transport = _api(
         {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]}, lister
     )
-    with pytest.raises(RPCError) as caught:
+    with pytest.raises(RPCTimeoutError) as caught:
         await api.import_sources_with_verification(
             "nb",
             RUN_ID,
             [ResearchSource("https://example.com/a", "A", research_task_id=RUN_ID)],
+            max_elapsed=0,
         )
     assert getattr(caught.value, "unconfirmed", False) is True
+    assert caught.value.reconciliation_candidates == ()  # type: ignore[attr-defined]
     assert [call[0] for call in transport.calls].count(FINISH_RUN_METHOD) == 1
 
 
 @pytest.mark.asyncio
 async def test_report_timeout_has_zero_resend_and_marks_outcome_unconfirmed() -> None:
+    lister = _Lister([[]])
     api, transport = _api(
         {FINISH_RUN_METHOD: [RPCTimeoutError("lost", timeout_seconds=10)]},
-        _Lister([[]]),
+        lister,
     )
     with pytest.raises(RPCTimeoutError) as caught:
         await api.import_sources_with_verification(
@@ -1039,6 +1050,9 @@ async def test_report_timeout_has_zero_resend_and_marks_outcome_unconfirmed() ->
             [ResearchSource("", "Report", result_type=5, report_markdown="# Report")],
         )
     assert getattr(caught.value, "unconfirmed", False) is True
+    assert caught.value.reconciliation_candidates == ()  # type: ignore[attr-defined]
+    assert caught.value.unresolved_inputs == ("Report",)  # type: ignore[attr-defined]
+    assert lister.calls == [("nb", False)]
     assert [call[0] for call in transport.calls] == [FINISH_RUN_METHOD]
 
 

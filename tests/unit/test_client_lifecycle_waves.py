@@ -8,9 +8,13 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from notebooklm._artifact.polling import ArtifactPollingService
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._runtime.call_supervisor import CallSupervisor
+from notebooklm._runtime.call_supervisor import AdmissionState, CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
+from notebooklm.types import GenerationState, GenerationStatus
+
+pytestmark = pytest.mark.refactor_qualification
 
 
 def _assert_republished_cancel_message(error: asyncio.CancelledError, expected: str) -> None:
@@ -34,6 +38,9 @@ class _Supervisor:
     start_error: BaseException | None = None
     closing_error: BaseException | None = None
     mark_error: BaseException | None = None
+
+    def assert_shutdown_allowed(self, action: str) -> None:
+        del action
 
     def set_bound_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.events.append("bind")
@@ -140,6 +147,16 @@ def _lifecycle(
     )
 
 
+def _real_lifecycle(*transports: _Transport) -> tuple[ClientLifecycle, CallSupervisor]:
+    supervisor = CallSupervisor(metrics=ClientMetrics(), max_concurrent_rpcs=None)
+    lifecycle = ClientLifecycle(
+        supervisor=supervisor,
+        transports=transports,
+        loop_participants=(supervisor,),
+    )
+    return lifecycle, supervisor
+
+
 async def _wait_for_event(events: list[str], prefix: str) -> None:
     """Yield until a lifecycle phase records ``prefix`` or fail deterministically."""
     for _ in range(100):
@@ -147,6 +164,28 @@ async def _wait_for_event(events: list[str], prefix: str) -> None:
             return
         await asyncio.sleep(0)
     raise AssertionError(f"lifecycle event {prefix!r} was not observed: {events!r}")
+
+
+async def _wait_for_admission_state(
+    supervisor: CallSupervisor,
+    expected: AdmissionState,
+) -> None:
+    for _ in range(100):
+        generation = supervisor._current
+        if generation is not None and generation.state is expected:
+            return
+        await asyncio.sleep(0)
+    raise AssertionError(f"admission state {expected.value!r} was not observed")
+
+
+async def _invoke_shutdown(lifecycle: ClientLifecycle, action: str) -> None:
+    if action == "drain":
+        await lifecycle.drain()
+    elif action == "graceful-close":
+        await lifecycle.close(drain=True)
+    else:
+        assert action == "forced-close"
+        await lifecycle.close(drain=False)
 
 
 @pytest.mark.asyncio
@@ -1377,3 +1416,149 @@ async def test_an_admission_rollback_failure_does_not_mask_the_open_failure() ->
         await lifecycle.open()
 
     assert lifecycle._state is _ResourceState.CLOSED
+
+
+# ===========================================================================
+# admitted callers cannot initiate or join their own shutdown
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["drain", "graceful-close", "forced-close"])
+@pytest.mark.parametrize("active_wave", ["none", "graceful", "forced"])
+async def test_admitted_shutdown_fails_before_state_or_close_wave_changes(
+    action: str,
+    active_wave: str,
+) -> None:
+    """Cover every self-shutdown cell, including both graceful entrypoints."""
+    events: list[str] = []
+    prepare_gate = asyncio.Event() if active_wave == "forced" else None
+    transport = _Transport("web", events, prepare_gate=prepare_gate)
+    lifecycle, supervisor = _real_lifecycle(transport)
+    await lifecycle.open()
+
+    closing: asyncio.Task[None] | None = None
+    async with supervisor.operation_scope("admitted caller"):
+        if active_wave == "graceful":
+            # This task intentionally inherits the caller's ContextVars. It has
+            # no entry in the generation depth map and may therefore own the
+            # graceful wave while the admitted caller keeps it waiting.
+            closing = asyncio.create_task(lifecycle.close(drain=True))
+            await _wait_for_admission_state(supervisor, AdmissionState.DRAINING)
+        elif active_wave == "forced":
+            closing = asyncio.create_task(lifecycle.close(drain=False))
+            await _wait_for_event(events, "prepare:web")
+
+        state_before = lifecycle._state
+        wave_before = lifecycle._close_wave
+        generation = supervisor._current
+        assert generation is not None
+        admission_before = generation.state
+
+        # Keep shutdown in the admitted task. Python 3.10/3.11 ``wait_for``
+        # would wrap this coroutine in an independent, unadmitted Task.
+        with pytest.raises(RuntimeError, match=f"Cannot {action.split('-')[-1]}"):
+            await _invoke_shutdown(lifecycle, action)
+
+        assert lifecycle._state is state_before
+        assert lifecycle._close_wave is wave_before
+        assert generation.state is admission_before
+        if closing is not None:
+            await asyncio.sleep(0)
+            assert not closing.done()
+
+        if active_wave == "forced":
+            assert prepare_gate is not None
+            prepare_gate.set()
+            assert closing is not None
+            await closing
+
+    if active_wave == "graceful":
+        assert closing is not None
+        await closing
+    elif active_wave == "none":
+        await lifecycle.close(drain=False)
+
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert supervisor._retired == {}
+
+
+@pytest.mark.asyncio
+async def test_registered_child_self_close_fails_fast_without_leaking_admission() -> None:
+    lifecycle, supervisor = _real_lifecycle()
+    await lifecycle.open()
+
+    async def child() -> str:
+        with pytest.raises(RuntimeError, match="Cannot close"):
+            await lifecycle.close(drain=False)
+        return "settled"
+
+    async with supervisor.operation_scope("parent"):
+        task = await supervisor.spawn_child("registered-child", child)
+        assert await task == "settled"
+
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert not generation.depths
+    await lifecycle.close(drain=False)
+
+
+@pytest.mark.asyncio
+async def test_retired_generation_owner_cannot_close_reopened_generation() -> None:
+    lifecycle, supervisor = _real_lifecycle()
+    await lifecycle.open()
+
+    async with supervisor.operation_scope("old generation") as old_lease:
+        # Forced shutdown from an independent task retires the still-admitted
+        # generation. A copied ContextVar does not confer admission on it.
+        await asyncio.create_task(lifecycle.close(drain=False))
+        assert old_lease.epoch in supervisor._retired
+
+        await lifecycle.open()
+        reopened_epoch = lifecycle._epoch
+        assert reopened_epoch > old_lease.epoch
+        with pytest.raises(RuntimeError, match="Cannot close"):
+            await lifecycle.close(drain=False)
+        assert lifecycle.is_open()
+        assert lifecycle._epoch == reopened_epoch
+
+    assert old_lease.epoch not in supervisor._retired
+    await lifecycle.close(drain=False)
+
+
+@pytest.mark.asyncio
+async def test_poll_callback_self_close_fails_fast_and_poll_settles_once() -> None:
+    lifecycle, supervisor = _real_lifecycle()
+    polling = ArtifactPollingService(supervisor=supervisor)
+    await lifecycle.open()
+    callback_errors: list[RuntimeError] = []
+
+    async def poll_status(_notebook_id: str, task_id: str) -> GenerationStatus:
+        return GenerationStatus(task_id=task_id, status=GenerationState.COMPLETED)
+
+    async def close_from_callback(_status: GenerationStatus) -> None:
+        with pytest.raises(RuntimeError, match="Cannot close") as raised:
+            await lifecycle.close(drain=False)
+        callback_errors.append(raised.value)
+
+    result = await polling.wait_for_completion(
+        "notebook",
+        "task",
+        initial_interval=0,
+        poll_status=poll_status,
+        on_status_change=close_from_callback,
+    )
+
+    assert result.status == GenerationState.COMPLETED
+    assert len(callback_errors) == 1
+    await asyncio.sleep(0)
+    assert polling.poll_registry.active_tasks() == []
+    generation = supervisor._current
+    assert generation is not None
+    assert generation.in_flight == 0
+    assert not generation.depths
+
+    await lifecycle.close(drain=False)
+    assert lifecycle._state is _ResourceState.CLOSED
+    assert supervisor._settlement_tasks == set()

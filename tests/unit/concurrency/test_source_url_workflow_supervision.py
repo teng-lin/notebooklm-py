@@ -37,6 +37,13 @@ def _sources(supervisor: CallSupervisor) -> WebSourcesAPI:
     )
 
 
+async def _accepted_source_result(*_args: object, **kwargs: Any) -> list[object]:
+    journal_entry = kwargs.get("journal_entry")
+    if journal_entry is not None:
+        journal_entry.mark_dispatched()
+    return [[[["src_1"], "Upstream title", [None, 0], [None, 2]]]]
+
+
 @pytest.mark.asyncio
 async def test_drain_after_url_admission_allows_full_workflow_to_finish() -> None:
     supervisor = _supervisor()
@@ -46,15 +53,15 @@ async def test_drain_after_url_admission_allows_full_workflow_to_finish() -> Non
     stages: list[str] = []
 
     async def _list_sources(*_args: object, **_kwargs: object) -> list[Source]:
-        if not stages:
-            workflow_admitted.set()
-            await continue_workflow.wait()
-        async with supervisor.call_scope("baseline", None, None):
-            stages.append("baseline")
         return []
 
-    async def _create(*_args: object, **_kwargs: object) -> list[object]:
+    async def _create(*_args: object, **kwargs: Any) -> list[object]:
+        journal_entry = kwargs.get("journal_entry")
+        if journal_entry is not None:
+            journal_entry.mark_dispatched()
         async with supervisor.call_scope("create", None, None):
+            workflow_admitted.set()
+            await continue_workflow.wait()
             stages.append("create")
         return [[[["src_1"], "Upstream title", [None, 0], [None, 2]]]]
 
@@ -89,7 +96,7 @@ async def test_drain_after_url_admission_allows_full_workflow_to_finish() -> Non
     await supervisor.wait_for_idle(1, timeout=1.0)
 
     assert result.title == "Requested title"
-    assert stages == ["baseline", "create", "readiness", "rename"]
+    assert stages == ["create", "readiness", "rename"]
 
 
 @pytest.mark.asyncio
@@ -220,9 +227,7 @@ async def test_timeout_before_title_never_emits_rename() -> None:
     rename = AsyncMock()
 
     api.list = AsyncMock(return_value=[])  # type: ignore[method-assign]
-    api._add_url_source = AsyncMock(  # type: ignore[method-assign]
-        return_value=[[[["src_1"], "Upstream title", [None, 0], [None, 2]]]]
-    )
+    api._add_url_source = AsyncMock(side_effect=_accepted_source_result)  # type: ignore[method-assign]
     api.wait_until_ready = AsyncMock(  # type: ignore[method-assign]
         side_effect=TimeoutError("readiness timed out")
     )
@@ -254,9 +259,7 @@ async def test_cancellation_before_title_never_emits_rename() -> None:
         return Source(id="src_1", title="Upstream title")
 
     api.list = AsyncMock(return_value=[])  # type: ignore[method-assign]
-    api._add_url_source = AsyncMock(  # type: ignore[method-assign]
-        return_value=[[[["src_1"], "Upstream title", [None, 0], [None, 2]]]]
-    )
+    api._add_url_source = AsyncMock(side_effect=_accepted_source_result)  # type: ignore[method-assign]
     api.wait_until_ready = _wait  # type: ignore[method-assign]
     api.rename = rename  # type: ignore[method-assign]
 
@@ -282,20 +285,20 @@ async def test_old_url_workflow_is_rejected_before_epoch_two_kernel_or_auth_acce
     auth = AuthTokens(csrf_token="csrf", session_id="sid", cookies={"SID": "cookie"})
     client = build_client_shell_for_tests(auth)
     await client.__aenter__()
-    baseline_started = asyncio.Event()
-    continue_baseline = asyncio.Event()
-    original_list = client.sources.list
+    create_started = asyncio.Event()
+    continue_create = asyncio.Event()
+    original_add = client.sources._add_url_source
 
-    async def _gated_list(*args: Any, **kwargs: Any) -> list[Source]:
-        baseline_started.set()
-        await continue_baseline.wait()
-        return await original_list(*args, **kwargs)
+    async def _gated_add(*args: Any, **kwargs: Any) -> Any:
+        create_started.set()
+        await continue_create.wait()
+        return await original_add(*args, **kwargs)
 
-    client.sources.list = _gated_list  # type: ignore[method-assign]
+    client.sources._add_url_source = _gated_add  # type: ignore[method-assign]
     old_workflow = asyncio.create_task(
         client.sources.add_url("nb_1", "https://example.test", title="Never emitted")
     )
-    await baseline_started.wait()
+    await create_started.wait()
 
     await client.close(drain=False)
     await client.__aenter__()
@@ -303,7 +306,7 @@ async def test_old_url_workflow_is_rejected_before_epoch_two_kernel_or_auth_acce
     auth_access = AsyncMock(wraps=client._web_runtime.auth_coord.snapshot)
     client._web_runtime.kernel.assert_epoch = kernel_access  # type: ignore[method-assign]
     client._web_runtime.auth_coord.snapshot = auth_access  # type: ignore[method-assign]
-    continue_baseline.set()
+    continue_create.set()
 
     try:
         with pytest.raises(RuntimeError, match="retired resource generation"):

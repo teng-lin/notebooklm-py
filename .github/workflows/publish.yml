@@ -118,16 +118,16 @@ jobs:
 
     - name: Install built wheel + release-smoke extras in a clean venv
       # Canonical contributor extras (`[browser,dev,markdown]`) match the
-      # install path documented in `docs/installation.md`; `impersonate` is
-      # additionally required because CI treats missing curl credential-policy
-      # coverage as a hard failure.
+      # install path documented in `docs/installation.md`; `impersonate` keeps
+      # curl credential-policy coverage mandatory, while `mcp` and `server`
+      # satisfy unconditional imports during whole-tree pytest collection.
       # Plain `[dev]` skipped playwright + markdownify, masking packaging bugs
       # in `[browser]`/`[markdown]` until users hit them post-release. Keep this
       # command in lockstep with testpypi-publish.yml.
       run: |
         python -m venv smoke-venv
         WHEEL=$(ls dist/notebooklm_py-*.whl)
-        smoke-venv/bin/pip install "${WHEEL}[browser,dev,markdown,impersonate]"
+        smoke-venv/bin/pip install "${WHEEL}[browser,dev,markdown,impersonate,mcp,server]"
         smoke-venv/bin/python -c "import notebooklm; print(notebooklm.__version__)"
 
     - name: Install Playwright browser for smoke
@@ -138,8 +138,15 @@ jobs:
         smoke-venv/bin/playwright install chromium
         smoke-venv/bin/playwright install-deps chromium
 
-    - name: Run unit tests against wheel
-      run: smoke-venv/bin/pytest tests/unit -q --no-cov -x
+    - name: Run routine unit tests against wheel
+      run: >-
+        smoke-venv/bin/pytest tests/unit -q --no-cov -x
+        -m "not refactor_qualification"
+
+    - name: Run refactor qualification against wheel
+      run: >-
+        smoke-venv/bin/pytest -q --no-cov -x
+        -m refactor_qualification
 
   publish:
     name: Publish to PyPI

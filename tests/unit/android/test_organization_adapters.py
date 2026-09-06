@@ -33,6 +33,7 @@ from notebooklm._android.proto.notebooklm.android.wire.v1 import (
 from notebooklm._android.session import AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._collections import CollectionsAPI
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._labels import LabelsAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm.exceptions import (
@@ -49,6 +50,7 @@ from notebooklm.exceptions import (
     RPCTimeoutError,
     ServerError,
 )
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.types import Collection, Label, Notebook, Source
 
 NB = "00000000-0000-4000-8000-000000000100"
@@ -166,6 +168,8 @@ class FakeOrganizationServer:
         )
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         failure = self.failures.get(len(self.calls))
         if failure is not None:
@@ -323,18 +327,21 @@ def test_adapters_are_concrete_and_module_imports_keep_protobuf_lazy() -> None:
     assert server.calls == []
     assert server.operation_scopes == []
     assert CollectionsAPI.__abstractmethods__ == {
+        "_operation_scope",
         "list",
         "create",
         "_send_update",
         "_send_mutate_member",
     }
+    assert callable(AndroidCollectionsAPI._operation_scope)
+    assert callable(AndroidLabelsAPI._operation_scope)
     assert all(
         inspect.iscoroutinefunction(getattr(AndroidCollectionsAPI, name))
-        for name in CollectionsAPI.__abstractmethods__
+        for name in CollectionsAPI.__abstractmethods__ - {"_operation_scope"}
     )
     assert all(
         inspect.iscoroutinefunction(getattr(AndroidLabelsAPI, name))
-        for name in LabelsAPI.__abstractmethods__
+        for name in LabelsAPI.__abstractmethods__ - {"_operation_scope"}
     )
 
     root = Path(__file__).resolve().parents[3]
@@ -382,14 +389,15 @@ async def test_get_and_membership_joins_preserve_order_and_skip_missing() -> Non
         await collections.get(COLLECTION_MISSING)
 
 
-async def test_label_and_collection_create_use_exact_response_rows() -> None:
+async def test_label_create_uses_exact_row_and_collection_reports_candidates() -> None:
     server = FakeOrganizationServer()
     labels, collections = _apis(server)
 
     created_label = await labels.create(NB, "Duplicate-safe", "🧪")
-    created_collection = await collections.create("Duplicate-safe")
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Duplicate-safe")
     assert created_label.id == LABEL_B
-    assert created_collection.id == COLLECTION_B
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
     assert [method for method, _request, _kwargs in server.calls] == [
         CREATE_LABEL_METHOD,
         GET_LABELS_METHOD,
@@ -436,6 +444,48 @@ async def test_manual_create_transport_loss_is_unconfirmed_and_sent_once(
     assert [method for method, _request, _kwargs in server.calls] == expected_methods
 
 
+@pytest.mark.parametrize(
+    ("dispatched", "expected_state", "expected_recovery"),
+    [
+        (False, CommitState.NOT_SENT, RecoveryAction.RETRY),
+        (True, CommitState.UNKNOWN, RecoveryAction.INSPECT_AND_RECONCILE),
+    ],
+    ids=["pre-dispatch", "post-dispatch"],
+)
+async def test_android_collection_create_cancellation_retains_journal(
+    dispatched: bool,
+    expected_state: CommitState,
+    expected_recovery: RecoveryAction,
+) -> None:
+    cancellation = asyncio.CancelledError("cancel Android collection mutation")
+
+    class CancellingServer(FakeOrganizationServer):
+        async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+            if method != CREATE_LABEL_METHOD:
+                return await super().unary(method, request, **kwargs)
+            self.calls.append((method, request, kwargs))
+            if dispatched:
+                for entry in bound_operation_journal_entries():
+                    entry.mark_dispatched()
+            raise cancellation
+
+    server = CancellingServer()
+    _labels, collections = _apis(server)
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await collections.create("Requested")
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is expected_state
+    assert metadata.recovery_action is expected_recovery
+    assert metadata.method == CREATE_LABEL_METHOD
+    assert metadata.entries == ()
+    assert [attempt.commit_state for attempt in metadata.attempts] == (
+        [CommitState.UNKNOWN] if dispatched else []
+    )
+
+
 async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
     server = FakeOrganizationServer()
     server.concurrent_label_ids = [LABEL_MISSING]
@@ -449,7 +499,7 @@ async def test_label_create_ignores_unrelated_concurrent_post_state() -> None:
     assert [method for method, _request, _kwargs in server.calls] == [CREATE_LABEL_METHOD]
 
 
-async def test_collection_create_selects_new_row_from_cumulative_response() -> None:
+async def test_collection_create_reports_cumulative_row_without_attribution() -> None:
     server = FakeOrganizationServer()
     server.create_response_override = organization_pb2.CreateLabelResponse(
         notebook_collections=[
@@ -462,24 +512,47 @@ async def test_collection_create_selects_new_row_from_cumulative_response() -> N
     )
     _labels, collections = _apis(server)
 
-    created = await collections.create("Requested")
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Requested")
 
-    assert created.id == COLLECTION_B
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
+    assert getattr(raised.value, "unconfirmed", False) is True
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
         CREATE_LABEL_METHOD,
     ]
 
 
-async def test_collection_create_ignores_unrelated_concurrent_post_state() -> None:
+async def test_collection_create_does_not_attribute_delayed_foreign_android_singleton() -> None:
+    """The caller's create is invisible while an external same-shaped row is echoed."""
+    server = FakeOrganizationServer()
+    server.next_collection_ids = []
+    server.create_response_override = organization_pb2.CreateLabelResponse(
+        notebook_collections=[
+            organization_pb2.NotebookCollection(
+                name="Requested",
+                id=COLLECTION_MISSING,
+            )
+        ]
+    )
+    _labels, collections = _apis(server)
+
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Requested")
+
+    assert getattr(raised.value, "unconfirmed", False) is True
+
+
+async def test_collection_create_reports_unrelated_concurrent_post_state() -> None:
     server = FakeOrganizationServer()
     server.concurrent_collection_ids = [COLLECTION_MISSING]
     _labels, collections = _apis(server)
 
-    created = await collections.create("Requested")
+    with pytest.raises(CollectionError) as raised:
+        await collections.create("Requested")
 
-    assert created.id == COLLECTION_B
-    assert created.name == "Requested"
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
+    assert getattr(raised.value, "unconfirmed", False) is True
     assert set(server.collections) == {COLLECTION_A, COLLECTION_B, COLLECTION_MISSING}
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
@@ -558,10 +631,9 @@ async def test_collection_create_rejects_uncorrelated_direct_response(row: Any) 
     )
     _labels, collections = _apis(server)
 
-    with pytest.raises(DecodingError, match="requested empty collection") as caught:
+    with pytest.raises(CollectionError, match="no caller-correlated id") as caught:
         await collections.create("Requested")
 
-    assert caught.value.method_id == CREATE_LABEL_METHOD
     assert getattr(caught.value, "unconfirmed", False) is True
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
@@ -862,10 +934,13 @@ async def test_generate_failed_post_write_readback_is_unconfirmed_without_resend
     server.failures[2] = read_error
     labels, _collections = _apis(server)
 
-    with pytest.raises(type(read_error)) as raised:
+    expected_type = DecodingError if isinstance(read_error, ValueError) else type(read_error)
+    with pytest.raises(expected_type) as raised:
         await labels.generate(NB)
 
-    if isinstance(read_error, RPCError) and read_error.rpc_code == 5:
+    if isinstance(read_error, ValueError):
+        assert isinstance(raised.value, DecodingError)
+    elif isinstance(read_error, RPCError) and read_error.rpc_code == 5:
         assert isinstance(raised.value, NotebookNotFoundError)
     else:
         assert raised.value is read_error
@@ -952,9 +1027,10 @@ async def test_real_supervisor_outer_lease_keeps_create_alive_during_graceful_dr
     assert not idle_task.done()
 
     server.release_write.set()
-    created = await create_task
+    with pytest.raises(CollectionError) as raised:
+        await create_task
     await idle_task
-    assert created.id == COLLECTION_B
+    assert raised.value.reconciliation_candidates == (COLLECTION_B,)  # type: ignore[attr-defined]
     assert [method for method, _request, _kwargs in server.calls] == [
         GET_LABELS_METHOD,
         CREATE_LABEL_METHOD,

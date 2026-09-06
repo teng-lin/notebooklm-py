@@ -82,10 +82,15 @@ _REGISTERED_SPEC_KEYS = frozenset(
         "auth_tokens_sync_storage_construction",
         "artifact_from_api_response",
         "artifact_from_mind_map",
+        "artifact_poll_follower_callback",
+        "artifact_poll_follower_options",
         "client_rpc_call_android",
         "client_rpc_call_web",
+        "client_legacy_constructor_options",
+        "client_legacy_from_storage_options",
         "collection_from_api_response",
         "label_from_api_response",
+        "mcp_confirmed_name_references",
         "notebook_from_api_response",
         "share_status_from_api_response",
         "shared_user_from_api_response",
@@ -588,8 +593,16 @@ def _registered_deprecation_problems(version: str) -> list[str]:
             if _call_name(node.func).rsplit(".", 1)[-1] != _REGISTERED_EMITTER:
                 continue
             rel = path.relative_to(REPO_ROOT).as_posix()
-            if len(node.args) != 1 or node.keywords:
-                problems.append(f"{rel}:{node.lineno}: registered call must have one literal key")
+            detail_keywords = [keyword for keyword in node.keywords if keyword.arg == "detail"]
+            if (
+                len(node.args) != 1
+                or len(detail_keywords) != len(node.keywords)
+                or len(detail_keywords) > 1
+            ):
+                problems.append(
+                    f"{rel}:{node.lineno}: registered call must have one literal key and "
+                    "at most one detail= keyword"
+                )
                 continue
             key = _literal(node.args[0], "registered deprecation key", problems)
             if not isinstance(key, str):

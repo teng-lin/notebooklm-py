@@ -34,13 +34,11 @@ Behavior:
   ``RPC_CONTEXT_DISABLE_INTERNAL_RETRIES`` (post-resolution bool produced
   by ``_web.policy.resolve_effective_disable_internal_retries`` before
   chain entry; see ADR-0009 §"Per-request behavior").
-- **Optional read-timeout retry gate** —
-  ``RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES`` suppresses retries for read-side
-  *post-transmission* failures (``_NON_REPLAYABLE_POST_SEND_ERRORS``: read
-  timeout, read error, remote protocol error) on non-idempotent long-running
-  calls such as streamed chat, where a retry would re-run generation from
-  scratch and risk a duplicate answer. Connect/Write/Pool failures (request not
-  fully sent) stay retryable, and HTTP 401 auth refresh is unaffected.
+- **Optional post-transmission retry gate** —
+  ``RPC_CONTEXT_DISABLE_READ_TIMEOUT_RETRIES`` suppresses retries for HTTP
+  statuses and request failures unless the failure positively occurred before
+  transmission (connect/connect-timeout/pool-timeout). Streamed chat seeds this
+  gate because replaying a sent POST can record a duplicate answer.
 - **Same exception types on exhaustion** —
   :class:`TransportRateLimited` /
   :class:`TransportServerError` re-raised verbatim so
@@ -83,19 +81,12 @@ if TYPE_CHECKING:
     from ...._client_metrics import ClientMetrics
 
 
-# httpx failures that imply the request was already transmitted and the server
-# may have started (or finished) work: replaying a non-idempotent streamed call
-# like ``chat.ask`` on these risks a duplicate answer. ``ReadTimeout`` is the
-# common shared-notebook slow-first-byte case; ``ReadError`` /
-# ``RemoteProtocolError`` cover a connection severed after the request was sent
-# but before/while the response streamed. Connect/Write/Pool failures are
-# deliberately excluded — the request was not fully sent, so a retry is safe —
-# and auth-expiry (HTTP 401) is handled separately by ``AuthRefreshMiddleware``,
-# so this gate does not suppress transparent token refresh.
-_NON_REPLAYABLE_POST_SEND_ERRORS = (
-    httpx.ReadTimeout,
-    httpx.ReadError,
-    httpx.RemoteProtocolError,
+# Only these failures establish that the request was not handed to the socket.
+# Write failures are excluded because part of the body may already have been sent.
+_REPLAYABLE_ZERO_SEND_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
 )
 
 
@@ -221,7 +212,11 @@ class RetryMiddleware:
                 return await next_call(request)
             except TransportRateLimited as exc:
                 rate_limit_max = self._resolve_rate_limit_max()
-                if disable_internal_retries or rate_limit_retries >= rate_limit_max:
+                if (
+                    disable_internal_retries
+                    or disable_read_timeout_retries
+                    or rate_limit_retries >= rate_limit_max
+                ):
                     raise
                 await self._wait_for_rate_limit(
                     exc=exc,
@@ -235,8 +230,8 @@ class RetryMiddleware:
                     self._metrics.increment(rpc_rate_limit_retries=1)
                 continue
             except TransportServerError as exc:
-                if disable_read_timeout_retries and isinstance(
-                    exc.original, _NON_REPLAYABLE_POST_SEND_ERRORS
+                if disable_read_timeout_retries and not isinstance(
+                    exc.original, _REPLAYABLE_ZERO_SEND_ERRORS
                 ):
                     raise
                 server_error_max = self._resolve_server_error_max()

@@ -355,7 +355,7 @@ def test_sources_upload_helpers_are_pure_delegators() -> None:
     # fetch — it does not re-implement or delegate a resumable-upload operation
     # (its upload leg goes through the inherited public ``self.add_file`` and
     # selected private hook, already covered).
-    _uploader_seam_only = {"__init__", "add_drive_file", "add_url", "_add_urls_batch"}
+    _uploader_seam_only = {"__init__", "add_drive_file", "add_url", "add_urls_batch"}
     uploader_methods = {
         node.name
         for node in class_def.body

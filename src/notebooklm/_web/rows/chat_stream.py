@@ -15,6 +15,7 @@ import reprlib
 from dataclasses import dataclass, field, replace
 from typing import Any, NoReturn
 
+from ..._idempotency import mark_commit_state, mark_unconfirmed
 from ..._types.documents import (
     DocumentAnnotation,
     StructuredDocument,
@@ -27,6 +28,7 @@ from ...exceptions import (
     RateLimitError,
     UnknownRPCMethodError,
 )
+from ...outcomes import CommitState
 from ...rpc.types import RPCMethod
 from ...types import ChatReference, ConversationTurnKey, NextStepSuggestion
 from ..wire.decoder import strip_anti_xssi
@@ -257,19 +259,26 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             # sequence value itself is still NOT an error code (successful
             # streams have one too); the quota signal is the complete absence
             # of any ``wrb.fr`` payload before termination.
-            raise RateLimitError(
-                "Chat rate limit reached: the request ended before the server "
-                "returned an RPC payload "
-                f"(terminal stream sequence {terminal_sequence}). Retry later.",
-                rpc_code="STREAM_TERMINATED_WITHOUT_RPC_PAYLOAD",
+            raise mark_unconfirmed(
+                RateLimitError(
+                    "Chat rate limit reached: the request ended before the server "
+                    "returned an RPC payload "
+                    f"(terminal stream sequence {terminal_sequence}). Inspect the "
+                    "conversation history before trying again.",
+                    rpc_code="STREAM_TERMINATED_WITHOUT_RPC_PAYLOAD",
+                ),
+                operation="chat",
             )
         # No ``wrb.fr`` envelopes recognized — distinguishable from a
         # legitimate empty answer (which still produces at least one
         # parseable chunk). Raise so callers can distinguish wire-drift
         # / empty-body from "the model returned nothing."
-        raise ChatResponseParseError(
-            f"No parseable chunks in streaming chat response ({len(lines)} lines scanned). "
-            "The response was empty or the API wire format may have changed."
+        raise mark_unconfirmed(
+            ChatResponseParseError(
+                f"No parseable chunks in streaming chat response ({len(lines)} lines scanned). "
+                "The response was empty or the API wire format may have changed."
+            ),
+            operation="chat",
         )
 
     if final_marked_answer:
@@ -594,11 +603,15 @@ def _raise_chat_rejection(error_payload: list) -> NoReturn:
     # path appends for the same reason.
     server_reason = row.message
     suffix = f" The server said: {server_reason}" if server_reason is not None else ""
-    raise ChatError(
-        f"Chat request was rejected by the server{detail}. "
-        "This usually means the request was malformed or too large — most often "
-        "an over-long question past the server-side size limit; shorten it and "
-        f"try again.{suffix}"
+    raise mark_commit_state(
+        ChatError(
+            f"Chat request was rejected by the server{detail}. "
+            "This usually means the request was malformed or too large — most often "
+            "an over-long question past the server-side size limit; shorten it and "
+            f"try again.{suffix}"
+        ),
+        CommitState.REJECTED,
+        operation="chat",
     )
 
 
@@ -622,10 +635,12 @@ def _raise_chat_error_frame(item: list) -> NoReturn:
     # ``safe_index``) which centralises the ``item[2]`` position (issue #1491).
     code = StreamFrameRow(item).error_code
     detail = f" (code {code!r})" if code is not None else ""
-    raise ChatError(
-        f"Chat request failed: the server returned an error frame{detail}. "
-        "This usually means the request was rejected or the conversation "
-        "could not be served; try again."
+    raise mark_unconfirmed(
+        ChatError(
+            f"Chat request failed: the server returned an error frame{detail}. "
+            "The turn may have been recorded; inspect conversation history."
+        ),
+        operation="chat",
     )
 
 
@@ -645,9 +660,13 @@ def raise_if_rate_limited(error_payload: list) -> None:
                 # users see today.
                 server_reason = row.message
                 suffix = f" The server said: {server_reason}" if server_reason else ""
-                raise ChatError(
-                    "Chat request was rate limited or rejected by the API. "
-                    f"Wait a few seconds and try again.{suffix}"
+                raise mark_commit_state(
+                    ChatError(
+                        "Chat request was rate limited or rejected by the API. "
+                        f"Wait a few seconds and try again.{suffix}"
+                    ),
+                    CommitState.REJECTED,
+                    operation="chat",
                 )
     except ChatError:
         raise

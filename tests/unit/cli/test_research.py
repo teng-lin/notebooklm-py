@@ -848,15 +848,10 @@ class TestResearchImport:
             is True
         )
 
-    def test_import_bounds_the_import_retry_loop_with_timeout(
+    def test_import_bounds_candidate_inspection_with_timeout(
         self, runner, mock_auth, mock_fetch_tokens
     ):
-        """--timeout reaches ``max_elapsed``, so the import retry loop is bounded.
-
-        The command never waits for the RUN, but IMPORT_RESEARCH is retried with
-        reconciliation and would otherwise inherit the library's 1800s default
-        with no way to shorten it.
-        """
+        """--timeout bounds read-only inspection; IMPORT_RESEARCH remains one-send."""
         mock_client = create_mock_client()
         mock_client.research.poll = AsyncMock(return_value=_completed_poll())
         mock_client.research.import_sources_with_verification = AsyncMock(

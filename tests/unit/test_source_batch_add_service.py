@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from notebooklm._app.errors import ErrorCategory, classify
+from notebooklm._app.source_batch import MAX_BATCH_URLS
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.rows.sources import unwrap_add_source_rows
+from notebooklm._web.sources import WebSourcesAPI
 from notebooklm._web.sources.batch import SourceBatchAddService
 from notebooklm.exceptions import (
     AuthError,
@@ -19,10 +23,13 @@ from notebooklm.exceptions import (
     RPCError,
     ServerError,
     SourceAddError,
+    ValidationError,
 )
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import SourceStatus
 from notebooklm.types import Source
+from tests._fixtures.fake_core import make_fake_core
 
 
 def _extract_youtube_video_id(_url: str) -> None:
@@ -42,16 +49,26 @@ def _deep_bare_url_payload(source_id: str, url: str) -> list[Any]:
 
 
 class RecordingRpc:
-    def __init__(self, result: Any = None, *, error: Exception | None = None) -> None:
+    def __init__(self, result: Any = None, *, error: BaseException | None = None) -> None:
         self.result = result
         self.error = error
         self.calls: list[dict[str, Any]] = []
 
     async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
+        journal_entries = bound_operation_journal_entries()
         self.calls.append({"method": method, "params": params, **kwargs})
+        for entry in journal_entries:
+            entry.mark_dispatched()
         if self.error is not None:
             raise self.error
         return self.result
+
+
+class PreDispatchFailureRpc(RecordingRpc):
+    async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
+        self.calls.append({"method": method, "params": params, **kwargs})
+        assert self.error is not None
+        raise self.error
 
 
 @pytest.mark.parametrize(
@@ -107,6 +124,47 @@ async def test_true_batch_uses_one_add_sources_rpc_and_preserves_order() -> None
         }
     ]
     list_sources.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_web_public_facade_uses_one_batch_rpc_and_public_outcomes() -> None:
+    urls = ["https://a.example.com", "https://b.example.com"]
+    rpc = RecordingRpc([_url_row("src-a", urls[0]), _url_row("src-b", urls[1])])
+    api = WebSourcesAPI(rpc, supervisor=make_fake_core(), uploader=MagicMock())
+
+    outcomes = await api.add_urls_batch("nb-1", urls)
+
+    assert [item.input for item in outcomes] == urls
+    assert [item.outcome.commit_state for item in outcomes if item.outcome] == [
+        CommitState.CONFIRMED,
+        CommitState.CONFIRMED,
+    ]
+    assert len(rpc.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_web_public_batch_cap_rejects_21_duplicate_occurrences_before_rpc() -> None:
+    rpc = RecordingRpc([])
+    api = WebSourcesAPI(rpc, supervisor=make_fake_core(), uploader=MagicMock())
+
+    with pytest.raises(ValidationError, match=r"at most 20 entries; got 21"):
+        await api.add_urls_batch("nb-1", ["https://same.example"] * (MAX_BATCH_URLS + 1))
+
+    assert rpc.calls == []
+
+
+@pytest.mark.asyncio
+async def test_web_public_batch_allows_20_duplicate_occurrences() -> None:
+    url = "https://same.example"
+    urls = [url] * MAX_BATCH_URLS
+    rpc = RecordingRpc([_url_row(f"src-{index}", url) for index in range(MAX_BATCH_URLS)])
+    api = WebSourcesAPI(rpc, supervisor=make_fake_core(), uploader=MagicMock())
+
+    outcomes = await api.add_urls_batch("nb-1", urls)
+
+    assert [item.member for item in outcomes] == list(range(MAX_BATCH_URLS))
+    assert [item.input for item in outcomes] == urls
+    assert len(rpc.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -377,7 +435,7 @@ async def test_transport_failure_preserves_type_is_unconfirmed_and_never_replaye
 
 
 @pytest.mark.asyncio
-async def test_auth_failure_preserves_typed_reauthentication_contract() -> None:
+async def test_post_dispatch_auth_failure_preserves_unknown_batch_contract() -> None:
     auth_error = AuthError("csrf token expired")
     rpc = RecordingRpc(error=auth_error)
     list_sources = AsyncMock()
@@ -393,9 +451,126 @@ async def test_auth_failure_preserves_typed_reauthentication_contract() -> None:
         )
 
     assert raised.value is auth_error
-    assert getattr(raised.value, "unconfirmed", False) is False
+    assert raised.value.commit_state is CommitState.UNKNOWN
+    assert raised.value.unconfirmed is True
+    assert [item.commit_state for item in raised.value.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert all(item.reconciliation is not None for item in raised.value.batch_outcome.items)
     assert len(rpc.calls) == 1
     list_sources.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pre_dispatch_transport_failure_stays_not_sent_without_inspect_guidance() -> None:
+    failure = NetworkError("connect failed before dispatch")
+    rpc = PreDispatchFailureRpc(error=failure)
+
+    with pytest.raises(NetworkError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            ["https://a.example.com", "https://b.example.com"],
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is failure
+    assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.operation_metadata.recovery_action is RecoveryAction.RETRY
+    assert failure.unconfirmed is False
+    assert failure.batch_outcome is not None
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.NOT_SENT,
+        CommitState.NOT_SENT,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pre_dispatch_generic_rpc_failure_stays_not_sent_and_retriable() -> None:
+    failure = RPCError("local RPC setup failed", method_id=RPCMethod.ADD_SOURCE.value)
+    rpc = PreDispatchFailureRpc(error=failure)
+
+    with pytest.raises(RPCError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            ["https://a.example.com", "https://b.example.com"],
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is failure
+    assert failure.commit_state is CommitState.NOT_SENT
+    assert failure.operation_metadata.recovery_action is RecoveryAction.RETRY
+    assert failure.unconfirmed is False
+    assert "UNRESOLVED" not in str(failure)
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.NOT_SENT,
+        CommitState.NOT_SENT,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_post_dispatch_cancellation_keeps_web_batch_snapshot_and_propagates() -> None:
+    cancellation = asyncio.CancelledError()
+    rpc = RecordingRpc(error=cancellation)
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            ["https://a.example.com", "https://b.example.com"],
+            rpc=rpc,
+            list_sources=AsyncMock(),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is CommitState.UNKNOWN
+    assert len(metadata.entries) == 2
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert all(item.reconciliation is not None for item in metadata.batch_outcome.items)
+
+
+@pytest.mark.asyncio
+async def test_sparse_readback_cancellation_preserves_decoded_committed_sibling() -> None:
+    urls = ["https://good.example.com", "https://missing.example.com"]
+    cancellation = asyncio.CancelledError("cancel sparse ERROR-row readback")
+    rpc = RecordingRpc([_url_row("src-good", urls[0])])
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await SourceBatchAddService().add_urls(
+            "nb-1",
+            urls,
+            rpc=rpc,
+            list_sources=AsyncMock(side_effect=cancellation),
+            extract_youtube_video_id=_extract_youtube_video_id,
+            logger=logging.getLogger(__name__),
+        )
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.commit_state is CommitState.UNKNOWN
+    assert metadata.known_resource_ids == ("src-good",)
+    assert [entry.commit_state for entry in metadata.entries] == [
+        CommitState.CONFIRMED,
+        CommitState.UNKNOWN,
+    ]
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.CONFIRMED,
+        CommitState.UNKNOWN,
+    ]
+    assert metadata.batch_outcome.items[0].resource_id == "src-good"
 
 
 @pytest.mark.asyncio

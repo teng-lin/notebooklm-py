@@ -5,6 +5,10 @@
     "title": "REST Server Subsystem",
     "locale": "en",
     "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/teng-lin/notebooklm-py",
+      "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"
+    },
     "views": [
       {
         "id": "request",
@@ -16,7 +20,7 @@
           "cores",
           "client"
         ],
-        "note": "Guarded /v1 routes over the same neutral cores and public namespaces."
+        "note": "Routes parse HTTP models, build typed neutral requests, and project their own responses."
       },
       {
         "id": "guards",
@@ -36,7 +40,7 @@
           "routes",
           "errors"
         ],
-        "note": "Create returns immediately; the matching GET reports the resource state."
+        "note": "Generation returns a task ID; source batches return one ordered four-state result per input."
       }
     ]
   },
@@ -117,7 +121,19 @@
       "id": "routes",
       "type": "frontend",
       "label": "/v1 Routes",
-      "sublabel": "server/routes/",
+      "sublabel": "HTTP models · projection",
+      "sources": [
+        {
+          "path": "src/notebooklm/server/routes/artifacts.py",
+          "line": 117,
+          "label": "generation model"
+        },
+        {
+          "path": "src/notebooklm/server/routes/sources.py",
+          "line": 485,
+          "label": "batch route"
+        }
+      ],
       "pos": [
         544,
         260
@@ -130,8 +146,25 @@
     {
       "id": "cores",
       "type": "backend",
-      "label": "Application Cores",
-      "sublabel": "_app/",
+      "label": "Neutral Contracts",
+      "sublabel": "requests · events · outcomes",
+      "sources": [
+        {
+          "path": "src/notebooklm/_app/generation_requests.py",
+          "line": 531,
+          "label": "11-kind union"
+        },
+        {
+          "path": "src/notebooklm/_app/generation_requests.py",
+          "line": 657,
+          "label": "shared validation"
+        },
+        {
+          "path": "src/notebooklm/_app/source_batch.py",
+          "line": 1,
+          "label": "batch policy"
+        }
+      ],
       "pos": [
         806,
         260
@@ -173,8 +206,15 @@
     {
       "id": "errors",
       "type": "backend",
-      "label": "Error Envelope",
-      "sublabel": "category + status",
+      "label": "REST Projection",
+      "sublabel": "HTTP status · safe detail",
+      "sources": [
+        {
+          "path": "src/notebooklm/server/_errors.py",
+          "line": 242,
+          "label": "classify once"
+        }
+      ],
       "pos": [
         282,
         460
@@ -190,6 +230,13 @@
       "label": "Pending Registry",
       "sublabel": "bounded FIFO",
       "tag": "poll the resource",
+      "sources": [
+        {
+          "path": "src/notebooklm/server/routes/artifacts.py",
+          "line": 182,
+          "label": "task registry"
+        }
+      ],
       "pos": [
         544,
         460
@@ -204,6 +251,13 @@
       "type": "backend",
       "label": "Full-ID Resolvers",
       "sublabel": "identity functions",
+      "sources": [
+        {
+          "path": "src/notebooklm/server/routes/_passthrough.py",
+          "line": 1,
+          "label": "canonical IDs"
+        }
+      ],
       "pos": [
         806,
         460
@@ -321,8 +375,8 @@
       "title": "Single tenant",
       "items": [
         "One client is attempted at ASGI lifespan and lazy-retried after a stale-auth startup",
-        "Workflow routes use _app/ cores; simple operations call public client namespaces",
-        "server/ imports no click, rich or cli — pinned by test_server_boundary.py"
+        "Routes own Pydantic input, HTTP responses, safe errors, and status codes",
+        "Neutral cores expose typed contracts; server/ imports no click, rich, or cli"
       ]
     },
     {
@@ -338,7 +392,8 @@
       "title": "Long-running work",
       "items": [
         "Create returns immediately; the matching GET reports pending, 200, 404, 409 or 410",
-        "Expensive route groups have lifespan-owned concurrency limiters"
+        "One table validates generation; source batches preserve ordered four-state evidence",
+        "URLs and titles are redacted; expensive route groups have concurrency limiters"
       ]
     }
   ]

@@ -70,7 +70,7 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `load_source` | `sources.get_fulltext()` | `GetProject` ×2, `LoadSource` |
 | `retrieve_relevant_chunks` | `sources.search()`, `sources.search(..., source_ids=...)` | `GetProject`, `RetrieveRelevantChunks` ×2 |
 | `list_artifacts_get_notes` | `artifacts.list()`, `notes.list()` | `ListArtifacts`, `GetNotes` ×2 |
-| `get_labels` | `labels.list()`, `collections.create()`, `collections.list()`, `collections.delete()` | `GetLabels` ×5, `CreateLabel`, `DeleteLabels` |
+| `get_labels` | `labels.list()`, `collections.create()` (expected unknown), `collections.list()`, `collections.delete()` using the independently pinned fixture ID | `GetLabels` ×5, `CreateLabel`, `DeleteLabels` |
 | `list_discover_sources_job` | `research.poll()` | `ListDiscoverSourcesJob` |
 | `research_discover` | `research.discover()` | `DiscoverSources` |
 | `get_project_details` | `sharing.get_status()` | `GetProjectDetails` |
@@ -82,7 +82,7 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `source_lifecycle` | `sources.add_text/add_url/wait_until_ready/rename/get_guide/check_freshness/refresh/delete()` | `AddTentativeSources` ×2, `AddSources` ×2, `GetProject` ×10, `MutateSource`, `GenerateDocumentGuides`, `CheckSourceFreshness` ×2, `DeleteSources` ×2 |
 | `note_lifecycle` | `notes.create/update/get/delete()` | `CreateNote`, `GetNotes` ×6, `MutateNote`, `DeleteNotes` |
 | `label_lifecycle` | `labels.create/rename/set_emoji/add_sources/sources/remove_sources/generate/delete/list()` | `GetProject` ×2, `CreateLabel` ×2, `GetLabels` ×11, `MutateLabel` ×4, `DeleteLabels` |
-| `collection_lifecycle` | `collections.create/rename/add_notebooks/notebooks/remove_notebooks/delete/get_or_none()` | `GetLabels` ×9, `CreateLabel`, `MutateLabel` ×3, `ListRecentlyViewedProjects`, `DeleteLabels` |
+| `collection_lifecycle` | `collections.create()` (expected unknown), then `rename/add_notebooks/notebooks/remove_notebooks/delete/get_or_none()` using the independently pinned fixture ID | `GetLabels` ×9, `CreateLabel`, `MutateLabel` ×3, `ListRecentlyViewedProjects`, `DeleteLabels` |
 | `share_project` | `sharing.set_public()`, `sharing.get_status()` | `ShareProject` ×2, `GetProjectDetails` ×3 |
 | `delete_chat_turns` | `chat.ask()`, `chat.delete_conversation()`, `chat.get_history()` | `GetProject`, `ListChatSessions` ×5, `ListChatTurns` ×2, `GenerateFreeFormStreamed (stream)`, `DeleteChatTurns` |
 | `mutate_account` | `settings.get_output_language()`, `settings.set_output_language()` | `GetOrCreateAccount`, `MutateAccount` |
@@ -90,9 +90,9 @@ records and replays (`tests/_helpers/android_grpc_harness.py`):
 | `quiz_lifecycle` | `artifacts.generate_quiz/poll_status/get/rename/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×8, `GetArtifact` ×3, `GetNotes` ×2, `UpdateArtifact`, `DeleteArtifact` |
 | `generate_report_suggestions` | `artifacts.suggest_reports()` | `GenerateReportSuggestions` |
 | `next_step_suggestions` | `notebooks.suggest_next_steps()`, `artifacts.get_customization_choices()` | `NextStepSuggestions` ×2, `GetArtifactCustomizationChoices` |
-| `source_transfers` | `notebooks.create()`, `sources.add_urls_async/wait_until_ready/append_text/get_fulltext/copy()`, `notebooks.delete()` | `CreateProject`, `AddSourcesAsync`, `GetProject` ×N, `AppendSource`, `LoadSource` ×2, `CopySourcesAsync`, `DeleteProjects` |
+| `source_transfers` | `notebooks.list/create()`, `sources.add_urls_async/wait_until_ready/append_text/get_fulltext/copy()`, `notebooks.delete()` | `ListRecentlyViewedProjects`, `CreateProject`, `AddSourcesAsync`, `GetProject` ×N, `AppendSource`, `LoadSource` ×2, `CopySourcesAsync`, `DeleteProjects` |
 | `play_books` | `sources.list_play_books()`, `sources.add_play_book()`, `sources.delete()` | `ListExpertIntelligenceContent` ×2, `AddTentativeSources`, `AddSources`, `GetProject` ×2, `DeleteSources` |
-| `artifact_copy` | `artifacts.generate_flashcards/poll_status()`, `notebooks.create()`, `artifacts.copy()`, `artifacts.delete()`, `notebooks.delete()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×N, `CreateProject`, `CopyArtifactsAsync`, `DeleteArtifact`, `DeleteProjects` |
+| `artifact_copy` | `artifacts.generate_flashcards/poll_status()`, `notebooks.list/create()`, `artifacts.copy()`, `artifacts.delete()`, `notebooks.delete()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×N, `ListRecentlyViewedProjects`, `CreateProject`, `CopyArtifactsAsync`, `DeleteArtifact`, `DeleteProjects` |
 | `research_fast_cancel` | `research.start(mode="fast")`, `research.cancel()`, `research.poll()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob` ×2, `CancelDiscoverSourcesJob` |
 | `research_fast_import` | `research.start(mode="fast")`, `research.poll()`, `research.import_sources()` | `DiscoverSourcesManifold`, `ListDiscoverSourcesJob`, `FinishDiscoverSourcesRun` |
 | `generate_report` | `artifacts.generate_report/poll_status/get/delete/get_or_none()` | `GetProject`, `CreateArtifact`, `ListArtifacts` ×5, `GetArtifact` ×2, `GetNotes` ×2, `DeleteArtifact` |

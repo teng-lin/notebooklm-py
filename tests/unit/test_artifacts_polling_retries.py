@@ -60,7 +60,8 @@ class _FakeSupervisor:
     def register_drain_hook(self, name: str, hook: object) -> None:
         self.drain_hooks[name] = hook
 
-    async def spawn_child(self, label, factory):
+    async def spawn_child(self, label, factory, *, inherit_operation=True):
+        assert inherit_operation is False
         parent = asyncio.current_task()
         assert parent is not None
         self.spawn_labels.append(label)
@@ -123,7 +124,8 @@ def api():
 def _make_session_core() -> MagicMock:
     core = MagicMock()
 
-    async def _spawn_child(label, factory):
+    async def _spawn_child(label, factory, *, inherit_operation=True):
+        assert inherit_operation is False
         return asyncio.create_task(factory(), name=label)
 
     core.assert_bound_loop = MagicMock(return_value=None)
@@ -442,7 +444,8 @@ async def test_polling_drain_cancels_reserved_leader_before_task_attachment() ->
     spawn_started = asyncio.Event()
     factory_invoked = False
 
-    async def _spawn_child(label, factory):
+    async def _spawn_child(label, factory, *, inherit_operation=True):
+        assert inherit_operation is False
         del label, factory
         spawn_started.set()
         await asyncio.Future()

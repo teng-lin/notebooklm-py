@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
 from .._auth.mint_service import MintService
 from .._auth.profile_store import ProfileStore
-from .._client_contracts import BackendAssembly, installed_backend_map
+from .._client_contracts import (
+    AndroidAssembly,
+    AndroidAssemblyConfig,
+    AndroidCredentials,
+    AndroidDependencies,
+    FeatureNamespaces,
+    installed_backend_map,
+)
 from .._runtime.config import normalize_max_concurrent_uploads, resolve_chat_read_timeout
-from .._runtime.init import SharedRuntimeConfig, build_collaborators
+from .._runtime.init import SharedRuntime
 from .artifacts import AndroidArtifactsAPI
 from .assets import AndroidAssetDownloadService
-from .auth import MasterTokenReader, OAuthMinter, _make_bearer_provider, _NoMasterTokenReader
+from .auth import _make_bearer_provider, _NoMasterTokenReader
 from .chat import AndroidChatAPI
 from .collections import AndroidCollectionsAPI
 from .labels import AndroidLabelsAPI
@@ -34,8 +39,18 @@ from .sources import AndroidSourcesAPI
 from .upload import AndroidUploadPipeline
 
 if TYPE_CHECKING:
-    from ..client import NotebookLMClient
-    from ..types import RpcTelemetryEvent
+    from ..options import TimeoutOptions
+
+
+def _http_timeout(options: TimeoutOptions | None) -> httpx.Timeout | None:
+    if options is None:
+        return None
+    return httpx.Timeout(
+        connect=options.connect,
+        read=options.read,
+        write=options.write,
+        pool=options.pool,
+    )
 
 
 def _validate_android_settings(
@@ -54,48 +69,43 @@ def _validate_android_settings(
 
 
 def assemble_android_backend(
-    client: NotebookLMClient,
     *,
-    profile_path: Path | None,
-    master_token_reader: MasterTokenReader | None,
-    oauth_minter: OAuthMinter | None,
-    timeout: float,
-    refresh_retry_delay: float,
-    rate_limit_max_retries: int,
-    server_error_max_retries: int,
-    max_concurrent_uploads: int | None,
-    upload_timeout: httpx.Timeout | None,
-    chat_timeout: float | None,
-    import_research_timeout: float | None,
-    chat_response_max_bytes: int | None,
-    sleep: Callable[[float], Awaitable[Any]] | None,
-    shared_config: SharedRuntimeConfig,
-    on_rpc_event: Callable[[RpcTelemetryEvent], object] | None,
-) -> BackendAssembly:
-    """Install only the Android graph and return its neutral lifecycle parts."""
+    shared: SharedRuntime,
+    config: AndroidAssemblyConfig,
+    credentials: AndroidCredentials,
+    deps: AndroidDependencies,
+) -> AndroidAssembly:
+    """Return a complete Android graph without reading or mutating a client."""
 
+    backend = config.backend
+    retry = config.retry
+    transfers = config.transfers
+    features = config.features
     _validate_android_settings(
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
-        max_concurrent_uploads=max_concurrent_uploads,
+        rate_limit_max_retries=retry.rate_limit_max_retries,
+        server_error_max_retries=retry.server_error_max_retries,
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
     )
-    shared = build_collaborators(shared_config, on_rpc_event=on_rpc_event)
+    master_token_reader = deps.master_token_reader
     if master_token_reader is None:
         master_token_reader = (
-            ProfileStore(profile_path) if profile_path is not None else _NoMasterTokenReader()
+            ProfileStore(credentials.profile_path)
+            if credentials.profile_path is not None
+            else _NoMasterTokenReader()
         )
+    oauth_minter = deps.oauth_minter
     if oauth_minter is None:
         oauth_minter = MintService()
     bearer_provider = _make_bearer_provider(master_token_reader, oauth_minter)
     session = AndroidSession(
         bearer_provider,
         shared.call_supervisor,
-        timeout=timeout,
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
-        refresh_retry_delay=refresh_retry_delay,
+        timeout=backend.rpc_timeout,
+        rate_limit_max_retries=retry.rate_limit_max_retries,
+        server_error_max_retries=retry.server_error_max_retries,
+        refresh_retry_delay=deps.refresh_retry_delay,
         metrics=shared.metrics,
-        sleep=sleep,
+        sleep=deps.sleep,
     )
     asset_downloads = AndroidAssetDownloadService(
         bearer_provider=bearer_provider,
@@ -104,8 +114,10 @@ def assemble_android_backend(
     upload_pipeline = AndroidUploadPipeline(
         session=session,
         bearer_provider=bearer_provider,
-        upload_timeout=upload_timeout,
-        max_concurrent_uploads=max_concurrent_uploads,
+        start_timeout=_http_timeout(transfers.start_timeout),
+        finalize_timeout=_http_timeout(transfers.finalize_timeout),
+        drive_timeout=_http_timeout(transfers.drive_timeout),
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
         record_upload_queue_wait=shared.metrics.record_upload_queue_wait,
     )
     phenotype = PhenotypeTokenProvider()
@@ -116,63 +128,74 @@ def assemble_android_backend(
         asset_downloads=asset_downloads,
         phenotype=phenotype,
     )
-    client._android_runtime = android
-    client._web_runtime = None
-    client._raw = AndroidRawAPI(session)
-
-    client.sources = AndroidSourcesAPI(
+    sources = AndroidSourcesAPI(
         session,
         upload_pipeline,
         drive_download=upload_pipeline.drive_download_scope,
         phenotype=phenotype,
     )
-    client.notebooks = AndroidNotebooksAPI(session, client.sources)
-    client.notes = AndroidNotesAPI(session)
+    notebooks = AndroidNotebooksAPI(session, sources)
+    notes = AndroidNotesAPI(session)
     note_backed_artifacts = NoteBackedMindMapArtifactAdapter(
-        client.notes._list_note_backed_mind_maps,
+        notes._list_note_backed_mind_maps,
     )
-    client.artifacts = AndroidArtifactsAPI(
+    artifacts = AndroidArtifactsAPI(
         session=session,
         supervisor=shared.call_supervisor,
-        notebooks=client.notebooks,
+        notebooks=notebooks,
         mind_maps=note_backed_artifacts,
         asset_downloads=asset_downloads,
     )
-    client.mind_maps = AndroidMindMapsAPI(
+    mind_maps = AndroidMindMapsAPI(
         session=session,
-        artifacts=client.artifacts,
-        notes=client.notes,
+        artifacts=artifacts,
+        notes=notes,
     )
-    client.chat = AndroidChatAPI(
+    chat = AndroidChatAPI(
         session=session,
         loop_guard=shared.call_supervisor,
-        chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
-        chat_response_max_bytes=chat_response_max_bytes,
-        notebooks=client.notebooks,
-        created_chat_sessions=client.notebooks,
+        chat_timeout=resolve_chat_read_timeout(features.chat_timeout, backend.rpc_timeout),
+        chat_response_max_bytes=features.chat_response_max_bytes,
+        notebooks=notebooks,
+        created_chat_sessions=notebooks,
     )
-    client.research = AndroidResearchAPI(
+    research = AndroidResearchAPI(
         session,
-        client.sources,
-        base_timeout=timeout,
-        import_research_timeout=import_research_timeout,
+        sources,
+        base_timeout=backend.rpc_timeout,
+        import_research_timeout=cast(Any, features.import_research_timeout),
     )
-    client.settings = AndroidSettingsAPI(session)
-    client.sharing = AndroidSharingAPI(session)
-    client.labels = AndroidLabelsAPI(session, list_sources=client.sources.list)
-    client.collections = AndroidCollectionsAPI(
+    settings = AndroidSettingsAPI(session)
+    sharing = AndroidSharingAPI(session)
+    labels = AndroidLabelsAPI(session, list_sources=sources.list)
+    collections = AndroidCollectionsAPI(
         session,
-        list_notebooks=client.notebooks.list,
+        list_notebooks=notebooks.list,
     )
 
-    return BackendAssembly(
+    namespaces = FeatureNamespaces(
+        notebooks=notebooks,
+        sources=sources,
+        artifacts=artifacts,
+        chat=chat,
+        research=research,
+        notes=notes,
+        mind_maps=mind_maps,
+        settings=settings,
+        sharing=sharing,
+        labels=labels,
+        collections=collections,
+    )
+    return AndroidAssembly(
         backend="android",
+        namespaces=namespaces,
+        raw=AndroidRawAPI(session),
         runtime=android,
-        collaborators=shared,
+        shared=shared,
         transports=(session, asset_downloads, upload_pipeline, phenotype),
         loop_participants=(
             shared.call_supervisor,
-            client.chat,
+            chat,
             bearer_provider,
             session,
             upload_pipeline,

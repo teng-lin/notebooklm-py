@@ -1,5 +1,6 @@
 """Unit tests for sharing types and API."""
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -7,6 +8,7 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm.exceptions import UnknownRPCMethodError
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import RPCMethod
 from notebooklm.rpc.types import ShareAccess, SharePermission, ShareViewLevel
 from notebooklm.types import SharedUser, ShareStatus
@@ -595,7 +597,7 @@ class TestSharingAPIValidation:
         from tests._fixtures.fake_core import make_fake_core
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         with pytest.raises(ValueError, match="Cannot assign OWNER permission"):
             await api.add_user("nb_123", "test@example.com", SharePermission.OWNER)
@@ -612,7 +614,7 @@ class TestSharingAPIValidation:
         from tests._fixtures.fake_core import make_fake_core
 
         mock_core = make_fake_core(rpc_call=AsyncMock())
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         with pytest.raises(ValueError, match="Use remove_user"):
             await api.add_user("nb_123", "test@example.com", SharePermission._REMOVE)
@@ -640,7 +642,7 @@ class TestSharingAPIValidation:
                 ]
             )
         )
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         status = await api.add_user("nb_123", "test@example.com", SharePermission.EDITOR)
 
@@ -668,13 +670,83 @@ class TestSharingAPIValidation:
                 ]
             )
         )
-        api = WebSharingAPI(mock_core)
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
 
         # Use default permission (VIEWER)
         status = await api.add_user("nb_123", "test@example.com")
 
         assert mock_core.rpc_executor.rpc_call.call_count == 2
         assert status.shared_users[0].permission == SharePermission.VIEWER
+
+    @pytest.mark.asyncio
+    async def test_readback_cancellation_retains_confirmed_mutation_journal(self):
+        from unittest.mock import AsyncMock
+
+        from notebooklm._web.sharing import WebSharingAPI
+        from tests._fixtures.fake_core import make_fake_core
+
+        cancellation = asyncio.CancelledError("cancel sharing readback")
+        mock_core = make_fake_core(rpc_call=AsyncMock(side_effect=[[], cancellation]))
+        api = WebSharingAPI(mock_core, supervisor=mock_core)
+
+        with pytest.raises(asyncio.CancelledError) as raised:
+            await api.set_public("nb_123", True)
+
+        assert raised.value is cancellation
+        metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+        assert metadata.commit_state is CommitState.CONFIRMED
+        assert metadata.recovery_action is RecoveryAction.INSPECT_AND_RECONCILE
+        assert [entry.commit_state for entry in metadata.entries] == [
+            CommitState.CONFIRMED,
+            CommitState.UNKNOWN,
+        ]
+
+    @pytest.mark.parametrize(
+        ("dispatched", "expected_state", "expected_recovery"),
+        [
+            (False, CommitState.NOT_SENT, RecoveryAction.RETRY),
+            (True, CommitState.UNKNOWN, RecoveryAction.INSPECT_AND_RECONCILE),
+        ],
+        ids=["pre-dispatch", "post-dispatch"],
+    )
+    @pytest.mark.asyncio
+    async def test_mutation_cancellation_retains_sharing_journal(
+        self,
+        dispatched: bool,
+        expected_state: CommitState,
+        expected_recovery: RecoveryAction,
+    ) -> None:
+        from notebooklm._web.sharing import WebSharingAPI
+        from tests._fixtures.fake_core import make_fake_core
+
+        cancellation = asyncio.CancelledError("cancel sharing mutation")
+
+        class CancellingRpc:
+            async def rpc_call(self, method: RPCMethod, _params: list[Any], **kwargs: Any) -> Any:
+                assert method is RPCMethod.SHARE_NOTEBOOK
+                if dispatched:
+                    from notebooklm._idempotency import bound_operation_journal_entries
+
+                    for entry in bound_operation_journal_entries():
+                        entry.mark_dispatched()
+                raise cancellation
+
+        api = WebSharingAPI(CancellingRpc(), supervisor=make_fake_core())
+
+        with pytest.raises(asyncio.CancelledError) as raised:
+            await api.set_public("nb_123", True)
+
+        assert raised.value is cancellation
+        metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+        assert metadata.commit_state is expected_state
+        assert metadata.recovery_action is expected_recovery
+        assert [entry.commit_state for entry in metadata.entries] == [
+            expected_state,
+            CommitState.NOT_SENT,
+        ]
+        assert [attempt.commit_state for attempt in metadata.attempts] == (
+            [CommitState.UNKNOWN] if dispatched else []
+        )
 
 
 class TestShareStatusDefaultValues:

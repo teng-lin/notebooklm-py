@@ -9,6 +9,7 @@ preview-then-delete flow, and error projection.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 from unittest.mock import MagicMock
@@ -20,6 +21,7 @@ pytest.importorskip("fastmcp")
 
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
+from notebooklm._redact import redact  # noqa: E402 - after importorskip guard
 from notebooklm._types.sources import SourceType  # noqa: E402 - after importorskip guard
 from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     NetworkError,
@@ -835,6 +837,54 @@ async def test_source_delete_with_confirm_deletes(mcp_call, mock_client) -> None
         "source_id": SRC_ID,
     }
     mock_client.sources.delete.assert_awaited_once_with(NB_ID, SRC_ID)
+
+
+async def test_source_delete_preview_canonical_id_survives_title_replacement(
+    mcp_call, mock_client
+) -> None:
+    mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC_ID, title="Report")])
+    mock_client.sources.delete = AsyncMock()
+
+    preview = await mcp_call("source_delete", {"notebook": NB_ID, "source": "Report"})
+    assert preview.structured_content["preview"]["source_id"] == SRC_ID
+    mock_client.sources.list.return_value = [FakeSource(id=SRC2_ID, title="Report")]
+
+    confirmed = await mcp_call(
+        "source_delete", {"notebook": NB_ID, "source": SRC_ID, "confirm": True}
+    )
+    assert "deprecation" not in confirmed.structured_content
+    mock_client.sources.delete.assert_awaited_once_with(NB_ID, SRC_ID)
+    assert mock_client.sources.list.await_count == 2
+
+
+async def test_source_delete_confirmed_legacy_name_warns_after_success(
+    mcp_call, mock_client
+) -> None:
+    mock_client.notebooks.list = AsyncMock(
+        return_value=[type("NB", (), {"id": NB_ID, "title": "Notebook"})()]
+    )
+    mock_client.sources.list = AsyncMock(return_value=[FakeSource(id=SRC_ID, title="Report")])
+    mock_client.sources.delete = AsyncMock()
+
+    result = await mcp_call(
+        "source_delete", {"notebook": "Notebook", "source": "Report", "confirm": True}
+    )
+
+    assert "deprecation" in result.structured_content
+    mock_client.sources.delete.assert_awaited_once_with(NB_ID, SRC_ID)
+
+
+async def test_strict_source_delete_name_rejected_before_list_or_mutation(
+    monkeypatch, mcp_call, mock_client
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_MCP_STRICT_IDS", "1")
+    mock_client.sources.delete = AsyncMock()
+
+    with pytest.raises(ToolError, match="NOTEBOOKLM_MCP_STRICT_IDS"):
+        await mcp_call("source_delete", {"notebook": NB_ID, "source": "Report", "confirm": True})
+
+    mock_client.sources.list.assert_not_called()
+    mock_client.sources.delete.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -2224,6 +2274,7 @@ async def test_source_add_batch_all_success(mcp_call, mock_client) -> None:
             {
                 "input": "https://example.com/a",
                 "status": "added",
+                "commit_state": "confirmed",
                 "source_id": SRC_ID,
                 "title": "A",
                 "status_label": "ready",
@@ -2231,18 +2282,59 @@ async def test_source_add_batch_all_success(mcp_call, mock_client) -> None:
             {
                 "input": "https://example.com/b",
                 "status": "added",
+                "commit_state": "confirmed",
                 "source_id": SRC2_ID,
                 "title": "B",
                 "status_label": "ready",
             },
         ],
     }
-    mock_client.sources._add_urls_batch.assert_awaited_once_with(
+    mock_client.sources.add_urls_batch.assert_awaited_once_with(
         NB_ID, ["https://example.com/a", "https://example.com/b"]
     )
     assert mock_client.sources.add_url.await_count == 2
     # Both ready web_page items were content-checked.
     assert mock_client.sources.get_fulltext.await_count == 2
+
+
+async def test_source_add_batch_success_redacts_and_caps_provisional_url_title(
+    mcp_call, mock_client
+) -> None:
+    """A provisional URL title is safe on the MCP wire without mutating the source."""
+    from notebooklm.outcomes import SourceBatchItemOutcome
+
+    unsafe_title = (
+        "https://batch-title-user:batch-title-password@example.com/path"
+        "?token=batch-title-token&padding=" + "x" * 300
+    )
+    ordinary_title = "Quarterly research notes"
+    sources = [
+        FakeSource(id=SRC_ID, title=unsafe_title),
+        FakeSource(id=SRC2_ID, title=ordinary_title),
+    ]
+    mock_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(url="https://example.com/a", source=sources[0]),
+            SourceBatchItemOutcome(url="https://example.com/b", source=sources[1]),
+        ]
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
+
+    result = await mcp_call(
+        "source_add",
+        {"notebook": NB_ID, "urls": ["https://example.com/a", "https://example.com/b"]},
+    )
+
+    rows = result.structured_content["results"]
+    assert rows[0]["title"] == redact(unsafe_title, max_length=200)
+    assert len(rows[0]["title"]) <= 201
+    assert "batch-title-user" not in rows[0]["title"]
+    assert "batch-title-password" not in rows[0]["title"]
+    assert "batch-title-token" not in rows[0]["title"]
+    assert rows[1]["title"] == ordinary_title
+    assert sources[0].title == unsafe_title
 
 
 async def test_source_add_batch_partial_failure(mcp_call, mock_client) -> None:
@@ -2261,6 +2353,7 @@ async def test_source_add_batch_partial_failure(mcp_call, mock_client) -> None:
     assert sc["results"][0] == {
         "input": "https://good.example.com",
         "status": "added",
+        "commit_state": "confirmed",
         "source_id": SRC_ID,
         "title": "Good",
         "status_label": "ready",
@@ -2268,11 +2361,10 @@ async def test_source_add_batch_partial_failure(mcp_call, mock_client) -> None:
     bad = sc["results"][1]
     assert bad["input"] == "ftp://bad.example.com"
     assert bad["status"] == "error"
+    assert bad["commit_state"] == "not_sent"
     assert bad["error"]["code"] == "VALIDATION"
     # The disallowed scheme is rejected by validate_url before reaching the client.
-    mock_client.sources._add_urls_batch.assert_awaited_once_with(
-        NB_ID, ["https://good.example.com"]
-    )
+    mock_client.sources.add_urls_batch.assert_awaited_once_with(NB_ID, ["https://good.example.com"])
     mock_client.sources.add_url.assert_awaited_once_with(NB_ID, "https://good.example.com")
     # The one ready item was content-checked; the rejected entry never reaches it.
     mock_client.sources.get_fulltext.assert_awaited_once_with(NB_ID, SRC_ID, output_format="text")
@@ -2295,34 +2387,116 @@ async def test_source_add_batch_non_url_entry_errors_not_text(mcp_call, mock_cli
     mock_client.sources.add_url.assert_not_called()
     mock_client.sources.add_text.assert_not_called()
     mock_client.sources.add_file.assert_not_called()
-    mock_client.sources._add_urls_batch.assert_not_awaited()
+    mock_client.sources.add_urls_batch.assert_not_awaited()
 
 
-async def test_source_add_batch_fatal_error_aborts_the_call(mcp_call, mock_client) -> None:
-    """A batch-level fatal failure aborts instead of being masked per item (#1871).
-
-    The real RPC receives both URLs at once and may have committed an unknown
-    subset. The fixture's sequential outcome model happens to raise on its first
-    scripted item, but the adapter contract under test is the top-level failure.
-    """
+async def test_source_add_batch_uses_typed_unknown_without_category_oracle(
+    mcp_call, mock_client
+) -> None:
+    """A returned infrastructure error preserves unknown alongside a sibling."""
     mock_client.sources.add_url = AsyncMock(
         side_effect=[NetworkError("boom"), FakeSource(id=SRC2_ID, title="Second")]
     )
-    with pytest.raises(ToolError) as excinfo:
-        await mcp_call(
-            "source_add",
-            {
-                "notebook": NB_ID,
-                "urls": ["https://first.example.com", "https://second.example.com"],
-            },
-        )
-    error_text = str(excinfo.value)
-    assert "RPC" in error_text
-    assert "unconfirmed=true" in error_text
-    assert "reconcile" in error_text.lower()
-    mock_client.sources._add_urls_batch.assert_awaited_once_with(
+    result = await mcp_call(
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "urls": ["https://first.example.com", "https://second.example.com"],
+        },
+    )
+    assert result.structured_content["results"][0]["commit_state"] == "unknown"
+    assert result.structured_content["results"][1]["source_id"] == SRC2_ID
+    mock_client.sources.add_urls_batch.assert_awaited_once_with(
         NB_ID, ["https://first.example.com", "https://second.example.com"]
     )
+
+
+async def test_e9_mcp_batch_error_preserves_committed_sibling_id(mcp_call, mock_client) -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+    from notebooklm._web.sources.batch import SourceUrlBatchItem
+    from notebooklm.exceptions import RateLimitError
+
+    unresolved = RateLimitError("batch response left another member unresolved")
+    mark_unconfirmed(unresolved)
+    mock_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceUrlBatchItem(
+                url="https://first.example.com",
+                source=Source(id="committed-before-failure", title="Committed"),
+            ),
+            SourceUrlBatchItem(url="https://second.example.com", error=unresolved),
+        ]
+    )
+
+    result = await mcp_call(
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "urls": ["https://first.example.com", "https://second.example.com"],
+        },
+    )
+
+    assert result.structured_content["results"][0]["source_id"] == "committed-before-failure"
+    assert result.structured_content["results"][1]["commit_state"] == "unknown"
+
+
+async def test_source_add_batch_projects_all_four_public_commit_states(
+    mcp_call, mock_client
+) -> None:
+    """One mixed result stays ordered without consulting error categories."""
+    from notebooklm.exceptions import SourceAddError
+    from notebooklm.outcomes import BatchItemOutcome, CommitState, SourceBatchItemOutcome
+
+    invalid = (
+        "ftp://not-sent-user:not-sent-password@example.com/path?token=not-sent-token&pad="
+        + "x" * 300
+    )
+    valid = [
+        f"https://{state}-user:{state}-password@example.com/path?token={state}-token&pad="
+        + "x" * 300
+        for state in ("confirmed", "rejected", "unknown")
+    ]
+    rejected = SourceAddError(valid[1])
+    unknown = SourceAddError(valid[2])
+    mock_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(
+                url=valid[0], source=Source(id="source-confirmed", title="Committed")
+            ),
+            SourceBatchItemOutcome(
+                url=valid[1],
+                error=rejected,
+                member=1,
+                outcome=BatchItemOutcome(
+                    member=1,
+                    input=valid[1],
+                    commit_state=CommitState.REJECTED,
+                    error=rejected,
+                ),
+            ),
+            SourceBatchItemOutcome(url=valid[2], error=unknown, member=2),
+        ]
+    )
+
+    result = await mcp_call(
+        "source_add",
+        {"notebook": NB_ID, "urls": [invalid, *valid]},
+    )
+
+    rows = result.structured_content["results"]
+    assert [row["commit_state"] for row in rows] == [
+        "not_sent",
+        "confirmed",
+        "rejected",
+        "unknown",
+    ]
+    assert rows[1]["source_id"] == "source-confirmed"
+    for row, raw in zip(rows, [invalid, *valid], strict=True):
+        assert row["input"] == redact(raw, max_length=200)
+        assert len(row["input"]) <= 201
+        assert "password" not in row["input"]
+        assert "-token" not in row["input"]
+    mock_client.sources.add_urls_batch.assert_awaited_once_with(NB_ID, valid)
 
 
 async def test_source_add_batch_isolates_non_fatal_input_error(mcp_call, mock_client) -> None:
@@ -2345,7 +2519,7 @@ async def test_source_add_batch_isolates_non_fatal_input_error(mcp_call, mock_cl
     assert sc["results"][0]["error"] == tool_error_payload(SourceNotFoundError("missing"))
     assert sc["results"][1]["status"] == "added"
     assert sc["results"][1]["source_id"] == SRC2_ID
-    # Non-fatal → the batch continued and attempted the second URL.
+    # The facade outcome retains both members; the adapter does not decide continuation.
     assert mock_client.sources.add_url.await_count == 2
 
 
@@ -2353,10 +2527,8 @@ async def test_source_add_batch_isolates_source_add_error(mcp_call, mock_client)
     """A per-URL ``SourceAddError`` (bad domain) isolates as a SOURCE_ADD error and
     later URLs still process — regression for #1905.
 
-    Before the fix, ``SourceAddError`` classified as the fatal ``LIBRARY`` category,
-    so a single bad-domain URL aborted the whole batch (the 3rd + 4th entries were
-    never attempted). Now it is the non-fatal ``SOURCE_ADD`` category, so the batch
-    isolates it per item. ``[valid, bad-domain, valid, non-http]`` must yield 4 result
+    The facade supplies a rejected ``SourceAddError`` member beside successful
+    siblings. ``[valid, bad-domain, valid, non-http]`` must yield 4 result
     entries: 2 ``added``, 1 ``SOURCE_ADD`` error (the bad domain, wrapped by
     ``_web/sources/add.py`` from a residual ADD RPCError), 1 ``VALIDATION`` error (the
     non-http entry, rejected by ``validate_url`` before any client call) — with no
@@ -2469,6 +2641,96 @@ async def test_source_add_batch_propagates_cancellation(mock_client) -> None:
         await _add_url_batch(mock_client, NB_ID, ["https://example.com/a"], allow_internal=False)
 
 
+@pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])
+async def test_source_add_batch_call_failure_merges_local_and_facade_members(
+    mock_client, failure_type: type[BaseException]
+) -> None:
+    """Facade-relative members are restored beside local NOT_SENT outcomes."""
+    from notebooklm._idempotency import attach_batch_outcome
+    from notebooklm.mcp.tools.sources import _add_url_batch
+    from notebooklm.outcomes import (
+        BatchItemOutcome,
+        BatchOutcome,
+        CommitState,
+        operation_metadata_payload,
+    )
+
+    invalid = "ftp://local-user:local-password@example.com/path?token=local-token"
+    valid = [
+        "https://ok-user:ok-password@example.com/path?token=ok-token",
+        "https://no-user:no-password@example.com/path?token=no-token",
+    ]
+    failure = failure_type("batch interrupted")
+    rejected = SourceAddError(valid[1])
+    attach_batch_outcome(
+        failure,
+        BatchOutcome(
+            items=(
+                BatchItemOutcome(
+                    member=0,
+                    input=valid[0],
+                    commit_state=CommitState.CONFIRMED,
+                    resource_id="source-before-failure",
+                ),
+                BatchItemOutcome(
+                    member=1,
+                    input=valid[1],
+                    commit_state=CommitState.REJECTED,
+                    error=rejected,
+                ),
+            )
+        ),
+    )
+    mock_client.sources.add_urls_batch = AsyncMock(side_effect=failure)
+
+    with pytest.raises(failure_type) as excinfo:
+        await _add_url_batch(mock_client, NB_ID, [invalid, *valid], allow_internal=False)
+
+    assert excinfo.value is failure
+    items = operation_metadata_payload(failure)["batch_outcome"]["items"]  # type: ignore[index]
+    assert [item["member"] for item in items] == [0, 1, 2]
+    assert [item["commit_state"] for item in items] == ["not_sent", "confirmed", "rejected"]
+    assert items[1]["resource_id"] == "source-before-failure"
+    for item, raw in zip(items, [invalid, *valid], strict=True):
+        assert item["input"] == redact(raw, max_length=200)
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])
+async def test_source_add_batch_projection_failure_retains_all_settled_outcomes(
+    mock_client, monkeypatch: pytest.MonkeyPatch, failure_type: type[BaseException]
+) -> None:
+    """Projection failure and cancellation retain every public facade outcome."""
+    from notebooklm.exceptions import SourceAddError
+    from notebooklm.mcp.tools import sources as sources_tool
+    from notebooklm.outcomes import SourceBatchItemOutcome, operation_metadata_payload
+
+    committed = Source(id="source-before-projection", title="Committed")
+    unresolved = SourceAddError("https://unknown.example.com")
+    mock_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(url="https://ok.example.com", source=committed),
+            SourceBatchItemOutcome(url="https://unknown.example.com", error=unresolved),
+        ]
+    )
+    failure = failure_type("projection interrupted")
+
+    def _fail_projection(*args: object, **kwargs: object) -> object:
+        raise failure
+
+    monkeypatch.setattr(sources_tool, "project_source_batch_item", _fail_projection)
+    with pytest.raises(failure_type):
+        await sources_tool._add_url_batch(
+            mock_client,
+            NB_ID,
+            ["https://ok.example.com", "https://unknown.example.com"],
+            allow_internal=False,
+        )
+
+    items = operation_metadata_payload(failure)["batch_outcome"]["items"]  # type: ignore[index]
+    assert [item["commit_state"] for item in items] == ["confirmed", "unknown"]
+    assert items[0]["resource_id"] == "source-before-projection"
+
+
 async def test_source_add_batch_allow_internal_passthrough(mcp_call, mock_client) -> None:
     """``allow_internal`` is forwarded to every batch entry (and is not rejected)."""
     internal = "http://127.0.0.1:8080/x"
@@ -2500,6 +2762,9 @@ async def test_source_add_batch_internal_rejected_without_allow_internal(
     assert sc["added"] == 0
     assert sc["results"][0]["status"] == "error"
     assert sc["results"][0]["error"]["code"] == "VALIDATION"
+    projected = str(sc["results"][0]["error"])
+    assert "--allow-internal" not in projected
+    assert "notebooklm " not in projected
     mock_client.sources.add_url.assert_not_called()
 
 
@@ -2589,6 +2854,7 @@ async def test_source_add_batch_youtube_accepted(mcp_call, mock_client) -> None:
     assert sc["results"][0] == {
         "input": yt,
         "status": "added",
+        "commit_state": "confirmed",
         "source_id": SRC_ID,
         "title": "Vid",
         "status_label": "ready",
@@ -2789,7 +3055,10 @@ async def test_source_list_unknown_label_raises(mcp_call, mock_client) -> None:
 
     with pytest.raises(ToolError) as excinfo:
         await mcp_call("source_list", {"notebook": NB_ID, "label": "Unknown"})
-    assert "No label found matching" in str(excinfo.value)
+    projected = str(excinfo.value)
+    assert "label resolution not found" in projected
+    assert "notebooklm " not in projected
+    assert "--" not in projected
 
 
 async def test_source_list_ambiguous_label_raises(mcp_call, mock_client) -> None:
@@ -2805,8 +3074,10 @@ async def test_source_list_ambiguous_label_raises(mcp_call, mock_client) -> None
 
     with pytest.raises(ToolError) as excinfo:
         await mcp_call("source_list", {"notebook": NB_ID, "label": "Work"})
-    assert "matches 2 labels" in str(excinfo.value)
-    assert "Use a label id instead" in str(excinfo.value)
+    projected = str(excinfo.value)
+    assert "label resolution ambiguous name" in projected
+    assert "notebooklm " not in projected
+    assert "--" not in projected
 
 
 # ---------------------------------------------------------------------------
@@ -3286,6 +3557,8 @@ async def test_source_add_wait_remote_file_rejected(mcp_call, mock_client, monke
             {"notebook": NB_ID, "wait": True, "source_type": "file", "path": "/tmp/doc.pdf"},
         )
     assert "VALIDATION" in str(excinfo.value)
+    assert "--allow-internal" not in str(excinfo.value)
+    assert "notebooklm " not in str(excinfo.value)
     mock_client.sources.add_file.assert_not_called()
 
 

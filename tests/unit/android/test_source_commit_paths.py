@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -44,6 +44,7 @@ from notebooklm._android.sources import (
     _ProofKind,
 )
 from notebooklm._android.upload import AndroidUploadPipeline
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm.exceptions import (
     AuthError,
     ConfigurationError,
@@ -88,7 +89,17 @@ class FakeTransport:
         self.scopes.append(label)
         yield _Lease()
 
+    async def spawn_child(
+        self,
+        label: str,
+        factory: Callable[[], Awaitable[Any]],
+    ) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct transport tests."""
+        return asyncio.create_task(factory(), name=label)
+
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         if method == GET_PROJECT_METHOD and method not in self.handlers:
             return _project(_source(SOURCE_A), _source(SOURCE_B))

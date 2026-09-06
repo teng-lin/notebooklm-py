@@ -16,8 +16,7 @@ from typing import Any, Generic, Literal, Protocol, TypeVar
 from ._lookup import unwrap_or_raise
 from ._notebook_metadata import reconcile_copy_mapping
 from ._runtime.call_supervisor import OperationLease
-from ._source.batch import SourceUrlBatchItem
-from ._source.polling import SourcePoller, SourceWaitResult
+from ._source.polling import SourcePoller, SourceWaitResult, SpawnSourceChild
 from ._types.research import SourceGuide
 from .exceptions import (
     DecodingError,
@@ -27,6 +26,7 @@ from .exceptions import (
     SourceNotFoundError,
     ValidationError,
 )
+from .outcomes import SourceBatchItemOutcome
 from .types import (
     CopiedSource,
     PlayBook,
@@ -131,16 +131,17 @@ class SourcesAPI(ABC):
     over the abstract :meth:`list` operation.
     """
 
+    @abstractmethod
     def _operation_scope(
         self, label: str
     ) -> contextlib.AbstractAsyncContextManager[OperationLease | None]:
         """Return the backend's scope for one multi-call workflow."""
+        raise NotImplementedError
 
-        return contextlib.nullcontext(None)
-
-    def __init__(self) -> None:
+    def __init__(self, *, spawn_child: SpawnSourceChild) -> None:
         """Initialize transport-neutral source polling state."""
         self._poller = SourcePoller()
+        self._spawn_child = spawn_child
 
     @abstractmethod
     async def list(
@@ -269,19 +270,20 @@ class SourcesAPI(ABC):
             )
             # Now safe to use in chat/artifacts
         """
-        return await self._poller.wait_until_ready(
-            notebook_id,
-            source_id,
-            timeout=timeout,
-            initial_interval=initial_interval,
-            max_interval=max_interval,
-            backoff_factor=backoff_factor,
-            transient_error_types=transient_error_types,
-            get_source=self.get_or_none,
-            sleep=asyncio.sleep,
-            monotonic=monotonic,
-            logger=logger,
-        )
+        async with self._operation_scope("source.wait_until_ready"):
+            return await self._poller.wait_until_ready(
+                notebook_id,
+                source_id,
+                timeout=timeout,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                backoff_factor=backoff_factor,
+                transient_error_types=transient_error_types,
+                get_source=self.get_or_none,
+                sleep=asyncio.sleep,
+                monotonic=monotonic,
+                logger=logger,
+            )
 
     async def wait_all_until_ready(
         self,
@@ -300,19 +302,20 @@ class SourcesAPI(ABC):
         :class:`SourceTimeoutError`) are RETURNED, not raised. See
         :meth:`SourcePoller.wait_all_until_ready`.
         """
-        return await self._poller.wait_all_until_ready(
-            notebook_id,
-            source_ids,
-            timeout=timeout,
-            initial_interval=initial_interval,
-            max_interval=max_interval,
-            backoff_factor=backoff_factor,
-            transient_error_types=transient_error_types,
-            list_sources=self.list,
-            sleep=asyncio.sleep,
-            monotonic=monotonic,
-            logger=logger,
-        )
+        async with self._operation_scope("source.wait_all_until_ready"):
+            return await self._poller.wait_all_until_ready(
+                notebook_id,
+                source_ids,
+                timeout=timeout,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                backoff_factor=backoff_factor,
+                transient_error_types=transient_error_types,
+                list_sources=self.list,
+                sleep=asyncio.sleep,
+                monotonic=monotonic,
+                logger=logger,
+            )
 
     async def wait_until_registered(
         self,
@@ -353,19 +356,20 @@ class SourcesAPI(ABC):
             SourceProcessingError: If source reports a terminal ERROR for a
                 non-transient source type.
         """
-        return await self._poller.wait_until_registered(
-            notebook_id,
-            source_id,
-            timeout=timeout,
-            initial_interval=initial_interval,
-            max_interval=max_interval,
-            backoff_factor=backoff_factor,
-            transient_error_types=transient_error_types,
-            get_source=self.get_or_none,
-            sleep=asyncio.sleep,
-            monotonic=monotonic,
-            logger=logger,
-        )
+        async with self._operation_scope("source.wait_until_registered"):
+            return await self._poller.wait_until_registered(
+                notebook_id,
+                source_id,
+                timeout=timeout,
+                initial_interval=initial_interval,
+                max_interval=max_interval,
+                backoff_factor=backoff_factor,
+                transient_error_types=transient_error_types,
+                get_source=self.get_or_none,
+                sleep=asyncio.sleep,
+                monotonic=monotonic,
+                logger=logger,
+            )
 
     async def wait_for_sources(
         self,
@@ -399,14 +403,16 @@ class SourcesAPI(ABC):
                 nb_id, [s.id for s in sources]
             )
         """
-        return await self._poller.wait_for_sources(
-            notebook_id,
-            source_ids,
-            timeout=timeout,
-            wait_until_ready=self.wait_until_ready,
-            logger=logger,
-            **kwargs,
-        )
+        async with self._operation_scope("source.wait_for_sources"):
+            return await self._poller.wait_for_sources(
+                notebook_id,
+                source_ids,
+                timeout=timeout,
+                wait_until_ready=self.wait_until_ready,
+                spawn_child=self._spawn_child,
+                logger=logger,
+                **kwargs,
+            )
 
     @abstractmethod
     async def add_url(
@@ -421,13 +427,26 @@ class SourcesAPI(ABC):
         """Add a URL source to a notebook."""
         raise NotImplementedError
 
+    async def add_urls_batch(
+        self,
+        notebook_id: str,
+        urls: builtins.list[str],
+    ) -> builtins.list[SourceBatchItemOutcome]:
+        """Add validated URLs once and return ordered per-input outcomes.
+
+        The returned commit states, rather than an exception category or HTTP
+        status, determine whether a member is confirmed, rejected, unknown, or
+        positively unattempted. The operation never replays the whole batch.
+        """
+        raise NotImplementedError
+
     async def _add_urls_batch(
         self,
         notebook_id: str,
         urls: builtins.list[str],
-    ) -> builtins.list[SourceUrlBatchItem]:
-        """Backend adapter seam used by the existing MCP/REST batch endpoints."""
-        raise NotImplementedError
+    ) -> builtins.list[SourceBatchItemOutcome]:
+        """Compatibility seam for pre-P7 first-party adapter callers."""
+        return await self.add_urls_batch(notebook_id, urls)
 
     @abstractmethod
     async def add_text(

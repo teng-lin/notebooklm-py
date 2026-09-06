@@ -470,7 +470,16 @@ curl -H "Authorization: Bearer $TOKEN" -d '{"question":"Summarize"}' \
 curl -H "Authorization: Bearer $TOKEN" $BASE/v1/notebooks/<id>/share # sharing status
 ```
 
-Endpoints: `/v1/notebooks` (list/get/create/delete); `/v1/notebooks/{id}/sources` (list/get/add via `url`·`text`·`file`/delete); `/v1/notebooks/{id}/notes` (list/get/create/update via `PUT`/delete); `/v1/notebooks/{id}/chat` (blocking ask, no streaming); `/v1/notebooks/{id}/artifacts` (list / generate / poll / download); `/v1/notebooks/{id}/share` (status / public link / users / view level). Long-running work (source ingest, artifact generation) is **poll-the-resource**: the create call returns immediately and the matching `GET` reports `pending` until the resource is ready (`200`), `404` for an id the server never created, `409`/`410` for a failed/removed artifact.
+Endpoints: `/v1/notebooks` (list/get/create/delete); `/v1/notebooks/{id}/sources` (list/get/add via `url`·`text`·`file`·`batch`/delete); `/v1/notebooks/{id}/notes` (list/get/create/update via `PUT`/delete); `/v1/notebooks/{id}/chat` (blocking ask, no streaming); `/v1/notebooks/{id}/artifacts` (list / generate / poll / download); `/v1/notebooks/{id}/share` (status / public link / users / view level). Long-running work (source ingest, artifact generation) is **poll-the-resource**: the create call returns immediately and the matching `GET` reports `pending` until the resource is ready (`200`), `404` for an id the server never created, `409`/`410` for a failed/removed artifact.
+
+Routes own Pydantic input, HTTP status, and JSON/error projection. REST and MCP use the same central
+builder and per-kind option table to construct exact frozen generation requests. The CLI constructs
+the same typed variants but maps most Click inputs directly; all three adapters reuse neutral domain
+validation, and the transport-neutral cores contain no HTTP or presentation policy. The batch source
+route validates local members, sends all valid URLs once, and returns one ordered result per input
+with `commit_state` `confirmed`, `rejected`, `unknown`, or `not_sent`. Continuation follows that
+typed evidence rather than the HTTP status. Inputs and titles are capped and credential-redacted
+before public and JSON projection.
 
 **Artifacts & uploads:**
 

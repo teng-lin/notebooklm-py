@@ -5,6 +5,7 @@ from enum import Enum
 import pytest
 
 from notebooklm._android.errors import grpc_status, raise_grpc_status
+from notebooklm._android.sources import ADD_TENTATIVE_SOURCES_METHOD
 from notebooklm.exceptions import (
     AuthError,
     ClientError,
@@ -13,6 +14,7 @@ from notebooklm.exceptions import (
     RPCTimeoutError,
     ServerError,
 )
+from notebooklm.outcomes import CommitState
 
 
 class _Code(Enum):
@@ -78,3 +80,18 @@ def test_status_mapping(name, code, error_type) -> None:
         assert error.original_error is None
     assert error.__cause__ is None
     assert error.__context__ is None
+
+
+def test_tentative_registration_auth_status_is_a_decoded_refusal() -> None:
+    from notebooklm._android.errors import GrpcStatus
+
+    with pytest.raises(AuthError) as captured:
+        raise_grpc_status(
+            GrpcStatus("UNAUTHENTICATED", 16),
+            method=ADD_TENTATIVE_SOURCES_METHOD,
+            timeout_seconds=12.0,
+        )
+
+    error = captured.value
+    assert error.commit_state is CommitState.REJECTED
+    assert getattr(error, "unconfirmed", False) is False

@@ -5,8 +5,12 @@ from __future__ import annotations
 import builtins
 from typing import Any, Literal, cast
 
-from .._idempotency import call_unconfirmed_on_transport_loss, mark_unconfirmed
-from ..exceptions import NotebookNotFoundError, RPCError
+from .._idempotency import (
+    bound_operation_journal_entry,
+    call_unconfirmed_on_transport_loss,
+    mark_unconfirmed,
+)
+from ..exceptions import DecodingError, NotebookLMError, NotebookNotFoundError, RPCError
 from ..types import Collection, Label
 from .codecs.organization import decode_collections, decode_labels
 from .session import AndroidSession
@@ -105,6 +109,7 @@ async def create_manual(
     notebook_id: str | None,
     expected_epoch: int,
 ) -> Any:
+    journal_entry = bound_operation_journal_entry()
     exact = _exact_proto()
     properties = exact.LabelProperties(name=name)
     if emoji:
@@ -119,17 +124,22 @@ async def create_manual(
         request.project_id = notebook_id
     else:
         request.label_type = COLLECTION_TYPE
-    return await call_unconfirmed_on_transport_loss(
-        lambda: transport.unary(
+
+    async def _send() -> Any:
+        return await transport.unary(
             CREATE_LABEL_METHOD,
             request,
             replay_safe=False,
             response_type=exact.CreateLabelResponse,
             expected_epoch=expected_epoch,
-        ),
+        )
+
+    return await call_unconfirmed_on_transport_loss(
+        _send,
         method=CREATE_LABEL_METHOD,
         what="CreateLabel",
         chain=None,
+        journal_entry=journal_entry,
     )
 
 
@@ -169,6 +179,11 @@ async def generate_labels(
         # so a retry could repeat the mutation even when the read failed for a
         # non-transport reason. Cancellation and process-control exceptions
         # remain BaseException and therefore propagate untouched.
+        if not isinstance(error, NotebookLMError):
+            error = DecodingError(
+                "Generated labels could not be decoded from the required readback.",
+                method_id=GET_LABELS_METHOD,
+            )
         raise mark_unconfirmed(error) from None
 
 

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
 from .._client_contracts import (
-    BackendAssembly,
-    CookieRotator,
-    CookieSaver,
+    FeatureNamespaces,
+    WebAssembly,
+    WebAssemblyConfig,
+    WebCredentials,
+    WebDependencies,
     installed_backend_map,
 )
 from .._runtime.config import (
@@ -20,7 +20,7 @@ from .._runtime.config import (
     DEFAULT_MAX_CONCURRENT_UPLOADS,
     resolve_chat_read_timeout,
 )
-from .._runtime.init import SharedRuntime, SharedRuntimeConfig
+from .._runtime.init import SharedRuntime
 from .artifacts import WebArtifactsAPI
 from .chat import WebChatAPI
 from .collections import WebCollectionsAPI
@@ -35,196 +35,231 @@ from .sharing import WebSharingAPI
 from .sources import WebSourcesAPI
 from .transport.config import validate_web_config
 from .transport.init import (
+    WebRuntime,
     _resolve_async_client_factory,
     build_web_runtime,
-    compose_client_internals,
 )
 from .transport.seams import ClientSeams, resolve_client_seams
 
 if TYPE_CHECKING:
-    from .._client_compat import WebSeamOverrides
-    from ..auth import AuthTokens
-    from ..client import NotebookLMClient
-    from ..types import ConnectionLimits, RpcTelemetryEvent
+    from .._client_compat import CompatibilityDependencies, CompatibilitySpec
+    from ..options import TimeoutOptions
+
+
+def _http_timeout(options: TimeoutOptions | None) -> httpx.Timeout | None:
+    if options is None:
+        return None
+    return httpx.Timeout(
+        connect=options.connect,
+        read=options.read,
+        write=options.write,
+        pool=options.pool,
+    )
 
 
 def assemble_web_backend(
-    client: NotebookLMClient,
     *,
-    auth: AuthTokens,
-    timeout: float,
-    storage_path: Path | None,
-    keepalive: float | None,
-    keepalive_min_interval: float,
-    rate_limit_max_retries: int,
-    server_error_max_retries: int,
-    limits: ConnectionLimits | None,
-    max_concurrent_uploads: int | None,
-    max_concurrent_rpcs: int | None,
-    upload_timeout: httpx.Timeout | None,
-    on_rpc_event: Callable[[RpcTelemetryEvent], object] | None,
-    cookie_saver: CookieSaver | None,
-    cookie_rotator: CookieRotator | None,
-    chat_timeout: float | None,
-    import_research_timeout: float | None,
-    chat_response_max_bytes: int | None,
-    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None,
-    use_default_refresh_callback: bool,
-    refresh_retry_delay: float,
-    connect_timeout: float,
-    keepalive_storage_path: Path | None,
-    async_client_factory: Callable[..., httpx.AsyncClient] | None,
-    decode_response: Callable[..., Any] | None,
-    sleep: Callable[[float], Awaitable[Any]] | None,
-    is_auth_error: Callable[[Exception], bool] | None,
-    shared_config: SharedRuntimeConfig,
-) -> BackendAssembly:
-    """Install the Web graph and return its neutral lifecycle parts."""
+    shared: SharedRuntime,
+    config: WebAssemblyConfig,
+    credentials: WebCredentials,
+    deps: WebDependencies,
+) -> WebAssembly:
+    """Return a complete Web graph without reading or mutating a client."""
 
-    internals = compose_client_internals(
-        auth=auth,
-        timeout=timeout,
-        connect_timeout=connect_timeout,
-        refresh_callback=refresh_callback,
-        use_default_refresh_callback=use_default_refresh_callback,
-        refresh_retry_delay=refresh_retry_delay,
-        keepalive=keepalive,
-        keepalive_min_interval=keepalive_min_interval,
-        keepalive_storage_path=keepalive_storage_path,
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
-        limits=limits,
-        max_concurrent_uploads=max_concurrent_uploads,
-        max_concurrent_rpcs=max_concurrent_rpcs,
-        upload_timeout=upload_timeout,
-        on_rpc_event=on_rpc_event,
-        cookie_saver=cookie_saver,
-        cookie_rotator=cookie_rotator,
-        async_client_factory=async_client_factory,
-        decode_response=decode_response,
-        sleep=sleep,
-        is_auth_error=is_auth_error,
-        shared_config=shared_config,
+    seams = deps.seams or resolve_client_seams(
+        decode_response=deps.decode_response,
+        sleep=deps.sleep,
+        is_auth_error=deps.is_auth_error,
     )
-    web = internals.web_runtime
-    shared = internals.collaborators
-    client._web_runtime = web
-    client._web_sidecar = None
-    client._android_runtime = None
-    client._seams = internals.seams
-    client._raw = WebRawAPI(web.executor)
-    client.sources = WebSourcesAPI(
+    backend = config.backend
+    transport = backend.transport
+    session = backend.session
+    retry = config.retry
+    transfers = config.transfers
+    features = config.features
+    hooks = backend.hooks
+    web_config, _ = validate_web_config(
+        read_timeout=transport.read_timeout,
+        write_timeout=transport.write_timeout,
+        pool_timeout=transport.pool_timeout,
+        connect_timeout=deps.connect_timeout,
+        refresh_retry_delay=deps.refresh_retry_delay,
+        rate_limit_max_retries=retry.rate_limit_max_retries,
+        server_error_max_retries=retry.server_error_max_retries,
+        keepalive=session.keepalive_interval,
+        keepalive_min_interval=session.keepalive_min_interval,
+        keepalive_storage_path=credentials.keepalive_storage_path,
+        auth_storage_path=credentials.auth.storage_path,
+        limits=transport.limits,
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
+        max_concurrent_rpcs=config.shared_config.max_concurrent_rpcs,
+        decode_response=seams.decode_response,
+        sleep=seams.sleep,
+        is_auth_error=seams.is_auth_error,
+        async_client_factory=_resolve_async_client_factory(deps.async_client_factory),
+        shared_config=config.shared_config,
+    )
+    web = build_web_runtime(
+        config=web_config,
+        auth=credentials.auth,
+        refresh_callback=deps.refresh_callback,
+        use_default_refresh_callback=deps.use_default_refresh_callback,
+        shared=shared,
+        start_timeout=_http_timeout(transfers.start_timeout),
+        finalize_timeout=_http_timeout(transfers.finalize_timeout),
+        drive_timeout=_http_timeout(transfers.drive_timeout),
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
+        cookie_saver=hooks.cookie_saver if hooks is not None else None,
+        cookie_rotator=hooks.cookie_rotator if hooks is not None else None,
+        seams=seams,
+        composed=deps.composed,
+    )
+    sources = WebSourcesAPI(
         web.executor,
         supervisor=shared.call_supervisor,
         uploader=web.source_uploader,
-        upload_timeout=upload_timeout,
-        max_concurrent_uploads=max_concurrent_uploads,
+        # Preserve the legacy introspection identity without bypassing the
+        # phase-specific TransferOptions consumed by SourceUploadPipeline.
+        upload_timeout=deps.legacy_upload_timeout,
+        max_concurrent_uploads=transfers.max_concurrent_uploads,
     )
-    client.notebooks = WebNotebooksAPI(web.executor, sources_api=client.sources)
+    notebooks = WebNotebooksAPI(
+        web.executor,
+        sources_api=sources,
+        supervisor=shared.call_supervisor,
+    )
     note_service = NoteService(web.executor, supervisor=shared.call_supervisor)
     mind_maps = NoteBackedMindMapService(note_service)
-    client.artifacts = WebArtifactsAPI(
+    artifacts = WebArtifactsAPI(
         rpc=web.executor,
         supervisor=shared.call_supervisor,
-        notebooks=client.notebooks,
+        notebooks=notebooks,
         mind_maps=mind_maps,
         note_service=note_service,
-        storage_path=storage_path,
+        storage_path=credentials.storage_path,
     )
-    client.chat = WebChatAPI(
+    chat = WebChatAPI(
         rpc=web.executor,
         transport=web.composed.transport,
         reqid=web.reqid,
         loop_guard=shared.call_supervisor,
-        chat_timeout=resolve_chat_read_timeout(chat_timeout, timeout),
-        chat_response_max_bytes=chat_response_max_bytes,
-        notebooks=client.notebooks,
-        created_chat_sessions=client.notebooks,
+        supervisor=shared.call_supervisor,
+        chat_timeout=resolve_chat_read_timeout(features.chat_timeout, transport.read_timeout),
+        chat_response_max_bytes=features.chat_response_max_bytes,
+        notebooks=notebooks,
+        created_chat_sessions=notebooks,
     )
-    client.notes = WebNotesAPI(notes=note_service, mind_maps=mind_maps)
-    client.mind_maps = WebMindMapsAPI(
+    notes = WebNotesAPI(
+        notes=note_service,
+        mind_maps=mind_maps,
+        supervisor=shared.call_supervisor,
+    )
+    mind_maps_api = WebMindMapsAPI(
         rpc=web.executor,
         mind_maps=mind_maps,
-        artifacts=client.artifacts,
-        notebooks=client.notebooks,
-        notes=client.notes,
+        artifacts=artifacts,
+        notebooks=notebooks,
+        notes=notes,
+        supervisor=shared.call_supervisor,
     )
-    client.research = WebResearchAPI(
+    research = WebResearchAPI(
         web.executor,
-        base_timeout=timeout,
-        import_research_timeout=import_research_timeout,
+        supervisor=shared.call_supervisor,
+        base_timeout=transport.read_timeout,
+        import_research_timeout=cast(Any, features.import_research_timeout),
     )
-    client.settings = WebSettingsAPI(web.executor)
-    client.sharing = WebSharingAPI(web.executor)
-    client.labels = WebLabelsAPI(web.executor, list_sources=client.sources.list)
-    client.collections = WebCollectionsAPI(web.executor, list_notebooks=client.notebooks.list)
+    settings = WebSettingsAPI(web.executor, supervisor=shared.call_supervisor)
+    sharing = WebSharingAPI(web.executor, supervisor=shared.call_supervisor)
+    labels = WebLabelsAPI(
+        web.executor,
+        list_sources=sources.list,
+        supervisor=shared.call_supervisor,
+    )
+    collections = WebCollectionsAPI(
+        web.executor,
+        list_notebooks=notebooks.list,
+        supervisor=shared.call_supervisor,
+    )
 
-    return BackendAssembly(
+    namespaces = FeatureNamespaces(
+        notebooks=notebooks,
+        sources=sources,
+        artifacts=artifacts,
+        chat=chat,
+        research=research,
+        notes=notes,
+        mind_maps=mind_maps_api,
+        settings=settings,
+        sharing=sharing,
+        labels=labels,
+        collections=collections,
+    )
+    return WebAssembly(
         backend="web",
+        namespaces=namespaces,
+        raw=WebRawAPI(web.executor),
         runtime=web,
-        collaborators=shared,
+        shared=shared,
         transports=(web.web_transport, web.source_uploader),
-        loop_participants=(shared.call_supervisor, web.reqid, web.auth_coord, client.chat),
+        loop_participants=(shared.call_supervisor, web.reqid, web.auth_coord, chat),
         backends=installed_backend_map("web"),
-        bind_collaborators=web.composed.bind_runtime_collaborators,
+        seams=seams,
     )
 
 
 def build_compatibility_runtime(
     *,
-    auth: AuthTokens,
-    refresh_callback: Callable[[int], Awaitable[AuthTokens]] | None,
-    use_default_refresh_callback: bool,
     shared: SharedRuntime,
-    shared_config: SharedRuntimeConfig,
-    seam_overrides: WebSeamOverrides,
-    timeout: float,
-    refresh_retry_delay: float,
-    rate_limit_max_retries: int,
-    server_error_max_retries: int,
-    max_concurrent_uploads: int | None,
-    async_client_factory: Callable[..., httpx.AsyncClient] | None,
-) -> tuple[Any, ClientSeams]:
+    spec: CompatibilitySpec,
+    deps: CompatibilityDependencies,
+) -> WebRuntime:
     """Build the deprecated Android ``rpc_call`` Web runtime on first use."""
 
-    seams = resolve_client_seams(
-        decode_response=seam_overrides.decode_response,
-        sleep=seam_overrides.sleep,
-        is_auth_error=seam_overrides.is_auth_error,
+    resolved_seams = resolve_client_seams(
+        decode_response=deps.seam_overrides.decode_response,
+        sleep=deps.seam_overrides.sleep,
+        is_auth_error=deps.seam_overrides.is_auth_error,
+    )
+    deps.seam_overrides.install(resolved_seams)
+    seams = ClientSeams(
+        decode_response=deps.seam_overrides.decode,
+        sleep=deps.seam_overrides.delay,
+        is_auth_error=deps.seam_overrides.classify_auth_error,
     )
     web_config, _ = validate_web_config(
-        timeout=timeout,
+        read_timeout=spec.read_timeout,
+        write_timeout=spec.write_timeout,
+        pool_timeout=spec.pool_timeout,
         connect_timeout=DEFAULT_CONNECT_TIMEOUT,
-        refresh_retry_delay=refresh_retry_delay,
-        rate_limit_max_retries=rate_limit_max_retries,
-        server_error_max_retries=server_error_max_retries,
+        refresh_retry_delay=spec.refresh_retry_delay,
+        rate_limit_max_retries=spec.rate_limit_max_retries,
+        server_error_max_retries=spec.server_error_max_retries,
         keepalive=None,
         keepalive_min_interval=DEFAULT_KEEPALIVE_MIN_INTERVAL,
         keepalive_storage_path=None,
-        auth_storage_path=auth.storage_path,
+        auth_storage_path=spec.auth.storage_path,
         limits=None,
-        max_concurrent_uploads=max_concurrent_uploads,
-        max_concurrent_rpcs=shared_config.max_concurrent_rpcs,
+        max_concurrent_uploads=spec.max_concurrent_uploads,
+        max_concurrent_rpcs=spec.shared_config.max_concurrent_rpcs,
         decode_response=seams.decode_response,
         sleep=seams.sleep,
         is_auth_error=seams.is_auth_error,
-        async_client_factory=_resolve_async_client_factory(async_client_factory),
-        shared_config=shared_config,
+        async_client_factory=_resolve_async_client_factory(deps.async_client_factory),
+        shared_config=spec.shared_config,
     )
-    return (
-        build_web_runtime(
-            config=web_config,
-            auth=auth,
-            refresh_callback=refresh_callback,
-            use_default_refresh_callback=use_default_refresh_callback,
-            shared=shared,
-            upload_timeout=None,
-            max_concurrent_uploads=DEFAULT_MAX_CONCURRENT_UPLOADS,
-            cookie_saver=None,
-            cookie_rotator=None,
-            seams=seams,
-        ),
-        seams,
+    return build_web_runtime(
+        config=web_config,
+        auth=spec.auth,
+        refresh_callback=deps.refresh_callback,
+        use_default_refresh_callback=deps.use_default_refresh_callback,
+        shared=shared,
+        start_timeout=None,
+        finalize_timeout=None,
+        drive_timeout=None,
+        max_concurrent_uploads=DEFAULT_MAX_CONCURRENT_UPLOADS,
+        cookie_saver=None,
+        cookie_rotator=None,
+        seams=seams,
     )
 
 

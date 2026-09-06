@@ -1417,12 +1417,22 @@ class TestAskServerAssignedConversationId:
             is_reusable=True,
         )
         async with NotebookLMClient(auth_tokens) as client:
-            with pytest.raises(ChatError, match="hPTbtc"):
+            with pytest.raises(
+                ChatError, match="conversation id could not be resolved"
+            ) as captured:
                 await client.chat.ask(
                     "nb_123",
                     "Q?",
                     source_ids=["src_001"],
                 )
+        from notebooklm.outcomes import CommitState, RecoveryAction
+
+        assert captured.value.commit_state is CommitState.CONFIRMED
+        assert captured.value.operation_metadata is not None
+        assert (
+            captured.value.operation_metadata.recovery_action
+            is RecoveryAction.INSPECT_AND_RECONCILE
+        )
 
     @pytest.mark.asyncio
     async def test_follow_up_sends_caller_conversation_id_in_request(

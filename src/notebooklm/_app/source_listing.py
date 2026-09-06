@@ -39,7 +39,6 @@ async def fetch_sources(
     *,
     label_filter: str | None,
     label_resolver: LabelResolver,
-    json_output: bool = False,
     status_filter: str | None = None,
 ) -> list[Source]:
     """Fetch the notebook's sources, optionally restricted by label and/or status.
@@ -64,11 +63,9 @@ async def fetch_sources(
     notebook's source quota. Filtering on ``preparing`` is the reconciliation
     query: "what did my failed adds leave behind?"
 
-    ``json_output`` is forwarded to the resolver only (it tunes the resolver's
-    own diagnostic routing); this function performs no rendering.
     """
     if label_filter is not None:
-        label_id = await label_resolver(client, notebook_id, label_filter, json_output=json_output)
+        label_id = await label_resolver(client, notebook_id, label_filter)
         # ``labels.sources()`` returns the group's members (joined from a single
         # ``sources.list()``), so the filtered set is fetched once.
         sources = await client.labels.sources(notebook_id, label_id)

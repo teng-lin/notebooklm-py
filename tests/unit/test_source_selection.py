@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._chat import ChatAPI
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.chat import WebChatAPI
 from notebooklm.exceptions import ValidationError
@@ -76,6 +77,8 @@ def mock_core():
     )
 
     async def _rpc_call_dispatch(method, params, **kwargs):
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         if method == _RPC.GET_LAST_CONVERSATION_ID:
             return [[["mock-core-conv-id"]]]
         if method == _RPC.GET_CONVERSATION_TURNS:
@@ -98,8 +101,10 @@ def mock_core():
         read_timeout=None,
         max_response_bytes=None,
         disable_read_timeout_retries=False,
-        **_kwargs,
+        **kwargs,
     ):
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         snapshot = AuthSnapshot(
             csrf_token=auth.csrf_token,
             session_id=auth.session_id,
@@ -203,6 +208,7 @@ def _chat_from_mock_core(mock_core, *, notebooks=None) -> ChatAPI:
     notebooks = notebooks if notebooks is not None else MagicMock()
     return WebChatAPI(
         rpc=mock_core.rpc_executor,
+        supervisor=mock_core,
         transport=mock_core.session_transport,
         reqid=mock_core,
         loop_guard=mock_core,
@@ -1246,7 +1252,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         # Mock notebook data with multiple sources
         # Structure: notebook_data[0][1] = sources list
@@ -1275,7 +1281,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         rpc.return_value = [["nb_123", []]]
 
@@ -1291,7 +1297,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         rpc.return_value = None
 
@@ -1307,7 +1313,7 @@ class TestGetSourceIds:
 
         rpc = AsyncMock()
         core = make_fake_core(rpc_call=rpc)
-        api = WebNotebooksAPI(core.rpc_executor)
+        api = WebNotebooksAPI(core.rpc_executor, supervisor=core)
 
         # Malformed data - missing nested structure
         # Structure: source[0] must be a list, source[0][0] must be a string

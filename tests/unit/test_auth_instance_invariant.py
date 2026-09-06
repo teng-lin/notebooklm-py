@@ -25,7 +25,7 @@ async def test_snapshot_provider_captures_client_auth_by_identity() -> None:
     captured: dict[str, AuthTokens] = {}
 
     async with client:
-        lifecycle = client._collaborators.lifecycle
+        lifecycle = client._lifecycle
         generation = client._collaborators.call_supervisor._current
         expected_epoch = lifecycle._epoch
         assert lifecycle.is_open()

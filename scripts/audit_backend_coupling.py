@@ -179,7 +179,7 @@ def _backend_objects(root: object | None) -> dict[str, int]:
 def _lifecycle_measurement(client: object | None) -> dict[str, list[str]]:
     if client is None:
         return {"loop_participants": [], "transports": []}
-    lifecycle = client._collaborators.lifecycle  # type: ignore[attr-defined]
+    lifecycle = client._lifecycle  # type: ignore[attr-defined]
 
     def labels(values: tuple[object, ...]) -> list[str]:
         result: list[str] = []

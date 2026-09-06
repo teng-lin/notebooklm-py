@@ -75,7 +75,7 @@ class TestValidateUrl:
     def test_rejects_missing_host(self) -> None:
         with pytest.raises(SourceAddValidationError) as exc:
             validate_url("http:///path", allow_internal=False)
-        assert "no host" in str(exc.value).lower()
+        assert exc.value.reason == "url_missing_host"
 
     @pytest.mark.parametrize(
         "url",
@@ -260,7 +260,8 @@ class TestBuildSourceAddPlan:
         # Still a text source — the warning is the change, not the routing.
         assert plan.detected_type == "text"
         assert len(plan.warnings) == 1
-        assert "looks like a path but does not exist" in plan.warnings[0]
+        assert plan.warnings[0].code == "PATH_NOT_FOUND"
+        assert plan.warnings[0].content == "dekc.pptx"
 
     def test_an_existing_file_uploads_regardless_of_extension(self, tmp_path: Path) -> None:
         """The extension set is NOT the upload gate — existence is, and it is checked first.
@@ -335,7 +336,8 @@ class TestBuildSourceAddPlan:
         )
         assert plan.detected_type == "text"
         assert len(plan.warnings) == 1
-        assert "looks like a path" in plan.warnings[0]
+        assert plan.warnings[0].code == "PATH_NOT_FOUND"
+        assert plan.warnings[0].content == "docs/missing.pdf"
 
     def test_autodetect_existing_file(self, tmp_path: Path) -> None:
         f = tmp_path / "doc.pdf"

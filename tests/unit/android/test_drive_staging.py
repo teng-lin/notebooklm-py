@@ -10,6 +10,7 @@ pinned individually.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
@@ -24,12 +25,23 @@ from notebooklm._android.drive_staging import (
     DriveStagingTransfer,
     map_staging_status,
 )
+from notebooklm._android.errors import GrpcStatus, raise_grpc_status
+from notebooklm._android.sources import ADD_TENTATIVE_SOURCES_METHOD, AndroidSourcesAPI
+from notebooklm._idempotency import mark_commit_state, mark_unconfirmed
 from notebooklm.exceptions import (
     AuthError,
+    ClientError,
+    DecodingError,
     RateLimitError,
+    RPCError,
+    RPCTimeoutError,
     ServerError,
+    SourceAddError,
+    SourceProcessingError,
+    SourceTimeoutError,
     ValidationError,
 )
+from notebooklm.outcomes import CommitState
 
 BEARER = "ya29.drive-staging-secret"
 GENERATION = 31
@@ -372,3 +384,168 @@ async def test_an_already_deleted_staged_file_is_not_reported_as_a_failure(
         await transfer.unstage(FILE_ID)
 
     assert caplog.text == ""
+
+
+@pytest.mark.asyncio
+async def test_e8_unconfirmed_import_keeps_staged_drive_file(tmp_path: Path) -> None:
+    """Drive scope must not DELETE a prerequisite an accepted import may still read."""
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+    transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
+    importer_calls: list[str] = []
+    error = SourceAddError("drive://staged", message="import response was lost")
+    mark_unconfirmed(error)
+
+    async def fake_importer(staged_id: str) -> None:
+        importer_calls.append(staged_id)
+        raise error
+
+    with pytest.raises(SourceAddError) as raised:
+        async with transfer.scope(path, path.name, "application/vnd.ms-word") as staged_id:
+            await fake_importer(staged_id)
+
+    assert raised.value is error
+    assert importer_calls == [FILE_ID]
+    assert client.deletes == []
+
+
+@pytest.mark.asyncio
+async def test_registration_auth_refusal_flows_mapper_to_importer_and_cleans_staging(
+    tmp_path: Path,
+) -> None:
+    """A decoded registration auth refusal proves the staged file was unused."""
+    path = tmp_path / "report.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+    transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
+    importer = AndroidSourcesAPI.__new__(AndroidSourcesAPI)
+    importer._transport = _Transport(epoch=7)  # type: ignore[attr-defined]
+
+    async def refuse_registration(*_args: Any, **_kwargs: Any) -> Any:
+        raise_grpc_status(
+            GrpcStatus("UNAUTHENTICATED", 16),
+            method=ADD_TENTATIVE_SOURCES_METHOD,
+            timeout_seconds=5.0,
+        )
+
+    importer._register_tentative_sources = refuse_registration  # type: ignore[method-assign]
+
+    with pytest.raises(AuthError) as captured:
+        async with transfer.scope(path, path.name, "application/vnd.ms-word"):
+            await importer._add_registered_content(
+                "notebook-1",
+                subject=FILE_ID,
+                kind="Drive",
+                operation_label="sources.add_drive",
+                build_content=lambda _source_id: object(),
+                wait=True,
+                wait_timeout=5.0,
+            )
+
+    error = captured.value
+    assert error.commit_state is CommitState.REJECTED
+    assert error.stage == "register"
+    assert getattr(error, "unconfirmed", False) is False
+    assert len(client.deletes) == 1
+
+
+def _staging_matrix_error(case: str) -> BaseException:
+    if case == "register-auth":
+        return mark_commit_state(
+            AuthError("registration refused"),
+            CommitState.NOT_SENT,
+            stage="register",
+        )
+    if case in {"commit-auth", "readiness-auth"}:
+        return AuthError(f"{case} failed")
+    if case == "known-registration":
+        return mark_commit_state(
+            SourceAddError("input"),
+            CommitState.REJECTED,
+            stage="register",
+        )
+    if case == "client-error":
+        return ClientError("decoded but stage unknown")
+    if case == "rpc-timeout":
+        return RPCTimeoutError("deadline", timeout_seconds=1.0)
+    if case == "rpc-error":
+        return RPCError("status")
+    if case == "decode":
+        return DecodingError("malformed")
+    if case == "runtime":
+        return RuntimeError("fenced")
+    if case == "cancel":
+        return asyncio.CancelledError()
+    if case == "timeout":
+        return SourceTimeoutError("source-1", 1.0)
+    if case == "terminal-processing":
+        return mark_commit_state(
+            SourceProcessingError("source-1"),
+            CommitState.CONFIRMED,
+            source_id="source-1",
+        )
+    raise AssertionError(case)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case", "delete_count"),
+    [
+        pytest.param("register-auth", 1, id="register-auth-clean"),
+        pytest.param("known-registration", 1, id="known-registration-clean"),
+        pytest.param("terminal-processing", 1, id="terminal-processing-clean"),
+        pytest.param("commit-auth", 0, id="commit-auth-retain"),
+        pytest.param("readiness-auth", 0, id="readiness-auth-retain"),
+        pytest.param("client-error", 0, id="client-error-retain"),
+        pytest.param("rpc-timeout", 0, id="rpc-timeout-retain"),
+        pytest.param("rpc-error", 0, id="rpc-error-retain"),
+        pytest.param("decode", 0, id="decode-retain"),
+        pytest.param("runtime", 0, id="runtime-retain"),
+        pytest.param("cancel", 0, id="cancel-retain"),
+        pytest.param("timeout", 0, id="timeout-retain"),
+    ],
+)
+async def test_real_staging_scope_cleanup_allowlist_matrix(
+    tmp_path: Path,
+    case: str,
+    delete_count: int,
+) -> None:
+    path = tmp_path / f"{case}.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+    transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
+    error = _staging_matrix_error(case)
+
+    expected_type = SourceAddError if case == "runtime" else type(error)
+    with pytest.raises(expected_type) as captured:
+        async with transfer.scope(path, path.name, "application/vnd.ms-word"):
+            raise error
+
+    assert len(client.deletes) == delete_count
+    if case == "cancel":
+        assert captured.value is error
+        metadata = error._operation_metadata  # type: ignore[attr-defined]
+        assert metadata.prerequisite_ids == (FILE_ID,)
+        assert not hasattr(error, "operation_metadata")
+    elif case == "runtime":
+        wrapped = captured.value
+        assert wrapped is not error
+        assert wrapped.cause is error
+        assert wrapped.commit_state is CommitState.UNKNOWN
+        assert wrapped.stage == "import"
+        assert wrapped.operation_metadata is not None
+        assert wrapped.operation_metadata.prerequisite_ids == (FILE_ID,)
+        assert not hasattr(error, "_operation_metadata")
+        assert not hasattr(error, "operation_metadata")
+    else:
+        assert captured.value is error
+
+
+@pytest.mark.asyncio
+async def test_real_staging_scope_normal_return_cleans_once(tmp_path: Path) -> None:
+    path = tmp_path / "ready.docx"
+    path.write_bytes(b"PK\x03\x04 docx payload")
+    transfer, _, client, _ = _transfer(_Response(200, payload={"id": FILE_ID}))
+
+    async with transfer.scope(path, path.name, "application/vnd.ms-word") as staged_id:
+        assert staged_id == FILE_ID
+
+    assert len(client.deletes) == 1

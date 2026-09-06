@@ -5,6 +5,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from notebooklm._idempotency import (
+    bound_operation_journal_entries,
+    call_unconfirmed_on_transport_loss,
+)
+from notebooklm._web.artifact.generation import ArtifactGenerationService
+from notebooklm._web.wire.decoder import extract_rpc_result
 from notebooklm.artifacts import (
     RATE_LIMIT_RETRY_MAX_DELAY,
     RateLimitRetryEvent,
@@ -12,7 +18,10 @@ from notebooklm.artifacts import (
     with_rate_limit_retry,
 )
 from notebooklm.exceptions import RateLimitError, RPCError
+from notebooklm.outcomes import CommitState, RecoveryAction
+from notebooklm.rpc import RPCMethod
 from notebooklm.types import GenerationStatus
+from tests._fixtures.rpc_error_frames import user_displayable_rejection_chunks
 
 
 def _rate_limited_status() -> GenerationStatus:
@@ -22,6 +31,15 @@ def _rate_limited_status() -> GenerationStatus:
         error="Rate limited",
         error_code="USER_DISPLAYABLE_ERROR",
     )
+
+
+def _decoded_refusal() -> RateLimitError:
+    with pytest.raises(RateLimitError) as captured:
+        extract_rpc_result(
+            user_displayable_rejection_chunks(RPCMethod.CREATE_ARTIFACT.value),
+            RPCMethod.CREATE_ARTIFACT.value,
+        )
+    return captured.value
 
 
 class TestCalculateBackoffDelay:
@@ -44,6 +62,34 @@ class TestCalculateBackoffDelay:
 
 
 class TestWithRateLimitRetry:
+    @pytest.mark.asyncio
+    async def test_e4_unconfirmed_rate_limit_is_not_replayed_by_outer_helper(self) -> None:
+        """A fake transport's unknown-commit verdict must survive outer orchestration."""
+        error = RateLimitError("response lost after artifact create dispatch")
+        transport_calls = 0
+
+        async def fake_transport() -> GenerationStatus:
+            nonlocal transport_calls
+            transport_calls += 1
+
+            async def dispatched_write() -> GenerationStatus:
+                raise error
+
+            return await call_unconfirmed_on_transport_loss(
+                dispatched_write,
+                method="fake.CreateArtifact",
+                what="the fake artifact create",
+            )
+
+        sleep = AsyncMock()
+        with pytest.raises(RateLimitError) as raised:
+            await with_rate_limit_retry(fake_transport, max_retries=1, sleep=sleep)
+
+        assert raised.value is error
+        assert getattr(error, "unconfirmed", False) is True
+        assert transport_calls == 1
+        sleep.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_returns_success_without_retry(self) -> None:
         success = GenerationStatus(task_id="task_123", status="pending")
@@ -92,7 +138,7 @@ class TestWithRateLimitRetry:
         success = GenerationStatus(task_id="task_123", status="pending")
         generate_fn = AsyncMock(
             side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                _decoded_refusal(),
                 success,
             ]
         )
@@ -119,7 +165,7 @@ class TestWithRateLimitRetry:
         success = GenerationStatus(task_id="task_123", status="in_progress")
         generate_fn = AsyncMock(
             side_effect=[
-                RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR"),
+                _decoded_refusal(),
                 success,
             ]
         )
@@ -139,29 +185,29 @@ class TestWithRateLimitRetry:
         # callback shape is uniform across the returned-status and raised paths.
         assert len(events) == 1
         assert events[0].result.error_code == "USER_DISPLAYABLE_ERROR"
-        assert events[0].result.error == "Rate limited"
+        assert "Resource exhausted" in (events[0].result.error or "")
         assert events[0].retry_number == 1
 
     @pytest.mark.asyncio
-    async def test_synthesized_event_is_rate_limited_without_rpc_code(self) -> None:
-        # A RateLimitError with no rpc_code must still produce a callback event
-        # whose result reads as rate-limited (uniform-callback contract), so we
-        # don't fall back to brittle message-substring matching.
-        success = GenerationStatus(task_id="task_123", status="in_progress")
-        generate_fn = AsyncMock(side_effect=[RateLimitError("429 from gateway"), success])
+    async def test_naked_gateway_rate_limit_is_not_replayed(self) -> None:
+        error = RateLimitError("429 from gateway")
+        generate_fn = AsyncMock(side_effect=error)
         events: list[RateLimitRetryEvent] = []
 
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await with_rate_limit_retry(generate_fn, max_retries=2, on_retry=events.append)
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as sleep,
+            pytest.raises(RateLimitError) as captured,
+        ):
+            await with_rate_limit_retry(generate_fn, max_retries=2, on_retry=events.append)
 
-        assert result == success
-        assert len(events) == 1
-        assert events[0].result.error_code == "USER_DISPLAYABLE_ERROR"
-        assert events[0].result.is_rate_limited is True
+        assert captured.value is error
+        assert generate_fn.await_count == 1
+        sleep.assert_not_awaited()
+        assert events == []
 
     @pytest.mark.asyncio
     async def test_reraises_rate_limit_error_when_budget_exhausted(self) -> None:
-        error = RateLimitError("Rate limited", rpc_code="USER_DISPLAYABLE_ERROR")
+        error = _decoded_refusal()
         generate_fn = AsyncMock(side_effect=error)
 
         with (
@@ -186,6 +232,88 @@ class TestWithRateLimitRetry:
 
         assert exc_info.value is error
         assert generate_fn.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_nested_confirmed_generation_is_not_replayed_by_outer_helper(self) -> None:
+        class ScriptedRpc:
+            def __init__(self) -> None:
+                self.results: list[Any] = [
+                    [["artifact-a", None, None, None, 2]],
+                    _decoded_refusal(),
+                ]
+                self.calls = 0
+
+            async def rpc_call(self, method: Any, params: Any, **kwargs: Any) -> Any:
+                del method, params
+                self.calls += 1
+                (entry,) = bound_operation_journal_entries()
+                entry.mark_dispatched()
+                result = self.results.pop(0)
+                if isinstance(result, BaseException):
+                    entry.record(result.commit_state, "decoded refusal")
+                    raise result
+                return result
+
+        rpc = ScriptedRpc()
+        service = ArtifactGenerationService(
+            rpc=rpc,
+            notebooks=AsyncMock(),
+            note_service=AsyncMock(),
+        )
+
+        async def outer_generation() -> GenerationStatus:
+            confirmed = await with_rate_limit_retry(
+                lambda: service.generate_audio("nb-a", source_ids=["source-a"]),
+                max_retries=1,
+                sleep=AsyncMock(),
+            )
+            assert confirmed.task_id == "artifact-a"
+            return await service.generate_audio("nb-b", source_ids=["source-b"])
+
+        with pytest.raises(RateLimitError) as captured:
+            await with_rate_limit_retry(outer_generation, max_retries=2, sleep=AsyncMock())
+
+        assert rpc.calls == 2
+        assert captured.value.commit_state is CommitState.CONFIRMED
+        assert captured.value.operation_metadata.known_resource_ids == ("artifact-a",)
+        assert (
+            captured.value.operation_metadata.recovery_action
+            is RecoveryAction.INSPECT_AND_RECONCILE
+        )
+
+    @pytest.mark.asyncio
+    async def test_inner_exhaustion_does_not_restart_from_outer_retry_budget(self) -> None:
+        class RefusingRpc:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def rpc_call(self, method: Any, params: Any, **kwargs: Any) -> Any:
+                del method, params
+                self.calls += 1
+                (entry,) = bound_operation_journal_entries()
+                entry.mark_dispatched()
+                error = _decoded_refusal()
+                entry.record(CommitState.REJECTED, "decoded refusal")
+                raise error
+
+        rpc = RefusingRpc()
+        service = ArtifactGenerationService(
+            rpc=rpc,
+            notebooks=AsyncMock(),
+            note_service=AsyncMock(),
+        )
+
+        async def outer_generation() -> GenerationStatus:
+            return await with_rate_limit_retry(
+                lambda: service.generate_audio("nb-a", source_ids=["source-a"]),
+                max_retries=1,
+                sleep=AsyncMock(),
+            )
+
+        with pytest.raises(RateLimitError):
+            await with_rate_limit_retry(outer_generation, max_retries=3, sleep=AsyncMock())
+
+        assert rpc.calls == 2
 
     @pytest.mark.asyncio
     async def test_validates_retry_parameters(self) -> None:

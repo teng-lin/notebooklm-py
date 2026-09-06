@@ -9,6 +9,8 @@ mutations and inference kickoffs are not. The AST guardrail keeps every
 
 from __future__ import annotations
 
+from .._idempotency import ReplayGrant, replay_allowed
+
 _ORCHESTRATION = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 _SHARING = "labs.language.tailwind.sharing.LabsTailwindSharingService"
 
@@ -88,7 +90,12 @@ def replay_safe_for(method: str, declared: bool) -> bool:
     # AndroidSession is a generic transport seam and its focused tests (plus
     # future raw callers) legitimately use method names outside the production
     # SDK manifest. Unknown can run once, but it can never inherit replay safety.
-    return declared and ANDROID_RETRY_MANIFEST.get(method, False)
+    grant = (
+        ReplayGrant.REPLAY_SAFE
+        if declared and ANDROID_RETRY_MANIFEST.get(method, False)
+        else ReplayGrant.NO_REPLAY
+    )
+    return replay_allowed(None, grant=grant, disabled=False, remaining=None)
 
 
 __all__ = ["ANDROID_RETRY_MANIFEST", "replay_safe_for"]

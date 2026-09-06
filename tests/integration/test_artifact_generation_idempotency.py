@@ -20,11 +20,8 @@ This file exercises that classification end-to-end:
    This is the "commit-lost-response" safety property.
 3. Happy-path calls still return the artifact / mind-map cleanly.
 
-Wave 2 follow-up: a caller-owned ``idempotent_create`` wrapper around
-``ArtifactsAPI._call_generate`` can later layer
-probe-and-return semantics on top of this foundation (using
-``client.artifacts.list()`` as the baseline-diff probe). That work is
-out of scope here per the b-generation task spec.
+Decoded refusal retries are owned only by the public generation helper; naked
+gateway/status failures remain one-send unknown outcomes.
 """
 
 from __future__ import annotations
@@ -53,8 +50,7 @@ def _wrb_response(rpc_id: str, payload: object) -> str:
     """Build a single-RPC ``batchexecute`` response body.
 
     Mirrors the on-the-wire format ``)]}}'\\n<len>\\n<chunk>\\n`` used by
-    the other mock-transport idempotency tests
-    (``tests/integration/concurrency/test_idempotency_create.py``).
+    the other mock-transport containment tests.
     """
     inner = json.dumps(payload)
     chunk = json.dumps([["wrb.fr", rpc_id, inner, None, None]])

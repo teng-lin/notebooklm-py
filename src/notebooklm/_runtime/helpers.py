@@ -116,6 +116,7 @@ def map_google_http_status(
     *,
     filename: str,
     chain: bool,
+    mutation: bool,
     cause: Exception | None = None,
 ) -> None:
     """Map Google HTTP auth, throttle, and server statuses consistently.
@@ -149,6 +150,11 @@ def map_google_http_status(
             f"Google returned HTTP {status} while {filename}; retry later.",
             status_code=status,
         )
+
+    if mutation:
+        from .._idempotency import mark_unconfirmed
+
+        mark_unconfirmed(public_error)
 
     if chain and cause is not None:
         raise public_error from cause

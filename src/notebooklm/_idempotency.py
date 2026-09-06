@@ -1,62 +1,737 @@
-"""Transport-neutral probe-then-retry helpers for mutating create workflows.
-
-:func:`idempotent_create` wraps create-RPC patterns where the server may have
-committed a write even though the client observed a transport failure. The
-wrapper probes for the server-side commit before it permits another create.
-
-Per-API probes used by :func:`idempotent_create` are caller-supplied
-because there is no universal probe key (notebooks: title +
-baseline-diff; ``add_url``: url-match + baseline-diff; ``add_drive``:
-Drive ``documentId``-match + baseline-diff; ``add_text``: no probe
-possible — see :class:`~notebooklm.exceptions.NonIdempotentRetryError`).
-
-The web executor's RPC classification registry remains separate in
-``notebooklm._web.policy``. This module owns only backend-neutral outcome
-helpers; it accepts both web RPC method enum values and Android gRPC method
-strings without importing either backend package.
-"""
+"""Transport-neutral commit evidence and replay decisions."""
 
 from __future__ import annotations
 
-import logging
+import asyncio
 import traceback
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
+from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Generic, Literal, Protocol, TypeVar
+from typing import Literal, Protocol, TypeVar
+from uuid import uuid4
 
+from ._redact import redact
 from .exceptions import (
     NetworkError,
+    NotebookLMError,
     RateLimitError,
     RPCError,
     ServerError,
 )
-
-logger = logging.getLogger(__name__)
+from .outcomes import (
+    BatchOutcome,
+    CommitState,
+    OperationMetadata,
+    ReconciliationCandidate,
+    ReconciliationReport,
+    RecoveryAction,
+    _AttemptMetadata,
+)
 
 T = TypeVar("T")
-
-
-class _CreateResultKind(str, Enum):
-    """How an idempotent create obtained its result."""
-
-    CREATED = "created"
-    PROBED = "probed"
+_E = TypeVar("_E", bound=BaseException)
 
 
 @dataclass(frozen=True)
-class _IdempotentCreateResult(Generic[T]):
-    """Private provenance carrier for idempotent create callers."""
+class _JournalCollector:
+    """Task-qualified sink used by the runtime operation context."""
 
-    value: T
-    kind: _CreateResultKind
+    owner_task: asyncio.Task[object]
+    collect: Callable[[JournalEntry], None]
 
 
-def _coerce_create_result(value: T | _IdempotentCreateResult[T]) -> _IdempotentCreateResult[T]:
-    """Attach fresh-create provenance to a legacy value-only result."""
-    if isinstance(value, _IdempotentCreateResult):
-        return value
-    return _IdempotentCreateResult(value=value, kind=_CreateResultKind.CREATED)
+_JOURNAL_COLLECTORS: ContextVar[tuple[_JournalCollector, ...]] = ContextVar(
+    "notebooklm_operation_journal_collectors", default=()
+)
+
+
+@dataclass(frozen=True)
+class _JournalBinding:
+    """Task-qualified physical-send evidence binding."""
+
+    owner_task: asyncio.Task[object] | None
+    entries: tuple[JournalEntry, ...]
+
+
+_JOURNAL_BINDINGS: ContextVar[tuple[_JournalBinding, ...]] = ContextVar(
+    "notebooklm_operation_journal_bindings", default=()
+)
+
+
+@dataclass(frozen=True)
+class _OperationJournalOwner:
+    owner_task: asyncio.Task[object]
+    journal: OperationJournal
+
+
+_OPERATION_JOURNALS: ContextVar[tuple[_OperationJournalOwner, ...]] = ContextVar(
+    "notebooklm_active_operation_journals", default=()
+)
+
+
+@dataclass(frozen=True)
+class SendIdentity:
+    """Value identity for one semantic send within a local invocation."""
+
+    invocation_id: str
+    operation: str
+    method: str
+    phase: str
+    member: int | None = None
+
+
+@dataclass
+class AttemptRecord:
+    """Mutable settlement record for one physical dispatch attempt."""
+
+    ordinal: int
+    commit_state: CommitState
+    evidence: str | None = None
+    known_resource_ids: tuple[str, ...] = ()
+
+
+@dataclass
+class JournalEntry:
+    """Bound semantic send whose attempts aggregate conservatively."""
+
+    identity: SendIdentity
+    _journal: OperationJournal = field(repr=False, compare=False)
+    _attempts: list[AttemptRecord] = field(default_factory=list, repr=False)
+    _preflight_state: CommitState = CommitState.NOT_SENT
+    _preflight_evidence: str | None = None
+    _known_resource_ids: list[str] = field(default_factory=list, repr=False)
+    recovery_action: RecoveryAction = RecoveryAction.NONE
+    source_id: str | None = None
+    stage: str | None = None
+    reconciliation: ReconciliationReport | None = None
+    batch_outcome: BatchOutcome | None = None
+    prerequisite_ids: tuple[str, ...] = ()
+
+    @property
+    def attempts(self) -> tuple[AttemptRecord, ...]:
+        return tuple(self._attempts)
+
+    @property
+    def known_resource_ids(self) -> tuple[str, ...]:
+        return tuple(self._known_resource_ids)
+
+    @property
+    def commit_state(self) -> CommitState:
+        states = tuple(attempt.commit_state for attempt in self._attempts)
+        if CommitState.UNKNOWN in states:
+            return CommitState.UNKNOWN
+        if CommitState.CONFIRMED in states:
+            return CommitState.CONFIRMED
+        if CommitState.REJECTED in states:
+            return CommitState.REJECTED
+        return self._preflight_state
+
+    def mark_dispatched(self) -> AttemptRecord:
+        return self._journal.mark_dispatched(self)
+
+    def record(
+        self,
+        state: CommitState,
+        evidence: str,
+        *,
+        attempt: AttemptRecord | None = None,
+        known_resource_ids: tuple[str, ...] = (),
+    ) -> None:
+        self._journal.record(
+            self,
+            state,
+            evidence,
+            attempt=attempt,
+            known_resource_ids=known_resource_ids,
+        )
+
+    def remember_resource_ids(self, *resource_ids: str) -> None:
+        """Retain already-known handles without settling an attempt."""
+
+        self._journal.remember_resource_ids(self, resource_ids)
+
+    def snapshot(self) -> OperationMetadata:
+        return self._journal.snapshot(self)
+
+
+class OperationJournal:
+    """Private journal of mutation evidence for one logical workflow."""
+
+    def __init__(self, operation: str) -> None:
+        self.operation = redact(operation, max_length=200)
+        self._entries: dict[SendIdentity, JournalEntry] = {}
+
+    @staticmethod
+    def invocation_id() -> str:
+        return uuid4().hex
+
+    @property
+    def entries(self) -> tuple[JournalEntry, ...]:
+        return tuple(self._entries.values())
+
+    def entry(self, identity: SendIdentity) -> JournalEntry:
+        return self._entries.setdefault(identity, JournalEntry(identity, self))
+
+    def new_entry(
+        self,
+        *,
+        method: str,
+        phase: str = "mutation",
+        member: int | None = None,
+        invocation_id: str | None = None,
+        operation: str | None = None,
+    ) -> JournalEntry:
+        entry = self.entry(
+            SendIdentity(
+                invocation_id or self.invocation_id(),
+                redact(operation or self.operation, max_length=200),
+                redact(method, max_length=200),
+                redact(phase, max_length=200),
+                member,
+            )
+        )
+        try:
+            task = asyncio.current_task()
+        except RuntimeError:
+            task = None
+        if task is not None:
+            for collector in _JOURNAL_COLLECTORS.get():
+                if collector.owner_task is task:
+                    collector.collect(entry)
+        return entry
+
+    def mark_dispatched(self, entry: JournalEntry) -> AttemptRecord:
+        self._check_entry(entry)
+        attempt = AttemptRecord(len(entry._attempts) + 1, CommitState.UNKNOWN, "dispatched")
+        entry._attempts.append(attempt)
+        return attempt
+
+    def remember_resource_ids(
+        self,
+        entry: JournalEntry,
+        resource_ids: tuple[str, ...],
+    ) -> None:
+        self._check_entry(entry)
+        for resource_id in resource_ids:
+            safe_id = redact(resource_id, max_length=200)
+            if safe_id and safe_id not in entry._known_resource_ids:
+                entry._known_resource_ids.append(safe_id)
+
+    def record(
+        self,
+        entry: JournalEntry,
+        state: CommitState,
+        evidence: str,
+        *,
+        attempt: AttemptRecord | None = None,
+        known_resource_ids: tuple[str, ...] = (),
+    ) -> None:
+        self._check_entry(entry)
+        for resource_id in known_resource_ids:
+            safe_id = redact(resource_id, max_length=200)
+            if safe_id and safe_id not in entry._known_resource_ids:
+                entry._known_resource_ids.append(safe_id)
+        if attempt is None and entry._attempts:
+            attempt = entry._attempts[-1]
+        if attempt is None:
+            if state is not CommitState.NOT_SENT:
+                raise ValueError("dispatch must be recorded before mutation settlement")
+            entry._preflight_state = state
+            entry._preflight_evidence = redact(evidence, max_length=200)
+            return
+        if attempt not in entry._attempts:
+            raise ValueError("attempt does not belong to journal entry")
+        if attempt.commit_state is not CommitState.UNKNOWN and attempt.commit_state is not state:
+            raise ValueError("a settled attempt cannot be overwritten")
+        attempt.commit_state = state
+        attempt.evidence = redact(evidence, max_length=200)
+        attempt.known_resource_ids = tuple(
+            dict.fromkeys(
+                (
+                    *attempt.known_resource_ids,
+                    *(redact(item, max_length=200) for item in known_resource_ids if item),
+                )
+            )
+        )
+
+    def snapshot(
+        self,
+        entry: JournalEntry | None = None,
+        *,
+        primary: JournalEntry | None = None,
+        primary_metadata: OperationMetadata | None = None,
+        extra_entries: tuple[JournalEntry, ...] = (),
+    ) -> OperationMetadata:
+        """Freeze one entry or an aggregate of every semantic workflow send."""
+
+        if entry is not None:
+            self._check_entry(entry)
+            return self._entry_snapshot(entry)
+        unique_entries: list[JournalEntry] = []
+        for candidate in (*self.entries, *extra_entries):
+            if not any(candidate is existing for existing in unique_entries):
+                unique_entries.append(candidate)
+        all_entries = tuple(unique_entries)
+        if not all_entries:
+            return OperationMetadata(operation=self.operation)
+        if primary is not None and not any(primary is item for item in all_entries):
+            raise ValueError("primary entry does not belong to the workflow snapshot")
+        selected = primary or next(iter(all_entries))
+        if primary_metadata is not None and (
+            primary is None or primary_metadata.invocation_id != primary.identity.invocation_id
+        ):
+            raise ValueError("primary metadata does not match the selected journal entry")
+        leaves = tuple(
+            primary_metadata
+            if primary_metadata is not None and item is primary
+            else item._journal._entry_snapshot(item)
+            for item in all_entries
+        )
+        mutation_leaves = (
+            tuple(
+                leaf
+                for leaf in leaves
+                if leaf.phase not in {"baseline", "readback", "observation", "cleanup", "wait"}
+            )
+            or leaves
+        )
+        states = tuple(leaf.commit_state for leaf in mutation_leaves)
+        state = (
+            CommitState.UNKNOWN
+            if CommitState.UNKNOWN in states
+            else CommitState.CONFIRMED
+            if CommitState.CONFIRMED in states
+            else CommitState.REJECTED
+            if CommitState.REJECTED in states
+            else CommitState.NOT_SENT
+        )
+        selected_leaf = (
+            primary_metadata
+            if primary_metadata is not None
+            else selected._journal._entry_snapshot(selected)
+        )
+        return replace(
+            selected_leaf,
+            commit_state=state,
+            known_resource_ids=tuple(
+                dict.fromkeys(
+                    resource_id for leaf in leaves for resource_id in leaf.known_resource_ids
+                )
+            ),
+            attempts=tuple(attempt for leaf in leaves for attempt in leaf.attempts),
+            prerequisite_ids=tuple(
+                dict.fromkeys(
+                    resource_id for leaf in leaves for resource_id in leaf.prerequisite_ids
+                )
+            ),
+            entries=leaves,
+        )
+
+    def _entry_snapshot(self, entry: JournalEntry) -> OperationMetadata:
+        identity = entry.identity
+        return OperationMetadata(
+            commit_state=entry.commit_state,
+            operation=identity.operation,
+            invocation_id=identity.invocation_id,
+            method=identity.method,
+            phase=identity.phase,
+            member=identity.member,
+            known_resource_ids=entry.known_resource_ids,
+            recovery_action=entry.recovery_action,
+            source_id=entry.source_id,
+            stage=entry.stage,
+            reconciliation=entry.reconciliation,
+            batch_outcome=entry.batch_outcome,
+            attempts=tuple(
+                _AttemptMetadata(
+                    ordinal=item.ordinal,
+                    commit_state=item.commit_state,
+                    evidence=item.evidence,
+                    known_resource_ids=item.known_resource_ids,
+                )
+                for item in entry._attempts
+            ),
+            prerequisite_ids=entry.prerequisite_ids,
+        )
+
+    def _check_entry(self, entry: JournalEntry) -> None:
+        if entry._journal is not self or self._entries.get(entry.identity) is not entry:
+            raise ValueError("journal entry is not bound to this journal")
+
+
+def attach_operation_metadata(exc: _E, metadata: OperationMetadata) -> _E:
+    """Attach one immutable canonical carrier to a public exception."""
+
+    exc._operation_metadata = metadata  # type: ignore[attr-defined]
+    # ``operation`` existed as a temporary P1 projection. Keep it readable
+    # through the migration without making it another metadata authority.
+    if isinstance(exc, NotebookLMError) and metadata.operation is not None:
+        exc.operation = metadata.operation  # type: ignore[attr-defined]
+    if isinstance(exc, NotebookLMError) and metadata.reconciliation is not None:
+        exc.reconciliation_candidates = tuple(  # type: ignore[attr-defined]
+            candidate.id for candidate in metadata.reconciliation.candidates
+        )
+        exc.unresolved_inputs = (  # type: ignore[attr-defined]
+            metadata.reconciliation.unresolved_inputs
+        )
+    return exc
+
+
+@contextmanager
+def collect_operation_journal_entries(
+    collect: Callable[[JournalEntry], None],
+    journal: OperationJournal | None = None,
+) -> Iterator[None]:
+    """Collect entries created by the current admitted task.
+
+    The callback is deliberately task-qualified.  Context variables are copied
+    into newly-created tasks, but shared producers must not inherit a waiter's
+    replay identity merely because their task was spawned from its call stack.
+    Registered exclusive children receive their operation context explicitly
+    through the supervisor instead.
+    """
+
+    task = asyncio.current_task()
+    if task is None:  # pragma: no cover - runtime operation invariant
+        raise RuntimeError("operation journal collection requires an asyncio task")
+    collector = _JournalCollector(task, collect)
+    stack = _JOURNAL_COLLECTORS.get()
+    token = _JOURNAL_COLLECTORS.set((*stack, collector))
+    journals = _OPERATION_JOURNALS.get()
+    journal_token = (
+        None
+        if journal is None
+        else _OPERATION_JOURNALS.set((*journals, _OperationJournalOwner(task, journal)))
+    )
+    try:
+        yield
+    finally:
+        if journal_token is not None:
+            _OPERATION_JOURNALS.reset(journal_token)
+        _JOURNAL_COLLECTORS.reset(token)
+
+
+@contextmanager
+def bind_operation_journal_entries(
+    *entries: JournalEntry | None,
+) -> Iterator[None]:
+    """Bind canonical send evidence around one transport invocation."""
+
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        # A few structural tests synchronously drive a coroutine only to its
+        # first transport raise. ContextVars still scope that path correctly;
+        # real sends always have an owning asyncio task.
+        task = None
+    binding = _JournalBinding(task, tuple(entry for entry in entries if entry is not None))
+    stack = _JOURNAL_BINDINGS.get()
+    token = _JOURNAL_BINDINGS.set((*stack, binding))
+    try:
+        yield
+    except BaseException:
+        raise
+    else:
+        # Structural test doubles and narrow collaborator seams may return a
+        # decoded response without implementing a wire terminal. Treat only a
+        # clean return as acceptance; real terminals have already opened their
+        # attempt, so this is a no-op in production transport paths.
+        for entry in binding.entries:
+            if not entry.attempts and entry.commit_state is CommitState.NOT_SENT:
+                entry.mark_dispatched()
+    finally:
+        _JOURNAL_BINDINGS.reset(token)
+
+
+def bound_operation_journal_entries() -> tuple[JournalEntry, ...]:
+    """Return the innermost send binding owned by the current task."""
+
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    for binding in reversed(_JOURNAL_BINDINGS.get()):
+        if binding.owner_task is task:
+            return binding.entries
+    return ()
+
+
+def bound_operation_journal_entry() -> JournalEntry | None:
+    """Return the sole task-owned send binding, if exactly one is active."""
+
+    entries = bound_operation_journal_entries()
+    return next(iter(entries), None) if len(entries) == 1 else None
+
+
+@contextmanager
+def detached_operation_journal_context() -> Iterator[None]:
+    """Clear waiter-specific evidence/replay bindings in a detached producer."""
+
+    collector_token = _JOURNAL_COLLECTORS.set(())
+    binding_token = _JOURNAL_BINDINGS.set(())
+    journal_token = _OPERATION_JOURNALS.set(())
+    generation_token = _GENERATION_BINDINGS.set(())
+    try:
+        yield
+    finally:
+        _GENERATION_BINDINGS.reset(generation_token)
+        _OPERATION_JOURNALS.reset(journal_token)
+        _JOURNAL_BINDINGS.reset(binding_token)
+        _JOURNAL_COLLECTORS.reset(collector_token)
+
+
+def attach_journal_entry(
+    exc: _E,
+    entry: JournalEntry,
+    *,
+    recovery_action: RecoveryAction | None = None,
+    workflow: bool = False,
+) -> _E:
+    """Attach the authoritative snapshot of a bound semantic send."""
+
+    existing = getattr(exc, "operation_metadata", None)
+    if existing is not None:
+        entry.remember_resource_ids(*existing.known_resource_ids)
+        entry.source_id = entry.source_id or existing.source_id
+        entry.stage = entry.stage or existing.stage
+        entry.reconciliation = entry.reconciliation or existing.reconciliation
+        entry.batch_outcome = entry.batch_outcome or existing.batch_outcome
+        entry.prerequisite_ids = tuple(
+            dict.fromkeys((*entry.prerequisite_ids, *existing.prerequisite_ids))
+        )
+        if entry.recovery_action is RecoveryAction.NONE:
+            entry.recovery_action = existing.recovery_action
+    if recovery_action is not None:
+        entry.recovery_action = recovery_action
+    metadata = entry._journal.snapshot(primary=entry) if workflow else entry.snapshot()
+    return attach_operation_metadata(exc, metadata)
+
+
+def attach_operation_journal(
+    exc: _E,
+    journal: OperationJournal,
+    *,
+    primary: JournalEntry | None = None,
+    recovery_action: RecoveryAction | None = None,
+    extra_entries: tuple[JournalEntry, ...] = (),
+) -> _E:
+    """Attach an immutable workflow-wide aggregate while preserving every send."""
+
+    existing = getattr(exc, "operation_metadata", None)
+    exact_primary_metadata: OperationMetadata | None = None
+    if existing is not None and existing.invocation_id is not None:
+        escaping_leaf = next(
+            (
+                leaf
+                for leaf in existing.entries
+                if leaf.invocation_id == existing.invocation_id
+                and (existing.operation is None or leaf.operation == existing.operation)
+                and (existing.method is None or leaf.method == existing.method)
+                and (existing.phase is None or leaf.phase == existing.phase)
+                and (existing.member is None or leaf.member == existing.member)
+            ),
+            existing,
+        )
+        candidates = (*journal.entries, *extra_entries)
+        matched = next(
+            (
+                entry
+                for entry in candidates
+                if entry.identity.invocation_id == existing.invocation_id
+                and (existing.operation is None or entry.identity.operation == existing.operation)
+                and (existing.method is None or entry.identity.method == existing.method)
+                and (existing.phase is None or entry.identity.phase == existing.phase)
+                and (existing.member is None or entry.identity.member == existing.member)
+            ),
+            None,
+        )
+        if matched is not None:
+            primary = matched
+            exact_primary_metadata = escaping_leaf
+    metadata = journal.snapshot(
+        primary=primary,
+        primary_metadata=exact_primary_metadata,
+        extra_entries=extra_entries,
+    )
+    if existing is not None and exact_primary_metadata is None:
+        metadata = replace(
+            metadata,
+            known_resource_ids=tuple(
+                dict.fromkeys((*metadata.known_resource_ids, *existing.known_resource_ids))
+            ),
+            source_id=metadata.source_id or existing.source_id,
+            stage=metadata.stage or existing.stage,
+            reconciliation=metadata.reconciliation or existing.reconciliation,
+            batch_outcome=metadata.batch_outcome or existing.batch_outcome,
+            prerequisite_ids=tuple(
+                dict.fromkeys((*metadata.prerequisite_ids, *existing.prerequisite_ids))
+            ),
+            recovery_action=(
+                existing.recovery_action
+                if metadata.recovery_action is RecoveryAction.NONE
+                else metadata.recovery_action
+            ),
+        )
+    if recovery_action is not None:
+        metadata = replace(metadata, recovery_action=recovery_action)
+    return attach_operation_metadata(exc, metadata)
+
+
+def reconciliation_report(
+    candidate_ids: tuple[str, ...] | list[str],
+    unresolved_inputs: tuple[str, ...] | list[str],
+    *,
+    reason: str = "outcome could not be correlated",
+) -> ReconciliationReport:
+    """Build the bounded, redaction-safe report used by migrated producers."""
+
+    return ReconciliationReport(
+        candidates=tuple(
+            ReconciliationCandidate(str(candidate)) for candidate in candidate_ids[:20]
+        ),
+        unresolved_inputs=tuple(str(item) for item in unresolved_inputs[:20]),
+        reason=reason,
+    )
+
+
+@dataclass
+class GenerationRetryBinding:
+    """Private helper-owned generation journal retained across retry sleeps."""
+
+    owner_task: asyncio.Task[object]
+    journal: OperationJournal
+    entries: list[JournalEntry] = field(default_factory=list)
+    linked_entries: list[JournalEntry] = field(default_factory=list)
+    ancestors: tuple[GenerationRetryBinding, ...] = ()
+    semantic_key: str | None = None
+    replay_disabled: bool = False
+
+
+_GENERATION_BINDINGS: ContextVar[tuple[GenerationRetryBinding, ...]] = ContextVar(
+    "notebooklm_generation_retry_bindings", default=()
+)
+
+
+def new_generation_retry_binding() -> GenerationRetryBinding:
+    """Create a helper binding and invalidate any inherited ancestor replay."""
+
+    task = asyncio.current_task()
+    if task is None:  # pragma: no cover - async helper invariant
+        raise RuntimeError("generation retry binding requires an asyncio task")
+    ancestors = _GENERATION_BINDINGS.get()
+    for ancestor in ancestors:
+        ancestor.replay_disabled = True
+    active_journal = next(
+        (
+            owner.journal
+            for owner in reversed(_OPERATION_JOURNALS.get())
+            if owner.owner_task is task
+        ),
+        None,
+    )
+    return GenerationRetryBinding(
+        owner_task=task,
+        journal=active_journal or OperationJournal("artifacts.generate"),
+        ancestors=ancestors,
+    )
+
+
+@contextmanager
+def activate_generation_retry_binding(
+    binding: GenerationRetryBinding,
+) -> Iterator[GenerationRetryBinding]:
+    """Expose the helper binding only while its generation callable runs."""
+
+    stack = _GENERATION_BINDINGS.get()
+    token: Token[tuple[GenerationRetryBinding, ...]] = _GENERATION_BINDINGS.set((*stack, binding))
+    try:
+        yield binding
+    finally:
+        _GENERATION_BINDINGS.reset(token)
+
+
+def claim_generation_entry(*, method: str, semantic_key: str) -> JournalEntry:
+    """Claim or allocate the semantic send used by one backend generation."""
+
+    task = asyncio.current_task()
+    binding = next(reversed(_GENERATION_BINDINGS.get()), None)
+    binding = binding if binding is None or binding.owner_task is task else None
+    if binding is None:
+        journal = OperationJournal("artifacts.generate")
+        return journal.new_entry(method=method)
+    if binding.semantic_key is None:
+        binding.semantic_key = semantic_key
+        entry = binding.journal.new_entry(method=method, operation="artifacts.generate")
+        binding.entries.append(entry)
+        for ancestor in binding.ancestors:
+            ancestor.linked_entries.append(entry)
+        return entry
+    if binding.semantic_key == semantic_key and binding.entries:
+        return next(iter(binding.entries))
+    binding.replay_disabled = True
+    entry = binding.journal.new_entry(method=method, operation="artifacts.generate")
+    binding.entries.append(entry)
+    for ancestor in binding.ancestors:
+        ancestor.linked_entries.append(entry)
+    return entry
+
+
+def settle_generation_failure(
+    binding: GenerationRetryBinding,
+    exc: _E,
+) -> _E:
+    """Attach helper-owned evidence and prevent retries after any uncertain send."""
+
+    if not binding.entries and not binding.linked_entries:
+        return exc
+    entry = (binding.entries or binding.linked_entries)[0]
+    has_confirmed_descendant = any(
+        item.commit_state is CommitState.CONFIRMED
+        for item in (*binding.entries, *binding.linked_entries)
+    )
+    attach_operation_journal(
+        exc,
+        binding.journal,
+        primary=entry,
+        recovery_action=(
+            RecoveryAction.INSPECT_AND_RECONCILE if has_confirmed_descendant else None
+        ),
+        extra_entries=tuple(binding.linked_entries),
+    )
+    if any(
+        item.commit_state in (CommitState.CONFIRMED, CommitState.UNKNOWN)
+        for item in (*binding.entries, *binding.linked_entries)
+    ):
+        binding.replay_disabled = True
+    return exc
+
+
+class ReplayGrant(str, Enum):
+    """Private semantic permission supplied by the operation owner."""
+
+    REFUSAL_RETRY_AUTHORIZED = "refusal_retry_authorized"
+    NO_REPLAY = "no_replay"
+    REPLAY_SAFE = "replay_safe"
+
+
+def replay_allowed(
+    exc: BaseException | None,
+    *,
+    grant: ReplayGrant,
+    disabled: bool,
+    remaining: float | None,
+) -> bool:
+    """Return whether canonical evidence and operation semantics permit replay."""
+    if disabled or (remaining is not None and remaining <= 0):
+        return False
+    if grant is ReplayGrant.NO_REPLAY:
+        return False
+    if grant is ReplayGrant.REPLAY_SAFE:
+        return True
+    state = getattr(exc, "commit_state", CommitState.UNKNOWN)
+    return state in (CommitState.REJECTED, CommitState.NOT_SENT)
 
 
 # The translated exception types that ``rpc_call`` raises when the
@@ -65,9 +740,8 @@ def _coerce_create_result(value: T | _IdempotentCreateResult[T]) -> _IdempotentC
 # inside ``RuntimeTransport.perform_authed_post`` does not replay these;
 # instead ``rpc_call`` translates the underlying ``TransportServerError`` /
 # network failure into ``ServerError`` / ``NetworkError`` / ``RateLimitError``
-# and surfaces it here. ``idempotent_create`` catches exactly these; anything else (auth,
-# validation, decoding) propagates unchanged because it indicates the
-# request never reached a state where the write could land.
+# and surfaces it here. Anything else (auth, validation, decoding) propagates
+# unchanged unless a producer has attached more precise evidence.
 #
 # Note: ``RPCTimeoutError`` inherits from ``NetworkError`` so it is
 # already covered by the ``NetworkError`` catch.
@@ -80,10 +754,41 @@ _RETRYABLE_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
 AMBIGUOUS_WRITE_ERRORS = _RETRYABLE_TRANSPORT_ERRORS
 
 
-_E = TypeVar("_E", bound=BaseException)
+def mark_commit_state(
+    exc: _E,
+    state: CommitState,
+    *,
+    operation: str | None = None,
+    source_id: str | None = None,
+    stage: str | None = None,
+    recovery_action: RecoveryAction = RecoveryAction.NONE,
+) -> _E:
+    """Attach positive commit evidence without overwriting earlier evidence."""
+    metadata = getattr(exc, "operation_metadata", None)
+    current = None if metadata is None else metadata.commit_state
+    carrier = metadata or OperationMetadata()
+    return attach_operation_metadata(
+        exc,
+        replace(
+            carrier,
+            commit_state=(state if current is None else current),
+            operation=carrier.operation or operation,
+            source_id=carrier.source_id or source_id,
+            stage=carrier.stage or stage,
+            recovery_action=(recovery_action if current is None else carrier.recovery_action),
+        ),
+    )
 
 
-def mark_unconfirmed(exc: _E) -> _E:
+def mark_unconfirmed(
+    exc: _E,
+    *,
+    force_unknown: bool = False,
+    operation: str | None = None,
+    source_id: str | None = None,
+    stage: str | None = None,
+    recovery_action: RecoveryAction = RecoveryAction.INSPECT_AND_RECONCILE,
+) -> _E:
     """Tag an error as *"the write may have committed and we cannot confirm it"*.
 
     Raised by a probe that could not answer (#2220). This is a genuinely
@@ -133,8 +838,125 @@ def mark_unconfirmed(exc: _E) -> _E:
     sites. Every ``except SourceAddError`` / ``except RPCError`` keeps matching
     exactly as before; only code that asks for the marker sees a difference.
     """
-    exc.unconfirmed = True  # type: ignore[attr-defined]
-    return exc
+    metadata = getattr(exc, "operation_metadata", None)
+    current = None if metadata is None else metadata.commit_state
+    if not force_unknown and current in (
+        CommitState.NOT_SENT,
+        CommitState.REJECTED,
+        CommitState.CONFIRMED,
+    ):
+        assert metadata is not None
+        return attach_operation_metadata(
+            exc,
+            replace(
+                metadata,
+                operation=metadata.operation or operation,
+                source_id=metadata.source_id or source_id,
+                stage=metadata.stage or stage,
+            ),
+        )
+    return attach_operation_metadata(
+        exc,
+        replace(
+            metadata or OperationMetadata(),
+            commit_state=CommitState.UNKNOWN,
+            operation=operation or (None if metadata is None else metadata.operation),
+            source_id=source_id or (None if metadata is None else metadata.source_id),
+            stage=stage or (None if metadata is None else metadata.stage),
+            recovery_action=recovery_action,
+        ),
+    )
+
+
+def attach_reconciliation_report(
+    exc: _E,
+    report: ReconciliationReport,
+    *,
+    operation: str | None = None,
+    commit_state: CommitState = CommitState.UNKNOWN,
+    recovery_action: RecoveryAction = RecoveryAction.INSPECT_AND_RECONCILE,
+) -> _E:
+    """Attach typed candidate evidence without promoting it to a known ID."""
+
+    metadata = (
+        getattr(exc, "operation_metadata", None)
+        or getattr(exc, "_operation_metadata", None)
+        or OperationMetadata()
+    )
+    return attach_operation_metadata(
+        exc,
+        replace(
+            metadata,
+            commit_state=commit_state,
+            operation=operation or metadata.operation,
+            recovery_action=recovery_action,
+            reconciliation=report,
+        ),
+    )
+
+
+def attach_batch_outcome(
+    exc: _E,
+    outcome: BatchOutcome,
+    *,
+    preserve_commit_state: bool = False,
+) -> _E:
+    """Retain ordered batch settlement on the original escaping exception."""
+
+    metadata = (
+        getattr(exc, "operation_metadata", None)
+        or getattr(exc, "_operation_metadata", None)
+        or OperationMetadata()
+    )
+    states = tuple(item.commit_state for item in outcome.items)
+    state = (
+        CommitState.UNKNOWN
+        if CommitState.UNKNOWN in states
+        else CommitState.CONFIRMED
+        if CommitState.CONFIRMED in states
+        else CommitState.REJECTED
+        if CommitState.REJECTED in states
+        else CommitState.NOT_SENT
+    )
+    recovery_action = (
+        metadata.recovery_action
+        if preserve_commit_state
+        else RecoveryAction.INSPECT_AND_RECONCILE
+        if state is CommitState.UNKNOWN
+        else RecoveryAction.NONE
+        if metadata.commit_state is CommitState.UNKNOWN
+        else metadata.recovery_action
+    )
+    return attach_operation_metadata(
+        exc,
+        replace(
+            metadata,
+            commit_state=(metadata.commit_state if preserve_commit_state else state),
+            recovery_action=recovery_action,
+            batch_outcome=outcome,
+        ),
+    )
+
+
+def attach_prerequisite_ids(exc: _E, *resource_ids: str) -> _E:
+    """Retain prerequisite recovery handles on a public error carrier."""
+
+    metadata = (
+        getattr(exc, "operation_metadata", None)
+        or getattr(exc, "_operation_metadata", None)
+        or OperationMetadata()
+    )
+    return attach_operation_metadata(
+        exc,
+        replace(
+            metadata,
+            prerequisite_ids=tuple(
+                dict.fromkeys(
+                    (*metadata.prerequisite_ids, *(item for item in resource_ids if item))
+                )
+            ),
+        ),
+    )
 
 
 class _MethodIdentifier(Protocol):
@@ -161,6 +983,8 @@ def unresolved_commit_error(
     exc: _E,
     *,
     preserve_exception: bool = False,
+    force_unknown: bool = False,
+    operation: str | None = None,
 ) -> _E | RPCError:
     """Build or tag an error for a write whose commit outcome is unknown.
 
@@ -172,7 +996,7 @@ def unresolved_commit_error(
     """
 
     if preserve_exception:
-        return mark_unconfirmed(exc)
+        return mark_unconfirmed(exc, force_unknown=force_unknown, operation=operation)
 
     rpc_code = exc.rpc_code if isinstance(exc, RPCError) else None
     return mark_unconfirmed(
@@ -182,7 +1006,50 @@ def unresolved_commit_error(
             f"No automatic retry was attempted. {exc}",
             method_id=_method_id(method),
             rpc_code=rpc_code,
-        )
+        ),
+        force_unknown=force_unknown,
+        operation=operation,
+    )
+
+
+def _attach_transport_loss_entry(exc: BaseException, entry: JournalEntry) -> None:
+    """Attach one send, conservatively filling a missing producer handoff."""
+
+    producer_state = getattr(exc, "commit_state", None)
+    if producer_state in (
+        CommitState.NOT_SENT,
+        CommitState.REJECTED,
+        CommitState.CONFIRMED,
+    ):
+        if entry.commit_state is CommitState.UNKNOWN:
+            entry.record(producer_state, "producer evidence")
+        elif (
+            entry.commit_state is CommitState.NOT_SENT
+            and not entry.attempts
+            and entry._preflight_evidence is None
+            and producer_state is not CommitState.NOT_SENT
+        ):
+            entry.mark_dispatched()
+            entry.record(producer_state, "producer evidence")
+    elif (
+        entry.commit_state is CommitState.NOT_SENT
+        and not entry.attempts
+        and entry._preflight_evidence is None
+    ):
+        # Transport-free fakes and third-party producer seams may accept the
+        # journal parameter without recording their dispatch handoff. A
+        # transport-loss exception is ambiguous unless the producer attached
+        # positive NOT_SENT evidence, so fail closed instead of treating the
+        # entry's untouched default as proof that nothing was sent.
+        entry.mark_dispatched()
+    attach_journal_entry(
+        exc,
+        entry,
+        recovery_action=(
+            RecoveryAction.INSPECT_AND_RECONCILE
+            if entry.commit_state is CommitState.UNKNOWN
+            else None
+        ),
     )
 
 
@@ -192,6 +1059,9 @@ async def call_unconfirmed_on_transport_loss(
     method: _Method,
     what: str,
     chain: Literal["exc"] | None = "exc",
+    force_unknown: bool = False,
+    operation: str | None = None,
+    journal_entry: JournalEntry | None = None,
 ) -> T:
     """Run one non-replayed write and mark transport-loss ambiguity.
 
@@ -208,7 +1078,21 @@ async def call_unconfirmed_on_transport_loss(
     try:
         return await call()
     except AMBIGUOUS_WRITE_ERRORS as exc:
-        mark_unconfirmed(exc)
+        if journal_entry is not None:
+            _attach_transport_loss_entry(exc, journal_entry)
+        else:
+            mark_unconfirmed(exc, force_unknown=force_unknown, operation=operation)
+        if chain == "exc":
+            del call, method, what
+            raise
+        failure = exc
+    except RPCError as exc:
+        if not force_unknown:
+            raise
+        if journal_entry is not None:
+            _attach_transport_loss_entry(exc, journal_entry)
+        else:
+            mark_unconfirmed(exc, force_unknown=True, operation=operation)
         if chain == "exc":
             del call, method, what
             raise
@@ -233,127 +1117,32 @@ async def call_unconfirmed_on_transport_loss(
     raise failure from None
 
 
-async def idempotent_create(
-    create: Callable[[], Awaitable[T]],
-    probe: Callable[[], Awaitable[T | None]],
-    *,
-    max_attempts: int = 2,
-    label: str = "create",
-) -> _IdempotentCreateResult[T]:
-    """Probe-then-retry wrapper for mutating create RPCs.
-
-    Args:
-        create: Coroutine factory that issues the create RPC. The
-            underlying ``rpc_call`` MUST be invoked with
-            ``disable_internal_retries=True`` so the first transport
-            failure surfaces to this wrapper instead of being replayed
-            blindly by the retry middleware inside
-            ``RuntimeTransport.perform_authed_post``.
-        probe: Coroutine factory that returns the resource if it
-            already exists server-side, or ``None`` if not. Probes are
-            API-specific (notebooks: list-then-baseline-diff by title;
-            ``add_url``: list-then-url-match and ``add_drive``:
-            list-then-documentId-match, both filtered by a pre-create
-            baseline).
-
-            **A probe must return ``None`` only when it has affirmatively
-            established that no matching resource exists.** ``None`` is
-            read here as evidence that the create did not land, and it is
-            acted on by re-issuing that create. A probe that cannot answer
-            — its own list failed, a match it cannot attribute, several
-            matches it cannot choose between — must raise instead (#2220).
-            Raising aborts the retry loop and surfaces to the caller. A probe
-            that wraps its own failure (all four do) yields
-            ``__cause__`` = that failure and ``__context__.__context__`` =
-            the transport error, since the wrap happens inside the probe's own
-            ``except``; a probe that raises directly puts the transport error
-            at ``__context__``.
-
-            The alternative, swallowing and returning ``None``, silently
-            converts a ``PROBE_THEN_CREATE`` operation into an
-            at-least-once one at the moment its guarantee matters most.
-            The web policy's ``AT_LEAST_ONCE_ACCEPTED`` classification exists
-            for callers who want that, and it is opt-in by name.
-        max_attempts: Maximum total ``create()`` invocations (default
-            2 — one initial + one retry). Each attempt is followed by
-            a probe; the probe runs only after a transport failure.
-        label: Diagnostic label embedded in log messages.
-
-    Returns:
-        A private result carrying the value and whether it came from a
-        successful create or a probe match. Callers must unwrap ``value``
-        before returning it from a public API.
-
-    Raises:
-        Whatever ``create()`` raises on the final attempt if the probe
-        consistently returns ``None`` and retries are exhausted. Non-
-        transport exceptions (auth, validation, decoding) propagate
-        from the first ``create()`` call without invoking the probe.
-
-        Whatever ``probe()`` raises, immediately and without a further
-        create attempt. The probe is awaited inside the handler for the
-        transport failure, so that failure is always reachable through the
-        ``__context__`` chain and the traceback shows both halves: the
-        create that may have committed, and the probe that could not say
-        whether it did. Its exact depth depends on the probe — one level
-        (``__context__``) when the probe re-raises directly, two when the
-        probe wraps its own failure first, as all four in-tree probes do.
-
-    Cancellation:
-        Pure ``await`` — no ``asyncio.shield``. A ``CancelledError``
-        propagates immediately at the next yield point so the caller
-        keeps full structured-concurrency semantics.
-    """
-    if max_attempts < 1:
-        raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
-
-    last_error: BaseException | None = None
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return _IdempotentCreateResult(value=await create(), kind=_CreateResultKind.CREATED)
-        except _RETRYABLE_TRANSPORT_ERRORS as exc:
-            last_error = exc
-            logger.warning(
-                "%s attempt %d/%d failed with transport error (%s); "
-                "probing for server-side commit before retry",
-                label,
-                attempt,
-                max_attempts,
-                type(exc).__name__,
-            )
-            existing = await probe()
-            if existing is not None:
-                logger.info(
-                    "%s probe found existing resource after transport "
-                    "failure on attempt %d; returning it without retry",
-                    label,
-                    attempt,
-                )
-                return _IdempotentCreateResult(value=existing, kind=_CreateResultKind.PROBED)
-            # Probe returned None: the create did not land. Loop and
-            # retry as long as we have attempts remaining.
-            logger.debug(
-                "%s probe returned no match on attempt %d; will retry create",
-                label,
-                attempt,
-            )
-
-    # Exhausted attempts. Re-raise the last transport error so callers
-    # see the original failure, not a synthetic wrapper.
-    assert last_error is not None  # loop body always sets this on failure
-    logger.error(
-        "%s failed after %d attempts with no probe match; re-raising last error",
-        label,
-        max_attempts,
-    )
-    raise last_error
-
-
 __all__ = [
     "AMBIGUOUS_WRITE_ERRORS",
+    "AttemptRecord",
+    "GenerationRetryBinding",
+    "JournalEntry",
+    "OperationJournal",
+    "ReplayGrant",
+    "SendIdentity",
+    "activate_generation_retry_binding",
+    "bind_operation_journal_entries",
+    "bound_operation_journal_entry",
+    "bound_operation_journal_entries",
+    "detached_operation_journal_context",
+    "attach_batch_outcome",
+    "attach_journal_entry",
+    "attach_operation_metadata",
+    "attach_operation_journal",
+    "attach_prerequisite_ids",
+    "attach_reconciliation_report",
     "call_unconfirmed_on_transport_loss",
-    "idempotent_create",
+    "claim_generation_entry",
+    "mark_commit_state",
     "mark_unconfirmed",
+    "new_generation_retry_binding",
+    "reconciliation_report",
+    "replay_allowed",
+    "settle_generation_failure",
     "unresolved_commit_error",
 ]

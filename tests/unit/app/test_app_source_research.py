@@ -97,12 +97,14 @@ class TestValidateAddResearchFlags:
     def test_cited_only_without_import_all_rejected(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_add_research_flags(import_all=False, cited_only=True, no_wait=False)
-        assert "--cited-only requires --import-all" in str(exc.value)
+        assert exc.value.reason == "cited_requires_import"
+        assert "--" not in str(exc.value)
 
     def test_no_wait_with_import_all_rejected(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_add_research_flags(import_all=True, cited_only=False, no_wait=True)
-        assert "--import-all requires" in str(exc.value)
+        assert exc.value.reason == "import_requires_wait"
+        assert "--" not in str(exc.value)
 
 
 # ===========================================================================
@@ -207,7 +209,7 @@ async def test_completed_import_all_but_no_sources_skips_importer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_json_output_threaded_to_importer() -> None:
+async def test_importer_receives_only_neutral_operation_inputs() -> None:
     client = _client()
     client.research.start = AsyncMock(return_value=_start())
     client.research.wait_for_completion = AsyncMock(
@@ -216,11 +218,9 @@ async def test_json_output_threaded_to_importer() -> None:
     importer = AsyncMock(
         return_value=SimpleNamespace(imported=[], sources=[], cited_selection=None)
     )
-    await execute_source_add_research(
-        client, _plan(import_all=True, json_output=True), import_sources=importer
-    )
+    await execute_source_add_research(client, _plan(import_all=True), import_sources=importer)
     _, kwargs = importer.call_args
-    assert kwargs["json_output"] is True
+    assert "json_output" not in kwargs
 
 
 @pytest.mark.asyncio

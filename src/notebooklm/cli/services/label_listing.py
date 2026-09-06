@@ -31,6 +31,45 @@ if TYPE_CHECKING:
     from ...client import NotebookLMClient
 
 
+def label_resolution_projection(
+    exc: LabelResolutionError,
+) -> tuple[str, str, dict[str, Any]]:
+    """Project a semantic label resolution failure onto the CLI contract."""
+    matches = exc.matches
+    candidate_payload = [
+        {"id": match.id, "emoji": match.emoji, "source_count": match.source_count}
+        for match in matches
+    ]
+    if exc.reason == "ambiguous_id":
+        lines = [f"Ambiguous label id '{exc.token}' matches {len(matches)} labels:"]
+        tail = "Specify more characters to disambiguate."
+        code, extra = "AMBIGUOUS_ID", {"id": exc.token, "candidates": candidate_payload}
+    elif exc.reason == "ambiguous_name":
+        lines = [f"Name '{exc.token}' matches {len(matches)} labels. Use a label id instead:"]
+        tail = "Specify the label id to disambiguate."
+        code, extra = "AMBIGUOUS_NAME", {"name": exc.token, "candidates": candidate_payload}
+    else:
+        message = (
+            f"No label found matching '{exc.token}'. "
+            "Run 'notebooklm label list' to see available labels."
+        )
+        extra = {"id": exc.token, "notebook_id": exc.notebook_id}
+        if exc.candidates:
+            extra["candidates"] = list(exc.candidates)
+        return message, "NOT_FOUND", extra
+
+    for match in matches[:5]:
+        emoji = f"{match.emoji} " if match.emoji else ""
+        lines.append(
+            f"  {match.id} {emoji}"
+            f"({match.source_count} source{'s' if match.source_count != 1 else ''})"
+        )
+    if len(matches) > 5:
+        lines.append(f"  ... and {len(matches) - 5} more")
+    lines.append(tail)
+    return "\n".join(lines), code, extra
+
+
 @dataclass(frozen=True)
 class LabelListPlan:
     """Prepared inputs for :func:`execute_label_list`."""
@@ -95,5 +134,6 @@ __all__ = [
     "LabelListPlan",
     "LabelResolutionError",
     "execute_label_list",
+    "label_resolution_projection",
     "resolve_label_id",
 ]

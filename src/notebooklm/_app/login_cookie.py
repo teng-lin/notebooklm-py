@@ -74,7 +74,7 @@ class BrowserCookieProbeRequest:
     raw_cookies: list[dict[str, Any]] = field(repr=False)
     browser_name: str
     browser_profile: str | None
-    quiet: bool
+    abort_on_network_error: bool
     validate_before_probe: bool
 
 
@@ -444,7 +444,9 @@ def probe_browser_cookie_jar(
     validate_with_recovery: ValidateWithRecovery,
 ) -> BrowserCookieProbeSuccess | BrowserCookieProbeFailure:
     """Validate and probe one browser cookie set."""
-    raw_cookies = browser_name = browser_profile = quiet = validate_before_probe = None
+    raw_cookies = browser_name = browser_profile = abort_on_network_error = (
+        validate_before_probe
+    ) = None
     storage_state = validation_error = cookie_names = hint = None
     cookie_map = jar = probe_coroutine = accounts = account = projected = projected_accounts = None
     result: BrowserCookieProbeSuccess | BrowserCookieProbeFailure | None = None
@@ -452,7 +454,7 @@ def probe_browser_cookie_jar(
         raw_cookies = request.raw_cookies
         browser_name = request.browser_name
         browser_profile = request.browser_profile
-        quiet = request.quiet
+        abort_on_network_error = request.abort_on_network_error
         validate_before_probe = request.validate_before_probe
 
         if validate_before_probe:
@@ -488,7 +490,7 @@ def probe_browser_cookie_jar(
             result = BrowserCookieProbeFailure(code="STALE_COOKIES", detail=str(exc))
             return result
         except httpx.RequestError as exc:
-            if quiet:
+            if abort_on_network_error:
                 raise
             result = BrowserCookieProbeFailure(code="NETWORK_ERROR", detail=str(exc))
             return result
@@ -522,7 +524,7 @@ def probe_browser_cookie_jar(
         result = BrowserCookieProbeSuccess(accounts=projected)
         return result
     finally:
-        del request, raw_cookies, browser_name, browser_profile, quiet
+        del request, raw_cookies, browser_name, browser_profile, abort_on_network_error
         del validate_before_probe, storage_state, validation_error, cookie_names, hint
         del (
             cookie_map,

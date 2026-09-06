@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 # Skip cleanly when the `mcp` extra (fastmcp + the mcp SDK) is absent; see
@@ -14,6 +16,7 @@ from mcp.types import ToolAnnotations  # noqa: E402 - after importorskip guard
 from notebooklm.mcp._confirm import (  # noqa: E402 - after importorskip guard
     DESTRUCTIVE,
     READ_ONLY,
+    confirmed_name_deprecation,
     needs_confirmation,
 )
 
@@ -48,3 +51,21 @@ def test_destructive_annotation() -> None:
 def test_annotations_are_distinct() -> None:
     assert READ_ONLY is not DESTRUCTIVE
     assert READ_ONLY.readOnlyHint != DESTRUCTIVE.readOnlyHint or READ_ONLY != DESTRUCTIVE
+
+
+def test_confirmed_legacy_references_emit_one_registered_warning() -> None:
+    with pytest.warns(DeprecationWarning, match="canonical notebook and target ids") as caught:
+        note = confirmed_name_deprecation("Notebook", "Source")
+
+    assert len(caught) == 1
+    assert note is not None
+
+
+def test_confirmed_canonical_references_are_silent() -> None:
+    canonical = "11111111-1111-1111-1111-111111111111"
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        note = confirmed_name_deprecation(canonical, canonical)
+
+    assert not caught
+    assert note is None

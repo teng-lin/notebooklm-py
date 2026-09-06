@@ -25,6 +25,7 @@ from ._logging import _truncate_response_preview, scrub_secrets
 
 if TYPE_CHECKING:
     from ._types.artifacts import GenerationStatus
+    from .outcomes import BatchOutcome, CommitState, OperationMetadata
 
 ArtifactStalledPhase = Literal["pending", "in_progress"]
 _PREVIEW_LIMIT = _logging._PREVIEW_LIMIT
@@ -37,6 +38,7 @@ __all__ = [
     # Cross-domain umbrellas
     "NotFoundError",
     "WaitTimeoutError",
+    "OperationTimeoutError",
     # Validation/Config
     "ValidationError",
     "ConfigurationError",
@@ -122,6 +124,66 @@ class NotebookLMError(Exception):
             handle_error(e)
     """
 
+    @property
+    def operation_metadata(self) -> OperationMetadata | None:
+        """Immutable commit evidence attached by the operation owner, if any."""
+
+        return getattr(self, "_operation_metadata", None)
+
+    @property
+    def commit_state(self) -> CommitState | None:
+        """Compatibility projection of :attr:`operation_metadata`."""
+
+        metadata = self.operation_metadata
+        return None if metadata is None else metadata.commit_state
+
+    @property
+    def batch_outcome(self) -> BatchOutcome | None:
+        """Ordered partial batch settlement, when this error ended a batch."""
+
+        metadata = self.operation_metadata
+        return None if metadata is None else metadata.batch_outcome
+
+    @property
+    def unconfirmed(self) -> bool:
+        """Whether recovery requires inspection instead of blind replay."""
+
+        from .outcomes import CommitState, RecoveryAction
+
+        metadata = self.operation_metadata
+        return metadata is not None and (
+            metadata.commit_state is CommitState.UNKNOWN
+            or metadata.recovery_action is RecoveryAction.INSPECT_AND_RECONCILE
+        )
+
+    @property
+    def source_id(self) -> str | None:
+        metadata = self.operation_metadata
+        return None if metadata is None else metadata.source_id
+
+    @source_id.setter
+    def source_id(self, value: str | None) -> None:
+        from dataclasses import replace
+
+        from .outcomes import OperationMetadata
+
+        metadata = self.operation_metadata or OperationMetadata()
+        self._operation_metadata = replace(metadata, source_id=value)
+
+    @property
+    def stage(self) -> str | None:
+        metadata = self.operation_metadata
+        return None if metadata is None else metadata.stage
+
+    @stage.setter
+    def stage(self, value: str | None) -> None:
+        from dataclasses import replace
+
+        from .outcomes import OperationMetadata
+
+        metadata = self.operation_metadata or OperationMetadata()
+        self._operation_metadata = replace(metadata, stage=value)
+
 
 # =============================================================================
 # Cross-domain umbrellas
@@ -205,6 +267,22 @@ class WaitTimeoutError(NotebookLMError, TimeoutError):
         still a ``TimeoutError``) is backward-compatible for ``except
         TimeoutError`` callers and newly catchable via the umbrella.
     """
+
+
+class OperationTimeoutError(WaitTimeoutError):
+    """An opt-in whole-operation deadline expired.
+
+    Unlike feature-owned polling and RPC timeout subclasses, this error covers
+    the complete admitted workflow: queueing, auth, retry sleeps, transport,
+    reconciliation, polling, and required settlement. Mutation evidence remains
+    available through :attr:`NotebookLMError.operation_metadata`.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({str(self)!r})"
 
 
 # =============================================================================

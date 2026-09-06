@@ -329,6 +329,7 @@ class DriveFetcher:
         max_bytes: int = _MAX_DRIVE_DOWNLOAD_BYTES,
         authuser: str | None = None,
         temp_dir: Path | None = None,
+        timeout: httpx.Timeout | None = None,
     ) -> None:
         self._cookies_provider = cookies_provider
         self._client_factory = client_factory
@@ -338,6 +339,11 @@ class DriveFetcher:
         # Where temp downloads land; ``None`` = the system temp dir. Injectable so
         # concurrent downloads (and tests) can scope their own directory.
         self._temp_dir = temp_dir
+        self._timeout = (
+            timeout
+            if timeout is not None
+            else httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
+        )
 
     async def __call__(self, ref: DriveRef) -> DriveDownload:
         url = _download_url(ref.file_id, authuser=self._authuser, resource_key=ref.resource_key)
@@ -357,8 +363,7 @@ class DriveFetcher:
         self, url: str, ref: DriveRef, *, allow_confirm: bool
     ) -> DriveDownload | _ConfirmRedirect:
         file_id = ref.file_id
-        timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
-        client = self._client_factory(self._cookies_provider(), timeout)
+        client = self._client_factory(self._cookies_provider(), self._timeout)
         try:
             async with client:  # noqa: SIM117 - stream() nested so the client is entered first
                 async with client.stream("GET", url) as response:
@@ -390,6 +395,7 @@ class DriveFetcher:
             response,
             filename=f"fetching Drive file {file_id}",
             chain=True,
+            mutation=False,
             cause=status_error,
         )
 

@@ -68,6 +68,7 @@ class TestConfigureChat:
         core = make_fake_core(rpc_call=rpc_call)
         return WebChatAPI(
             rpc=core.rpc_executor,
+            supervisor=core,
             transport=MagicMock(),
             reqid=MagicMock(),
             loop_guard=MagicMock(spec=LoopGuard),
@@ -222,7 +223,6 @@ class TestAddSourceDrive:
         # notebook), second is the ADD_SOURCE echo.
         rpc_call = AsyncMock(
             side_effect=[
-                [["Notebook", []]],
                 [[[["source_id_123"], "My Document", [None, 0], [None, 2]]]],
             ]
         )
@@ -240,7 +240,7 @@ class TestAddSourceDrive:
         # idempotency probe can tell a fresh add from a pre-existing copy of the
         # same Drive file (#2113), then issues the ADD_SOURCE.
         methods = [call.args[0] for call in rpc_call.call_args_list]
-        assert methods == [RPCMethod.GET_NOTEBOOK, RPCMethod.ADD_SOURCE]
+        assert methods == [RPCMethod.ADD_SOURCE]
         params = rpc_call.call_args_list[-1].args[1]
 
         # Verify source data structure - params[0] is [source_data] (single wrap)
@@ -273,7 +273,11 @@ class TestGetNotebookDescription:
         ]
         rpc_call = AsyncMock(return_value=mock_response)
         core = make_fake_core(rpc_call=rpc_call)
-        notebooks = WebNotebooksAPI(core.rpc_executor, sources_api=MagicMock())
+        notebooks = WebNotebooksAPI(
+            core.rpc_executor,
+            supervisor=core,
+            sources_api=MagicMock(),
+        )
 
         result = await notebooks.get_description("notebook_123")
 

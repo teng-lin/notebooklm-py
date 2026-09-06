@@ -11,11 +11,9 @@ This file validates the Wave-2 classifications added to
                        no reliable probe/retry wrapper exists, so transport
                        loss is surfaced as unconfirmed)
 
-It also exercises the P1-2 fix to ``NotebooksAPI.create``: a
-``NetworkError`` during the probe ``list()`` MUST propagate, not be
-silently coerced to "no match", so the caller learns the prior create
-may have committed server-side and the retry loop won't duplicate the
-resource.
+It also exercises the P1 create containment contract: notebook and source
+creates make one mutation request, perform no pre-create probe, never re-POST,
+and preserve conservative commit evidence across the full executor path.
 
 Tests use ``httpx.MockTransport`` — no cassettes, no network. They are
 opted out of the VCR tier enforcement via
@@ -31,8 +29,9 @@ import httpx
 import pytest
 
 import notebooklm._runtime.helpers as _runtime_helpers
-from notebooklm import NetworkError, NotebookLMClient, RPCError
+from notebooklm import NotebookLMClient, ServerError
 from notebooklm._web.policy import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 
@@ -381,25 +380,7 @@ async def test_notebooks_create_probe_propagates_network_error(
     auth_tokens,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A ``NetworkError`` raised by the probe ``list()`` MUST propagate
-    out of ``NotebooksAPI.create``, not be silently coerced to "no match".
-
-    Before the fix the probe's ``except Exception:`` clause swallowed
-    everything and returned ``None``, which let ``idempotent_create``
-    re-issue the create on the next attempt — potentially duplicating
-    the notebook if the original create actually committed server-side.
-
-    Test setup:
-      * LIST_NOTEBOOKS returns an empty baseline on the FIRST call so
-        ``baseline_ids = set()`` (the create can proceed).
-      * CREATE_NOTEBOOK fails with 502 → the executor's retry loop is
-        disabled because CREATE_NOTEBOOK is registered PROBE_THEN_CREATE,
-        so the failure surfaces as a single ``ServerError`` (treated as
-        a transport failure by ``idempotent_create``).
-      * The probe call to LIST_NOTEBOOKS then fails with a *transport-
-        layer* connection error that translates to ``NetworkError``.
-      * ``NetworkError`` MUST propagate out instead of being swallowed.
-    """
+    """Notebook create on 5xx sends once and performs no baseline/readback probe."""
     list_call_count = 0
     create_call_count = 0
 
@@ -435,45 +416,21 @@ async def test_notebooks_create_probe_propagates_network_error(
     transport = httpx.MockTransport(handler)
     client = await _make_client_with_transport(transport, auth_tokens)
     try:
-        with pytest.raises(NetworkError):
+        with pytest.raises(ServerError) as caught:
             await client.notebooks.create("Some Title")
     finally:
         await client.close()
 
-    # Bite-check: the retry-safe LIST_NOTEBOOKS / CREATE_NOTEBOOK 5xx path
-    # exercises the backoff sleep, so the patched seam was invoked —
-    # proving the object-form patch reached production ``resolve_sleep``.
-    assert sleep_calls >= 1, "patched asyncio.sleep was never invoked"
-
-    # Sanity check: the probe was actually attempted and the create fired
-    # once before the probe failed. LIST_NOTEBOOKS is retry-safe so the
-    # inner transport retry loop fires for the probe — we don't pin a
-    # precise count, only that the probe path was entered (>1 list call).
-    assert list_call_count >= 2, (
-        f"expected ≥2 LIST_NOTEBOOKS calls (baseline + probe), got {list_call_count}"
-    )
-    assert create_call_count >= 1, (
-        f"expected ≥1 CREATE_NOTEBOOK call before probe NetworkError, got {create_call_count}"
-    )
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert sleep_calls == 0
+    assert list_call_count == 0
+    assert create_call_count == 1
 
 
 async def test_notebooks_create_probe_propagates_non_network_exception(
     auth_tokens,
 ) -> None:
-    """A non-network probe failure aborts the create instead of retrying (#2220).
-
-    **This test was inverted by #2220.** It previously pinned the opposite
-    contract — that only ``NetworkError`` propagates and every other probe
-    failure stays "best-effort", swallowed into ``None`` so the create is
-    re-issued. That best-effort reading is the bug: ``None`` is not a neutral
-    "don't know", it is the specific claim *"no matching notebook exists"*,
-    which ``idempotent_create`` acts on by repeating a create that runs with
-    internal retries disabled precisely because repeating it can duplicate.
-
-    A decoding error means the probe could not look, not that it looked and
-    found nothing. So the create must fire once, and the caller must be told
-    the outcome is unknown.
-    """
+    """A second scripted create response is never consumed after a 5xx."""
     list_call_count = 0
     create_call_count = 0
     nb_id_after_retry = "nb_after_retry"
@@ -519,18 +476,124 @@ async def test_notebooks_create_probe_propagates_non_network_exception(
     transport = httpx.MockTransport(handler)
     client = await _make_client_with_transport(transport, auth_tokens)
     try:
-        with pytest.raises(RPCError, match="Cannot confirm notebook"):
+        with pytest.raises(ServerError) as caught:
             await client.notebooks.create(title)
     finally:
         await client.close()
 
-    # The load-bearing assertion. Restore the probe's ``return None`` and this
-    # becomes 2 — a second notebook created on the strength of a probe that
-    # never managed to look.
+    # The load-bearing assertion: no transport or outer retry may consume the
+    # scripted second response.
     assert create_call_count == 1, (
         f"expected 1 CREATE_NOTEBOOK call (the probe could not confirm, so no "
         f"retry was permitted), got {create_call_count}"
     )
-    # Baseline + the one probe that failed; no second probe, since the retry
-    # loop aborted rather than continuing.
-    assert list_call_count == 2, f"expected 2 LIST_NOTEBOOKS, got {list_call_count}"
+    assert getattr(caught.value, "unconfirmed", False) is True
+    assert list_call_count == 0
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["notebook", "url", "youtube", "drive", "file"],
+)
+@pytest.mark.asyncio
+async def test_create_families_send_once_without_preflight_or_repost(
+    auth_tokens,
+    tmp_path,
+    operation: str,
+) -> None:
+    """All demoted create families stop after one 5xx mutation attempt."""
+    expected_method = {
+        "notebook": RPCMethod.CREATE_NOTEBOOK,
+        "url": RPCMethod.ADD_SOURCE,
+        "youtube": RPCMethod.ADD_SOURCE,
+        "drive": RPCMethod.ADD_SOURCE,
+        "file": RPCMethod.ADD_SOURCE_FILE,
+    }[operation]
+    mutation_calls = 0
+    readback_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal mutation_calls, readback_calls
+        rpc_id = _rpc_id_in_request(request)
+        if rpc_id == expected_method.value:
+            mutation_calls += 1
+            return httpx.Response(502, text="bad gateway")
+        if rpc_id == RPCMethod.GET_NOTEBOOK.value:
+            readback_calls += 1
+            return httpx.Response(
+                200,
+                text=_wrb_response(RPCMethod.GET_NOTEBOOK.value, [["Notebook", []]]),
+            )
+        return httpx.Response(404, text=f"unexpected rpc_id={rpc_id}")
+
+    upload = tmp_path / "one-send.txt"
+    upload.write_text("payload")
+    client = await _make_client_with_transport(
+        httpx.MockTransport(handler), auth_tokens, server_error_max_retries=5
+    )
+    try:
+        with pytest.raises(Exception) as caught:
+            if operation == "notebook":
+                await client.notebooks.create("One send")
+            elif operation == "url":
+                await client.sources.add_url("nb", "https://example.com/article")
+            elif operation == "youtube":
+                await client.sources.add_url("nb", "https://youtube.com/watch?v=dQw4w9WgXcQ")
+            elif operation == "drive":
+                await client.sources.add_drive("nb", "drive-id", "Drive")
+            else:
+                await client.sources.add_file("nb", upload)
+    finally:
+        await client.close()
+
+    assert mutation_calls == 1
+    # File registration performs one read-only candidate inspection after
+    # uncertainty; no family performs the retired pre-create probe.
+    assert readback_calls == (1 if operation == "file" else 0)
+    assert getattr(caught.value, "commit_state", None) is CommitState.UNKNOWN
+    assert getattr(caught.value, "unconfirmed", False) is True
+
+
+@pytest.mark.parametrize(
+    ("failure", "status", "expected_commit_state"),
+    [
+        pytest.param(None, 429, CommitState.UNKNOWN, id="http-429"),
+        pytest.param(None, 502, CommitState.UNKNOWN, id="http-5xx"),
+        pytest.param(None, 401, CommitState.UNKNOWN, id="http-auth"),
+        pytest.param(httpx.WriteError, None, CommitState.UNKNOWN, id="write"),
+        pytest.param(httpx.ConnectError, None, CommitState.NOT_SENT, id="connect"),
+        pytest.param(httpx.PoolTimeout, None, CommitState.NOT_SENT, id="pool"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_mutation_transport_evidence_never_reposts(
+    auth_tokens,
+    failure: type[httpx.RequestError] | None,
+    status: int | None,
+    expected_commit_state: CommitState,
+) -> None:
+    """Never replay writes; preserve ambiguity only once transport dispatch is possible."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if failure is not None:
+            raise failure("synthetic transport failure", request=request)
+        assert status is not None
+        return httpx.Response(status, text="synthetic status")
+
+    client = await _make_client_with_transport(
+        httpx.MockTransport(handler), auth_tokens, server_error_max_retries=5
+    )
+    try:
+        with pytest.raises(Exception) as caught:
+            await client.notebooks.create("One send")
+    finally:
+        await client.close()
+
+    assert calls == 1
+    assert getattr(caught.value, "commit_state", None) is expected_commit_state
+    assert getattr(caught.value, "unconfirmed", False) is (
+        expected_commit_state is CommitState.UNKNOWN
+    )

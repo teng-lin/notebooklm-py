@@ -34,6 +34,7 @@ from notebooklm._android.source_transfers import (
     COPY_SOURCES_ASYNC_METHOD,
 )
 from notebooklm._android.sources import AndroidSourcesAPI
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.collections import WebCollectionsAPI
 from notebooklm._web.labels import WebLabelsAPI
@@ -297,9 +298,22 @@ def _method_owner(api_type: type[Any], method_name: str) -> type[Any]:
 
 
 def _build_web_api(namespace: str, side_effect: Any) -> Any:
-    fake = make_fake_core(rpc_call=AsyncMock(side_effect=side_effect))
+    outcomes = list(side_effect) if isinstance(side_effect, list) else [side_effect]
+
+    async def terminal(*args: Any, **kwargs: Any) -> Any:
+        del args
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
+        if not outcomes:
+            raise AssertionError("web test terminal exhausted")
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    fake = make_fake_core(rpc_call=AsyncMock(side_effect=terminal))
     if namespace == "notebooks":
-        return WebNotebooksAPI(fake.rpc_executor, fake)
+        return WebNotebooksAPI(fake.rpc_executor, fake, supervisor=fake)
     if namespace == "sources":
         return WebSourcesAPI(
             fake.rpc_executor,
@@ -315,16 +329,24 @@ def _build_web_api(namespace: str, side_effect: Any) -> Any:
             note_service=MagicMock(),
         )
     if namespace == "labels":
-        return WebLabelsAPI(fake.rpc_executor, list_sources=AsyncMock(return_value=[]))
+        return WebLabelsAPI(
+            fake.rpc_executor,
+            supervisor=fake,
+            list_sources=AsyncMock(return_value=[]),
+        )
     if namespace == "collections":
-        return WebCollectionsAPI(fake.rpc_executor, list_notebooks=AsyncMock(return_value=[]))
+        return WebCollectionsAPI(
+            fake.rpc_executor,
+            supervisor=fake,
+            list_notebooks=AsyncMock(return_value=[]),
+        )
     if namespace == "sharing":
-        return WebSharingAPI(fake.rpc_executor)
+        return WebSharingAPI(fake.rpc_executor, supervisor=fake)
     if namespace == "research":
-        return WebResearchAPI(fake.rpc_executor, source_lister=fake)
+        return WebResearchAPI(fake.rpc_executor, supervisor=fake, source_lister=fake)
     if namespace == "notes":
         service = NoteService(fake.rpc_executor, supervisor=fake)
-        return WebNotesAPI(notes=service, mind_maps=MagicMock())
+        return WebNotesAPI(supervisor=fake, notes=service, mind_maps=MagicMock())
     raise AssertionError(f"unknown manifest namespace: {namespace}")
 
 

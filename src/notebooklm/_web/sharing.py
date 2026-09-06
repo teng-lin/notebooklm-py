@@ -1,17 +1,30 @@
 """Concrete batchexecute sharing backend."""
 
+from __future__ import annotations
+
+import asyncio
+import contextlib
 import logging
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .._idempotency import call_unconfirmed_on_transport_loss
+from .._idempotency import (
+    OperationJournal,
+    attach_operation_journal,
+    bind_operation_journal_entries,
+)
 from .._sharing import SharingAPI
 from .._types.enums import ShareAccess, SharePermission, ShareViewLevel
+from ..exceptions import NotebookLMError
+from ..outcomes import CommitState, RecoveryAction
 from ..rpc import RPCMethod
 from ..types import ShareStatus
 from .contracts import RpcCaller
 from .rows.sharing import decode_share_status
+
+if TYPE_CHECKING:
+    from .._runtime.call_supervisor import CallSupervisor, OperationLease
 
 logger = logging.getLogger("notebooklm._sharing")
 
@@ -40,13 +53,20 @@ class WebSharingAPI(SharingAPI):
             )
     """
 
-    def __init__(self, rpc: RpcCaller):
+    def _operation_scope(
+        self, label: str
+    ) -> contextlib.AbstractAsyncContextManager[OperationLease]:
+        """Keep neutral sharing workflows under the Web supervisor."""
+        return self._supervisor.operation_scope(label)
+
+    def __init__(self, rpc: RpcCaller, *, supervisor: CallSupervisor):
         """Initialize the sharing API.
 
         Args:
             rpc: RPC dispatch surface (typically the shared client session).
         """
         self._rpc = rpc
+        self._supervisor = supervisor
 
     async def get_status(self, notebook_id: str) -> ShareStatus:
         """Get current sharing configuration.
@@ -74,21 +94,69 @@ class WebSharingAPI(SharingAPI):
         what: str,
     ) -> ShareStatus:
         """Apply one share mutation and include its status readback in the outcome boundary."""
-
-        async def mutate_and_readback() -> ShareStatus:
-            await self._rpc.rpc_call(
-                RPCMethod.SHARE_NOTEBOOK,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
+        async with self._operation_scope("sharing.mutate_and_readback"):
+            journal = OperationJournal("sharing.update")
+            invocation_id = journal.invocation_id()
+            mutation_entry = journal.new_entry(
+                method=RPCMethod.SHARE_NOTEBOOK.value,
+                phase="mutation",
+                invocation_id=invocation_id,
             )
-            return await self.get_status(notebook_id)
-
-        return await call_unconfirmed_on_transport_loss(
-            mutate_and_readback,
-            method=RPCMethod.SHARE_NOTEBOOK,
-            what=what,
-        )
+            readback_entry = journal.new_entry(
+                method=RPCMethod.GET_SHARE_STATUS.value,
+                phase="readback",
+                invocation_id=invocation_id,
+            )
+            try:
+                with bind_operation_journal_entries(mutation_entry):
+                    await self._rpc.rpc_call(
+                        RPCMethod.SHARE_NOTEBOOK,
+                        params,
+                        source_path=f"/notebook/{notebook_id}",
+                        allow_null=True,
+                    )
+            except asyncio.CancelledError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=(
+                        RecoveryAction.RETRY
+                        if mutation_entry.commit_state is CommitState.NOT_SENT
+                        else RecoveryAction.INSPECT_AND_RECONCILE
+                    ),
+                )
+                raise
+            except NotebookLMError as exc:
+                attach_operation_journal(exc, journal, primary=mutation_entry)
+                raise
+            mutation_entry.record(CommitState.CONFIRMED, "decoded sharing mutation")
+            try:
+                with bind_operation_journal_entries(readback_entry):
+                    result = await self._rpc.rpc_call(
+                        RPCMethod.GET_SHARE_STATUS,
+                        [notebook_id, [2]],
+                        source_path=f"/notebook/{notebook_id}",
+                    )
+                status = decode_share_status(ShareStatus, result, notebook_id)
+                readback_entry.record(CommitState.CONFIRMED, "decoded sharing readback")
+                return status
+            except asyncio.CancelledError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                )
+                raise
+            except NotebookLMError as exc:
+                attach_operation_journal(
+                    exc,
+                    journal,
+                    primary=mutation_entry,
+                    recovery_action=RecoveryAction.INSPECT_AND_RECONCILE,
+                )
+                raise
 
     async def set_public(
         self,
@@ -142,30 +210,31 @@ class WebSharingAPI(SharingAPI):
             returned status includes the view_level we just set rather
             than fetching it from the API.
         """
-        logger.debug("Setting notebook %s view level to %s", notebook_id, level.name)
-        params = [
-            notebook_id,
-            [[None, None, None, None, None, None, None, None, [[level.value]]]],
-        ]
-        await self._rpc.rpc_call(
-            RPCMethod.RENAME_NOTEBOOK,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-            # #2290: a status-tagged null is a server rejection, not an empty success.
-            raise_on_null_status=True,
-        )
-        # Fetch current status and override view_level with what we just set
-        # (GET_SHARE_STATUS doesn't return view_level)
-        status = await self.get_status(notebook_id)
-        # ``replace`` rather than a field-by-field rebuild: the old form listed
-        # six fields explicitly and silently dropped every field added to
-        # ``ShareStatus`` afterwards, so this path reported ``None`` for the
-        # collaborator cap and the public-sharing policy gate that
-        # ``get_status`` had just decoded (#2130). Copying by construction ties
-        # the set of preserved fields to the dataclass itself, so a future field
-        # cannot regress the same way.
-        return replace(status, view_level=level)
+        async with self._operation_scope("sharing.set_view_level"):
+            logger.debug("Setting notebook %s view level to %s", notebook_id, level.name)
+            params = [
+                notebook_id,
+                [[None, None, None, None, None, None, None, None, [[level.value]]]],
+            ]
+            await self._rpc.rpc_call(
+                RPCMethod.RENAME_NOTEBOOK,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                # #2290: a status-tagged null is a server rejection, not an empty success.
+                raise_on_null_status=True,
+            )
+            # Fetch current status and override view_level with what we just set
+            # (GET_SHARE_STATUS doesn't return view_level)
+            status = await self.get_status(notebook_id)
+            # ``replace`` rather than a field-by-field rebuild: the old form listed
+            # six fields explicitly and silently dropped every field added to
+            # ``ShareStatus`` afterwards, so this path reported ``None`` for the
+            # collaborator cap and the public-sharing policy gate that
+            # ``get_status`` had just decoded (#2130). Copying by construction ties
+            # the set of preserved fields to the dataclass itself, so a future field
+            # cannot regress the same way.
+            return replace(status, view_level=level)
 
     @staticmethod
     def _share_params(

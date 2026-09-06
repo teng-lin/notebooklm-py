@@ -2,88 +2,80 @@
   "schema_version": 1,
   "diagram_type": "workflow",
   "meta": {
-    "title": "Backend Retry and Write Safety",
+    "title": "Backend Retry, Deadlines, and Write Safety",
     "locale": "en",
+    "output": "docs/diagrams/20-retry-policy-workflow.html",
     "quality_profile": "showcase",
-    "viewBox": [1100, 620],
+    "viewBox": [720, 360],
     "views": [
       {
         "id": "web",
-        "label": "Web retry",
-        "focus": ["call", "select", "webpolicy", "webretry", "dispatch"],
-        "note": "The Web registry controls blind HTTP replay before the middleware retry loop."
+        "label": "Web retry gate",
+        "focus": ["call", "policy", "retry", "dispatch", "idempotency"],
+        "note": "The Web registry grants replay only within the earlier phase and operation deadline."
       },
       {
         "id": "android",
-        "label": "Android retry",
-        "focus": ["call", "select", "androidpolicy", "androidretry", "dispatch"],
-        "note": "The Android manifest applies the same safe-read ceiling to auth, rate-limit and server retries."
+        "label": "Android retry gate",
+        "focus": ["call", "policy", "retry", "dispatch", "idempotency"],
+        "note": "The Android manifest is a safe-read ceiling; unknown methods run once and expired calls stop."
       },
       {
         "id": "ambiguity",
-        "label": "Unconfirmed writes",
-        "focus": ["webpolicy", "androidpolicy", "idempotency", "scrub"],
-        "note": "Non-replayed writes surface transport-loss ambiguity; Android boundaries additionally scrub secret-owning frames."
+        "label": "Mutation evidence",
+        "focus": ["policy", "idempotency", "scrub"],
+        "note": "Ordered attempts settle into one conservative commit state and a typed recovery action."
       }
     ]
   },
   "lanes": [
-    {"id": "entry", "label": "Selected client"},
-    {"id": "web", "label": "Web executor"},
-    {"id": "android", "label": "Android session"},
-    {"id": "shared", "label": "Shared write safety"}
+    {"id": "entry", "label": "Selected backend"},
+    {"id": "shared", "label": "Shared deadline + evidence"}
   ],
   "phases": [
     {"id": "enter", "label": "Enter and select", "fromCol": 0, "toCol": 1},
-    {"id": "classify", "label": "Classify", "fromCol": 2, "toCol": 3, "variant": "emphasis"},
-    {"id": "recover", "label": "Recover or surface", "fromCol": 4, "toCol": 5, "variant": "dashed"}
+    {"id": "classify", "label": "Classify + budget", "fromCol": 2, "toCol": 3, "variant": "emphasis"},
+    {"id": "recover", "label": "Dispatch + settle", "fromCol": 4, "toCol": 5, "variant": "dashed"}
   ],
-  "mainPath": ["call", "select", "webpolicy", "webretry", "dispatch"],
+  "mainPath": ["call", "policy", "retry", "dispatch"],
   "nodes": [
-    {"id": "call", "lane": "entry", "col": 0, "width": 84, "type": "external", "label": "Operation", "sublabel": "typed or raw"},
-    {"id": "select", "lane": "entry", "col": 1, "width": 84, "type": "backend", "label": "Backend", "sublabel": "web · android"},
-    {"id": "dispatch", "lane": "entry", "col": 5, "width": 88, "type": "cloud", "label": "Dispatch", "sublabel": "one wire attempt"},
-    {"id": "webpolicy", "lane": "web", "col": 2, "width": 112, "type": "database", "label": "Web Registry", "sublabel": "5 policies"},
-    {"id": "webretry", "lane": "web", "col": 4, "width": 112, "type": "backend", "label": "Web Retry", "sublabel": "HTTP middleware"},
-    {"id": "androidpolicy", "lane": "android", "col": 2, "width": 112, "type": "database", "label": "Android Manifest", "sublabel": "method ceiling"},
-    {"id": "androidretry", "lane": "android", "col": 4, "width": 112, "type": "backend", "label": "Android Retry", "sublabel": "auth · rate · server"},
-    {"id": "idempotency", "lane": "shared", "col": 3, "width": 132, "type": "security", "label": "Outcome Helpers", "sublabel": "unsafe write · probe · tag"},
-    {"id": "scrub", "lane": "shared", "col": 5, "width": 110, "type": "security", "label": "Mark + Surface", "sublabel": "unconfirmed error"}
+    {"id": "call", "lane": "entry", "col": 0, "width": 84, "type": "external", "label": "Operation", "sublabel": "task · epoch"},
+    {"id": "dispatch", "lane": "entry", "col": 5, "width": 88, "type": "cloud", "label": "Dispatch", "sublabel": "remaining budget"},
+    {"id": "policy", "lane": "entry", "col": 1, "width": 112, "type": "database", "label": "Backend Policy", "sublabel": "Web registry · Android"},
+    {"id": "retry", "lane": "entry", "col": 3, "width": 112, "type": "backend", "label": "Bounded Retry", "sublabel": "grant + deadline"},
+    {"id": "idempotency", "lane": "shared", "col": 3, "width": 132, "type": "security", "label": "Operation Gate", "sublabel": "earlier deadline · journal"},
+    {"id": "scrub", "lane": "shared", "col": 5, "width": 110, "type": "security", "label": "Typed Outcome", "sublabel": "state + recovery"}
   ],
   "edges": [
-    {"id": "call-select", "from": "call", "to": "select", "variant": "emphasis", "role": "main"},
-    {"id": "select-web", "from": "select", "to": "webpolicy", "variant": "emphasis", "role": "main"},
-    {"id": "web-retry", "from": "webpolicy", "to": "webretry", "label": "replay safe", "variant": "emphasis", "role": "main", "route": "straight"},
-    {"id": "web-dispatch", "from": "webretry", "to": "dispatch", "variant": "emphasis", "role": "main"},
-    {"id": "select-android", "from": "select", "to": "androidpolicy", "variant": "dashed", "role": "branch"},
-    {"id": "android-retry", "from": "androidpolicy", "to": "androidretry", "label": "safe unary", "variant": "dashed", "role": "branch", "route": "straight"},
-    {"id": "android-dispatch", "from": "androidretry", "to": "dispatch", "variant": "dashed", "role": "branch"},
-    {"id": "shared-uncertainty", "from": "select", "to": "idempotency", "variant": "security", "role": "error"},
-    {"id": "surface", "from": "idempotency", "to": "scrub", "variant": "security", "role": "error"}
+    {"id": "call-policy", "from": "call", "to": "policy", "variant": "emphasis", "role": "main"},
+    {"id": "policy-retry", "from": "policy", "to": "retry", "label": "grant + budget", "variant": "emphasis", "role": "main", "route": "straight"},
+    {"id": "retry-dispatch", "from": "retry", "to": "dispatch", "variant": "emphasis", "role": "main"},
+    {"id": "shared-uncertainty", "from": "call", "to": "idempotency", "label": "bind owner", "variant": "security", "role": "branch", "labelDx": 36},
+    {"id": "surface", "from": "idempotency", "to": "scrub", "label": "aggregate", "variant": "security", "role": "return"}
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Backend-specific classification",
+      "title": "Classification is a ceiling",
       "items": [
-        "Web uses IdempotencyRegistry; Android uses the total _android/retry_policy.py manifest",
-        "Both bound auth, rate-limit, and server recovery by replay safety"
+        "Web uses IdempotencyRegistry; Android uses the total retry manifest",
+        "Safe reads replay only with remaining budget; unknown raw methods run once"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Shared outcome honesty",
+      "title": "Mutation replay needs proof",
       "items": [
-        "idempotent_create probes for a committed result before repeating a create",
-        "call_unconfirmed_on_transport_loss and unresolved_commit_error expose unknown commits honestly"
+        "Non-idempotent writes disable blind transport replay",
+        "Explicit owners may replay NOT_SENT or REJECTED; UNKNOWN requires inspection"
       ]
     },
     {
       "dot": "rose",
-      "title": "Secret-safe failure",
+      "title": "Cancellation stays honest",
       "items": [
-        "Android ambiguous-write paths clear secret-owning traceback frames, cause and context before re-raise",
-        "Cancellation and confirmed backend rejections are never relabeled unconfirmed"
+        "The aggregate deadline can shorten a phase but never extend it",
+        "Caller cancellation stays CancelledError while ordered journal evidence remains"
       ]
     }
   ]

@@ -2,189 +2,49 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Client Runtime and Backend Bundles",
+    "title": "Client Runtime and Selected Transport",
     "locale": "en",
     "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/teng-lin/notebooklm-py",
+      "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"
+    },
     "views": [
-      {
-        "id": "shared",
-        "label": "Shared runtime",
-        "focus": ["client", "shared", "supervisor", "lifecycle"],
-        "note": "SharedRuntime owns only neutral metrics, admission and root lifecycle state."
-      },
-      {
-        "id": "selected",
-        "label": "Selected backend",
-        "focus": ["client", "raw", "webruntime", "executor", "androidruntime", "session"],
-        "note": "Construction installs one primary backend bundle and a matching raw adapter."
-      },
-      {
-        "id": "compatibility",
-        "label": "Deprecated rpc_call",
-        "focus": ["client", "deprecated", "webruntime", "sidecar"],
-        "note": "Web delegates directly; Android materialises the sidecar's WebRuntime inside an operation scope and retains it across close and reopen."
-      }
+      {"id": "construction", "label": "Construction handoff", "focus": ["config", "normalizer", "root", "assembly", "client"], "note": "Typed options are normalized once; one complete backend assembly is installed by the root."},
+      {"id": "selected-runtime", "label": "Selected runtime", "focus": ["assembly", "webgraph", "androidgraph", "client"], "note": "The assembly is discriminated: a client owns one primary Web or Android graph, never both."},
+      {"id": "root-lifecycle", "label": "Root lifecycle", "focus": ["root", "shared", "lifecycle", "sidecar"], "note": "ClientLifecycle is root-owned and separate from SharedRuntime; the Android Web sidecar is inert until deprecated rpc_call use."}
     ]
   },
+  "layout": {"mode": "grid", "origin": [50, 52], "cols": 5, "gapX": 70, "gapY": 70, "cellW": 140, "cellH": 82},
   "components": [
-    {
-      "id": "shared",
-      "type": "database",
-      "label": "SharedRuntime",
-      "sublabel": "_runtime/init.py",
-      "tag": "metrics · supervisor · lifecycle",
-      "pos": [282, 60],
-      "size": [170, 84]
-    },
-    {
-      "id": "supervisor",
-      "type": "backend",
-      "label": "CallSupervisor",
-      "sublabel": "generation leases",
-      "tag": "admission · metrics · semaphore",
-      "pos": [544, 60],
-      "size": [170, 84]
-    },
-    {
-      "id": "lifecycle",
-      "type": "backend",
-      "label": "ClientLifecycle",
-      "sublabel": "transactional root",
-      "tag": "open · drain · close",
-      "pos": [806, 60],
-      "size": [165, 84]
-    },
-    {
-      "id": "client",
-      "type": "backend",
-      "label": "NotebookLMClient",
-      "sublabel": "composition root",
-      "tag": "one primary backend",
-      "pos": [30, 260],
-      "size": [160, 90]
-    },
-    {
-      "id": "raw",
-      "type": "backend",
-      "label": "client.raw",
-      "sublabel": "WebRawAPI · AndroidRawAPI",
-      "tag": "backend-selected",
-      "pos": [282, 260],
-      "size": [170, 90]
-    },
-    {
-      "id": "webruntime",
-      "type": "backend",
-      "label": "WebRuntime",
-      "sublabel": "_web/transport/init.py",
-      "tag": "web-only bundle",
-      "pos": [544, 260],
-      "size": [170, 90]
-    },
-    {
-      "id": "executor",
-      "type": "backend",
-      "label": "RpcExecutor",
-      "sublabel": "batchexecute path",
-      "pos": [806, 260],
-      "size": [165, 90]
-    },
-    {
-      "id": "weblifecycle",
-      "type": "backend",
-      "label": "Web Lifecycle",
-      "sublabel": "kernel · cookies · keepalive",
-      "pos": [1063, 260],
-      "size": [155, 90]
-    },
-    {
-      "id": "deprecated",
-      "type": "external",
-      "label": "rpc_call",
-      "sublabel": "deprecated wrapper",
-      "tag": "Web RPCMethod only",
-      "pos": [25, 460],
-      "size": [170, 84]
-    },
-    {
-      "id": "sidecar",
-      "type": "backend",
-      "label": "LazyWebSidecar",
-      "sublabel": "_client_compat.py",
-      "tag": "Android compatibility",
-      "pos": [544, 460],
-      "size": [170, 84]
-    },
-    {
-      "id": "androidruntime",
-      "type": "backend",
-      "label": "AndroidRuntime",
-      "sublabel": "_android/runtime.py",
-      "tag": "gRPC · uploads · assets",
-      "pos": [806, 460],
-      "size": [165, 84]
-    },
-    {
-      "id": "session",
-      "type": "backend",
-      "label": "AndroidSession",
-      "sublabel": "lazy gRPC channel",
-      "tag": "epoch fenced",
-      "pos": [1063, 460],
-      "size": [155, 84]
-    }
+    {"id": "config", "type": "frontend", "label": "ClientConfig", "sublabel": "owner-grouped spec", "tag": "frozen values", "row": 0, "col": 0, "sources": [{"path": "src/notebooklm/options.py", "line": 213, "end_line": 233, "label": "public spec"}]},
+    {"id": "normalizer", "type": "backend", "label": "_client_options", "sublabel": "legacy → typed", "tag": "one normalization", "row": 0, "col": 1, "sources": [{"path": "src/notebooklm/_client_options.py", "line": 269, "end_line": 336, "label": "normalizer"}]},
+    {"id": "root", "type": "backend", "label": "_client_assembly", "sublabel": "select · install", "tag": "sole mutation owner", "row": 0, "col": 2, "sources": [{"path": "src/notebooklm/_client_assembly.py", "line": 60, "end_line": 110, "label": "install"}, {"path": "src/notebooklm/_client_assembly.py", "line": 131, "end_line": 158, "label": "assemble"}]},
+    {"id": "assembly", "type": "database", "label": "BackendAssembly", "sublabel": "Web | Android", "tag": "complete typed graph", "row": 0, "col": 3, "sources": [{"path": "src/notebooklm/_client_contracts.py", "line": 87, "end_line": 116, "label": "assembly union"}]},
+    {"id": "client", "type": "backend", "label": "NotebookLMClient", "sublabel": "public surface", "tag": "one installed graph", "row": 0, "col": 4, "sources": [{"path": "src/notebooklm/client.py", "line": 533, "end_line": 604, "label": "lifecycle facade"}]},
+    {"id": "shared", "type": "database", "label": "SharedRuntime", "sublabel": "metrics · CallSupervisor", "tag": "no lifecycle", "row": 1, "col": 1, "sources": [{"path": "src/notebooklm/_runtime/init.py", "line": 17, "end_line": 42, "label": "neutral bundle"}]},
+    {"id": "lifecycle", "type": "backend", "label": "ClientLifecycle", "sublabel": "frozen participant tuples", "tag": "open · drain · close", "row": 1, "col": 2, "sources": [{"path": "src/notebooklm/_runtime/lifecycle.py", "line": 140, "end_line": 165, "label": "root owner"}]},
+    {"id": "sidecar", "type": "external", "label": "LazyWebSidecar", "sublabel": "lazy rpc_call bridge", "tag": "pre-registered · inert", "row": 1, "col": 0, "sources": [{"path": "src/notebooklm/_client_compat.py", "line": 105, "end_line": 161, "label": "lazy proxy"}]},
+    {"id": "webgraph", "type": "cloud", "label": "WebRuntime", "sublabel": "executor · HTTP · upload", "tag": "Web selected graph", "row": 1, "col": 3, "sources": [{"path": "src/notebooklm/_web/assembly.py", "line": 60, "end_line": 116, "label": "Web builder"}]},
+    {"id": "androidgraph", "type": "cloud", "label": "AndroidRuntime", "sublabel": "gRPC · bearer · transfers", "tag": "Android selected graph", "row": 1, "col": 4, "sources": [{"path": "src/notebooklm/_android/assembly.py", "line": 71, "end_line": 130, "label": "Android builder"}]}
   ],
   "boundaries": [
-    {
-      "kind": "region",
-      "label": "transport-neutral runtime",
-      "wraps": ["shared", "supervisor", "lifecycle"]
-    },
-    {
-      "kind": "region",
-      "label": "selected backend bundles",
-      "wraps": ["webruntime", "executor", "weblifecycle", "androidruntime", "session"]
-    }
+    {"kind": "region", "label": "root-owned neutral services", "wraps": ["shared", "lifecycle"]},
+    {"kind": "region", "label": "mutually exclusive primary runtimes", "wraps": ["webgraph", "androidgraph"]}
   ],
   "connections": [
-    {"id": "client-shared", "from": "client", "to": "shared", "label": "owns", "variant": "emphasis"},
-    {"id": "shared-supervisor", "from": "shared", "to": "supervisor", "label": "admission"},
-    {"id": "supervisor-lifecycle", "from": "supervisor", "to": "lifecycle", "label": "generation state"},
-    {"id": "client-raw", "from": "client", "to": "raw"},
-    {"id": "raw-web", "from": "raw", "to": "webruntime", "label": "WebRawAPI.call", "variant": "emphasis"},
-    {"id": "web-executor", "from": "webruntime", "to": "executor", "label": "executor"},
-    {"id": "executor-lifecycle", "from": "executor", "to": "weblifecycle", "label": "web resources"},
-    {"id": "raw-android", "from": "raw", "to": "androidruntime", "label": "AndroidRawAPI", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "via": [[367, 180], [1260, 180], [1260, 590], [888.5, 590]], "labelAt": [700, 170]},
-    {"id": "android-session", "from": "androidruntime", "to": "session", "label": "unary · stream"},
-    {"id": "client-deprecated", "from": "client", "to": "deprecated", "label": "compatibility", "variant": "dashed", "labelAt": [110, 405]},
-    {"id": "deprecated-web", "from": "deprecated", "to": "webruntime", "label": "Web → executor", "variant": "emphasis", "labelAt": [470, 405]},
-    {"id": "deprecated-sidecar", "from": "deprecated", "to": "sidecar", "label": "Android operation scope", "variant": "dashed", "labelAt": [367, 558]}
+    {"id": "config-normalizer", "from": "config", "to": "normalizer", "label": "normalizes", "variant": "emphasis"},
+    {"id": "normalizer-root", "from": "normalizer", "to": "root", "label": "typed options", "variant": "emphasis"},
+    {"id": "root-assembly", "from": "root", "to": "assembly", "label": "selects", "variant": "emphasis"},
+    {"id": "assembly-client", "from": "assembly", "to": "client", "label": "installs", "variant": "emphasis"},
+    {"id": "root-shared", "from": "root", "to": "shared", "label": "builds", "fromSide": "left", "toSide": "right", "via": [[435, 82], [435, 234]], "labelAt": [435, 155]},
+    {"id": "root-lifecycle", "from": "root", "to": "lifecycle", "label": "constructs once", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [535, 165]},
+    {"id": "root-sidecar", "from": "root", "to": "sidecar", "label": "pre-registers", "variant": "dashed", "fromSide": "top", "toSide": "left", "via": [[530, 25], [20, 25], [20, 234]], "labelAt": [330, 25]},
+    {"id": "client-web", "from": "client", "to": "webgraph", "label": "Web graph", "variant": "emphasis"},
+    {"id": "client-android", "from": "client", "to": "androidgraph", "label": "Android graph", "variant": "emphasis", "labelAt": [750, 336]}
   ],
   "cards": [
-    {
-      "dot": "cyan",
-      "title": "Three runtime owners",
-      "items": [
-        "SharedRuntime contains metrics, CallSupervisor and the root ClientLifecycle",
-        "WebRuntime owns Web HTTP/RPC/upload; AndroidRuntime owns bearer, gRPC, transfers, and Phenotype"
-      ]
-    },
-    {
-      "dot": "emerald",
-      "title": "Selected raw access",
-      "items": [
-        "WebRawAPI.call uses the installed WebRuntime executor",
-        "AndroidRawAPI and typed Android calls use AndroidSession without Web transport"
-      ]
-    },
-    {
-      "dot": "rose",
-      "title": "Compatibility sidecar",
-      "items": [
-        "rpc_call is deprecated and remains a Web RPCMethod wrapper",
-        "Android pre-registers LazyWebSidecar; first rpc_call materialises its WebRuntime inside operation_scope",
-        "Root lifecycle closes and reopens its resources; the proxy retains the runtime and never starts keepalive"
-      ]
-    }
+    {"dot": "cyan", "title": "Construction contract", "items": ["ClientConfig groups public owner values; backend builders return complete assemblies without mutating NotebookLMClient", "_client_assembly installs one selected graph and constructs the separate root lifecycle"]},
+    {"dot": "rose", "title": "Compatibility isolation", "items": ["Android typed namespaces use only the Android graph", "LazyWebSidecar materializes Web resources only for deprecated rpc_call and retains them for reopen"]}
   ]
 }

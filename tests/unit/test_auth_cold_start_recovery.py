@@ -608,7 +608,7 @@ async def test_cold_and_live_l4_recovery_share_one_master_token_mint(tmp_path, m
     async with NotebookLMClient(live_auth) as client:
         collaborators = client._collaborators
         web = client._web_runtime
-        lifecycle = collaborators.lifecycle
+        lifecycle = client._lifecycle
         generation = collaborators.call_supervisor._current
         expected_epoch = lifecycle._epoch
         assert lifecycle.is_open()

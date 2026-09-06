@@ -16,6 +16,12 @@ from .._chat import (
     _TurnRoleSnapshot,
 )
 from .._conversation_cache import ConversationCache
+from .._idempotency import (
+    OperationJournal,
+    attach_journal_entry,
+    bind_operation_journal_entries,
+    mark_unconfirmed,
+)
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.call_supervisor import OperationLease
 from .._runtime.config import (
@@ -28,6 +34,7 @@ from .._types.enums import ChatGoal, ChatResponseLength
 from ..exceptions import (
     ChatError,
     ChatResponseParseError,
+    NotebookLMError,
     UnknownRPCMethodError,
 )
 from ..types import (
@@ -288,17 +295,18 @@ class AndroidChatAPI(ChatAPI):
         bounded_limit = max(0, limit)
         if bounded_limit == 0:
             return []
-        resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
-        if not resolved_id:
-            return []
-        response = await self.get_conversation_turns(
-            notebook_id,
-            resolved_id,
-            # Android exposes separate generated-response and user-query rows,
-            # while the public limit counts completed Q&A pairs.
-            limit=bounded_limit * 2,
-        )
-        return decode_history(response, limit=bounded_limit)
+        async with self._operation_scope("chat.get_history"):
+            resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+            if not resolved_id:
+                return []
+            response = await self.get_conversation_turns(
+                notebook_id,
+                resolved_id,
+                # Android exposes separate generated-response and user-query rows,
+                # while the public limit counts completed Q&A pairs.
+                limit=bounded_limit * 2,
+            )
+            return decode_history(response, limit=bounded_limit)
 
     async def _list_turn_roles(
         self,
@@ -370,39 +378,70 @@ class AndroidChatAPI(ChatAPI):
 
         final_response = None
         next_steps: list[NextStepSuggestion] = []
-        async for response in self._transport.stream(
-            GENERATE_FREE_FORM_STREAMED_METHOD,
-            request,
-            replay_safe=False,
-            timeout=self._chat_timeout,
-            response_type=proto.GenerateFreeFormStreamedResponse,
-            telemetry_method="chat.ask",
-            max_response_bytes=self._chat_response_max_bytes,
-            stop_after=_is_final_chat_response,
-        ):
-            if response.HasField("next_step_suggestions"):
-                decoded_next_steps = [
-                    NextStepSuggestion(
-                        question=next_step.suggestion,
-                        type_code=int(next_step.suggestion_type),
-                    )
-                    for next_step in response.next_step_suggestions.next_steps
-                    if next_step.suggestion
-                ]
-                if decoded_next_steps:
-                    next_steps = decoded_next_steps
-            if response.is_final_response:
-                final_response = response
+        journal_entry = OperationJournal("chat").new_entry(
+            method=GENERATE_FREE_FORM_STREAMED_METHOD
+        )
+        try:
+            with bind_operation_journal_entries(journal_entry):
+                async for response in self._transport.stream(
+                    GENERATE_FREE_FORM_STREAMED_METHOD,
+                    request,
+                    replay_safe=False,
+                    timeout=self._chat_timeout,
+                    response_type=proto.GenerateFreeFormStreamedResponse,
+                    telemetry_method="chat.ask",
+                    max_response_bytes=self._chat_response_max_bytes,
+                    stop_after=_is_final_chat_response,
+                ):
+                    if response.HasField("next_step_suggestions"):
+                        decoded_next_steps = [
+                            NextStepSuggestion(
+                                question=next_step.suggestion,
+                                type_code=int(next_step.suggestion_type),
+                            )
+                            for next_step in response.next_step_suggestions.next_steps
+                            if next_step.suggestion
+                        ]
+                        if decoded_next_steps:
+                            next_steps = decoded_next_steps
+                    if response.is_final_response:
+                        final_response = response
+        except NotebookLMError as exc:
+            # Android status mapping already supplies UNKNOWN for this
+            # non-replayable stream. Add the feature identity at the boundary
+            # that knows it was a chat turn so every adapter gives the caller
+            # conversation-history guidance.
+            if getattr(exc, "unconfirmed", False):
+                mark_unconfirmed(exc, operation="chat")
+            attach_journal_entry(exc, journal_entry)
+            raise
 
         if final_response is None:
-            raise ChatResponseParseError(
-                "Android GenerateFreeFormStreamed ended before response field 5 "
-                "declared a final snapshot."
+            error = mark_unconfirmed(
+                ChatResponseParseError(
+                    "Android GenerateFreeFormStreamed ended before response field 5 "
+                    "declared a final snapshot."
+                ),
+                operation="chat",
             )
+            raise attach_journal_entry(error, journal_entry)
 
         answer = final_response.answer
-        answer_document = decode_document(answer.response_doc)
-        references = decode_references(answer.response_doc, answer_document)
+        try:
+            answer_document = decode_document(answer.response_doc)
+            references = decode_references(answer.response_doc, answer_document)
+        except NotebookLMError as exc:
+            mark_unconfirmed(exc, operation="chat")
+            attach_journal_entry(exc, journal_entry)
+            raise
+        except Exception as exc:
+            error = mark_unconfirmed(
+                ChatResponseParseError(
+                    f"Failed to decode Android chat response: {type(exc).__name__}"
+                ),
+                operation="chat",
+            )
+            raise attach_journal_entry(error, journal_entry) from exc
         from google.protobuf.json_format import MessageToJson
 
         return _PostedAsk(

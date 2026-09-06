@@ -4,6 +4,7 @@ import logging
 from unittest.mock import MagicMock
 
 from notebooklm._web.chat import WebChatAPI
+from tests._fixtures.fake_core import make_fake_core
 
 
 class MalformedErrorPayload(list):
@@ -18,6 +19,7 @@ def test_rate_limit_payload_parse_failure_logs_debug(caplog):
     # so all five are plain ``MagicMock()`` placeholders.
     api = WebChatAPI(
         rpc=MagicMock(),
+        supervisor=make_fake_core(),
         transport=MagicMock(),
         reqid=MagicMock(),
         loop_guard=MagicMock(),

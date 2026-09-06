@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .._client_metrics import ClientMetrics
 from .call_supervisor import CallSupervisor
-from .lifecycle import ClientLifecycle
 
 if TYPE_CHECKING:
     from ..types import RpcTelemetryEvent
@@ -16,9 +16,10 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class SharedRuntimeConfig:
-    """The sole scalar input read by backend-neutral construction."""
+    """Resolved backend-neutral runtime options retained by the shared owner."""
 
     max_concurrent_rpcs: int | None
+    operation_timeout: float | None = None
 
 
 @dataclass(frozen=True)
@@ -33,14 +34,7 @@ class SharedRuntime:
 
     metrics: ClientMetrics
     call_supervisor: CallSupervisor
-    _lifecycle: ClientLifecycle | None
-
-    @property
-    def lifecycle(self) -> ClientLifecycle:
-        """Return the root after final client assembly has frozen the graph."""
-        if self._lifecycle is None:
-            raise RuntimeError("Client lifecycle has not been assembled.")
-        return self._lifecycle
+    config: SharedRuntimeConfig
 
 
 # One-release compatibility name for private importers.  The concrete type is
@@ -48,12 +42,29 @@ class SharedRuntime:
 RuntimeCollaborators = SharedRuntime
 
 
-def validate_shared_runtime_config(*, max_concurrent_rpcs: int | None) -> SharedRuntimeConfig:
+def validate_shared_runtime_config(
+    *,
+    max_concurrent_rpcs: int | None,
+    operation_timeout: float | None = None,
+) -> SharedRuntimeConfig:
     """Validate and return the backend-neutral admission input."""
 
     if max_concurrent_rpcs is not None and max_concurrent_rpcs < 1:
         raise ValueError(f"max_concurrent_rpcs must be >= 1, got {max_concurrent_rpcs!r}")
-    return SharedRuntimeConfig(max_concurrent_rpcs=max_concurrent_rpcs)
+    if operation_timeout is not None and (
+        isinstance(operation_timeout, bool)
+        or not isinstance(operation_timeout, (int, float))
+        or not math.isfinite(operation_timeout)
+        or operation_timeout <= 0
+    ):
+        raise ValueError(
+            "operation_timeout must be a positive, finite number or None "
+            f"(got {operation_timeout!r})"
+        )
+    return SharedRuntimeConfig(
+        max_concurrent_rpcs=max_concurrent_rpcs,
+        operation_timeout=operation_timeout,
+    )
 
 
 def build_collaborators(
@@ -77,11 +88,12 @@ def build_collaborators(
     call_supervisor = CallSupervisor(
         metrics=metrics,
         max_concurrent_rpcs=config.max_concurrent_rpcs,
+        operation_timeout=config.operation_timeout,
     )
     return SharedRuntime(
         metrics=metrics,
         call_supervisor=call_supervisor,
-        _lifecycle=None,
+        config=config,
     )
 
 

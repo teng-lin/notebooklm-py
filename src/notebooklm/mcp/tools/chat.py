@@ -100,16 +100,19 @@ def _entry_status_payload(entry: Any) -> dict[str, Any]:
                 **timings,
                 "hint": "generation was cancelled; call chat_start to ask again",
             }
-        return {
+        error_payload = tool_error_payload(entry.error)
+        payload = {
             "status": "failed",
             "task_id": entry.task_id,
-            "error": tool_error_payload(entry.error),
+            "error": error_payload,
             **timings,
-            "hint": (
+        }
+        if error_payload["retriable"] and not error_payload.get("unconfirmed"):
+            payload["hint"] = (
                 "the ask failed — a retriable error is worth one chat_start "
                 "retry with the same question (a retry re-runs the generation)"
-            ),
-        }
+            )
+        return payload
     return {"status": "completed", "task_id": entry.task_id, **timings, **(entry.result or {})}
 
 
@@ -376,6 +379,7 @@ def register(mcp: Any) -> None:
                     _run_ask,
                     notebook_id=nb_id,
                     conversation_id=resolved_conversation_id,
+                    client=client,
                 )
             except ChatTaskCapacityError as exc:
                 # Nothing about the arguments is wrong and the same call succeeds

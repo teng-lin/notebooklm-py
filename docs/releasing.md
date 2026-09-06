@@ -199,7 +199,8 @@ no break against the baseline) is a CI failure, not silent cruft.
 
 - [ ] Run all checks before committing:
   ```bash
-  uv run pre-commit run --all-files && uv run mypy src/notebooklm --ignore-missing-imports && uv run pytest
+  uv run pre-commit run --all-files && uv run mypy src/notebooklm --ignore-missing-imports && uv run pytest -m "not refactor_qualification"
+  uv run pytest -m refactor_qualification --timeout=180 --no-cov
   ```
 - [ ] Ensure CI runs the same lint gate (`pre-commit run --all-files`) as local release prep
 - [ ] Run documentation drift checks (mirror the CI gates in `.github/workflows/test.yml`):

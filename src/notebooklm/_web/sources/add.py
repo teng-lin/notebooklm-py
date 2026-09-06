@@ -6,26 +6,28 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import parse_qs
 
 from ..._idempotency import (
-    _CreateResultKind,
-    _IdempotentCreateResult,
-    idempotent_create,
-    unresolved_commit_error,
-)
-from ..._idempotency import (
-    mark_unconfirmed as _unconfirmed,
+    OperationJournal,
+    attach_journal_entry,
+    bind_operation_journal_entries,
+    call_unconfirmed_on_transport_loss,
+    mark_commit_state,
+    mark_unconfirmed,
 )
 from ...exceptions import (
     AuthError,
     NetworkError,
+    NotebookLMError,
     RateLimitError,
     ServerError,
     SourceAddError,
+    SourceProcessingError,
     ValidationError,
 )
+from ...outcomes import CommitState, RecoveryAction
 from ...rpc import RPCError, RPCMethod
 from ...types import Source
 from ..contracts import RpcCaller
@@ -34,12 +36,34 @@ from ..rows.source_models import decode_source
 
 ListSources = Callable[[str], Awaitable[list[Source]]]
 WaitUntilReady = Callable[..., Awaitable[Source]]
-RawSourceAdder = Callable[[str, str], Awaitable[Any]]
+
+
+class RawSourceAdder(Protocol):
+    async def __call__(self, notebook_id: str, url: str) -> Any: ...
+
+
 RenameSource = Callable[[str, str, str], Awaitable[Source | None]]
 ParseUrl = Callable[[str], Any]
 ExtractVideoId = Callable[[Any, str], str | None]
 ValidateVideoId = Callable[[str], bool]
 YoutubeDetector = Callable[[str], bool]
+
+
+def _source_add_failure(
+    subject: str,
+    *,
+    operation: str,
+    cause: Exception | None = None,
+    message: str | None = None,
+) -> SourceAddError:
+    """Wrap one post-dispatch failure without losing its commit evidence."""
+    failure = SourceAddError(subject, cause=cause, message=message)
+    inherited_operation = getattr(cause, "operation", None)
+    operation_name = inherited_operation if isinstance(inherited_operation, str) else operation
+    state = getattr(cause, "commit_state", None)
+    if state in (CommitState.NOT_SENT, CommitState.REJECTED, CommitState.CONFIRMED):
+        return mark_commit_state(failure, state, operation=operation_name)
+    return mark_unconfirmed(failure, operation=operation_name)
 
 
 def _validate_drive_file_id(file_id: str) -> None:
@@ -106,33 +130,11 @@ async def honor_requested_title(
 async def honor_requested_title_if_fresh(
     rename: RenameSource,
     notebook_id: str,
-    result: Source | _IdempotentCreateResult[Source],
+    source: Source,
     requested_title: str | None,
     logger: logging.Logger,
-    *,
-    probe_proves_freshness: bool = False,
 ) -> Source:
-    """Apply a requested title only to a source created by this call.
-
-    A ``PROBED`` result is normally skipped because the probe may have matched a
-    source that predates this call, and renaming someone else's source would be
-    a surprise. Set ``probe_proves_freshness`` when the caller's probe already
-    guarantees the match is new — ``add_drive`` (#2113) and ``add_url`` (#2204)
-    both filter probe matches against a baseline captured before the create, so
-    their ``PROBED`` value is attributable to this call and must still honor the
-    requested title. Without this, an add that commits but loses its response
-    silently keeps the backend-derived name instead of the caller's ``title``.
-
-    "Attributable", not "proven": a baseline establishes *when* a source
-    appeared, not *who* created it — see the concurrency ``.. warning::`` on
-    :meth:`SourceAddService.add_url`.
-    """
-    if isinstance(result, _IdempotentCreateResult):
-        if result.kind is _CreateResultKind.PROBED and not probe_proves_freshness:
-            return result.value
-        source = result.value
-    else:
-        source = result
+    """Apply a requested title after a confirmed source create."""
     return await honor_requested_title(rename, notebook_id, source, requested_title, logger)
 
 
@@ -154,107 +156,18 @@ class SourceAddService:
         is_youtube_url: YoutubeDetector,
         logger: logging.Logger,
         return_result: bool = False,
-    ) -> Source | _IdempotentCreateResult[Source]:
-        """Add a URL source to a notebook.
+    ) -> Source:
+        """Add one URL source without replaying an ambiguous create.
 
-        Runs the probe-then-create idempotency pattern: the create is issued
-        with internal retries disabled, and a 5xx / network failure that may
-        have committed server-side is followed by a probe for the committed
-        source before any retry. The probe matches ``source.url == url``.
-
-        A URL is **not** unique within a notebook — the backend happily holds
-        the same URL twice (live-verified on #2204: two adds of
-        ``https://example.com/`` produced two distinct source ids), and
-        ``SourceLister.list`` dedupes by source id, not by URL. So a bare
-        URL match cannot tell *"the create I just issued landed"* from *"a
-        source with this URL was already here"*. Probe matches are therefore
-        filtered against a baseline of source ids captured **before** the
-        first create attempt, exactly like
-        :meth:`~notebooklm._web.sources.upload.SourceUploader.register_file_source`
-        does for filenames and ``add_drive`` does for Drive ``documentId``\\ s.
-        An unavailable baseline or an ambiguous multi-match raises
-        :class:`~notebooklm.exceptions.SourceAddError` rather than guessing.
-
-        .. note::
-           **A probe that cannot answer aborts the add (#2220).** If the
-           probe's own ``list()`` fails for a non-transport reason — a drifted
-           ``GET_NOTEBOOK`` making the strict decoder raise ``RPCError`` is the
-           realistic case — this raises :class:`~notebooklm.exceptions.SourceAddError`
-           instead of reporting "no match" and letting the create be re-issued.
-
-           The probe returns ``None`` only when it has affirmatively
-           established that no matching source exists; ``None`` is read by
-           ``idempotent_create`` as evidence the create did not land, and acted
-           on by repeating it. A broken probe is not that evidence. Retrying
-           anyway would silently turn a ``PROBE_THEN_CREATE`` operation into an
-           at-least-once one at the exact moment its guarantee matters — and
-           this codebase makes at-least-once an explicit, named opt-in
-           (:attr:`~notebooklm._web.policy.IdempotencyPolicy.AT_LEAST_ONCE_ACCEPTED`).
-
-           The cost is real and was weighed: a decode blip on a create that
-           never landed now surfaces as a hard failure the caller must retry by
-           hand, where before it recovered silently. That is accepted because
-           the two outcomes are not symmetric in *detectability*. A caller who
-           is told "unresolved, go look" can act; a caller handed a silent
-           duplicate — or the wrong source id — has nothing to act on and no
-           reason to look. The baseline read, by contrast, still degrades
-           rather than failing: it runs before anything is written, so
-           proceeding is safe there.
-
-        .. note::
-           **This is a behaviour change (#2204).** ``add_url`` used to list
-           sources only inside ``_probe``, which ``idempotent_create`` runs
-           only after a transport failure; it now takes that snapshot on
-           *every* call, matching the shape ``add_file`` has always had and
-           ``add_drive`` adopted in #2113.
-
-           The concrete cost: that list is a ``GET_NOTEBOOK``, and the backend
-           **writes** ``lastViewedTime`` when answering one (#2126), so every
-           ``add_url`` now promotes the notebook to the top of the user's
-           *Recent* list in the web UI. ``ADD_SOURCE`` alone does not — the
-           #2204 live probe held ``last_viewed_at`` pinned at ``1786617745``
-           across an ``add_url`` — so this is a genuinely new side effect on
-           the highest-traffic add path, not a pre-existing one. It is
-           accepted because the alternative is what the same probe run
-           demonstrated: a create that *did* land as ``df618843-…`` returned
-           the pre-existing ``0d2c15a1-…`` instead, so the caller held the
-           wrong source id **and** an unreported duplicate.
-
-           No cheaper *id-based* probe exists: source ids are published only
-           inside the ``GET_NOTEBOOK`` payload, and ``LIST_NOTEBOOKS`` (which
-           does not bump) does not carry them. Two non-id alternatives were
-           weighed and rejected. A lazily captured baseline is not merely
-           cheaper but wrong — the probe runs *after* the create, so a list
-           taken there already contains the just-created source. Filtering by
-           :attr:`~notebooklm.types.Source.created_at` would need no pre-create
-           read at all, but it compares a second-resolution *server* timestamp
-           against a client clock of unknown skew, and it fails precisely in
-           the bulk-import case this path serves, where the pre-existing copy
-           was added seconds earlier.
-
-           A caller looping over this single-item method keeps the notebook at
-           the top of *Recent* when no other activity intervenes, but every
-           baseline read still writes ``lastViewedTime``. Any ``wait=True``
-           caller also pays the polling reads. The existing MCP/REST URL-batch
-           endpoints deliberately bypass this method and use one true-batch
-           write plus, when needed, one reconciliation read (#2115). ``add_text`` is
-           ``NON_IDEMPOTENT_NO_RETRY``, runs no probe, and is unaffected.
-
-        .. warning::
-           The baseline establishes *when* a matching source appeared, not
-           *who* created it. If two callers add the same URL to one notebook
-           concurrently and one create fails before committing, the failed
-           caller's probe can attribute the other caller's source to itself
-           (or see two new matches and raise). Because the recovered result is
-           treated as fresh, a requested ``title`` would then be applied to the
-           other caller's source — a visible mutation, not merely a
-           misattributed id. A list-based probe cannot close that gap — the
-           wire carries no client-supplied idempotency key — so serialize
-           concurrent adds of the same URL into a notebook if you need that
-           guarantee. The same limitation applies to ``add_drive`` and
-           ``register_file_source``.
+        A decoded response returns its correlated source normally. If the
+        response is lost after transmission, the original exception is marked
+        unknown and raised so the caller can inspect before creating again.
         """
+
         logger.debug("Adding URL source to notebook %s: %s", notebook_id, url[:80])
+        journal_entry = OperationJournal("sources.add_url").new_entry(
+            method=RPCMethod.ADD_SOURCE.value
+        )
         video_id = extract_youtube_video_id(url)
         if not video_id and is_youtube_url(url):
             logger.warning(
@@ -268,187 +181,70 @@ class SourceAddService:
             # Preserve transport-level signals so callers can act on the
             # specific type (AuthError -> re-login, RateLimitError -> back-off
             # with retry_after, ServerError -> transient retry). RateLimitError,
-            # ServerError, and NetworkError must propagate so idempotent_create
-            # can catch them and run the probe. AuthError continues to
+            # ServerError, and NetworkError must propagate to the one-shot
+            # ambiguity marker. AuthError continues to
             # propagate to the caller because an auth failure cannot have
             # committed the write.
             try:
-                if video_id:
-                    result = await add_youtube_source(notebook_id, url)
-                else:
-                    result = await add_url_source(notebook_id, url)
+                adder = add_youtube_source if video_id else add_url_source
+                with bind_operation_journal_entries(journal_entry):
+                    result = await adder(notebook_id, url)
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
-                raise SourceAddError(url, cause=e) from e
+                raise _source_add_failure(
+                    url,
+                    cause=e,
+                    operation="sources.add_url",
+                ) from e
 
             if result is None:
-                raise SourceAddError(url, message=f"API returned no data for URL: {url}")
-            return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
-
-        # Capture baseline source ids before the first create attempt so the
-        # probe can tell "this URL add landed" from "the same URL was already
-        # in the notebook". A URL is NOT unique within a notebook — live
-        # capture (#2204) added ``https://example.com/`` twice and got two
-        # distinct source ids — so an unfiltered match could hand back a
-        # pre-existing copy as if it were the one just created, masking a
-        # failed create. ``None`` is the "baseline unavailable" sentinel; the
-        # probe then refuses to guess. Mirrors ``add_drive`` below and
-        # ``register_file_source`` in ``_web/sources/upload.py``.
-        #
-        # NEW on every call (it used to list only inside _probe, i.e. only
-        # after a transport failure). This list is a GET_NOTEBOOK, which the
-        # backend answers by WRITING lastViewedTime (#2126) — so every add_url
-        # now reshuffles the user's Recent ordering. Unavoidable (source ids
-        # live only in that payload; LIST_NOTEBOOKS does not bump but does not
-        # carry them) and accepted; see the ``.. note::`` on this method.
-        baseline_ids: set[str] | None
-        # Retained so the ambiguity raise below can name what went wrong: the
-        # caller sees "baseline unavailable" long after this line ran, and
-        # without the cause there is nothing in the process that can explain it.
-        baseline_error: Exception | None = None
-        try:
-            baseline_ids = {source.id for source in await list_sources(notebook_id)}
-        except Exception as exc:
-            # WARNING, not DEBUG: the default logger level is WARNING
-            # (``_logging.py``), so a DEBUG record here is discarded before any
-            # handler sees it and this call would silently run with the #2204
-            # protection disabled. Louder than the probe's own swallow is
-            # justified — a failed probe costs one extra create attempt, while a
-            # failed baseline disables the probe for the whole call AND turns a
-            # recoverable transport error into a hard ambiguity error below.
-            baseline_error = exc
-            logger.warning(
-                "add_url: baseline list() failed (%s); the idempotency probe can no "
-                "longer tell a source this call created from one that was already "
-                "there, so a transport failure will surface as an ambiguity error "
-                "instead of recovering",
-                type(exc).__name__,
-                exc_info=True,
-            )
-            baseline_ids = None
-
-        async def _probe() -> Source | None:
+                raise _source_add_failure(
+                    url,
+                    message=f"API returned no data for URL: {url}",
+                    operation="sources.add_url",
+                )
             try:
-                sources = await list_sources(notebook_id)
-            except (AuthError, RateLimitError, ServerError, NetworkError) as exc:
-                # Transport- and auth-level probe failures must propagate.
-                # Silently returning None here lets ``idempotent_create``
-                # re-issue the create on top of a broken probe, which is
-                # exactly the duplicate-source bug we are guarding against.
-                # Mark it UNCONFIRMED before it goes (#2220 review): the create
-                # may already have committed and this probe could not say, which
-                # is the same predicament as the decode branch below. Without the
-                # marker a ServerError/RateLimitError here classifies as the
-                # *retriable* SERVER/RATE_LIMITED with the hint "retry after a
-                # short delay" — and the caller retries the ADD, not the probe.
-                # The underlying type is left intact, so "re-authenticate" /
-                # "connectivity" remain readable in the message.
-                _unconfirmed(exc)
-                raise
-            except Exception as exc:
-                # Propagate, do not retry (#2220). A decode failure here (e.g.
-                # the strict ``RPCError`` GET_NOTEBOOK raises on a drifted
-                # response) leaves the probe unable to answer, and its answer is
-                # the only thing that makes the retry safe: this variant runs
-                # with ``disable_internal_retries=True`` precisely because a
-                # blind re-POST of ``ADD_SOURCE`` can duplicate. Returning
-                # ``None`` here would claim "the create did not land" on no
-                # evidence and re-issue it — silently downgrading a
-                # ``PROBE_THEN_CREATE`` operation to at-least-once, which this
-                # codebase's own taxonomy (``AT_LEAST_ONCE_ACCEPTED``) requires
-                # the *caller* to opt into. Raising hands the caller the one
-                # thing they can act on: this add is unresolved, go look.
-                logger.warning(
-                    "add_url: probe list() failed with a non-transport error (%s); the "
-                    "create cannot be confirmed, so it will not be retried",
-                    type(exc).__name__,
-                    exc_info=True,
+                source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded source create",
+                    known_resource_ids=((source.id,) if source.id else ()),
                 )
-                raise unresolved_commit_error(
-                    RPCMethod.ADD_SOURCE,
-                    "the URL-source add",
-                    SourceAddError(
-                        url,
-                        cause=exc,
-                        message=(
-                            # Front-loaded on purpose: the MCP and REST surfaces
-                            # truncate messages at 300 characters, which cut the
-                            # closing instruction mid-word on a realistic URL.
-                            # The action comes first; the narrative can be lost.
-                            "UNRESOLVED — do not blindly retry; check the notebook "
-                            f"source list first. Cannot confirm URL source {url!r}: "
-                            "the create failed at the transport level and may or may "
-                            "not have committed, and the idempotency probe that would "
-                            f"settle it failed too ({type(exc).__name__}). No FURTHER attempt "
-                            "was made, because retrying on an unanswered probe is how "
-                            "duplicates happen — but an earlier attempt in this call "
-                            "may also have committed."
-                        ),
-                    ),
-                    preserve_exception=True,
-                ) from exc
-            matches = [source for source in sources if source.url == url]
-            if baseline_ids is not None:
-                matches = [source for source in matches if source.id not in baseline_ids]
-            elif matches:
-                # Without a baseline a match may predate this add — see the
-                # ``baseline_ids`` comment for the failure mode this guards.
-                # Both halves of the ambiguity are worth stating: the match may
-                # predate the add, or it may BE the add, in which case the create
-                # landed and the caller will otherwise never learn its id.
-                raise unresolved_commit_error(
-                    RPCMethod.ADD_SOURCE,
-                    "the URL-source add",
-                    SourceAddError(
-                        url,
-                        cause=baseline_error,
-                        message=(
-                            # Action first: MCP and REST truncate at 300 chars,
-                            # while the URL + matched-row description are unbounded.
-                            "UNRESOLVED — check the notebook source list before retrying. "
-                            f"Cannot disambiguate URL source {url!r}: the pre-create baseline "
-                            f"snapshot failed ({type(baseline_error).__name__}), so "
-                            f"{_describe_sources(matches)} may either predate this add or be "
-                            "the source it just created."
-                        ),
-                    ),
-                    preserve_exception=True,
-                )
-            if len(matches) == 1:
-                (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
-                return match
-            if len(matches) > 1:
-                raise unresolved_commit_error(
-                    RPCMethod.ADD_SOURCE,
-                    "the URL-source add",
-                    SourceAddError(
-                        url,
-                        message=(
-                            # _describe_sources grows with every match; keep the
-                            # manual-reconciliation instruction inside [:300].
-                            "UNRESOLVED — check the notebook source list before retrying. "
-                            f"Cannot disambiguate URL source {url!r}: probe found "
-                            f"{len(matches)} new sources with this URL after a transport "
-                            f"failure ({_describe_sources(matches)})."
-                        ),
-                    ),
-                    preserve_exception=True,
-                )
-            return None
+                return source
+            except Exception as e:
+                raise _source_add_failure(
+                    url,
+                    cause=e,
+                    operation="sources.add_url",
+                    message=f"Failed to decode the added URL source: {url}",
+                ) from e
 
-        result = await idempotent_create(
+        source = await call_unconfirmed_on_transport_loss(
             _create,
-            _probe,
-            label=f"sources.add_url[{url[:40]}]",
+            method=RPCMethod.ADD_SOURCE,
+            what="the URL-source add",
+            operation="sources.add_url",
+            journal_entry=journal_entry,
         )
-        source = result.value
 
         if wait:
-            source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
-            result = replace(result, value=source)
+            try:
+                source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            except NotebookLMError as exc:
+                journal_entry.stage = "wait"
+                attach_journal_entry(
+                    exc,
+                    journal_entry,
+                    recovery_action=(
+                        RecoveryAction.NONE
+                        if isinstance(exc, SourceProcessingError)
+                        else RecoveryAction.WAIT
+                    ),
+                )
+                raise
 
-        return result if return_result else source
+        return source
 
     async def add_text(
         self,
@@ -465,6 +261,9 @@ class SourceAddService:
     ) -> Source:
         """Add a text source to a notebook."""
         logger.debug("Adding text source to notebook %s: %s", notebook_id, title)
+        journal_entry = OperationJournal("sources.add_text").new_entry(
+            method=RPCMethod.ADD_SOURCE.value
+        )
         # Nested template block per the Gemini-3.5 wire migration (#1546): the
         # text spec grew from 8 to 11 elements (slot 3 None -> 2, trailing 1) and
         # the flat [2],None,None tail collapsed into the shared template block.
@@ -476,34 +275,71 @@ class SourceAddService:
             notebook_id,
             build_template_block(),
         ]
-        try:
-            result = await rpc.rpc_call(
-                RPCMethod.ADD_SOURCE,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                operation_variant="text",
-            )
-        except (AuthError, RateLimitError, ServerError, NetworkError):
-            # Preserve transport-level signals so callers can act on the
-            # specific type (AuthError -> re-login, RateLimitError -> back-off
-            # with retry_after, ServerError -> transient retry) instead of
-            # receiving everything collapsed into SourceAddError — the same
-            # ADR-0019 catch ordering add_url and add_drive use.
-            raise
-        except RPCError as e:
-            raise SourceAddError(
-                title,
-                cause=e,
-                message=f"Failed to add text source '{title}'",
-            ) from e
 
-        if result is None:
-            raise SourceAddError(title, message=f"API returned no data for text source: {title}")
+        async def _create() -> Source:
+            try:
+                with bind_operation_journal_entries(journal_entry):
+                    result = await rpc.rpc_call(
+                        RPCMethod.ADD_SOURCE,
+                        params,
+                        source_path=f"/notebook/{notebook_id}",
+                        operation_variant="text",
+                    )
+            except (AuthError, RateLimitError, ServerError, NetworkError):
+                raise
+            except RPCError as e:
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_text",
+                    message=f"Failed to add text source '{title}'",
+                ) from e
 
-        source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+            if result is None:
+                raise _source_add_failure(
+                    title,
+                    message=f"API returned no data for text source: {title}",
+                    operation="sources.add_text",
+                )
+            try:
+                source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded source create",
+                    known_resource_ids=((source.id,) if source.id else ()),
+                )
+                return source
+            except Exception as e:
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_text",
+                    message=f"Failed to decode the added text source: {title}",
+                ) from e
+
+        source = await call_unconfirmed_on_transport_loss(
+            _create,
+            method=RPCMethod.ADD_SOURCE,
+            what="the text-source add",
+            operation="sources.add_text",
+            journal_entry=journal_entry,
+        )
 
         if wait:
-            return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            try:
+                return await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            except NotebookLMError as exc:
+                journal_entry.stage = "wait"
+                attach_journal_entry(
+                    exc,
+                    journal_entry,
+                    recovery_action=(
+                        RecoveryAction.NONE
+                        if isinstance(exc, SourceProcessingError)
+                        else RecoveryAction.WAIT
+                    ),
+                )
+                raise
 
         return source
 
@@ -521,77 +357,23 @@ class SourceAddService:
         wait_until_ready: WaitUntilReady,
         logger: logging.Logger,
         return_result: bool = False,
-    ) -> Source | _IdempotentCreateResult[Source]:
-        """Add a Google Drive document as a source.
+    ) -> Source:
+        """Add one Drive source without replaying an ambiguous create.
 
-        Drive sources go through the same probe-then-create idempotency
-        pattern as ``add_url``: a 5xx / network failure
-        between server-side commit and client-side response could
-        otherwise duplicate the source on a naive retry. The probe matches
-        on :attr:`~notebooklm.types.Source.drive_document_id`, the Drive
-        ``documentId`` the backend echoes back in the source metadata.
-        Drive-backed sources carry **no** URL (their URL slots are empty),
-        so a URL-based probe could never match one — it silently duplicated
-        the source on every retry until #2113.
-
-        A ``documentId`` is **not** unique within a notebook: the backend
-        happily holds the same Drive file twice. The probe therefore filters
-        matches against a baseline of source ids captured before the first
-        create attempt, exactly like
-        :meth:`~notebooklm._web.sources.upload.SourceUploader.register_file_source`
-        does for filenames, so a pre-existing copy is never handed back as if
-        it were the one just created. This costs one extra source list per
-        call; it is the price of telling "my create landed" apart from "a copy
-        was already there".
-
-        .. note::
-           **This is a behaviour change.** ``add_drive`` now captures a baseline
-           on *every* call; previously it listed sources only inside ``_probe``,
-           which ``idempotent_create`` runs only after a transport failure. It
-           now matches the shape ``register_file_source`` has always had (an
-           unconditional pre-create baseline), so the cost is an extension of an
-           existing pattern rather than a wholly new one — but for the Drive path
-           it is new, moving from retry-only to every call.
-
-           The concrete cost: that list is a ``GET_NOTEBOOK``, and the backend
-           **writes** ``lastViewedTime`` when answering one (#2126), so every
-           ``add_drive`` now promotes the notebook to the top of the user's
-           *Recent* list in the web UI. No cheaper probe exists — source ids are
-           published only inside the ``GET_NOTEBOOK`` payload, and
-           ``LIST_NOTEBOOKS`` (which does not bump) does not carry them. The bump
-           is accepted: silently returning a pre-existing source and reporting a
-           create that never happened is far worse than a reordered Recent list.
-
-           Sibling paths, so the next reader need not re-derive it: ``add_text``
-           is ``NON_IDEMPOTENT_NO_RETRY`` and has no probe, so it has no such
-           exposure. ``add_url`` shared the un-baselined shape this fix replaced
-           — a notebook can hold two sources with the same URL — and was given
-           the same pre-create baseline in #2204.
-
-        .. warning::
-           The baseline establishes *when* a matching source appeared, not
-           *who* created it. If two callers add the same Drive file to one
-           notebook concurrently and one create fails before committing, the
-           failed caller's probe can attribute the other caller's source to
-           itself. A list-based probe cannot close that gap — the wire carries
-           no client-supplied idempotency key — so serialize concurrent adds of
-           the same file into a notebook if you need that guarantee. The same
-           limitation applies to ``register_file_source``'s filename probe.
-
-        .. note::
-           The ``title`` is sent on the wire but **ignored** for native Drive
-           imports: NotebookLM re-derives the display title from live Drive
-           metadata, so the returned source keeps the file's Drive name
-           regardless of what you pass here. Call
-           :meth:`~notebooklm._sources.SourcesAPI.rename` after the add if you
-           need a specific title.
+        A decoded response returns its correlated source normally. If the
+        response is lost after transmission, the original exception is marked
+        unknown and raised so the caller can inspect before creating again.
         """
+
         # Fail before the write rather than POSTing a blank Drive id. A blank
         # id is also unmatchable by the probe below (a row's
         # ``drive_document_id`` is never ``""``), so without this guard a
         # transport failure would retry the blank add and could leave two
         # garbage sources behind.
         _validate_drive_file_id(file_id)
+        journal_entry = OperationJournal("sources.add_drive").new_entry(
+            method=RPCMethod.ADD_SOURCE.value
+        )
         logger.debug("Adding Drive source to notebook %s: %s", notebook_id, title)
         source_data = [
             [file_id, mime_type, 1, title],
@@ -620,25 +402,29 @@ class SourceAddService:
         async def _create() -> Source:
             # Preserve transport-level signals so callers can act on the
             # specific type (AuthError -> re-login, RateLimitError -> back-off,
-            # ServerError -> transient retry). The retryable transport
-            # exceptions must propagate so idempotent_create can catch them
-            # and run the probe.
+            # ServerError -> transient retry). Transport exceptions propagate
+            # so the one-shot ambiguity boundary can mark them without replay.
             try:
-                result = await rpc.rpc_call(
-                    RPCMethod.ADD_SOURCE,
-                    params,
-                    source_path=f"/notebook/{notebook_id}",
-                    allow_null=True,
-                    disable_internal_retries=True,
-                    operation_variant="drive",
-                )
+                with bind_operation_journal_entries(journal_entry):
+                    result = await rpc.rpc_call(
+                        RPCMethod.ADD_SOURCE,
+                        params,
+                        source_path=f"/notebook/{notebook_id}",
+                        allow_null=True,
+                        disable_internal_retries=True,
+                        operation_variant="drive",
+                    )
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
-                raise SourceAddError(title, cause=e) from e
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_drive",
+                ) from e
 
             if result is None:
-                raise SourceAddError(
+                raise _source_add_failure(
                     title,
                     message=(
                         f"API returned no data for Drive source: {title} "
@@ -648,150 +434,49 @@ class SourceAddService:
                         "upload-only type (e.g. epub/docx/txt/md/rtf/odt/csv), "
                         "download it and add it as a `file` source instead."
                     ),
+                    operation="sources.add_drive",
                 )
-            return decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
-
-        # Capture baseline source ids before the first create attempt so the
-        # probe can tell "this Drive add landed" from "the same Drive file was
-        # already in the notebook". A ``documentId`` is NOT unique within a
-        # notebook — live capture (``tests/cassettes/web/sources_check_freshness_
-        # drive.yaml``) holds two source ids sharing one documentId — so an
-        # unfiltered match could hand back a pre-existing copy as if it were the
-        # one just created, silently masking a failed create. ``None`` is the
-        # "baseline unavailable" sentinel; the probe then refuses to guess.
-        # Mirrors ``register_file_source`` in ``_web/sources/upload.py``.
-        #
-        # NEW on every call (it used to list only inside _probe, i.e. only after
-        # a transport failure). This list is a GET_NOTEBOOK, which the backend
-        # answers by WRITING lastViewedTime (#2126) — so every add_drive now
-        # reshuffles the user's Recent ordering. Unavoidable (source ids live
-        # only in that payload; LIST_NOTEBOOKS does not bump but does not carry
-        # them) and accepted; see the ``.. note::`` on this method.
-        baseline_ids: set[str] | None
-        # Retained so the ambiguity raise below can name what went wrong, exactly
-        # as ``add_url`` does: the caller sees "baseline snapshot failed" long
-        # after this line ran, and without the cause there is nothing left in the
-        # process that can explain it.
-        baseline_error: Exception | None = None
-        try:
-            baseline_ids = {source.id for source in await list_sources(notebook_id)}
-        except Exception as exc:
-            baseline_error = exc
-            # WARNING, not DEBUG, for the reason spelled out on ``add_url``'s
-            # copy of this block (#2204): the default logger level is WARNING,
-            # so a DEBUG record here is dropped before any handler sees it and
-            # the call silently runs with its idempotency probe disabled.
-            logger.warning(
-                "add_drive: baseline list() failed (%s); the idempotency probe can no "
-                "longer tell a source this call created from one that was already "
-                "there, so a transport failure will surface as an ambiguity error "
-                "instead of recovering",
-                type(exc).__name__,
-                exc_info=True,
-            )
-            baseline_ids = None
-
-        # A Drive-backed source echoes the requested ``file_id`` back as the
-        # ``documentId`` in its metadata (``SourceRow.drive_document_id``);
-        # it carries no URL at all, which is why the previous ``/d/<file_id>``
-        # URL-segment probe could never match and let every retry duplicate the
-        # source (#2113). Exact equality — not a substring test — so neither an
-        # interior substring nor a prefix collision (``abc`` vs ``abcdef``) can
-        # produce a false positive, and non-Drive rows (``drive_document_id is
-        # None``) can never match a requested file_id.
-        async def _probe() -> Source | None:
             try:
-                sources = await list_sources(notebook_id)
-            except (AuthError, RateLimitError, ServerError, NetworkError) as exc:
-                # Transport- and auth-level probe failures must propagate
-                # — see the rationale in ``add_url._probe``.
-                # Mark it UNCONFIRMED before it goes (#2220 review): the create
-                # may already have committed and this probe could not say, which
-                # is the same predicament as the decode branch below. Without the
-                # marker a ServerError/RateLimitError here classifies as the
-                # *retriable* SERVER/RATE_LIMITED with the hint "retry after a
-                # short delay" — and the caller retries the ADD, not the probe.
-                # The underlying type is left intact, so "re-authenticate" /
-                # "connectivity" remain readable in the message.
-                _unconfirmed(exc)
-                raise
-            except Exception as exc:
-                # Propagate, do not retry (#2220) — see the full rationale on
-                # ``add_url._probe``. An unanswered probe is not evidence that
-                # the create did not land, and this variant has no internal
-                # retries left as a net against the duplicate.
-                logger.warning(
-                    "add_drive: probe list() failed with a non-transport error (%s); the "
-                    "create cannot be confirmed, so it will not be retried",
-                    type(exc).__name__,
-                    exc_info=True,
+                source = decode_source(Source, result, method_id=RPCMethod.ADD_SOURCE.value)
+                journal_entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded source create",
+                    known_resource_ids=((source.id,) if source.id else ()),
                 )
-                raise unresolved_commit_error(
-                    RPCMethod.ADD_SOURCE,
-                    "the Drive-source add",
-                    SourceAddError(
-                        title,
-                        cause=exc,
-                        message=(
-                            # Action first — see the note on ``add_url``'s copy.
-                            "UNRESOLVED — do not blindly retry; check the notebook "
-                            "source list first. Cannot confirm Drive source "
-                            f"{file_id!r}: the create failed at the transport level "
-                            "and may or may not have committed, and the idempotency "
-                            f"probe that would settle it failed too "
-                            f"({type(exc).__name__}). No FURTHER attempt was made, because "
-                            "retrying on an unanswered probe is how duplicates happen — "
-                            "but an earlier attempt in this call may also have committed."
-                        ),
-                    ),
-                    preserve_exception=True,
-                ) from exc
-            matches = [source for source in sources if source.drive_document_id == file_id]
-            if baseline_ids is not None:
-                matches = [source for source in matches if source.id not in baseline_ids]
-            elif matches:
-                # Without a baseline a match may predate this add — see the
-                # ``baseline_ids`` comment for the failure mode this guards.
-                raise _unconfirmed(
-                    SourceAddError(
-                        title,
-                        cause=baseline_error,
-                        message=(
-                            f"Cannot disambiguate Drive source {file_id!r}: the pre-create "
-                            f"baseline snapshot failed ({type(baseline_error).__name__}), so "
-                            "a matching source may either predate this add or be the one it "
-                            "just created. Check the notebook source list before retrying."
-                        ),
-                    )
-                )
-            if len(matches) == 1:
-                (match,) = matches  # exactly one (len==1 guard); unpack, not matches[0]
-                return match
-            if len(matches) > 1:
-                raise _unconfirmed(
-                    SourceAddError(
-                        title,
-                        message=(
-                            f"Cannot disambiguate Drive source {file_id!r}: probe found "
-                            f"{len(matches)} new sources with this documentId after a "
-                            "transport failure. Check the notebook source list before retrying."
-                        ),
-                    )
-                )
-            return None
+                return source
+            except Exception as e:
+                raise _source_add_failure(
+                    title,
+                    cause=e,
+                    operation="sources.add_drive",
+                    message=f"Failed to decode the added Drive source: {title}",
+                ) from e
 
-        result = await idempotent_create(
+        source = await call_unconfirmed_on_transport_loss(
             _create,
-            _probe,
-            label=f"sources.add_drive[{file_id}]",
+            method=RPCMethod.ADD_SOURCE,
+            what="the Drive-source add",
+            operation="sources.add_drive",
+            journal_entry=journal_entry,
         )
-        source = result.value
 
         if wait:
-            source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
-            result = replace(result, value=source)
+            try:
+                source = await wait_until_ready(notebook_id, source.id, timeout=wait_timeout)
+            except NotebookLMError as exc:
+                journal_entry.stage = "wait"
+                attach_journal_entry(
+                    exc,
+                    journal_entry,
+                    recovery_action=(
+                        RecoveryAction.NONE
+                        if isinstance(exc, SourceProcessingError)
+                        else RecoveryAction.WAIT
+                    ),
+                )
+                raise
 
-        return result if return_result else source
+        return source
 
     def extract_youtube_video_id(
         self,

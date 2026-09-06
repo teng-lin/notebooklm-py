@@ -42,6 +42,8 @@ from notebooklm._android.sources import (
     AndroidSourcesAPI,
 )
 from notebooklm._android.upload import AndroidUploadPipeline
+from notebooklm._app.source_batch import MAX_BATCH_URLS
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._types.research import SourceGuide
 from notebooklm._types.sources import PlayBookExportReason
 from notebooklm.exceptions import (
@@ -59,6 +61,7 @@ from notebooklm.exceptions import (
     SourceTimeoutError,
     ValidationError,
 )
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.types import Source, SourceStatus
 
 NOTEBOOK_ID = "00000000-0000-4000-8000-000000000100"
@@ -100,7 +103,13 @@ class FakeTransport:
         self.scopes.append(label)
         yield _Lease()
 
+    async def spawn_child(self, label: str, factory: Any) -> asyncio.Task[Any]:
+        """Declare unowned child scheduling for direct transport tests."""
+        return asyncio.create_task(factory(), name=label)
+
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.timeline.append(method)
         self.calls.append((method, request, kwargs))
         if method == GET_PROJECT_METHOD and method not in self.handlers:
@@ -320,7 +329,7 @@ async def test_duplicate_returned_name_is_unconfirmed_and_unexpected_row_is_isol
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _duplicate
     transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse()
     transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_B, url=URL_B))
-    results = await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+    results = await _api(transport).add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
     assert results[0].error is not None
     assert getattr(results[0].error, "unconfirmed", False) is True
     assert results[1].source is not None and results[1].source.id == SOURCE_B
@@ -694,6 +703,113 @@ async def test_empty_url_batch_has_zero_io() -> None:
 
 
 @pytest.mark.asyncio
+async def test_public_batch_cap_rejects_21_duplicate_occurrences_before_grpc() -> None:
+    transport = FakeTransport()
+
+    with pytest.raises(ValidationError, match=r"at most 20 entries; got 21"):
+        await _api(transport).add_urls_batch(
+            NOTEBOOK_ID,
+            ["https://same.example"] * (MAX_BATCH_URLS + 1),
+        )
+
+    assert transport.calls == []
+    assert transport.scopes == []
+
+
+@pytest.mark.asyncio
+async def test_public_batch_allows_20_duplicate_occurrences() -> None:
+    url = "https://same.example"
+    urls = [url] * MAX_BATCH_URLS
+    source_ids = [f"00000000-0000-4000-8000-{index:012d}" for index in range(MAX_BATCH_URLS)]
+    sources = [_source(source_id, url=url) for source_id in source_ids]
+    transport = FakeTransport()
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler(source_ids)
+    transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse(sources=sources)
+    transport.handlers[GET_PROJECT_METHOD] = _project(*sources)
+
+    outcomes = await _api(transport).add_urls_batch(NOTEBOOK_ID, urls)
+
+    assert [item.member for item in outcomes] == list(range(MAX_BATCH_URLS))
+    assert [item.input for item in outcomes] == urls
+    assert [call[0] for call in transport.calls] == [
+        ADD_TENTATIVE_SOURCES_METHOD,
+        ADD_SOURCES_METHOD,
+        GET_PROJECT_METHOD,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_batch_pre_dispatch_failure_is_ordered_unattempted_evidence() -> None:
+    transport = FakeTransport()
+    failure = AuthError("credential acquisition failed")
+
+    async def fail_before_dispatch(method: str, request: Any, **kwargs: Any) -> Any:
+        del method, request, kwargs
+        raise failure
+
+    transport.unary = fail_before_dispatch  # type: ignore[method-assign]
+
+    with pytest.raises(AuthError) as raised:
+        await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+
+    assert raised.value is failure
+    assert failure.batch_outcome is not None
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.NOT_SENT,
+        CommitState.NOT_SENT,
+    ]
+    assert failure.operation_metadata is not None
+    assert failure.operation_metadata.recovery_action is RecoveryAction.RETRY
+    assert len(failure.operation_metadata.entries) == 4
+    assert all(not entry.attempts for entry in failure.operation_metadata.entries)
+
+
+@pytest.mark.asyncio
+async def test_batch_registration_auth_after_dispatch_is_unknown_with_reports() -> None:
+    transport = FakeTransport()
+    failure = AuthError("wire auth status")
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = failure
+
+    with pytest.raises(AuthError) as raised:
+        await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+
+    assert raised.value is failure
+    assert failure.batch_outcome is not None
+    assert [item.commit_state for item in failure.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert all(item.reconciliation is not None for item in failure.batch_outcome.items)
+    assert failure.operation_metadata is not None
+    assert len(failure.operation_metadata.entries) == 4
+    assert [len(entry.attempts) for entry in failure.operation_metadata.entries] == [1, 1, 0, 0]
+
+
+@pytest.mark.asyncio
+async def test_batch_commit_cancellation_retains_registration_ids_and_all_entries() -> None:
+    transport = FakeTransport()
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A, SOURCE_B])
+    cancellation = asyncio.CancelledError()
+    transport.handlers[ADD_SOURCES_METHOD] = cancellation
+
+    with pytest.raises(asyncio.CancelledError) as raised:
+        await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+
+    assert raised.value is cancellation
+    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    assert metadata.known_resource_ids == (SOURCE_A, SOURCE_B)
+    assert len(metadata.entries) == 4
+    assert metadata.batch_outcome is not None
+    assert [item.commit_state for item in metadata.batch_outcome.items] == [
+        CommitState.UNKNOWN,
+        CommitState.UNKNOWN,
+    ]
+    assert [item.resource_id for item in metadata.batch_outcome.items] == [SOURCE_A, SOURCE_B]
+    assert all(item.reconciliation is not None for item in metadata.batch_outcome.items)
+    assert not hasattr(cancellation, "operation")
+
+
+@pytest.mark.asyncio
 async def test_add_text_uses_registered_exact_content_and_rejects_idempotent_opt_in() -> None:
     transport = _successful_transport()
 
@@ -731,7 +847,11 @@ async def test_add_drive_uses_exact_content_and_validates_identifier_before_io()
 
     assert result.id == SOURCE_A
     assert result.title == "Drive title"
-    assert transport.scopes == ["source.add_drive", "source.rename"]
+    assert transport.scopes == [
+        "source.add_drive",
+        "source.add_drive.commit",
+        "source.rename",
+    ]
     commit = next(call[1] for call in transport.calls if call[0] == ADD_SOURCES_METHOD)
     content = commit.user_content[0]
     assert content.google_drive_content.document_id == "drive-document-id"
@@ -1743,7 +1863,7 @@ class TestPlayBooksAndroid:
         ]
 
     @pytest.mark.asyncio
-    async def test_internal_refusal_refreshes_after_tentative_readback(self) -> None:
+    async def test_internal_status_does_not_replay_after_tentative_readback(self) -> None:
         transport = _successful_transport()
         phenotype = FakePhenotype()
         transport.handlers[LIST_EXPERT_INTELLIGENCE_CONTENT_METHOD] = _ei_response(
@@ -1764,17 +1884,18 @@ class TestPlayBooksAndroid:
             ]
         )
 
-        source = await _api(transport, phenotype=phenotype).add_play_book(
-            NOTEBOOK_ID,
-            "QhsZEAAAQBAJ",
-        )
+        with pytest.raises(SourceAddError) as raised:
+            await _api(transport, phenotype=phenotype).add_play_book(
+                NOTEBOOK_ID,
+                "QhsZEAAAQBAJ",
+            )
 
-        assert source.id == SOURCE_A
-        assert phenotype.calls == [("fake-bearer", False), ("fake-bearer", True)]
+        assert raised.value.commit_state is CommitState.UNKNOWN
+        assert phenotype.calls == [("fake-bearer", False)]
         methods = [method for method, _, _ in transport.calls]
         assert methods.count(ADD_TENTATIVE_SOURCES_METHOD) == 1
-        assert methods.count(ADD_SOURCES_METHOD) == 2
-        assert methods.count(GET_PROJECT_METHOD) == 2
+        assert methods.count(ADD_SOURCES_METHOD) == 1
+        assert methods.count(GET_PROJECT_METHOD) == 1
 
     @pytest.mark.asyncio
     async def test_internal_refusal_does_not_retry_after_commit_proof(self) -> None:
