@@ -129,6 +129,26 @@ def _source_revision() -> str | None:
         return None
 
 
+def _validate_evidence(result: ScenarioResult) -> None:
+    """Require recorded plans and checks, not only a claimed passing summary."""
+    if not result.checks or not all(value is True for value in result.checks.values()):
+        raise ValueError("scenario completed without nonempty passing invariant checks")
+    if not any(event.get("kind") == "plan" for event in result.events):
+        raise ValueError("scenario completed without a recorded fault plan")
+    recorded: dict[str, bool] = {}
+    for event in result.events:
+        if event.get("kind") != "check":
+            continue
+        name = event.get("name")
+        if not isinstance(name, str) or name in recorded or event.get("passed") is not True:
+            raise ValueError("scenario has duplicate, invalid, or failed check evidence")
+        recorded[name] = True
+    if recorded != result.checks:
+        raise ValueError("scenario check summary does not match recorded evidence")
+    # Validate even direct event-list mutations by scenario code.
+    json.dumps({"events": result.events, "checks": result.checks}, allow_nan=False)
+
+
 async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
     """Run a fixed worker pool and retain diagnostics for every planned cohort."""
     plans = build_plan(config, registry)
@@ -176,10 +196,7 @@ async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
                 plan.operation_id,
             ):
                 raise ValueError("scenario returned an inconsistent result identity")
-            if not result.checks or not all(value is True for value in result.checks.values()):
-                raise ValueError("scenario completed without nonempty passing invariant checks")
-            # Validate even direct event-list mutations by scenario code.
-            json.dumps({"events": result.events, "checks": result.checks}, allow_nan=False)
+            _validate_evidence(result)
             operation["status"] = "passed"
         except asyncio.TimeoutError:
             operation["status"] = "timed_out"

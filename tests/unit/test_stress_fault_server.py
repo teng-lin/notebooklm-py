@@ -131,6 +131,28 @@ async def test_failed_scenarios_preserve_trace_and_fail_report(mode: str) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["missing_plan", "unrecorded", "duplicate", "mismatched"])
+async def test_passing_claim_without_matching_evidence_fails(mode: str) -> None:
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        if mode != "missing_plan":
+            result.record("plan", faults=["commit_then_disconnect"])
+        if mode == "unrecorded":
+            result.checks["one commit"] = True
+        else:
+            result.require("one commit", True)
+        if mode == "duplicate":
+            result.record("check", name="one commit", passed=True)
+        if mode == "mismatched":
+            result.checks = {"unobserved condition": True}
+        return result
+
+    report = await stress.run_stress(stress.RunConfig(iterations=1), {("web", "read"): scenario})
+    assert report["summary"]["failed"] == 1
+    assert not report["summary"]["ok"]
+    assert "ValueError" in report["operations"][0]["error"]
+
+
+@pytest.mark.asyncio
 async def test_scenario_timeout_cancels_work_and_retains_cleanup_events() -> None:
     cleaned = asyncio.Event()
 
@@ -308,6 +330,7 @@ def test_cli_reports_a_leaked_child_even_when_it_cancels_cleanly() -> None:
             cleaned = True
 
     async def leaks(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        result.record("plan", faults=["leaked_child"])
         asyncio.create_task(child(), name="unexpected-child")
         result.require("misleading cleanup claim", True)
         return result
@@ -323,6 +346,7 @@ def test_cli_records_unhandled_background_failure() -> None:
         raise RuntimeError("orphaned handler failed")
 
     async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        result.record("plan", faults=["unhandled_background_failure"])
         asyncio.create_task(fails(), name="unowned-handler")
         await asyncio.sleep(0)
         result.require("misleading success", True)
