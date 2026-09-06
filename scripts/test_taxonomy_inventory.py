@@ -41,9 +41,9 @@ class ItemRecord:
 
 class CollectionRecorder:
     def __init__(self) -> None:
-        self.items: list[object] = []
+        self.items: list[pytest.Item] = []
 
-    def pytest_collection_modifyitems(self, config, items) -> None:
+    def pytest_collection_modifyitems(self, config: pytest.Config, items: list[pytest.Item]) -> None:
         self.items = list(items)
 
 
@@ -379,8 +379,8 @@ def check_outputs(outputs: dict[Path, str]) -> int:
             stale.append(_repo_relative(path))
     if stale:
         print("taxonomy inventory outputs are stale:", file=sys.stderr)
-        for path in stale:
-            print(f"  {path}", file=sys.stderr)
+        for stale_path in stale:
+            print(f"  {stale_path}", file=sys.stderr)
         return 1
     return 0
 
