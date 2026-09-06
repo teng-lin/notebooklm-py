@@ -1537,6 +1537,21 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
+      "owner_qualname": "test_capture_reads_cookie_after_login_page_closes_in_real_chromium",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py",
+      "category": "runtime_gateway",
+      "owner": "browser authentication maintainers",
+      "reason": "Substitutes the environment-bound browser runtime gateway notebooklm._browser.oauth_token.sync_playwright_context while preserving its orchestration, security, and cleanup contract.",
+      "removal_trigger": "Replace this target with a dedicated injected browser-operation owner that preserves the same observable contract.",
+      "ceiling": 1
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
       "owner_qualname": "test_capture_rejected_cdp_scrubs_retained_frame_and_exception_chain",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py",
@@ -1574,6 +1589,36 @@
       "owner": "browser authentication maintainers",
       "reason": "Substitutes the environment-bound browser runtime gateway notebooklm._browser.oauth_token.sync_playwright_context while preserving its orchestration, security, and cleanup contract.",
       "removal_trigger": "Replace this target with a dedicated injected browser-operation owner that preserves the same observable contract.",
+      "ceiling": 1
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py",
+      "category": "runtime_gateway",
+      "owner": "browser authentication maintainers",
+      "reason": "Substitutes the environment-bound browser runtime gateway notebooklm._browser.oauth_token.sync_playwright_context while preserving its orchestration, security, and cleanup contract.",
+      "removal_trigger": "Replace this target with a dedicated injected browser-operation owner that preserves the same observable contract.",
+      "ceiling": 1
+    },
+    {
+      "attribute": "time",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py",
+      "category": "runtime_gateway",
+      "owner": "browser authentication maintainers",
+      "reason": "Substitutes the host clock and sleep gateway notebooklm._browser.oauth_token.time while preserving the capture loop's timeout and cleanup contract.",
+      "removal_trigger": "Replace this target with an injected clock owner that preserves the same observable timeout contract.",
       "ceiling": 1
     }
   ]

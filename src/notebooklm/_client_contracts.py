@@ -148,6 +148,8 @@ class WebDependencies:
     decode_response: Callable[..., Any] | None
     sleep: Callable[[float], Awaitable[Any]] | None
     is_auth_error: Callable[[Exception], bool] | None
+    # Compatibility projection; TransferOptions remains the upload-phase owner.
+    legacy_upload_timeout: httpx.Timeout | None
     seams: ClientSeams | None = None
     composed: ClientComposed | None = None
 

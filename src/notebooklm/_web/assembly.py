@@ -118,6 +118,9 @@ def assemble_web_backend(
         web.executor,
         supervisor=shared.call_supervisor,
         uploader=web.source_uploader,
+        # Preserve the legacy introspection identity without bypassing the
+        # phase-specific TransferOptions consumed by SourceUploadPipeline.
+        upload_timeout=deps.legacy_upload_timeout,
         max_concurrent_uploads=transfers.max_concurrent_uploads,
     )
     notebooks = WebNotebooksAPI(

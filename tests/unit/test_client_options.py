@@ -153,6 +153,7 @@ def test_typed_web_values_reach_only_their_owners(auth: AuthTokens) -> None:
     assert uploader._start_timeout == httpx.Timeout(connect=1, read=2, write=3, pool=4)
     assert uploader._finalize_timeout == httpx.Timeout(None)
     assert uploader._drive_timeout == httpx.Timeout(connect=1, read=2, write=3, pool=4)
+    assert client.sources._upload_timeout is None
     assert client.chat._chat_timeout == 7.0
     assert client.research._import_research_timeout == 8.0
 
@@ -194,8 +195,11 @@ def test_legacy_upload_timeout_maps_losslessly_by_backend(auth: AuthTokens) -> N
         warnings.simplefilter("ignore", DeprecationWarning)
         web = NotebookLMClient(auth, upload_timeout=legacy)
         android = NotebookLMClient(auth, upload_timeout=legacy, backend="android")
+    assert web.sources._upload_timeout is legacy
     assert web._web_runtime.source_uploader._start_timeout == legacy
     assert web._web_runtime.source_uploader._finalize_timeout == legacy
+    assert web._web_runtime.source_uploader._start_timeout is not legacy
+    assert web._web_runtime.source_uploader._finalize_timeout is not legacy
     assert web._web_runtime.source_uploader._drive_timeout is None
     pipeline = android._android_runtime.upload_pipeline
     assert pipeline._start_http_timeout == legacy
