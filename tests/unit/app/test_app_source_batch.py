@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from notebooklm._app.source_batch import MAX_BATCH_URLS, validate_source_batch_occurrences
+from notebooklm._app.source_batch import MAX_BATCH_URLS
+from notebooklm._source.batch import validate_source_batch_occurrences
 from notebooklm.exceptions import ValidationError
 
 

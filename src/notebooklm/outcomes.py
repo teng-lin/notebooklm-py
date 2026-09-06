@@ -18,7 +18,8 @@ if TYPE_CHECKING:
     from .types import Source
 
 _MAX_TEXT = 200
-_MAX_COLLECTION = 20
+_MAX_BATCH_OUTCOME_ITEMS = 20
+_MAX_COLLECTION = _MAX_BATCH_OUTCOME_ITEMS
 _MAX_JOURNAL_RECORDS = 64
 
 
@@ -233,8 +234,8 @@ class BatchOutcome:
     whole_request_retriable: bool = False
 
     def __post_init__(self) -> None:
-        if len(self.items) > _MAX_COLLECTION:
-            raise ValueError(f"batch outcomes are capped at {_MAX_COLLECTION} items")
+        if len(self.items) > _MAX_BATCH_OUTCOME_ITEMS:
+            raise ValueError(f"batch outcomes are capped at {_MAX_BATCH_OUTCOME_ITEMS} items")
         if tuple(item.member for item in self.items) != tuple(range(len(self.items))):
             raise ValueError("batch outcome members must be ordered occurrence indexes")
         if self.whole_request_retriable and any(

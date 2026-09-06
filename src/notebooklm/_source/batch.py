@@ -6,7 +6,9 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from .._idempotency import attach_batch_outcome
+from ..exceptions import ValidationError
 from ..outcomes import (
+    _MAX_BATCH_OUTCOME_ITEMS,
     BatchItemOutcome,
     BatchOutcome,
     CommitState,
@@ -15,6 +17,19 @@ from ..outcomes import (
 )
 
 SourceUrlBatchItem = SourceBatchItemOutcome
+
+
+def validate_source_batch_occurrences(urls: Sequence[str]) -> None:
+    """Reject an oversized public batch before any backend mutation can run.
+
+    The bound applies to input occurrences, not unique URL values, because each
+    occurrence owns a distinct ordered outcome and operation-journal member.
+    """
+
+    if len(urls) > _MAX_BATCH_OUTCOME_ITEMS:
+        raise ValidationError(
+            f"urls must contain at most {_MAX_BATCH_OUTCOME_ITEMS} entries; got {len(urls)}"
+        )
 
 
 def preserve_batch_projection_failure(
@@ -110,4 +125,5 @@ __all__ = [
     "SourceUrlBatchItem",
     "preserve_batch_call_failure",
     "preserve_batch_projection_failure",
+    "validate_source_batch_occurrences",
 ]

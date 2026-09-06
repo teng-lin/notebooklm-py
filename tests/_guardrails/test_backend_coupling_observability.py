@@ -152,6 +152,24 @@ def test_web_object_graph_remains_android_object_free() -> None:
         assert not [name for name in objects if name.startswith("notebooklm._android")]
 
 
+def test_core_backend_stages_do_not_eagerly_initialize_the_app_package() -> None:
+    for backend, stages in BACKEND_STAGES.items():
+        for stage in stages:
+            modules = _stage(backend, stage)["module_delta"]
+            assert isinstance(modules, list)
+            assert not [name for name in modules if name.startswith("notebooklm._app")]
+
+
+def test_backend_batch_facades_do_not_import_the_app_layer() -> None:
+    adjacency = build_static_import_adjacency()
+    for module in ("notebooklm._android.source_batch", "notebooklm._web.sources"):
+        assert not [
+            target
+            for target in adjacency[module]
+            if target == "notebooklm._app" or target.startswith("notebooklm._app.")
+        ]
+
+
 def test_static_scanner_resolves_relative_local_type_and_dynamic_imports() -> None:
     imports, dynamic = _scan_static_source(
         """
