@@ -21,6 +21,10 @@ pytest.importorskip("fastmcp")
 
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
+from notebooklm._app.generation_requests import (  # noqa: E402
+    GenerationKind,
+    generation_option_choices,
+)
 from notebooklm._idempotency import mark_unconfirmed  # noqa: E402
 from notebooklm._types.artifacts import (  # noqa: E402
     QUIZ_VARIANT,
@@ -38,13 +42,27 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     RateLimitError,
     RPCError,
 )
-from notebooklm.mcp.tools.studio import _KIND_OPTIONS  # noqa: E402
 from notebooklm.types import Artifact, ArtifactType, GenerationState, Note  # noqa: E402
 
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
 NB_ID = "11111111-1111-1111-1111-111111111111"
 TASK_ID = "task-abc-123"
+
+_GENERATION_KINDS: tuple[GenerationKind, ...] = (
+    "audio",
+    "video",
+    "cinematic-video",
+    "slide-deck",
+    "revise-slide",
+    "quiz",
+    "flashcards",
+    "infographic",
+    "data-table",
+    "mind-map",
+    "report",
+)
+_KIND_OPTIONS = {kind: generation_option_choices(kind) for kind in _GENERATION_KINDS}
 
 
 def _schema_enum(prop: dict[str, Any]) -> set[str] | None:
@@ -947,7 +965,7 @@ async def test_artifact_generate_cross_kind_style_is_validation_error(
     mcp_call, mock_client, artifact_type: str, opts: dict
 ) -> None:
     """A ``style`` value that IS in the global union Literal but invalid for THIS kind
-    projects as VALIDATION via the runtime ``_KIND_OPTIONS`` loop.
+    projects as VALIDATION via the neutral option contract.
 
     ``style`` is a single union Literal (video ∪ infographic), so these values pass
     the schema boundary and must be narrowed per-kind at runtime — proving the
@@ -1020,6 +1038,7 @@ async def test_artifact_generate_bad_option_value_is_schema_boundary_error(
 @pytest.mark.parametrize(
     "artifact_type,opts",
     [
+        ("audio", {"orientation": "landscape"}),  # shared REST parity case
         ("quiz", {"orientation": "portrait"}),  # infographic option on quiz
         ("video", {"deck_format": "presenter"}),  # slide-deck option on video
         ("audio", {"video_format": "brief"}),  # video option on audio
@@ -1027,6 +1046,7 @@ async def test_artifact_generate_bad_option_value_is_schema_boundary_error(
         ("cinematic-video", {"style": "classic"}),  # cinematic-video exposes NO options
     ],
     ids=[
+        "orientation-on-audio",
         "orientation-on-quiz",
         "deck-on-video",
         "video-on-audio",
@@ -1039,8 +1059,8 @@ async def test_artifact_generate_wrong_kind_option_is_validation_error(
 ) -> None:
     """An option valid for some OTHER kind is rejected, not silently ignored.
 
-    The neutral core ignores irrelevant extras, so this rejection lives in the MCP tool;
-    without it an agent's mis-targeted option would silently no-op.
+    The MCP layer only parses the schema; the neutral request builder owns this
+    semantic rejection before any resource lookup.
     """
     with pytest.raises(ToolError) as excinfo:
         await mcp_call(
@@ -1048,6 +1068,11 @@ async def test_artifact_generate_wrong_kind_option_is_validation_error(
             {"notebook": NB_ID, "artifact_type": artifact_type, **opts},
         )
     assert "VALIDATION" in str(excinfo.value)
+    if artifact_type == "audio" and opts == {"orientation": "landscape"}:
+        assert (
+            "option 'orientation' is not valid for generation kind 'audio'; "
+            "this kind accepts ['audio_format', 'audio_length']"
+        ) in str(excinfo.value)
 
 
 async def test_artifact_generate_wrong_kind_message_for_optionless_kind(
@@ -1074,12 +1099,8 @@ async def test_artifact_generate_style_prompt_requires_custom(mcp_call, mock_cli
 
 
 def test_kind_options_match_core_maps() -> None:
-    """The MCP per-kind choice tuples are DUPLICATED from the core's private maps (the
-    CLI/MCP boundary forbids importing them at runtime). Pin them equal so they can't
-    silently drift — the parity tests only exercise valid values and would miss a
-    *subset* drift (MCP wrongly rejecting a value the core accepts)."""
+    """The MCP schema's neutral choice authority matches the CLI enum maps."""
     from notebooklm.cli import generate_cmd as gp
-    from notebooklm.mcp.tools.studio import _KIND_OPTIONS
 
     assert _KIND_OPTIONS["audio"]["audio_format"] == tuple(gp._AUDIO_FORMAT_MAP)
     assert _KIND_OPTIONS["audio"]["audio_length"] == tuple(gp._AUDIO_LENGTH_MAP)
@@ -1119,11 +1140,10 @@ async def test_artifact_generate_exposes_new_option_params(mcp_list_tools) -> No
 
 async def test_artifact_generate_option_params_expose_enums(mcp_list_tools) -> None:
     """Each finite-choice option param is typed ``Literal`` → the tool schema exposes a
-    JSON-schema ``enum`` matching ``_KIND_OPTIONS`` (acceptance criterion for #1666).
+    JSON-schema ``enum`` matching the neutral contract (acceptance criterion for #1666).
 
-    The expected enum is read from ``_KIND_OPTIONS`` (pinned equal to the neutral core
-    maps by ``test_kind_options_match_core_maps``), so a core-map change not mirrored
-    into BOTH ``_KIND_OPTIONS`` and the signature ``Literal`` fails here. ``style`` is a
+    The expected enum is read from the neutral authority, so a contract change not
+    mirrored into the signature ``Literal`` fails here. ``style`` is a
     single union Literal, so its enum is the union across video+infographic; ``quantity``
     /``difficulty`` are shared by quiz+flashcards (identical today — assert the union so
     a future flashcards-specific set is still covered)."""

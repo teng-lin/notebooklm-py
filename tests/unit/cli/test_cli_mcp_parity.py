@@ -611,8 +611,8 @@ def test_quiz_option_choices_match_core_and_mcp(subcommand: str, flag: str, axis
     MCP tuples are still hand-written, so this pins the two surfaces together
     rather than comparing the map with itself.
     """
+    from notebooklm._app.generation_requests import generation_option_choices
     from notebooklm.cli import generate_cmd as gp
-    from notebooklm.mcp.tools.studio import _KIND_OPTIONS
 
     core_map = gp._QUIZ_QUANTITY_MAP if axis == "quantity" else gp._QUIZ_DIFFICULTY_MAP
     choices = _cli_choices(subcommand, flag)
@@ -620,7 +620,7 @@ def test_quiz_option_choices_match_core_and_mcp(subcommand: str, flag: str, axis
         f"generate {subcommand} {flag} offers {choices} but the core map declares "
         f"{tuple(core_map)} — derive the click.Choice from the map instead of hardcoding it."
     )
-    assert choices == _KIND_OPTIONS[subcommand][axis]
+    assert choices == generation_option_choices(subcommand)[axis]
 
 
 @pytest.mark.parametrize(

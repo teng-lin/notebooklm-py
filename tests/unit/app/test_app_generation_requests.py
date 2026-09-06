@@ -20,9 +20,17 @@ from notebooklm._app.generation_requests import (
     ReviseSlideGenerationRequest,
     VideoGenerationRequest,
     build_generation_request,
+    generation_option_choices,
 )
 from notebooklm.exceptions import ValidationError
-from notebooklm.types import MindMapKind, ReportFormat, VideoFormat, VideoStyle
+from notebooklm.types import (
+    InfographicOrientation,
+    MindMapKind,
+    QuizDifficulty,
+    ReportFormat,
+    VideoFormat,
+    VideoStyle,
+)
 
 _GENERATION_KINDS = [
     "audio",
@@ -231,6 +239,106 @@ def test_factory_non_cinematic_custom_style_still_requires_prompt() -> None:
         )
     assert exc_info.value.code == "custom_style_prompt_required"
     assert "--" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("kind", "kwargs", "option", "allowed"),
+    [
+        (
+            "audio",
+            {"orientation": InfographicOrientation.LANDSCAPE},
+            "orientation",
+            ("audio_format", "audio_length"),
+        ),
+        ("quiz", {"video_style": VideoStyle.CLASSIC}, "style", ("quantity", "difficulty")),
+        ("data-table", {"difficulty": QuizDifficulty.EASY}, "difficulty", ()),
+    ],
+)
+def test_factory_rejects_direct_wrong_kind_options_with_typed_context(
+    kind: str,
+    kwargs: dict[str, object],
+    option: str,
+    allowed: tuple[str, ...],
+) -> None:
+    with pytest.raises(GenerationRequestValidationError) as exc_info:
+        build_generation_request(
+            kind,  # type: ignore[arg-type]
+            notebook_id="nb",
+            instructions="required",
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    exc = exc_info.value
+    assert exc.code == "option_not_valid_for_kind"
+    assert exc.params == {
+        "kind": kind,
+        "option": option,
+        "value": next(iter(kwargs.values())),
+        "allowed_options": allowed,
+    }
+
+
+def test_factory_normalizes_schema_options_and_preserves_style_prompt_none() -> None:
+    request = build_generation_request(
+        "video",
+        notebook_id="nb",
+        option_values={
+            "video_format": "brief",
+            "style": "custom",
+            "style_prompt": "  ink drawing  ",
+        },
+    )
+    explicit_none = build_generation_request(
+        "video",
+        notebook_id="nb",
+        option_values={"video_format": None, "style": None, "style_prompt": None},
+    )
+
+    assert isinstance(request, VideoGenerationRequest)
+    assert request.video_format is VideoFormat.BRIEF
+    assert request.video_style is VideoStyle.CUSTOM
+    assert request.style_prompt == "ink drawing"
+    assert isinstance(explicit_none, VideoGenerationRequest)
+    assert explicit_none.video_format is VideoFormat.EXPLAINER
+    assert explicit_none.video_style is VideoStyle.AUTO_SELECT
+    assert explicit_none.style_prompt is None
+
+
+def test_factory_schema_wrong_kind_matches_direct_typed_error_shape() -> None:
+    with pytest.raises(GenerationRequestValidationError) as exc_info:
+        build_generation_request(
+            "audio",
+            notebook_id="nb",
+            option_values={"orientation": "landscape"},
+        )
+
+    assert exc_info.value.code == "option_not_valid_for_kind"
+    assert exc_info.value.params == {
+        "kind": "audio",
+        "option": "orientation",
+        "value": "landscape",
+        "allowed_options": ("audio_format", "audio_length"),
+    }
+    assert generation_option_choices("audio") == {
+        "audio_format": ("deep-dive", "brief", "critique", "debate"),
+        "audio_length": ("short", "default", "long"),
+    }
+
+
+def test_factory_invalid_schema_value_has_typed_choice_context() -> None:
+    with pytest.raises(GenerationRequestValidationError) as exc_info:
+        build_generation_request(
+            "video",
+            notebook_id="nb",
+            option_values={"style": "professional"},
+        )
+
+    exc = exc_info.value
+    assert exc.code == "invalid_option_value"
+    assert exc.params["kind"] == "video"
+    assert exc.params["option"] == "style"
+    assert exc.params["value"] == "professional"
+    assert exc.params["choices"] == tuple(generation_option_choices("video")["style"] or ())
 
 
 @pytest.mark.parametrize("kind", _GENERATION_KINDS)

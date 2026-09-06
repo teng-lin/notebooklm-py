@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Iterator
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,8 +15,10 @@ from notebooklm._app.generate_retry import GenerationOutcome
 from notebooklm._app.generation_requests import (
     UNSET,
     AudioGenerationRequest,
+    GenerationKind,
     ReportGenerationRequest,
     VideoGenerationRequest,
+    generation_option_choices,
 )
 from notebooklm._types.artifacts import GenerationState
 from notebooklm.server._pending import PendingRegistry
@@ -714,6 +717,10 @@ def test_generate_wrong_kind_option_is_400(authed_client: TestClient) -> None:
         "/v1/notebooks/nb-1/artifacts", json={"type": "audio", "orientation": "landscape"}
     )
     assert resp.status_code == 400
+    assert resp.json()["error"]["message"] == (
+        "option 'orientation' is not valid for generation kind 'audio'; "
+        "this kind accepts ['audio_format', 'audio_length']"
+    )
 
 
 def test_generate_optionless_kind_rejects_any_option(authed_client: TestClient) -> None:
@@ -771,41 +778,39 @@ def test_generate_mind_map_forwards_instructions(
     assert fake_client.last_mind_map_generate["instructions"] == "group by theme"
 
 
-def test_kind_options_exact_mcp_parity() -> None:
-    """The REST and MCP ``_KIND_OPTIONS`` tables must be byte-for-byte identical.
-
-    Both are duplicated from the neutral core (the CLI/MCP/server boundary forbids
-    importing the core privates); pinning them EQUAL to each other guarantees the
-    two agent surfaces validate the SAME per-kind options with the SAME choices.
-    """
+def test_adapters_do_not_define_generation_semantic_tables() -> None:
+    """REST and MCP consume the neutral authority instead of duplicating it."""
     import pytest
 
     pytest.importorskip("fastmcp")  # MCP tools need the ``mcp`` extra
-    from notebooklm.mcp.tools.studio import _KIND_OPTIONS as mcp_options
-    from notebooklm.server.routes.artifacts import _KIND_OPTIONS as rest_options
+    from notebooklm.mcp.tools import studio
 
-    assert rest_options == mcp_options
+    assert not hasattr(artifacts_route, "_KIND_OPTIONS")
+    assert not hasattr(studio, "_KIND_OPTIONS")
 
 
 def test_kind_options_cover_every_generate_type() -> None:
-    """Every ``GENERATE_TYPES`` kind has a ``_KIND_OPTIONS`` entry, and the
+    """Every ``GENERATE_TYPES`` kind has a neutral option-contract entry, and the
     per-kind-only keys (``map_kind``, ``style_prompt``) + optionless kinds are
     exactly as expected — so a new generate kind can't silently ship without its
     option contract."""
-    from notebooklm.server.routes.artifacts import _KIND_OPTIONS
+
+    kind_options = {
+        kind: generation_option_choices(cast(GenerationKind, kind)) for kind in GENERATE_TYPES
+    }
 
     # Exhaustive over the generate surface (no missing / extra kinds).
-    assert set(_KIND_OPTIONS) == set(GENERATE_TYPES)
+    assert set(kind_options) == set(GENERATE_TYPES)
     # ``map_kind`` is validated at the boundary ONLY (no core map) — it must exist
     # on mind-map and nowhere else.
-    assert "map_kind" in _KIND_OPTIONS["mind-map"]
-    assert all("map_kind" not in opts for k, opts in _KIND_OPTIONS.items() if k != "mind-map")
+    assert "map_kind" in kind_options["mind-map"]
+    assert all("map_kind" not in opts for k, opts in kind_options.items() if k != "mind-map")
     # ``style_prompt`` (free text, choices None) belongs to video only.
-    assert _KIND_OPTIONS["video"]["style_prompt"] is None
-    assert all("style_prompt" not in opts for k, opts in _KIND_OPTIONS.items() if k != "video")
+    assert kind_options["video"]["style_prompt"] is None
+    assert all("style_prompt" not in opts for k, opts in kind_options.items() if k != "video")
     # Optionless kinds carry an explicit empty map (so a stray option is rejected).
-    assert _KIND_OPTIONS["cinematic-video"] == {}
-    assert _KIND_OPTIONS["data-table"] == {}
+    assert kind_options["cinematic-video"] == {}
+    assert kind_options["data-table"] == {}
 
 
 def test_download_spec_exhaustiveness() -> None:

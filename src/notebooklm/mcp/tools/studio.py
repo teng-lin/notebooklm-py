@@ -20,8 +20,9 @@ from the canonical neutral ``_app.download_specs`` registry through
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp import Context
 
@@ -44,21 +45,6 @@ from ...exceptions import (
     RPCError,
     ServerError,
     ValidationError,
-)
-from ...types import (
-    AudioFormat,
-    AudioLength,
-    InfographicDetail,
-    InfographicOrientation,
-    InfographicStyle,
-    MindMapKind,
-    QuizDifficulty,
-    QuizQuantity,
-    ReportFormat,
-    SlideDeckFormat,
-    SlideDeckLength,
-    VideoFormat,
-    VideoStyle,
 )
 from .._coerce import coerce_list
 from .._confirm import (
@@ -100,140 +86,6 @@ from ._studio_payloads import _artifact_rename_payload, _generation_payload
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
-
-_EnumT = TypeVar("_EnumT")
-
-
-def _enum_option(
-    options: dict[str, _EnumT], values: dict[str, Any], key: str, default: _EnumT
-) -> _EnumT:
-    value = values.get(key)
-    return options.get(value, default) if isinstance(value, str) else default
-
-
-#: Per-kind default option values mirroring the CLI ``generate`` Click ``Choice``
-#: defaults, so a bare ``studio_generate(notebook, type=…)`` succeeds without
-#: the agent restating every enum. The agent can override any of these by passing
-#: the matching keyword; ``build_generation_request`` enum-maps + validates them.
-_KIND_DEFAULTS: dict[str, dict[str, Any]] = {
-    "audio": {"audio_format": "deep-dive", "audio_length": "default"},
-    "video": {"video_format": "explainer", "style": "auto"},
-    "cinematic-video": {},
-    "slide-deck": {"deck_format": "detailed", "deck_length": "default"},
-    "quiz": {"quantity": "standard", "difficulty": "medium"},
-    "flashcards": {"quantity": "standard", "difficulty": "medium"},
-    "infographic": {"orientation": "landscape", "detail": "standard", "style": "auto"},
-    "data-table": {},
-    "mind-map": {"map_kind": "interactive"},
-    "report": {"report_format": "briefing-doc"},
-}
-
-#: Per-kind agent-settable options → their accepted choices. ``None`` choices mean
-#: free text (only ``style_prompt``). This single table drives all three things the
-#: agent-facing override path needs:
-#:
-#: * **Choice validation** up front, so a bad value surfaces as a clean ``VALIDATION``
-#:   error rather than a raw ``KeyError`` from a generate-core display-name lookup that
-#:   runs before its own choice validation (the CLI never hits this — Click validates
-#:   the ``Choice`` first).
-#: * **The ``style`` collision** — ``video`` and ``infographic`` both take a ``style``
-#:   kwarg but with DIFFERENT choice sets (overlapping only on ``auto``/``anime``/
-#:   ``kawaii``); keying choices by ``artifact_type`` keeps them apart.
-#: * **Wrong-kind rejection** — an option valid for some other kind (e.g. ``orientation``
-#:   passed to ``quiz``) is rejected here before constructing the exact typed variant.
-#:
-#: The literal choice tuples are DUPLICATED from the neutral core's private ``_*_MAP``
-#: maps (MCP must not import them — the CLI/MCP boundary rule); a guardrail test pins
-#: these tuples equal to the core maps so they can't silently drift. ``map_kind`` has no
-#: core map (the core reads it raw and any non-``interactive`` value routes note-backed),
-#: so it is validated here ONLY.
-_KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
-    "audio": {
-        "audio_format": ("deep-dive", "brief", "critique", "debate"),
-        "audio_length": ("short", "default", "long"),
-    },
-    "video": {
-        "video_format": ("explainer", "brief", "cinematic", "short"),
-        "style": (
-            "auto",
-            "custom",
-            "classic",
-            "whiteboard",
-            "kawaii",
-            "anime",
-            "watercolor",
-            "retro-print",
-            "heritage",
-            "paper-craft",
-        ),
-        "style_prompt": None,
-    },
-    "cinematic-video": {},
-    "slide-deck": {
-        "deck_format": ("detailed", "presenter"),
-        "deck_length": ("default", "short"),
-    },
-    "quiz": {
-        "quantity": ("fewer", "standard", "more"),
-        "difficulty": ("easy", "medium", "hard"),
-    },
-    "flashcards": {
-        "quantity": ("fewer", "standard", "more"),
-        "difficulty": ("easy", "medium", "hard"),
-    },
-    "infographic": {
-        "orientation": ("landscape", "portrait", "square"),
-        "detail": ("concise", "standard", "detailed"),
-        "style": (
-            "auto",
-            "sketch-note",
-            "professional",
-            "bento-grid",
-            "editorial",
-            "instructional",
-            "bricks",
-            "clay",
-            "anime",
-            "kawaii",
-            "scientific",
-        ),
-    },
-    "data-table": {},
-    "mind-map": {"map_kind": ("interactive", "note-backed")},
-    "report": {"report_format": ("briefing-doc", "study-guide", "blog-post", "custom")},
-}
-
-_AUDIO_FORMAT = dict(zip(_KIND_OPTIONS["audio"]["audio_format"] or (), AudioFormat, strict=True))
-_AUDIO_LENGTH = dict(zip(_KIND_OPTIONS["audio"]["audio_length"] or (), AudioLength, strict=True))
-_VIDEO_FORMAT = dict(zip(_KIND_OPTIONS["video"]["video_format"] or (), VideoFormat, strict=True))
-_VIDEO_STYLE = dict(zip(_KIND_OPTIONS["video"]["style"] or (), VideoStyle, strict=True))
-_SLIDE_FORMAT = dict(
-    zip(_KIND_OPTIONS["slide-deck"]["deck_format"] or (), SlideDeckFormat, strict=True)
-)
-_SLIDE_LENGTH = dict(
-    zip(_KIND_OPTIONS["slide-deck"]["deck_length"] or (), SlideDeckLength, strict=True)
-)
-_QUIZ_QUANTITY = dict(zip(_KIND_OPTIONS["quiz"]["quantity"] or (), QuizQuantity, strict=True))
-_QUIZ_DIFFICULTY = dict(zip(_KIND_OPTIONS["quiz"]["difficulty"] or (), QuizDifficulty, strict=True))
-_INFOGRAPHIC_ORIENTATION = dict(
-    zip(
-        _KIND_OPTIONS["infographic"]["orientation"] or (),
-        InfographicOrientation,
-        strict=True,
-    )
-)
-_INFOGRAPHIC_DETAIL = dict(
-    zip(_KIND_OPTIONS["infographic"]["detail"] or (), InfographicDetail, strict=True)
-)
-_INFOGRAPHIC_STYLE = dict(
-    zip(_KIND_OPTIONS["infographic"]["style"] or (), InfographicStyle, strict=True)
-)
-_REPORT_FORMAT = {
-    "briefing-doc": ReportFormat.BRIEFING_DOC,
-    "study-guide": ReportFormat.STUDY_GUIDE,
-    "blog-post": ReportFormat.BLOG_POST,
-    "custom": ReportFormat.CUSTOM,
-}
 
 
 async def _passthrough_sources(
@@ -390,10 +242,8 @@ def register(mcp: Any) -> None:
         # Finite-choice per-kind options are typed as ``Literal`` so FastMCP/Pydantic
         # emits a JSON-schema ``enum`` (agents discover valid values from the schema,
         # not by trial-and-error) and rejects out-of-enum values at the boundary. The
-        # members are DUPLICATED from the neutral core's private ``_*_MAP`` maps via
-        # ``_KIND_OPTIONS`` (the CLI/MCP boundary forbids importing them); a guardrail
-        # test pins each ``enum`` equal to ``_KIND_OPTIONS`` (itself pinned to the core
-        # maps) so they can't drift. ``style_prompt``/``language`` stay free text.
+        # members mirror the neutral option contract; schema parity tests pin every
+        # ``enum`` to that authority. ``style_prompt``/``language`` stay free text.
         report_format: Literal["briefing-doc", "study-guide", "blog-post", "custom"] | None = None,
         audio_format: Literal["deep-dive", "brief", "critique", "debate"] | None = None,
         audio_length: Literal["short", "default", "long"] | None = None,
@@ -402,9 +252,8 @@ def register(mcp: Any) -> None:
         video_format: Literal["explainer", "brief", "cinematic", "short"] | None = None,
         # ``style`` is shared by ``video`` and ``infographic`` with DIFFERENT value
         # sets (overlap only auto/anime/kawaii). One param carries one Literal, so this
-        # is the UNION of both kinds' values; the runtime ``_KIND_OPTIONS`` loop narrows
-        # it per-kind (a video-only value on infographic, or vice versa, is rejected
-        # there with a clean VALIDATION error).
+        # is the UNION of both kinds' values; the neutral request builder narrows it
+        # per kind after schema parsing.
         style: Literal[
             # full video set (auto/kawaii/anime also valid for infographic)
             "auto",
@@ -492,49 +341,33 @@ def register(mcp: Any) -> None:
             if language is not None and not is_supported_language(language):
                 raise ValidationError(f"Unsupported language {language!r}")
 
-            # Validate caller-supplied per-kind overrides FIRST — before resolving the
-            # notebook — so a wrong-kind or invalid option fails fast without a wasted
-            # notebook-resolution round-trip. Each option is validated against the choice
-            # set for THIS ``artifact_type`` (see ``_KIND_OPTIONS``): an option not accepted
-            # by this kind is rejected (the core would otherwise silently ignore it), and a
-            # bad value surfaces a clean VALIDATION error. ``style_prompt`` (choices
-            # ``None``) is free text — the core enforces the ``style=custom`` ⇔
-            # ``style_prompt`` combination rules.
-            allowed = _KIND_OPTIONS[artifact_type]
-            overrides: dict[str, Any] = {}
-            for key, value in (
-                ("report_format", report_format),
-                ("audio_format", audio_format),
-                ("audio_length", audio_length),
-                ("quantity", quantity),
-                ("difficulty", difficulty),
-                ("video_format", video_format),
-                ("style", style),
-                ("style_prompt", style_prompt),
-                ("deck_format", deck_format),
-                ("deck_length", deck_length),
-                ("orientation", orientation),
-                ("detail", detail),
-                ("map_kind", map_kind),
-            ):
-                if value is None:
-                    continue
-                if key not in allowed:
-                    accepts = (
-                        f"this kind accepts {sorted(allowed)}"
-                        if allowed
-                        else "this kind accepts no per-kind options"
-                    )
-                    raise ValidationError(
-                        f"option {key!r} is not valid for artifact_type {artifact_type!r}; "
-                        f"{accepts}"
-                    )
-                choices = allowed[key]
-                if choices is not None and value not in choices:
-                    raise ValidationError(
-                        f"Invalid {key} {value!r}; expected one of {list(choices)}"
-                    )
-                overrides[key] = value
+            # Construct the typed request before name resolution so shared
+            # wrong-kind/value validation still fails before any remote lookup.
+            # The canonical IDs are installed immutably after resolution.
+            normalized_instructions = instructions or None
+            request = build_generation_request(
+                artifact_type,
+                notebook_id=notebook,
+                source_ids=UNSET,
+                language=language or "en",
+                instructions=normalized_instructions,
+                option_values={
+                    "report_format": report_format,
+                    "audio_format": audio_format,
+                    "audio_length": audio_length,
+                    "quantity": quantity,
+                    "difficulty": difficulty,
+                    "video_format": video_format,
+                    "style": style,
+                    "style_prompt": style_prompt,
+                    "deck_format": deck_format,
+                    "deck_length": deck_length,
+                    "orientation": orientation,
+                    "detail": detail,
+                    "map_kind": map_kind,
+                },
+                extra_instructions=None,
+            )
 
             client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
@@ -546,66 +379,14 @@ def register(mcp: Any) -> None:
             resolved_source_ids = (
                 await resolve_sources(client, nb_id, source_ids) if source_ids else None
             )
-            defaults = {**_KIND_DEFAULTS[artifact_type], **overrides}
-            normalized_instructions = instructions or None
-            report_name = defaults.get("report_format", "briefing-doc")
-            if (
-                artifact_type == "report"
-                and normalized_instructions
-                and report_name == "briefing-doc"
-            ):
-                report_name = "custom"
-            request = build_generation_request(
-                artifact_type,
+            request = replace(
+                request,
                 notebook_id=nb_id,
-                source_ids=(UNSET if resolved_source_ids is None else tuple(resolved_source_ids)),
-                # The removed plan builder normalized an omitted MCP language to the
-                # same default as the CLI resolver.  Keep that adapter contract while
-                # still preserving explicit unset semantics inside the typed request.
-                language=language or "en",
-                instructions=normalized_instructions,
-                audio_format=_enum_option(
-                    _AUDIO_FORMAT, defaults, "audio_format", AudioFormat.DEEP_DIVE
+                source_ids=(
+                    UNSET  # type: ignore[arg-type]
+                    if resolved_source_ids is None
+                    else tuple(resolved_source_ids)
                 ),
-                audio_length=_enum_option(
-                    _AUDIO_LENGTH, defaults, "audio_length", AudioLength.DEFAULT
-                ),
-                video_format=_enum_option(
-                    _VIDEO_FORMAT, defaults, "video_format", VideoFormat.EXPLAINER
-                ),
-                video_style=_enum_option(_VIDEO_STYLE, defaults, "style", VideoStyle.AUTO_SELECT),
-                # The artifact API has historically received these optional values as
-                # explicit ``None`` from both CLI and MCP, rather than omission.
-                style_prompt=defaults.get("style_prompt"),
-                slide_format=_enum_option(
-                    _SLIDE_FORMAT, defaults, "deck_format", SlideDeckFormat.DETAILED_DECK
-                ),
-                slide_length=_enum_option(
-                    _SLIDE_LENGTH, defaults, "deck_length", SlideDeckLength.DEFAULT
-                ),
-                quantity=_enum_option(_QUIZ_QUANTITY, defaults, "quantity", QuizQuantity.STANDARD),
-                difficulty=_enum_option(
-                    _QUIZ_DIFFICULTY, defaults, "difficulty", QuizDifficulty.MEDIUM
-                ),
-                orientation=_enum_option(
-                    _INFOGRAPHIC_ORIENTATION,
-                    defaults,
-                    "orientation",
-                    InfographicOrientation.LANDSCAPE,
-                ),
-                detail_level=_enum_option(
-                    _INFOGRAPHIC_DETAIL, defaults, "detail", InfographicDetail.STANDARD
-                ),
-                infographic_style=_enum_option(
-                    _INFOGRAPHIC_STYLE, defaults, "style", InfographicStyle.AUTO_SELECT
-                ),
-                map_kind=(
-                    MindMapKind.INTERACTIVE
-                    if defaults.get("map_kind", "interactive") == "interactive"
-                    else MindMapKind.NOTE_BACKED
-                ),
-                report_format=_REPORT_FORMAT[report_name],
-                extra_instructions=None,
             )
             result = await generate_core.execute_generation(
                 request,
