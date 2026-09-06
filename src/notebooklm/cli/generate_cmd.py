@@ -21,10 +21,11 @@ from .._app.generate_retry import GenerationOutcome
 from .._app.generation_requests import (
     UNSET,
     AudioGenerationRequest,
-    CinematicVideoGenerationRequest,
     DataTableGenerationRequest,
     FlashcardsGenerationRequest,
     GenerationRequest,
+    GenerationRequestValidationError,
+    GenerationValidationCode,
     InfographicGenerationRequest,
     MindMapGenerationRequest,
     QuizGenerationRequest,
@@ -32,7 +33,7 @@ from .._app.generation_requests import (
     ReviseSlideGenerationRequest,
     SlideDeckGenerationRequest,
     SourceSelection,
-    VideoGenerationRequest,
+    build_generation_request,
 )
 from ..types import (
     AudioFormat,
@@ -110,6 +111,15 @@ _VIDEO_STYLE_MAP = {
     "retro-print": VideoStyle.RETRO_PRINT,
     "heritage": VideoStyle.HERITAGE,
     "paper-craft": VideoStyle.PAPER_CRAFT,
+}
+_VIDEO_VALIDATION_MESSAGES: dict[GenerationValidationCode, str] = {
+    "cinematic_style_prompt": "--style-prompt cannot be used with cinematic video",
+    "short_video_style": (
+        "--style/--style-prompt cannot be used with --format short "
+        "(short video has a fixed visual style)"
+    ),
+    "custom_style_prompt_required": "--style custom requires --style-prompt",
+    "style_prompt_requires_custom": "--style-prompt requires --style custom",
 }
 _SLIDE_FORMAT_MAP = {
     "detailed": SlideDeckFormat.DETAILED_DECK,
@@ -589,10 +599,11 @@ def generate_video(
     """
     description = resolve_prompt(description, prompt_file, "description")
     source_selection = _source_selection(ctx, source_ids)
-    if ctx.info_name == "cinematic-video" or video_format == "cinematic":
+    alias_is_cinematic = ctx.info_name == "cinematic-video"
+    is_cinematic = alias_is_cinematic or video_format == "cinematic"
+    if alias_is_cinematic:
         if (
-            ctx.info_name == "cinematic-video"
-            and ctx.get_parameter_source("video_format") == ParameterSource.COMMANDLINE
+            ctx.get_parameter_source("video_format") == ParameterSource.COMMANDLINE
             and video_format != "cinematic"
         ):
             output_error(
@@ -602,29 +613,9 @@ def generate_video(
                 json_output,
                 1,
             )
-        if style_prompt and style_prompt.strip():
-            output_error(
-                "--style-prompt cannot be used with cinematic video",
-                "VALIDATION_ERROR",
-                json_output,
-                1,
-            )
-        request: GenerationRequest = CinematicVideoGenerationRequest(
-            notebook_id=require_notebook(notebook_id),
-            source_ids=source_selection,
-            language=resolve_language(language),
-            instructions=description or None,
-            wait=wait,
-            timeout=(
-                timeout
-                if ctx.get_parameter_source("timeout") == ParameterSource.COMMANDLINE
-                else 3600.0
-            ),
-            interval=interval,
-            max_retries=max_retries,
-        )
-    else:
-        request = VideoGenerationRequest(
+    try:
+        request = build_generation_request(
+            "cinematic-video" if alias_is_cinematic else "video",
             notebook_id=require_notebook(notebook_id),
             source_ids=source_selection,
             language=resolve_language(language),
@@ -633,9 +624,21 @@ def generate_video(
             video_style=_VIDEO_STYLE_MAP[style],
             style_prompt=style_prompt,
             wait=wait,
-            timeout=timeout,
+            timeout=(
+                timeout
+                if not is_cinematic
+                or ctx.get_parameter_source("timeout") == ParameterSource.COMMANDLINE
+                else 3600.0
+            ),
             interval=interval,
             max_retries=max_retries,
+        )
+    except GenerationRequestValidationError as exc:
+        output_error(
+            _VIDEO_VALIDATION_MESSAGES[exc.code],
+            "VALIDATION_ERROR",
+            json_output,
+            1,
         )
     return _run_generate(ctx=ctx, client_auth=client_auth, request=request, json_output=json_output)
 

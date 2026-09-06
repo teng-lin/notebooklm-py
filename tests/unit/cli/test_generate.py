@@ -470,6 +470,16 @@ class TestGenerateCinematicVideo:
         assert result.exit_code == 1
         assert "--style-prompt cannot be used with cinematic video" in result.output
 
+    def test_generate_cinematic_video_rejects_custom_style_without_prompt(
+        self, runner, mock_auth, mock_fetch_tokens
+    ):
+        result = runner.invoke(
+            cli,
+            ["generate", "cinematic-video", "--style", "custom", "-n", "nb_123"],
+        )
+        assert result.exit_code == 1
+        assert "--style custom requires --style-prompt" in result.output
+
     def test_generate_cinematic_video_rejects_non_cinematic_format(
         self, runner, mock_auth, mock_fetch_tokens
     ):

@@ -47,6 +47,20 @@ class UnsetType(Enum):
 UNSET = UnsetType.UNSET
 OptionalText: TypeAlias = str | None | UnsetType
 SourceSelection: TypeAlias = tuple[str, ...] | UnsetType
+GenerationValidationCode: TypeAlias = Literal[
+    "cinematic_style_prompt",
+    "short_video_style",
+    "custom_style_prompt_required",
+    "style_prompt_requires_custom",
+]
+
+
+class GenerationRequestValidationError(ValidationError):
+    """Typed semantic validation failure for adapter-owned presentation."""
+
+    def __init__(self, code: GenerationValidationCode, message: str) -> None:
+        self.code = code
+        super().__init__(message)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -99,21 +113,32 @@ class VideoGenerationRequest(_SourcedGenerationRequest):
     def __post_init__(self) -> None:
         super().__post_init__()
         prompt = self.style_prompt
-        normalized = prompt.strip() if isinstance(prompt, str) else None
-        if self.video_format is VideoFormat.CINEMATIC and normalized:
-            raise ValidationError("--style-prompt cannot be used with cinematic video")
-        if self.video_format is VideoFormat.SHORT and (
-            self.video_style is not VideoStyle.AUTO_SELECT or normalized
-        ):
-            raise ValidationError(
-                "--style/--style-prompt cannot be used with --format short "
-                "(short video has a fixed visual style)"
+        normalized = prompt.strip() if isinstance(prompt, str) else prompt
+        has_prompt = isinstance(normalized, str) and bool(normalized)
+        if self.video_format is VideoFormat.CINEMATIC and has_prompt:
+            raise GenerationRequestValidationError(
+                "cinematic_style_prompt",
+                "style_prompt is not supported for cinematic video",
             )
-        if self.video_style is VideoStyle.CUSTOM and not normalized:
-            raise ValidationError("--style custom requires --style-prompt")
-        if normalized and self.video_style is not VideoStyle.CUSTOM:
-            raise ValidationError("--style-prompt requires --style custom")
-        if normalized is not None:
+        if self.video_format is VideoFormat.SHORT and (
+            self.video_style is not VideoStyle.AUTO_SELECT or has_prompt
+        ):
+            raise GenerationRequestValidationError(
+                "short_video_style",
+                "video_style and style_prompt are not supported for short video "
+                "because it has a fixed visual style",
+            )
+        if self.video_style is VideoStyle.CUSTOM and not has_prompt:
+            raise GenerationRequestValidationError(
+                "custom_style_prompt_required",
+                "video_style=custom requires a non-empty style_prompt",
+            )
+        if has_prompt and self.video_style is not VideoStyle.CUSTOM:
+            raise GenerationRequestValidationError(
+                "style_prompt_requires_custom",
+                "style_prompt requires video_style=custom",
+            )
+        if isinstance(normalized, str):
             object.__setattr__(self, "style_prompt", normalized)
 
 
@@ -266,24 +291,16 @@ def build_generation_request(
             interval=interval,
             max_retries=max_retries,
         )
-    if kind == "video":
-        if video_format is VideoFormat.CINEMATIC:
-            return CinematicVideoGenerationRequest(
-                notebook_id=notebook_id,
-                source_ids=source_ids,
-                language=language,
-                instructions=instructions,
-                wait=wait,
-                timeout=timeout,
-                interval=interval,
-                max_retries=max_retries,
-            )
-        return VideoGenerationRequest(
+    if kind in ("video", "cinematic-video"):
+        # Validate every video-specific value before normalizing cinematic video
+        # to its distinct execution variant.  Constructing the cinematic request
+        # first would silently discard an invalid custom style or style prompt.
+        normalized_video = VideoGenerationRequest(
             notebook_id=notebook_id,
             source_ids=source_ids,
             language=language,
             instructions=instructions,
-            video_format=video_format,
+            video_format=(VideoFormat.CINEMATIC if kind == "cinematic-video" else video_format),
             video_style=video_style,
             style_prompt=style_prompt,
             wait=wait,
@@ -291,17 +308,18 @@ def build_generation_request(
             interval=interval,
             max_retries=max_retries,
         )
-    if kind == "cinematic-video":
-        return CinematicVideoGenerationRequest(
-            notebook_id=notebook_id,
-            source_ids=source_ids,
-            language=language,
-            instructions=instructions,
-            wait=wait,
-            timeout=timeout,
-            interval=interval,
-            max_retries=max_retries,
-        )
+        if normalized_video.video_format is VideoFormat.CINEMATIC:
+            return CinematicVideoGenerationRequest(
+                notebook_id=normalized_video.notebook_id,
+                source_ids=normalized_video.source_ids,
+                language=normalized_video.language,
+                instructions=normalized_video.instructions,
+                wait=normalized_video.wait,
+                timeout=normalized_video.timeout,
+                interval=normalized_video.interval,
+                max_retries=normalized_video.max_retries,
+            )
+        return normalized_video
     if kind == "slide-deck":
         return SlideDeckGenerationRequest(
             notebook_id=notebook_id,
@@ -413,6 +431,8 @@ __all__ = [
     "FlashcardsGenerationRequest",
     "GenerationKind",
     "GenerationRequest",
+    "GenerationRequestValidationError",
+    "GenerationValidationCode",
     "InfographicGenerationRequest",
     "MindMapGenerationRequest",
     "QuizGenerationRequest",

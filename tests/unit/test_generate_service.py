@@ -18,8 +18,6 @@ def test_generation_command_constructs_typed_requests_without_raw_args_bridge() 
     }
     assert {
         "AudioGenerationRequest",
-        "VideoGenerationRequest",
-        "CinematicVideoGenerationRequest",
         "SlideDeckGenerationRequest",
         "ReviseSlideGenerationRequest",
         "QuizGenerationRequest",
@@ -29,6 +27,10 @@ def test_generation_command_constructs_typed_requests_without_raw_args_bridge() 
         "MindMapGenerationRequest",
         "ReportGenerationRequest",
     } <= constructed
+    # Video and cinematic-video deliberately share the neutral factory so both
+    # variants pass through the same cross-field validation before cinematic
+    # normalization. The other variants remain constructed directly.
+    assert "build_generation_request" in constructed
     assert all(
         not (isinstance(node, ast.Name) and node.id == "raw_args") for node in ast.walk(tree)
     )

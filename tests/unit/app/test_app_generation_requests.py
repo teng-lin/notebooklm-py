@@ -13,6 +13,8 @@ from notebooklm._app.generation_requests import (
     CinematicVideoGenerationRequest,
     DataTableGenerationRequest,
     GenerationRequest,
+    GenerationRequestValidationError,
+    GenerationValidationCode,
     MindMapGenerationRequest,
     ReportGenerationRequest,
     ReviseSlideGenerationRequest,
@@ -21,6 +23,20 @@ from notebooklm._app.generation_requests import (
 )
 from notebooklm.exceptions import ValidationError
 from notebooklm.types import MindMapKind, ReportFormat, VideoFormat, VideoStyle
+
+_GENERATION_KINDS = [
+    "audio",
+    "video",
+    "cinematic-video",
+    "slide-deck",
+    "revise-slide",
+    "quiz",
+    "flashcards",
+    "infographic",
+    "data-table",
+    "mind-map",
+    "report",
+]
 
 
 def test_union_has_exactly_eleven_frozen_variants() -> None:
@@ -59,17 +75,7 @@ def test_requests_are_immutable() -> None:
 
 @pytest.mark.parametrize(
     "kind",
-    [
-        "audio",
-        "video",
-        "cinematic-video",
-        "slide-deck",
-        "quiz",
-        "flashcards",
-        "infographic",
-        "mind-map",
-        "report",
-    ],
+    [kind for kind in _GENERATION_KINDS if kind not in ("data-table", "revise-slide")],
 )
 def test_factory_builds_each_default_variant(kind: str) -> None:
     request = build_generation_request(kind, notebook_id="nb")  # type: ignore[arg-type]
@@ -106,19 +112,105 @@ def test_video_custom_style_trims_prompt() -> None:
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "match"),
+    ("style_prompt", "expected"),
+    [(UNSET, UNSET), (None, None), ("", ""), ("   ", "")],
+)
+def test_video_style_prompt_preserves_unset_and_explicit_values(
+    style_prompt: object, expected: object
+) -> None:
+    request = build_generation_request(
+        "video",
+        notebook_id="nb",
+        style_prompt=style_prompt,  # type: ignore[arg-type]
+    )
+    assert isinstance(request, VideoGenerationRequest)
+    if expected is UNSET:
+        assert request.style_prompt is UNSET
+    else:
+        assert request.style_prompt == expected
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "code", "match"),
     [
-        ({"video_style": VideoStyle.CUSTOM}, "--style custom"),
-        ({"style_prompt": "ink"}, "requires --style custom"),
+        (
+            {"video_style": VideoStyle.CUSTOM},
+            "custom_style_prompt_required",
+            "video_style=custom",
+        ),
+        (
+            {"style_prompt": "ink"},
+            "style_prompt_requires_custom",
+            "requires video_style=custom",
+        ),
         (
             {"video_format": VideoFormat.SHORT, "video_style": VideoStyle.CLASSIC},
+            "short_video_style",
             "fixed visual style",
         ),
     ],
 )
-def test_video_validation(kwargs: dict[str, object], match: str) -> None:
-    with pytest.raises(ValidationError, match=match):
+def test_video_validation(
+    kwargs: dict[str, object], code: GenerationValidationCode, match: str
+) -> None:
+    with pytest.raises(GenerationRequestValidationError, match=match) as exc_info:
         VideoGenerationRequest(notebook_id="nb", **kwargs)  # type: ignore[arg-type]
+    assert exc_info.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("kind", "video_format"),
+    [
+        ("video", VideoFormat.CINEMATIC),
+        ("cinematic-video", VideoFormat.EXPLAINER),
+    ],
+)
+@pytest.mark.parametrize(
+    ("kwargs", "code", "match"),
+    [
+        (
+            {"style_prompt": "ink"},
+            "cinematic_style_prompt",
+            "style_prompt is not supported",
+        ),
+        (
+            {"video_style": VideoStyle.CUSTOM},
+            "custom_style_prompt_required",
+            "video_style=custom",
+        ),
+        (
+            {"video_style": VideoStyle.CUSTOM, "style_prompt": "ink"},
+            "cinematic_style_prompt",
+            "style_prompt is not supported",
+        ),
+    ],
+)
+def test_factory_validates_video_options_before_cinematic_normalization(
+    kind: str,
+    video_format: VideoFormat,
+    kwargs: dict[str, object],
+    code: GenerationValidationCode,
+    match: str,
+) -> None:
+    with pytest.raises(GenerationRequestValidationError, match=match) as exc_info:
+        build_generation_request(
+            kind,  # type: ignore[arg-type]
+            notebook_id="nb",
+            video_format=video_format,
+            **kwargs,  # type: ignore[arg-type]
+        )
+    assert exc_info.value.code == code
+
+
+@pytest.mark.parametrize("kind", _GENERATION_KINDS)
+def test_factory_applies_common_validation_to_every_variant(kind: str) -> None:
+    with pytest.raises(ValidationError, match="notebook_id"):
+        build_generation_request(
+            kind,  # type: ignore[arg-type]
+            notebook_id=" ",
+            instructions="required",
+            artifact_id="artifact",
+        )
 
 
 def test_common_validation() -> None:
