@@ -3216,10 +3216,15 @@ async def test_source_add_wait_drive_pdf_kind_not_spreadsheet(mcp_call, mock_cli
     assert ready_row["kind"] != "google_spreadsheet"
 
 
-async def test_source_add_wait_stdio_file_ready(mcp_call, mock_client, tmp_path) -> None:
+async def test_source_add_wait_stdio_file_ready(
+    mcp_call, mock_client, tmp_path, monkeypatch
+) -> None:
     """A stdio (local-path) file add-and-wait reaches READY — pins the file branch."""
+    from notebooklm.mcp.tools._fileupload import ALLOWED_ROOTS_ENV
+
     doc = tmp_path / "doc.pdf"
     doc.write_text("hello")
+    monkeypatch.setenv(ALLOWED_ROOTS_ENV, str(tmp_path))
     mock_client.sources.add_file = AsyncMock(
         return_value=FakeReadyTextSource(id=SRC_ID, title="doc.pdf")
     )

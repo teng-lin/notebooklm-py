@@ -830,3 +830,24 @@ def test_source_row_payload_distinguishes_unknown_from_no_claim() -> None:
     assert unreadable["drive_status"] == "unknown"
     # A state we cannot name is not evidence of degradation.
     assert unreadable["is_drive_degraded"] is False
+
+
+def test_source_add_validation_message_covers_every_reason() -> None:
+    """CLI renderer must handle every ``SourceAddValidationReason`` (#2385)."""
+    from typing import get_args
+
+    from notebooklm._app.source_add import SourceAddValidationError, SourceAddValidationReason
+
+    for reason in get_args(SourceAddValidationReason):
+        message = _source_render._source_add_validation_message(
+            SourceAddValidationError(
+                reason,
+                url="http://example.test",
+                scheme="file",
+                host="localhost",
+                path="/tmp/doc.pdf",
+                detail="boom",
+            )
+        )
+        assert message
+        assert "Unhandled" not in message

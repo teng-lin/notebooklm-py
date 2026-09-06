@@ -7,7 +7,8 @@ These pin the relocated ``source add`` business logic at the ``_app`` boundary
   no-host rejection, private/loopback/link-local/unspecified IP rejection,
   ``localhost`` spelling rejection, the ``allow_internal`` bypass).
 * :func:`looks_like_path` — slash / known-extension path heuristic.
-* :func:`validate_upload_path` — symlink refusal + regular-file check.
+* :func:`validate_upload_path` — symlink refusal, regular-file check, credential
+  path refusal, and optional allowed-root boundary.
 * :func:`build_source_add_plan` — input-mode detection (url / youtube / file /
   text), warning collection, and the gate that explicit ``--type`` still honours.
 * :func:`add_source` / :func:`execute_source_add` — the add-workflow dispatch
@@ -19,6 +20,7 @@ in ``tests/unit/cli/test_source.py``.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -33,6 +35,7 @@ from notebooklm._app.source_add import (
     build_source_add_plan,
     execute_source_add,
     looks_like_path,
+    parse_upload_allowed_roots,
     validate_upload_path,
     validate_url,
 )
@@ -229,6 +232,146 @@ class TestValidateUploadPath:
         link.symlink_to(target)
         resolved = validate_upload_path(str(link), follow_symlinks=True)
         assert resolved == target.resolve()
+
+
+class TestParseUploadAllowedRoots:
+    def test_empty_is_deny(self) -> None:
+        assert parse_upload_allowed_roots(None) == ()
+        assert parse_upload_allowed_roots("") == ()
+        assert parse_upload_allowed_roots("   ") == ()
+
+    def test_splits_on_pathsep_and_dedupes(self, tmp_path: Path) -> None:
+        first = tmp_path / "a"
+        second = tmp_path / "b"
+        first.mkdir()
+        second.mkdir()
+        raw = f"{first}{os.pathsep}{second}{os.pathsep}{first / '.'}"
+        assert parse_upload_allowed_roots(raw) == (first.resolve(), second.resolve())
+
+    def test_drops_home_and_notebooklm_home(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        home = tmp_path / "nblm-home"
+        home.mkdir()
+        monkeypatch.setenv("NOTEBOOKLM_HOME", str(home))
+        assert parse_upload_allowed_roots(str(Path.home())) == ()
+        assert parse_upload_allowed_roots(str(home)) == ()
+        uploads = tmp_path / "uploads"
+        uploads.mkdir()
+        assert parse_upload_allowed_roots(str(uploads)) == (uploads.resolve(),)
+
+    def test_drops_filesystem_root(self) -> None:
+        assert parse_upload_allowed_roots(str(Path("/"))) == ()
+
+
+class TestValidateUploadPathAllowedRoots:
+    def test_rejects_storage_state_under_notebooklm_home(self, tmp_path: Path) -> None:
+        profile = tmp_path / ".notebooklm" / "profiles" / "p"
+        profile.mkdir(parents=True)
+        cred = profile / "storage_state.json"
+        cred.write_text("{}")
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(cred), follow_symlinks=False)
+        assert exc.value.reason == "credential_path_disallowed"
+
+    def test_rejects_master_token_inside_allowed_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        root.mkdir()
+        cred = root / "master_token.json"
+        cred.write_text("{}")
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(cred), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "credential_path_disallowed"
+
+    def test_rejects_playwright_profile_dir_inside_allowed_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        profile = root / "browser_profile"
+        profile.mkdir(parents=True)
+        cookies = profile / "Cookies"
+        cookies.write_text("x")
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(cookies), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "credential_path_disallowed"
+
+    def test_rejects_explicit_storage_browser_profile_suffix(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        profile = root / "custom.browser_profile"
+        profile.mkdir(parents=True)
+        cookies = profile / "Cookies"
+        cookies.write_text("x")
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(cookies), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "credential_path_disallowed"
+
+    def test_accepts_path_inside_allowed_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        root.mkdir()
+        doc = root / "doc.pdf"
+        doc.write_text("x")
+        resolved = validate_upload_path(str(doc), follow_symlinks=False, allowed_roots=[root])
+        assert resolved == doc.resolve()
+
+    def test_rejects_path_outside_allowed_root_even_if_regular_pdf(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        root.mkdir()
+        outside = tmp_path / "other" / "doc.pdf"
+        outside.parent.mkdir()
+        outside.write_text("x")
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(outside), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "path_outside_allowed_root"
+
+    def test_rejects_prefix_sibling_directory(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        root.mkdir()
+        sibling = tmp_path / "uploads_evil" / "doc.pdf"
+        sibling.parent.mkdir()
+        sibling.write_text("x")
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(sibling), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "path_outside_allowed_root"
+
+    def test_empty_allowed_roots_is_deny(self, tmp_path: Path) -> None:
+        doc = tmp_path / "doc.pdf"
+        doc.write_text("x")
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(doc), follow_symlinks=False, allowed_roots=())
+        assert exc.value.reason == "upload_root_not_configured"
+
+    def test_omitted_allowed_roots_stays_unrestricted_for_non_credentials(
+        self, tmp_path: Path
+    ) -> None:
+        doc = tmp_path / "doc.pdf"
+        doc.write_text("x")
+        assert validate_upload_path(str(doc), follow_symlinks=False) == doc.resolve()
+
+    def test_rejects_symlink_inside_allowed_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        root.mkdir()
+        target = root / "real.pdf"
+        target.write_text("x")
+        link = root / "link.pdf"
+        link.symlink_to(target)
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(link), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "symlink_disallowed"
+
+    def test_rejects_directory_inside_allowed_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        root.mkdir()
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(root), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "not_regular_file"
+
+    def test_rejects_escape_via_dotdot(self, tmp_path: Path) -> None:
+        root = tmp_path / "uploads"
+        root.mkdir()
+        secret = tmp_path / "secret.pdf"
+        secret.write_text("x")
+        sneaky = root / ".." / "secret.pdf"
+        with pytest.raises(SourceAddValidationError) as exc:
+            validate_upload_path(str(sneaky), follow_symlinks=False, allowed_roots=[root])
+        assert exc.value.reason == "path_outside_allowed_root"
 
 
 # ===========================================================================

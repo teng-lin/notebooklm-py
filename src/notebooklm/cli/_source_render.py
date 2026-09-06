@@ -135,6 +135,12 @@ def _source_add_validation_message(exc: source_add_service.SourceAddValidationEr
         return f"Not a regular file: {exc.path}"
     if exc.reason == "missing_upload_path":
         return "upload_path must be set when detected_type == 'file'"
+    if exc.reason == "upload_root_not_configured":
+        return "No upload allowed roots are configured; refusing local file add."
+    if exc.reason == "path_outside_allowed_root":
+        return f"Path is outside the allowed upload roots: {exc.path}"
+    if exc.reason == "credential_path_disallowed":
+        return f"Refusing to upload a credential or Playwright profile path: {exc.path}"
     raise AssertionError(f"Unhandled source-add validation reason: {exc.reason}")
 
 

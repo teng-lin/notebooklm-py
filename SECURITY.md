@@ -119,17 +119,27 @@ before the password is typed.
 ### Stdio `source_add(path=...)`
 
 On **stdio**, `source_add(source_type="file", path=...)` reads a file on the
-**server host**, not on the MCP client. The process opens whatever regular file
-path the server user can read (after `~` expansion and the existing
-non-symlink / regular-file checks). A prompt-injected path under
-`~/.notebooklm/` can therefore upload `storage_state.json` or `master_token.json`
-into a notebook.
+**server host**. Host-path uploads are off until the operator sets
+`NOTEBOOKLM_MCP_ALLOWED_ROOTS` to explicit upload directories. Separate multiple
+roots with the OS path separator (`:` on POSIX, `;` on Windows); for example,
+`NOTEBOOKLM_MCP_ALLOWED_ROOTS=/srv/notebooklm-uploads` allows that directory.
+The user's home, NotebookLM home, and filesystem root are rejected as roots.
+Paths outside configured roots, symlinks, and non-files are rejected.
+Accepted files are opened without following symlinks or junctions and copied
+into a private temporary directory before the tool awaits client access.
+Both backends upload that copy, which is removed on completion, failure, or
+cancellation; replacing the caller path cannot redirect a later backend open.
+
+Known credential filenames (`storage_state.json`, `master_token.json`) and
+Playwright profile directories are refused even inside an allowed root. The
+shared CLI file-add validator also refuses these known credential paths.
+Keep upload directories separate from credential storage and grant the server
+process only the filesystem access it needs.
 
 Remote HTTP does **not** open a host `path` for file add; it returns a signed
-upload URL instead (or `source_add(..., bytes_base64=...)` for a tiny in-channel
-file). There is currently no allowed-roots restriction on stdio; tightening that
-is tracked in [#2385](https://github.com/teng-lin/notebooklm-py/issues/2385) and
-is not implemented here.
+upload URL instead. `bytes_base64` accepts bytes already supplied in-channel
+and does not open a caller-selected host path. This boundary implements
+[#2385](https://github.com/teng-lin/notebooklm-py/issues/2385).
 
 ### Signed `/files/dl` and `/files/ul` URLs
 
@@ -148,7 +158,8 @@ earlier; all tokens die on process restart because the signing key is ephemeral.
   server can run without a bearer. The Host-header DNS-rebinding guard remains
   (requests whose `Host` is not a loopback literal are rejected). The
   `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1` flag alone does not drop that guard.
-- **REST always requires a bearer token.** Configure it with `--token-file` /
+- **REST `/v1` routes require a bearer token.** `GET /healthz` is tokenless.
+  Configure the token with `--token-file` /
   `NOTEBOOKLM_SERVER_TOKEN_FILE` (preferred), or `NOTEBOOKLM_SERVER_TOKEN`.
   `notebooklm-server` refuses to start without a token. By default every `/v1`
   route requires both a loopback peer and a loopback `Host`.

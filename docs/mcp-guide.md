@@ -226,13 +226,22 @@ bearer-only deploy → the two file tools return a clear "not configured" error
   `PUT`ing to the upload URL may also append `?sha256=<hex>`: the route verifies the received
   stream against it and rejects a corrupted transfer with a clean 400 (retryable) *before*
   adding the source.
-- Links are HMAC-signed and short-lived (upload 15 min, download 30 min) and expire on
-  a server restart. `/files/dl` and `/files/ul` are HMAC-URL auth only (not bearer/OAuth);
-  a leaked URL is a timed capability ([ADR-0024](adr/0024-mcp-remote-file-transfer.md),
-  [SECURITY.md](../SECURITY.md)). Google Drive (`source_add` with a Drive id) remains a
-  no-browser alternative for adding files. stdio (local) installs are unchanged — they
-  still read and write real **server-host** paths directly (`source_add(path=...)` opens
-  a file on the machine running `notebooklm-mcp`, not on the MCP client).
+- Links use HMAC-URL authentication (not bearer/OAuth) and expire on server restart.
+  Ordinary upload links last 15 minutes, widget upload pools last 60 minutes, and
+  download links last 30 minutes. A leaked link is a timed capability; see
+  [ADR-0024](adr/0024-mcp-remote-file-transfer.md) and [SECURITY.md](../SECURITY.md).
+  Google Drive (`source_add` with a Drive id) is another option for adding files.
+- Stdio `source_add(source_type="file", path=...)` reads a **server-host** path and
+  is **off unless** `NOTEBOOKLM_MCP_ALLOWED_ROOTS` names one or more upload directories.
+  For example, set `NOTEBOOKLM_MCP_ALLOWED_ROOTS=/srv/notebooklm-uploads` in the MCP
+  server's environment. Separate multiple roots with `:` on POSIX or `;` on Windows.
+  The user's home, NotebookLM home, and filesystem root are rejected as roots.
+  Credential filenames (`storage_state.json`, `master_token.json`) and Playwright
+  profile directories are refused even inside an allowed root. Accepted files are
+  copied into private temporary storage before upload; file or directory replacement
+  cannot redirect the backend to another path. Temporary copies are removed when
+  the call ends. `bytes_base64` and remote signed-URL transfer never open a
+  caller-selected server-host `path`.
 
 ## Core concepts
 

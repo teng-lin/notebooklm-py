@@ -264,7 +264,7 @@ async def test_mcp_source_add_text_over_vcr() -> None:
 
 @pytest.mark.asyncio
 @notebooklm_vcr.use_cassette("sources_add_file.yaml")
-async def test_mcp_source_add_file_over_vcr(tmp_path) -> None:
+async def test_mcp_source_add_file_over_vcr(tmp_path, monkeypatch) -> None:
     """``source_add source_type=file`` replays the upload + ``ADD_SOURCE_FILE`` RPC.
 
     The file flow validates a real on-disk path (``validate_upload_path`` checks
@@ -272,8 +272,11 @@ async def test_mcp_source_add_file_over_vcr(tmp_path) -> None:
     ``ADD_SOURCE_FILE`` (``o4cbdc``). A freshly-registered file source is still
     ``PROCESSING`` (status 1) and carries no decoded type/url/created_at yet.
     """
+    from notebooklm.mcp.tools._fileupload import ALLOWED_ROOTS_ENV
+
     upload = tmp_path / "vcr_test_document.txt"
     upload.write_text("This is a test document for VCR cassette replay.")
+    monkeypatch.setenv(ALLOWED_ROOTS_ENV, str(tmp_path))
 
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(

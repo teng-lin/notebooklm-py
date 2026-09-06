@@ -52,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MCP stdio `source_add` host-path file-add is default-deny.**
+  `source_add(source_type="file", path=...)` over stdio now requires
+  `NOTEBOOKLM_MCP_ALLOWED_ROOTS` (OS-pathsep directories; `$HOME` and
+  `~/.notebooklm` are rejected as roots). Known credential filenames
+  (`storage_state.json`, `master_token.json`) and Playwright profile dirs
+  are refused even inside an allowed root. Remote HTTP still never opens a
+  server-host `path`.
 - **Fuzzy artifact resolution refuses incomplete listings.** CLI
   `resolve_artifact_id` and MCP `resolve_artifact` now require
   `list_with_status().is_complete` before title/prefix matching. A notes

@@ -20,6 +20,7 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastmcp import Context
@@ -71,7 +72,13 @@ from .._resolve import (
     resolve_sources,
 )
 from ._content_sanity import _annotate_thin_warnings
-from ._fileupload import _add_bytes, _add_one, _broker_upload, _decode_upload_b64
+from ._fileupload import (
+    _add_bytes,
+    _add_one,
+    _broker_upload,
+    _decode_upload_b64,
+    _spool_stdio_upload,
+)
 from ._passthrough import passthrough_child_id
 from ._preview import title_for_id
 from ._waitagg import _aggregate_wait_outcomes, _wait_all_sources
@@ -634,7 +641,9 @@ def register(mcp: Any) -> None:
         * ``url`` / ``youtube`` — require ``url`` (``youtube`` → a YouTube link).
         * ``text``    — requires ``text``; ``title`` optional.
         * ``file``    — over **stdio**, requires ``path`` (a local path on the
-          server host). Over the **remote (http) connector** the host filesystem is
+          server host inside ``NOTEBOOKLM_MCP_ALLOWED_ROOTS``; host-path file-add
+          is off until that env is set — not ``$HOME`` and not ``~/.notebooklm``).
+          Over the **remote (http) connector** the host filesystem is
           unreachable, so it returns ``upload_required`` with two actor paths:
           ``human_upload`` (open the signed URL in a browser) and ``agent_upload`` (an
           agent POSTs the bytes as the raw body); ``agent_instructions`` gives the rule
@@ -680,7 +689,7 @@ def register(mcp: Any) -> None:
         Single-mode inputs and ``wait`` are invalid with ``urls``; ``allow_internal``
         applies to every entry.
         """
-        with mcp_errors():
+        with mcp_errors(), ExitStack() as upload_files:
             # Mode selection (fail-closed) BEFORE any notebook I/O, so a malformed
             # call never reaches notebooks.list. Exactly one of source_type / urls.
             if urls is not None and source_type is not None:
@@ -788,6 +797,9 @@ def register(mcp: Any) -> None:
                     )
                 else:
                     content = _select_content(source_type, url=url, text=text, path=path)
+                    # Pin and copy before any await. Backends receive only the
+                    # private spool, so replacing the caller path cannot redirect I/O.
+                    content = str(upload_files.enter_context(_spool_stdio_upload(content)))
             elif source_type == "drive":
                 if not document_id:
                     raise ValidationError("source_type 'drive' requires 'document_id'")

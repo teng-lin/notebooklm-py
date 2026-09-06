@@ -187,6 +187,7 @@ async def test_source_add_file_with_config_returns_upload_url(mock_client, confi
 
 async def test_source_add_file_default_title_from_path_basename(mock_client, config) -> None:
     # A `path` is ACCEPTED on remote (not opened) — its basename seeds the title.
+    mock_client.sources.add_file = AsyncMock()
     result = await _call(
         mock_client,
         config,
@@ -196,6 +197,7 @@ async def test_source_add_file_default_title_from_path_basename(mock_client, con
     sc = result.structured_content
     token = sc["url"].rsplit("/", 1)[1]
     assert config.signer.verify(token, op="ul")["title"] == "report.pdf"
+    mock_client.sources.add_file.assert_not_called()
     # No mime supplied → not locked, so the agent path exposes a Content-Type knob (#1801).
     assert sc["mime_locked"] is False
     assert "Content-Type" in sc["agent_upload"]["headers"]
@@ -219,19 +221,40 @@ async def test_source_add_file_empty_mime_is_not_locked(mock_client, config) -> 
 
 
 async def test_source_add_file_http_without_config_is_not_configured_error(
-    monkeypatch, mock_client
+    monkeypatch, mock_client, tmp_path
 ) -> None:
-    # Force the http-transport branch while file transfer is unset.
+    # Force the http-transport branch while file transfer is unset. A real
+    # host-readable file must still not be opened.
+    doc = tmp_path / "doc.pdf"
+    doc.write_text("x")
     monkeypatch.setattr(src_mod, "get_http_request", lambda: MagicMock())
+    mock_client.sources.add_file = AsyncMock()
     with pytest.raises(ToolError) as excinfo:
         await _call(
             mock_client,
             None,
             "source_add",
-            {"notebook": NB_ID, "source_type": "file", "path": "/x.pdf"},
+            {"notebook": NB_ID, "source_type": "file", "path": str(doc)},
         )
     assert "not configured" in str(excinfo.value)
     assert "NOTEBOOKLM_MCP_PUBLIC_URL" in str(excinfo.value)
+    mock_client.sources.add_file.assert_not_called()
+
+
+async def test_source_add_file_http_with_config_does_not_open_host_path(
+    mock_client, config, tmp_path
+) -> None:
+    secret = tmp_path / "storage_state.json"
+    secret.write_text("cookies")
+    mock_client.sources.add_file = AsyncMock()
+    result = await _call(
+        mock_client,
+        config,
+        "source_add",
+        {"notebook": NB_ID, "source_type": "file", "path": str(secret)},
+    )
+    assert result.structured_content["status"] == "upload_required"
+    mock_client.sources.add_file.assert_not_called()
 
 
 async def test_source_add_file_stdio_keeps_path_behavior(mock_client) -> None:

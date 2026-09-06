@@ -118,6 +118,12 @@ is pinned in [development.md](development.md); those values are evidence and not
 5. Rotate or revoke a master token immediately if its file may have been exposed.
 6. Preserve the canonical lock files and atomic writers; custom writers must retain the documented
    locking, permissions, and exact-path behavior.
+7. MCP stdio host-path file-add is off unless `NOTEBOOKLM_MCP_ALLOWED_ROOTS` is set to an
+   explicit upload directory — not `$HOME` and not `~/.notebooklm`. Allowed files are opened
+   without following symlinks or junctions and copied into a private temporary directory before
+   authentication or upload. Replacing a caller path cannot redirect the backend's later file
+   open; the copy is removed when the call completes, fails, or is cancelled. Remote HTTP never
+   opens a server-host `path`.
 
 ## Hosted adapters (MCP / REST)
 

@@ -26,7 +26,7 @@ import ipaddress
 import os
 import re
 import socket
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
@@ -123,6 +123,9 @@ SourceAddValidationReason = Literal[
     "symlink_disallowed",
     "not_regular_file",
     "missing_upload_path",
+    "upload_root_not_configured",
+    "path_outside_allowed_root",
+    "credential_path_disallowed",
 ]
 
 
@@ -322,25 +325,145 @@ def looks_like_path(content: str) -> bool:
     return suffix in _PATH_SHAPED_EXTENSIONS
 
 
-def validate_upload_path(content: str, follow_symlinks: bool) -> Path:
+#: Basenames that are account-equivalent NotebookLM credentials. Matched
+#: case-insensitively so a dummy ``storage_state.json`` anywhere the process
+#: can read is refused even inside an allowed upload root.
+_CREDENTIAL_FILENAMES = frozenset({"storage_state.json", "master_token.json"})
+#: Playwright Chromium profile directory names. The conventional profile layout
+#: uses ``browser_profile/``; an explicit storage path may instead use a
+#: ``*.browser_profile`` sibling. Either is account-equivalent.
+_PLAYWRIGHT_DIR_NAME = "browser_profile"
+_PLAYWRIGHT_DIR_SUFFIX = ".browser_profile"
+
+
+def parse_upload_allowed_roots(raw: str | None) -> tuple[Path, ...]:
+    """Resolve operator-configured upload directories, excluding broad roots.
+
+    Root configuration is trusted input; target paths are checked separately
+    before probing their metadata. Filesystem identity catches differently
+    cased home aliases on case-insensitive POSIX filesystems.
+    """
+    if raw is None or not raw.strip():
+        return ()
+    forbidden = _forbidden_upload_roots()
+    roots: list[Path] = []
+    for part in raw.split(os.pathsep):
+        if not part.strip():
+            continue
+        try:
+            resolved = Path(part.strip()).expanduser().resolve()
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if resolved.parent == resolved:
+            continue
+        if any(_same_upload_root(resolved, candidate) for candidate in (*forbidden, *roots)):
+            continue
+        roots.append(resolved)
+    return tuple(roots)
+
+
+def _forbidden_upload_roots() -> tuple[Path, ...]:
+    """Find credential homes even when a service UID has no OS home entry."""
+    candidates: list[Path] = []
+    try:
+        home = Path.home()
+        candidates.extend((home, home / ".notebooklm"))
+    except (OSError, RuntimeError):
+        pass
+    try:
+        from ..paths import get_home_dir
+
+        candidates.append(get_home_dir())
+    except (OSError, RuntimeError):
+        pass
+    return tuple(candidates)
+
+
+def _same_upload_root(left: Path, right: Path) -> bool:
+    if os.path.normcase(str(left)) == os.path.normcase(str(right)):
+        return True
+    try:
+        return left.samefile(right)
+    except (OSError, ValueError):
+        return False
+
+
+def _is_credential_upload_path(path: Path) -> bool:
+    """Reject credential basenames, including Win32 stream/dot/space aliases."""
+    parts = tuple(part.split(":", 1)[0].rstrip(" .").casefold() for part in path.parts)
+    if parts and parts[-1] in _CREDENTIAL_FILENAMES:
+        return True
+    return any(
+        part == _PLAYWRIGHT_DIR_NAME or part.endswith(_PLAYWRIGHT_DIR_SUFFIX) for part in parts
+    )
+
+
+def _is_under_allowed_root(path: Path, root: Path) -> bool:
+    """Return True if ``path`` is ``root`` or a descendant, including case-fold."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        pass
+    path_s = os.path.normcase(str(path))
+    root_s = os.path.normcase(str(root))
+    if path_s == root_s:
+        return True
+    return path_s.startswith(root_s.rstrip(os.sep) + os.sep)
+
+
+def validate_upload_path(
+    content: str,
+    follow_symlinks: bool,
+    *,
+    allowed_roots: Sequence[str | Path] | None = None,
+) -> Path:
     """Validate a local-file path before uploading it as a source.
 
-    Raises:
-        SourceAddValidationError: if the path is a refused symlink or is
-            not a regular file.
-    """
-    # Expand ``~`` BEFORE the symlink check — otherwise a ``~``-prefixed path
-    # (e.g. ``~/evil_symlink``) passes the guard as a non-existent literal and
-    # only resolves to the real symlink afterwards, bypassing follow_symlinks.
-    raw = Path(content).expanduser()
+    Always refuses known credential filenames (``storage_state.json``,
+    ``master_token.json``) and Playwright profile directories. When
+    ``allowed_roots`` is passed (including an empty sequence), the resolved
+    path must also sit inside one of those roots; an empty sequence is
+    default-deny. ``allowed_roots=None`` skips the root check (CLI and
+    trusted temp spools).
 
+    Raises:
+        SourceAddValidationError: if the path is a refused symlink, is not a
+            regular file, is a credential path, or falls outside ``allowed_roots``.
+    """
+    # Refuse unconfigured access before expanding or probing any target path.
+    resolved_roots: list[Path] = []
+    if allowed_roots is not None:
+        for root in allowed_roots:
+            try:
+                resolved_roots.append(Path(root).expanduser().resolve())
+            except (OSError, RuntimeError, ValueError):
+                continue
+        if not resolved_roots:
+            raise SourceAddValidationError("upload_root_not_configured")
+
+    # abspath normalizes dot segments without following links or stat-ing the
+    # target. Out-of-root targets always fail with the same boundary error.
+    raw = Path(os.path.abspath(os.path.expanduser(content)))
+    if allowed_roots is not None and not any(
+        _is_under_allowed_root(raw, root) for root in resolved_roots
+    ):
+        raise SourceAddValidationError("path_outside_allowed_root")
+    if _is_credential_upload_path(raw):
+        raise SourceAddValidationError("credential_path_disallowed", path=str(raw))
     if not follow_symlinks:
         for component in [raw, *raw.parents]:
             if component.is_symlink():
                 raise SourceAddValidationError("symlink_disallowed", path=str(raw))
 
     file_path = raw.resolve()
-
+    if allowed_roots is not None and not any(
+        _is_under_allowed_root(file_path, root) for root in resolved_roots
+    ):
+        raise SourceAddValidationError("path_outside_allowed_root")
+    # On Windows resolve() expands short (8.3) spellings to the long filename.
+    if _is_credential_upload_path(file_path):
+        raise SourceAddValidationError("credential_path_disallowed", path=str(file_path))
     if not file_path.is_file():
         raise SourceAddValidationError("not_regular_file", path=content)
 
@@ -499,6 +622,7 @@ __all__ = [
     "build_source_add_plan",
     "execute_source_add",
     "looks_like_path",
+    "parse_upload_allowed_roots",
     "safe_upload_name",
     "validate_upload_path",
     "validate_url",

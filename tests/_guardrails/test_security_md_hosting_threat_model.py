@@ -118,12 +118,15 @@ def hosting_threat_model_gaps(security_md: str) -> list[str]:
     if not (
         "NOTEBOOKLM_SERVER_TOKEN_FILE" in compact
         and re.search(
-            r"REST.{0,80}always requires a bearer token",
+            r"REST /v1 routes require a bearer token",
             compact,
             re.IGNORECASE,
         )
     ):
-        gaps.append("REST always requires a bearer token, with token-file support")
+        gaps.append("REST /v1 routes require a bearer token, with token-file support")
+
+    if not re.search(r"/healthz.{0,60}\b(public|token[- ]?less)\b", compact, re.IGNORECASE):
+        gaps.append("GET /healthz is public or tokenless")
 
     if not (
         "/healthz" in compact
@@ -203,6 +206,15 @@ def test_uncorrected_no_long_lived_claim_detector() -> None:
     assert "OAuth state file mode 0600" in hosting_threat_model_gaps(storage_only)
     oauth_mode = "OAuth state file written 0600.\n"
     assert "OAuth state file mode 0600" not in hosting_threat_model_gaps(oauth_mode)
+
+
+def test_healthz_access_must_be_explicit() -> None:
+    probe = 'GET /healthz is a liveness probe, not readiness. It returns {"ok": true}.'
+    gap = "GET /healthz is public or tokenless"
+    assert gap in hosting_threat_model_gaps(probe)
+    for access in ("public", "tokenless", "token-less"):
+        documented = probe.replace("is a liveness", f"is a {access} liveness")
+        assert gap not in hosting_threat_model_gaps(documented)
 
 
 def test_security_md_documents_mcp_rest_hosting_threat_model() -> None:
