@@ -121,7 +121,7 @@ def test_live_projection_is_the_frozen_scorecard(audit):
     result = audit.build_projection()
     assert result["summary"] == {
         "modules": 32,
-        "total_lines": 13686,
+        "total_lines": 13711,
         "unique_edges": 123,
         "module_edges": 111,
         "function_local_edges": 12,
