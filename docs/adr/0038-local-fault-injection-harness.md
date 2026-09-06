@@ -55,3 +55,19 @@ workflow that preserves reports as artifacts.
 
 See [the harness guide](../fault-injection.md) for commands, coverage, and
 scenario extension rules.
+
+## Alternatives considered
+
+- Extend transport mocks and cassettes alone. They remain useful for protocol
+  fidelity, but cannot show whether cancellation reaches a real server or
+  distinguish a committed mutation from a response lost on the socket.
+- Add a network proxy or kernel fault injector as the primary harness. Those
+  can model packet loss and connection faults, but cannot directly script
+  authentication generations, partial application responses, or committed
+  objects. They would also add setup requirements to ordinary test runs.
+- Build a complete upstream emulator. Maintaining every API and backend
+  would duplicate protocol work without strengthening the selected resilience
+  invariants. Representative public operations keep the harness bounded.
+- Run stress scenarios against live accounts. Live tests are still needed to
+  verify upstream agreement, but cannot reliably force authentication races
+  or commit-before-disconnect ordering and require credentials and quotas.
