@@ -98,6 +98,7 @@ def build_fault_client(
     sleep: Callable[[float], Awaitable[Any]] | None = None,
     transfer_timeout: float | None = None,
     transfer_client_factory: Callable[..., Any] | None = None,
+    async_client_factory: Callable[..., Any] | None = None,
 ) -> NotebookLMClient:
     """Assemble a production Web graph while varying only private test seams.
 
@@ -143,10 +144,10 @@ def build_fault_client(
             client,
             auth=synthetic_auth(),
             options=options,
-            async_client_factory=server.client_factory,
             http_client_factories=HttpClientFactories(
                 httpx=transfer_client_factory or transfer_factory
             ),
+            async_client_factory=async_client_factory or server.client_factory,
             sleep=sleep,
             refresh_retry_delay=0.0,
         )

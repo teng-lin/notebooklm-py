@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
+
+import httpx
 
 from notebooklm import NetworkError, OperationTimeoutError, RateLimitError, ServerError
 from notebooklm.client import NotebookLMClient
@@ -13,28 +16,36 @@ from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 
 from .common import ScenarioResult
-from .http import Disconnect, HttpFaultServer, Reply, Route, Stall
+from .http import Disconnect, HttpFaultServer, LogicalHostTransport, Reply, Route, Stall
 from .web import (
     COOKIE_NAME,
     build_fault_client,
     create_response,
     homepage_response,
     list_response,
+    rpc_response,
     rpc_status_response,
 )
 
 _READ = Route.rpc(RPCMethod.LIST_NOTEBOOKS.value)
 _CREATE = Route.rpc(RPCMethod.CREATE_NOTEBOOK.value)
+_RENAME = Route.rpc(RPCMethod.RENAME_NOTEBOOK.value)
+_GET = Route.rpc(RPCMethod.GET_NOTEBOOK.value)
 _HOME = Route.homepage()
 _CLOSE_TIMEOUT = 2.0
 
 SCENARIOS = (
     "auth_refresh_cancelled_waiter",
     "auth_refresh_old_generation",
+    "connection_refusal_recovery",
+    "configured_queue_expiry_no_dispatch",
     "create_disconnect_uncommitted",
     "queue_cancel_no_dispatch",
     "queue_expiry_no_dispatch",
     "read_disconnect_recovery",
+    "rename_commit_loss_converges",
+    "retry_auth_backoff_cancelled",
+    "retry_auth_operation_deadline",
     "retry_auth_rate_exhaustion",
     "retry_auth_server_budget",
 )
@@ -52,6 +63,16 @@ PLANS: dict[str, tuple[str, ...]] = {
         "new refresh:rpc:200",
         "old response:release",
     ),
+    "connection_refusal_recovery": (
+        "loopback:connection-refused x3",
+        "same transport:retarget",
+        "read:recovery",
+    ),
+    "configured_queue_expiry_no_dispatch": (
+        "rpc:permit-held",
+        "queued create:configured-expiry",
+        "rpc:recovery",
+    ),
     "create_disconnect_uncommitted": ("create:request-observed", "socket:disconnect"),
     "queue_cancel_no_dispatch": ("rpc:permit-held", "queued rpc:cancel", "rpc:recovery"),
     "queue_expiry_no_dispatch": (
@@ -60,6 +81,23 @@ PLANS: dict[str, tuple[str, ...]] = {
         "rpc:recovery",
     ),
     "read_disconnect_recovery": ("read:request-observed", "socket:disconnect", "read:200"),
+    "rename_commit_loss_converges": (
+        "rename:commit+disconnect",
+        "rename:repeat same set",
+        "get:final state",
+    ),
+    "retry_auth_backoff_cancelled": (
+        "rpc:503+decoded-auth+429",
+        "retry sleep:gate",
+        "caller:cancel",
+        "read:recovery",
+    ),
+    "retry_auth_operation_deadline": (
+        "rpc:503+decoded-auth+429",
+        "retry sleep:gate",
+        "configured operation:expire",
+        "read:recovery",
+    ),
     "retry_auth_rate_exhaustion": (
         "rpc:503",
         "rpc:decoded-auth",
@@ -96,7 +134,8 @@ async def _cohort(
     server_retries: int = 2,
     max_concurrent_rpcs: int | None = 16,
     operation_timeout: float | None = None,
-    real_sleep: bool = False,
+    retry_sleep: Callable[[float], Awaitable[Any]] | None = None,
+    async_client_factory: Callable[..., Any] | None = None,
 ) -> AsyncIterator[NotebookLMClient]:
     await server.__aenter__()
     client: NotebookLMClient | None = None
@@ -112,7 +151,8 @@ async def _cohort(
             server_error_max_retries=server_retries,
             max_concurrent_rpcs=max_concurrent_rpcs,
             operation_timeout=operation_timeout,
-            sleep=None if real_sleep else no_sleep,
+            sleep=retry_sleep or no_sleep,
+            async_client_factory=async_client_factory,
         )
         await client.__aenter__()
         yield client
@@ -165,6 +205,54 @@ async def _read_disconnect_recovery(result: ScenarioResult) -> None:
     _clean(result, server)
 
 
+async def _connection_refusal_recovery(result: ScenarioResult) -> None:
+    reserved = socket.socket()
+    reserved.bind(("127.0.0.1", 0))
+    refused_target = ("127.0.0.1", int(reserved.getsockname()[1]))
+    reserved.close()
+    transports: list[LogicalHostTransport] = []
+
+    def client_factory(**kwargs: Any) -> httpx.AsyncClient:
+        if "transport" in kwargs:
+            raise TypeError("connection-refusal factory owns the transport")
+        transport = LogicalHostTransport(
+            {
+                "notebook.google.com": refused_target,
+                "accounts.google.com": refused_target,
+            }
+        )
+        transports.append(transport)
+        return httpx.AsyncClient(transport=transport, trust_env=False, **kwargs)
+
+    server = HttpFaultServer()
+    server.enqueue(
+        _READ,
+        Reply(body=list_response(_READ.rpc_id or "", [("probe", "Probe")])),
+    )
+    error: BaseException | None = None
+    async with _cohort(
+        result,
+        server,
+        timeout=10.0,
+        server_retries=2,
+        async_client_factory=client_factory,
+    ) as client:
+        try:
+            await client.notebooks.list()
+        except BaseException as caught:
+            error = caught
+        for transport in transports:
+            transport.retarget("notebook.google.com", server.address)
+            transport.retarget("accounts.google.com", server.address)
+        probe = await client.notebooks.list()
+        metrics = client.metrics_snapshot()
+    result.require("refusal_network_error", isinstance(error, NetworkError))
+    result.require("refusal_no_server_dispatch", len(_requests(server, _READ)) == 1)
+    result.require("refusal_three_attempts", metrics.rpc_server_error_retries == 2)
+    result.require("refusal_same_client_recovery", [row.id for row in probe] == ["probe"])
+    _clean(result, server)
+
+
 async def _create_disconnect_uncommitted(result: ScenarioResult) -> None:
     server = HttpFaultServer()
     server.enqueue(
@@ -189,6 +277,43 @@ async def _create_disconnect_uncommitted(result: ScenarioResult) -> None:
     result.require("uncommitted_create_no_service_commit", server.committed == [])
     result.require("uncommitted_create_recovery", probe == [])
     _clean(result, server, remaining=1)
+
+
+async def _rename_commit_loss_converges(result: ScenarioResult) -> None:
+    server = HttpFaultServer()
+    server.enqueue(
+        _RENAME,
+        Disconnect(commit_id="rename:notebook-1:Stable"),
+        Reply(body=rpc_response(_RENAME.rpc_id or "", None)),
+    )
+    server.enqueue(
+        _GET,
+        Reply(
+            body=rpc_response(
+                _GET.rpc_id or "",
+                [["Stable", [], "notebook-1", "📘", None, [None, None, None, None]]],
+            )
+        ),
+        Reply(
+            body=rpc_response(
+                _GET.rpc_id or "",
+                [["Stable", [], "notebook-1", "📘", None, [None, None, None, None]]],
+            )
+        ),
+    )
+    async with _cohort(result, server, timeout=10.0, server_retries=1) as client:
+        renamed = await client.notebooks.rename("notebook-1", "Stable")
+        probe = await client.notebooks.get("notebook-1")
+    attempts = _requests(server, _RENAME)
+    result.require("rename_replayed_once", len(attempts) == 2)
+    result.require(
+        "rename_replayed_identical_set",
+        len(attempts) == 2 and attempts[0].body_digest == attempts[1].body_digest,
+    )
+    result.require("rename_first_commit_recorded", server.committed == ["rename:notebook-1:Stable"])
+    result.require("rename_result_converged", renamed.title == "Stable")
+    result.require("rename_recovery", probe.title == "Stable")
+    _clean(result, server)
 
 
 async def _queue_expiry_no_dispatch(result: ScenarioResult) -> None:
@@ -225,6 +350,51 @@ async def _queue_expiry_no_dispatch(result: ScenarioResult) -> None:
     )
     result.require("queued_create_zero_dispatch", len(_requests(server, _CREATE)) == 0)
     result.require("queued_create_recovery", [row.id for row in probe] == ["probe"])
+    _clean(result, server, remaining=1)
+
+
+async def _configured_queue_expiry_no_dispatch(result: ScenarioResult) -> None:
+    server = HttpFaultServer()
+    holder_reply = Reply(body=list_response(_READ.rpc_id or "", [("held", "Held")]))
+    server.enqueue(
+        _READ,
+        Stall("headers", "held-rpc", holder_reply),
+        Reply(body=list_response(_READ.rpc_id or "", [("probe", "Probe")])),
+    )
+    server.enqueue(
+        _CREATE,
+        Reply(body=create_response(_CREATE.rpc_id or "", "must-not-run", "Queued")),
+    )
+    error: BaseException | None = None
+    async with _cohort(
+        result,
+        server,
+        max_concurrent_rpcs=1,
+        operation_timeout=0.05,
+    ) as client:
+        async def hold_without_default_deadline() -> list[Any]:
+            async with client.operation(timeout=None):
+                return await client.notebooks.list()
+
+        held = asyncio.create_task(hold_without_default_deadline())
+        await server.wait_for_requests(_READ, 1)
+        try:
+            await client.notebooks.create("Queued")
+        except BaseException as caught:
+            error = caught
+        server.release("held-rpc")
+        await held
+        probe = await client.notebooks.list()
+    metadata = getattr(error, "operation_metadata", None)
+    result.require("configured_queue_timeout", isinstance(error, OperationTimeoutError))
+    result.require(
+        "configured_queue_not_sent",
+        metadata is not None
+        and metadata.commit_state is CommitState.NOT_SENT
+        and not metadata.attempts,
+    )
+    result.require("configured_queue_zero_dispatch", len(_requests(server, _CREATE)) == 0)
+    result.require("configured_queue_recovery", [row.id for row in probe] == ["probe"])
     _clean(result, server, remaining=1)
 
 
@@ -273,6 +443,97 @@ async def _retry_auth_rate_exhaustion(result: ScenarioResult) -> None:
     result.require("composed_rate_rpc_count", len(_requests(server, _READ)) == 6)
     result.require("composed_rate_one_refresh", len(_requests(server, _HOME)) == 1)
     result.require("composed_rate_recovery", [row.id for row in probe] == ["probe"])
+    _clean(result, server)
+
+
+async def _retry_auth_operation_deadline(result: ScenarioResult) -> None:
+    server = HttpFaultServer()
+    server.enqueue(
+        _READ,
+        Reply(503),
+        Reply(body=rpc_status_response(_READ.rpc_id or "", 16)),
+        Reply(429, headers={"Retry-After": "5"}),
+        Reply(body=list_response(_READ.rpc_id or "", [("probe", "Probe")])),
+    )
+    server.enqueue(_HOME, Reply(body=homepage_response()))
+    backoff_started = asyncio.Event()
+    release_backoff = asyncio.Event()
+
+    async def gated_sleep(seconds: float) -> None:
+        result.record("sleep", seconds=seconds)
+        if seconds >= 4.0:
+            backoff_started.set()
+            await release_backoff.wait()
+
+    error: BaseException | None = None
+    async with _cohort(
+        result,
+        server,
+        timeout=10.0,
+        operation_timeout=0.2,
+        server_retries=3,
+        rate_retries=3,
+        retry_sleep=gated_sleep,
+    ) as client:
+        task = asyncio.create_task(client.notebooks.list())
+        await asyncio.wait_for(backoff_started.wait(), 1.0)
+        try:
+            await task
+        except BaseException as caught:
+            error = caught
+        attempts_before_recovery = len(_requests(server, _READ))
+        release_backoff.set()
+        await asyncio.sleep(0)
+        probe = await client.notebooks.list()
+    result.require("aggregate_deadline_timeout", isinstance(error, OperationTimeoutError))
+    result.require("aggregate_deadline_three_attempts", attempts_before_recovery == 3)
+    result.require("aggregate_deadline_one_refresh", len(_requests(server, _HOME)) == 1)
+    result.require("aggregate_deadline_recovery", [row.id for row in probe] == ["probe"])
+    _clean(result, server)
+
+
+async def _retry_auth_backoff_cancelled(result: ScenarioResult) -> None:
+    server = HttpFaultServer()
+    server.enqueue(
+        _READ,
+        Reply(503),
+        Reply(body=rpc_status_response(_READ.rpc_id or "", 16)),
+        Reply(429, headers={"Retry-After": "5"}),
+        Reply(body=list_response(_READ.rpc_id or "", [("probe", "Probe")])),
+    )
+    server.enqueue(_HOME, Reply(body=homepage_response()))
+    backoff_started = asyncio.Event()
+    release_backoff = asyncio.Event()
+
+    async def gated_sleep(seconds: float) -> None:
+        result.record("sleep", seconds=seconds)
+        if seconds >= 4.0:
+            backoff_started.set()
+            await release_backoff.wait()
+
+    async with _cohort(
+        result,
+        server,
+        timeout=10.0,
+        server_retries=3,
+        rate_retries=3,
+        retry_sleep=gated_sleep,
+    ) as client:
+        task = asyncio.create_task(client.notebooks.list())
+        await asyncio.wait_for(backoff_started.wait(), 1.0)
+        task.cancel()
+        cancelled = await asyncio.gather(task, return_exceptions=True)
+        attempts_before_recovery = len(_requests(server, _READ))
+        release_backoff.set()
+        await asyncio.sleep(0)
+        probe = await client.notebooks.list()
+    result.require(
+        "backoff_cancelled_publicly",
+        len(cancelled) == 1 and isinstance(cancelled[0], asyncio.CancelledError),
+    )
+    result.require("backoff_cancelled_three_attempts", attempts_before_recovery == 3)
+    result.require("backoff_cancelled_one_refresh", len(_requests(server, _HOME)) == 1)
+    result.require("backoff_cancelled_recovery", [row.id for row in probe] == ["probe"])
     _clean(result, server)
 
 
@@ -411,10 +672,15 @@ async def _auth_refresh_old_generation(result: ScenarioResult) -> None:
 IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
     "auth_refresh_cancelled_waiter": _auth_refresh_cancelled_waiter,
     "auth_refresh_old_generation": _auth_refresh_old_generation,
+    "connection_refusal_recovery": _connection_refusal_recovery,
+    "configured_queue_expiry_no_dispatch": _configured_queue_expiry_no_dispatch,
     "create_disconnect_uncommitted": _create_disconnect_uncommitted,
     "queue_cancel_no_dispatch": _queue_cancel_no_dispatch,
     "queue_expiry_no_dispatch": _queue_expiry_no_dispatch,
     "read_disconnect_recovery": _read_disconnect_recovery,
+    "rename_commit_loss_converges": _rename_commit_loss_converges,
+    "retry_auth_backoff_cancelled": _retry_auth_backoff_cancelled,
+    "retry_auth_operation_deadline": _retry_auth_operation_deadline,
     "retry_auth_rate_exhaustion": _retry_auth_rate_exhaustion,
     "retry_auth_server_budget": _retry_auth_server_budget,
 }

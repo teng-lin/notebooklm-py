@@ -150,6 +150,17 @@ class LogicalHostTransport(httpx.AsyncBaseTransport):
                 raise ValueError("fault transport route port is invalid")
         self._inner = httpx.AsyncHTTPTransport(proxy=None, trust_env=False)
 
+    def retarget(self, logical_host: str, target: tuple[str, int]) -> None:
+        """Redirect one logical host between attempts on this transport instance."""
+        physical_host, physical_port = target
+        if logical_host not in self._routes:
+            raise ValueError(f"unknown logical host: {logical_host}")
+        if not ipaddress.ip_address(physical_host).is_loopback:
+            raise ValueError("fault transport target must be numeric loopback")
+        if not 1 <= physical_port <= 65535:
+            raise ValueError("fault transport target port is invalid")
+        self._routes[logical_host] = (physical_host, physical_port)
+
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if request.url.scheme != "https" or request.url.port not in (None, 443):
             raise httpx.ConnectError(
