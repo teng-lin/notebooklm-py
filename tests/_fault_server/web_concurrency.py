@@ -213,7 +213,6 @@ async def close_mixed_load_and_reopen(result: ScenarioResult) -> None:
     server.enqueue(
         LIST_ASSETS,
         _artifact_reply("audio-fault", poll_id),
-        Stall("headers", "poll-rpc", _artifact_reply("audio-fault", poll_id)),
     )
     server.enqueue(
         ASSET,
@@ -226,6 +225,11 @@ async def close_mixed_load_and_reopen(result: ScenarioResult) -> None:
     )
     server.enqueue(
         READ,
+        Stall(
+            "headers",
+            "active-read",
+            Reply(body=list_response(READ.rpc_id or "", [("held", "Held")])),
+        ),
         Reply(body=list_response(READ.rpc_id or "", [("reopened", "Reopened")])),
     )
     with tempfile.TemporaryDirectory(prefix="fault-close-mixed-") as directory:
@@ -243,6 +247,8 @@ async def close_mixed_load_and_reopen(result: ScenarioResult) -> None:
                 )
             )
             await server.wait_for_event("response_prefix")
+            holder = asyncio.create_task(client.notebooks.list())
+            await server.wait_for_requests(READ, 1)
             leader = asyncio.create_task(
                 client.artifacts.wait_for_completion(
                     NOTEBOOK,
@@ -252,7 +258,15 @@ async def close_mixed_load_and_reopen(result: ScenarioResult) -> None:
                     timeout=2.0,
                 )
             )
-            await server.wait_for_requests(LIST_ASSETS, 2)
+            key = (NOTEBOOK, poll_id)
+            for _ in range(100):
+                if client.artifacts._poll_registry.get(key) is not None:
+                    break
+                await asyncio.sleep(0)
+            result.require(
+                "close_mixed_poll_registered",
+                client.artifacts._poll_registry.get(key) is not None,
+            )
             follower = asyncio.create_task(
                 client.artifacts.wait_for_completion(
                     NOTEBOOK,
@@ -264,14 +278,15 @@ async def close_mixed_load_and_reopen(result: ScenarioResult) -> None:
             )
             queued = asyncio.create_task(client.notebooks.list())
             await asyncio.sleep(0)
-            result.require("close_mixed_read_queued", not _requests(server, READ))
+            result.require("close_mixed_read_queued", len(_requests(server, READ)) == 1)
+            result.require("close_mixed_poll_rpc_queued", len(_requests(server, LIST_ASSETS)) == 1)
             await client.close(drain=False)
             outcomes = await asyncio.gather(
-                download, leader, follower, queued, return_exceptions=True
+                download, holder, leader, follower, queued, return_exceptions=True
             )
             result.record("close_mixed_outcomes", types=[type(item).__name__ for item in outcomes])
             server.release("asset-close")
-            server.release("poll-rpc")
+            server.release("active-read")
             await client.__aenter__()
             reopened = await client.notebooks.list()
             result.require(
@@ -281,7 +296,10 @@ async def close_mixed_load_and_reopen(result: ScenarioResult) -> None:
                     for outcome in outcomes
                 ),
             )
-            result.require("close_mixed_no_queued_dispatch", len(_requests(server, READ)) == 1)
+            result.require("close_mixed_no_queued_dispatch", len(_requests(server, READ)) == 2)
+            result.require(
+                "close_mixed_no_poll_dispatch", len(_requests(server, LIST_ASSETS)) == 1
+            )
             result.require("close_mixed_reopened", [row.id for row in reopened] == ["reopened"])
             result.require("close_mixed_poll_registry_empty", not client.artifacts._poll_registry.active_tasks())
             result.require("close_mixed_transfer_clients_empty", not client.artifacts._asset_downloads._clients)
@@ -297,7 +315,13 @@ IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
 
 PLANS = {
     "close_mixed_load_and_reopen": (
-        ("asset-body:gated", "poll:leader+follower@gate", "read:queued", "close+reopen"),
+        (
+            "asset-body:gated",
+            "read:active@gate",
+            "poll:leader+follower queued",
+            "read:queued",
+            "close+reopen",
+        ),
         1,
     ),
     "mixed_rpc_transfer_poll_progress": (
