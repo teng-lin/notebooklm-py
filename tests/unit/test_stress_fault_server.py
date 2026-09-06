@@ -18,7 +18,7 @@ from tests._fault_server.common import ScenarioFailure, ScenarioResult
 
 async def _passing(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
     assert result.operation_id == operation_id
-    result.record("plan", faults=[name])
+    result.record("plan", faults=[name], required_checks=["work completed"])
     result.record("cleanup", completed=True)
     result.require("work completed", True)
     return result
@@ -506,3 +506,18 @@ async def test_missing_cleanup_cannot_be_replaced_by_unrelated_passing_check() -
     report = await stress.run_stress(stress.RunConfig(iterations=1), {("web", "read"): scenario})
     assert not report["summary"]["ok"]
     assert report["operations"][0]["error"] == "ValueError"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("declaration", [None, []])
+async def test_empty_required_checks_cannot_claim_success(declaration: list[str] | None) -> None:
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        fields = {} if declaration is None else {"required_checks": declaration}
+        result.record("plan", faults=[name], **fields)
+        result.record("cleanup", completed=True)
+        result.require("unrelated", True)
+        return result
+
+    report = await stress.run_stress(stress.RunConfig(iterations=1), {("web", "read"): scenario})
+    assert report["summary"]["failed"] == 1
+    assert not report["summary"]["ok"]
