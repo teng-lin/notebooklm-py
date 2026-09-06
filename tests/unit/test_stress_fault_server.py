@@ -318,6 +318,21 @@ def test_cli_reports_a_leaked_child_even_when_it_cancels_cleanly() -> None:
     assert cleaned
 
 
+def test_cli_records_unhandled_background_failure() -> None:
+    async def fails() -> None:
+        raise RuntimeError("orphaned handler failed")
+
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        asyncio.create_task(fails(), name="unowned-handler")
+        await asyncio.sleep(0)
+        result.require("misleading success", True)
+        return result
+
+    report = stress._run_cli(stress.RunConfig(iterations=1), {("web", "broken"): scenario})
+    assert not report["summary"]["ok"]
+    assert any("orphaned handler failed" in failure for failure in report["failures"])
+
+
 def test_cli_bounds_cancellation_resistant_cleanup_in_subprocess() -> None:
     # A broken coroutine must not strand pytest's own event loop. The CLI owns
     # its loop and reports shutdown failure even when a scenario swallows cancel.

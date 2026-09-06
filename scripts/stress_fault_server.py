@@ -271,6 +271,17 @@ async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
 def _run_cli(config: RunConfig, registry: Registry) -> dict[str, Any]:
     """Own the CLI loop so broken scenario cleanup cannot hang asyncio.run()."""
     loop = asyncio.new_event_loop()
+    loop_errors: list[str] = []
+
+    def exception_handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+        error = context.get("exception")
+        loop_errors.append(
+            f"event loop error: {context.get('message', 'unknown')}: "
+            f"{type(error).__name__}: {str(error)[:1000]}"
+        )
+        loop.default_exception_handler(context)
+
+    loop.set_exception_handler(exception_handler)
     report: dict[str, Any] | None = None
     main_task = loop.create_task(run_stress(config, registry))
     try:
@@ -301,6 +312,9 @@ def _run_cli(config: RunConfig, registry: Registry) -> dict[str, Any]:
                     "CLI shutdown left pending tasks: " + ", ".join(t.get_name() for t in survivors)
                 )
                 report["summary"]["ok"] = False
+        if loop_errors and report is not None:
+            report["failures"].extend(loop_errors)
+            report["summary"]["ok"] = False
         loop.close()
 
 
