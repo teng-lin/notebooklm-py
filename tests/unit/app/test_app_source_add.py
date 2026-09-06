@@ -75,7 +75,7 @@ class TestValidateUrl:
     def test_rejects_missing_host(self) -> None:
         with pytest.raises(SourceAddValidationError) as exc:
             validate_url("http:///path", allow_internal=False)
-        assert "no host" in str(exc.value).lower()
+        assert exc.value.reason == "url_missing_host"
 
     @pytest.mark.parametrize(
         "url",

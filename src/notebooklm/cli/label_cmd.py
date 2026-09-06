@@ -47,6 +47,7 @@ from .services.label_listing import (
     LabelListPlan,
     LabelResolutionError,
     execute_label_list,
+    label_resolution_projection,
     resolve_label_id,
 )
 
@@ -57,12 +58,13 @@ def _handle_label_resolution_error(exc: LabelResolutionError, *, json_output: bo
     # in text mode render them as a "Did you mean" hint so the CLI label path
     # matches the *NotFoundError handler.
     candidates = list(exc.candidates)
+    message, code, extra = label_resolution_projection(exc)
     output_error(
-        exc.message,
-        code=exc.code,
+        message,
+        code=code,
         json_output=json_output,
         exit_code=1,
-        extra=dict(exc.extra) if exc.extra else None,
+        extra=extra,
         hint=did_you_mean_hint(candidates) if candidates else None,
     )
     raise AssertionError("unreachable")  # pragma: no cover

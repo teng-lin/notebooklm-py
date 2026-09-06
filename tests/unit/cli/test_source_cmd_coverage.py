@@ -25,8 +25,8 @@ import notebooklm.auth as auth_module
 from notebooklm._app.source_clean import SourceCleanResult
 from notebooklm.cli import source_cmd
 from notebooklm.cli.services.source_mutations import (
+    CliSourceMutationError,
     SourceDeleteResult,
-    SourceMutationError,
     SourceRefreshResult,
 )
 from notebooklm.cli.services.source_research import (
@@ -92,7 +92,7 @@ class TestRenderSourceWaitOutcomeGuard:
 # ---------------------------------------------------------------------------
 class TestHandleSourceMutationError:
     def test_structured_extra_is_preserved(self, capsys):
-        exc = SourceMutationError("boom", "DELETE_FAILED", extra={"k": "v"})
+        exc = CliSourceMutationError("boom", "DELETE_FAILED", extra={"k": "v"})
         with pytest.raises(SystemExit):
             source_cmd._handle_source_mutation_error(exc, json_output=True)
         payload = json.loads(capsys.readouterr().out)
@@ -100,7 +100,7 @@ class TestHandleSourceMutationError:
         assert payload["k"] == "v"
 
     def test_text_error_uses_adapter_renderer(self, capsys):
-        exc = SourceMutationError("boom", "DELETE_FAILED")
+        exc = CliSourceMutationError("boom", "DELETE_FAILED")
         with pytest.raises(SystemExit):
             source_cmd._handle_source_mutation_error(exc, json_output=False)
         err = capsys.readouterr().err

@@ -606,7 +606,7 @@ async def rename_source(
     result = await mut_core.execute_source_rename(
         client,
         mut_core.SourceRenamePlan(
-            notebook_id=notebook_id, source_id=source_id, new_title=body.title, json_output=True
+            notebook_id=notebook_id, source_id=source_id, new_title=body.title
         ),
         resolve_source_id=passthrough_source_id,
     )

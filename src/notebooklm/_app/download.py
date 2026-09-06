@@ -114,21 +114,31 @@ NotebookResolver = Callable[[str], Awaitable[str]]
 ArtifactResolver = Callable[[list[ArtifactDict], str], str]
 
 
+DownloadValidationReason = Literal[
+    "missing_notebook",
+    "conflicting_overwrite_policy",
+    "conflicting_selection_order",
+    "all_with_artifact",
+    "unsupported_format",
+]
+
+
 class DownloadPlanValidationError(ValidationError):
-    """Plan-validation error raised synchronously by :func:`build_download_plan`.
+    """Adapter-neutral, typed plan-validation failure."""
 
-    Subclasses :class:`~notebooklm.exceptions.ValidationError` so
-    ``_app.errors.classify`` covers it uniformly across adapters (it classifies
-    as :attr:`~notebooklm._app.errors.ErrorCategory.VALIDATION`). It keeps its
-    ``message`` / ``code`` attributes so the CLI ``download_cmd`` adapter can
-    project them onto the historical ``VALIDATION_ERROR`` ``--json`` code +
-    exit-code policy unchanged.
-    """
-
-    def __init__(self, message: str, code: str = "VALIDATION_ERROR") -> None:
-        self.message = message
-        self.code = code
-        super().__init__(message)
+    def __init__(
+        self,
+        reason: DownloadValidationReason,
+        *,
+        format_parameter: str | None = None,
+        format_choice: str | None = None,
+        supported_formats: tuple[str, ...] = (),
+    ) -> None:
+        self.reason = reason
+        self.format_parameter = format_parameter
+        self.format_choice = format_choice
+        self.supported_formats = supported_formats
+        super().__init__(reason.replace("_", " "))
 
 
 @dataclass(frozen=True)
@@ -223,6 +233,28 @@ class DownloadOutcome(Enum):
     SINGLE_DOWNLOADED = "single_downloaded"
 
 
+DownloadFailureReason = Literal[
+    "no_artifacts",
+    "name_not_found",
+    "selection_failed",
+    "file_exists",
+    "download_failed",
+    "authentication",
+]
+
+
+@dataclass(frozen=True)
+class DownloadFailure:
+    """Semantic download failure data for adapter-owned projection."""
+
+    reason: DownloadFailureReason
+    detail: str | None = None
+    artifact_type: str | None = None
+    name: str | None = None
+    available_titles: tuple[str, ...] = ()
+    path: str | None = None
+
+
 @dataclass(frozen=True)
 class DownloadResult:
     """Typed outcome of :func:`execute_download`.
@@ -239,11 +271,7 @@ class DownloadResult:
     """
 
     outcome: DownloadOutcome
-    error: str | None = None
-    error_code: str | None = None
-    message: str | None = None
-    hint: str | None = None
-    suggestion: str | None = None
+    failure: DownloadFailure | None = None
     artifact: dict[str, Any] | None = None
     output_path: str | None = None
     #: On-disk size of a single downloaded file, in bytes. Populated only for a
@@ -268,7 +296,7 @@ class DownloadResult:
         ``ALL_EXECUTED`` outcome that had at least one per-item failure — i.e.
         exactly when the historical envelope grew a top-level ``"error"`` key.
         """
-        return self.error is not None or self.is_failure
+        return self.failure is not None or self.is_failure
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +335,7 @@ def select_artifact(
         raise ValueError("No artifacts found")
 
     if latest and earliest:
-        raise ValueError("Cannot specify both --latest and --earliest")
+        raise DownloadPlanValidationError("conflicting_selection_order")
 
     filtered = artifacts
 
@@ -436,7 +464,7 @@ def _identity_notebook(notebook_id: str | None) -> str:
             neutral path has no context to fall back on.
     """
     if not notebook_id:
-        raise DownloadPlanValidationError("notebook_id is required")
+        raise DownloadPlanValidationError("missing_notebook")
     return notebook_id
 
 
@@ -477,11 +505,11 @@ def build_download_plan(
         DownloadPlanValidationError: when flag combinations conflict.
     """
     if args.get("force") and args.get("no_clobber"):
-        raise DownloadPlanValidationError("Cannot specify both --force and --no-clobber")
+        raise DownloadPlanValidationError("conflicting_overwrite_policy")
     if args.get("latest") and args.get("earliest"):
-        raise DownloadPlanValidationError("Cannot specify both --latest and --earliest")
+        raise DownloadPlanValidationError("conflicting_selection_order")
     if args.get("download_all") and args.get("artifact_id"):
-        raise DownloadPlanValidationError("Cannot specify both --all and --artifact")
+        raise DownloadPlanValidationError("all_with_artifact")
 
     nb_id = notebook_required(args.get("notebook_id"))
 
@@ -499,8 +527,10 @@ def build_download_plan(
         # adapter has no such guard).
         if format_choice not in config.format_choices:
             raise DownloadPlanValidationError(
-                f"Invalid {config.format_param_name} {format_choice!r}; "
-                f"expected one of {list(config.format_choices)}"
+                "unsupported_format",
+                format_parameter=config.format_param_name,
+                format_choice=format_choice,
+                supported_formats=config.format_choices,
             )
 
     file_extension, warnings = _resolve_format_extension(
@@ -679,9 +709,10 @@ async def _execute_download_all(
         if not filtered:
             return DownloadResult(
                 outcome=DownloadOutcome.ERROR,
-                error=(
-                    f"No artifacts matching '{plan.name}'. "
-                    f"Available: {', '.join(a['title'] for a in type_artifacts)}"
+                failure=DownloadFailure(
+                    "name_not_found",
+                    name=plan.name,
+                    available_titles=tuple(a["title"] for a in type_artifacts),
                 ),
             )
         type_artifacts = filtered
@@ -792,12 +823,10 @@ async def _execute_download_all(
         failed_count=failed_count,
         skipped_count=skipped_count,
         is_failure=failed_count > 0,
-        error_code="AUTH_ERROR" if first_auth_error is not None else None,
-        message=(
-            f"Authentication error: {first_auth_error}" if first_auth_error is not None else None
-        ),
-        hint=(
-            "Run 'notebooklm login' to re-authenticate." if first_auth_error is not None else None
+        failure=(
+            DownloadFailure("authentication", detail=str(first_auth_error))
+            if first_auth_error is not None
+            else None
         ),
         artifacts=tuple(artifacts_results),
     )
@@ -836,8 +865,11 @@ async def _execute_download_single(
             name=plan.name,
             artifact_id=resolved_artifact_id,
         )
-    except ValueError as e:
-        return DownloadResult(outcome=DownloadOutcome.ERROR, error=str(e))
+    except (ValueError, DownloadPlanValidationError) as e:
+        return DownloadResult(
+            outcome=DownloadOutcome.ERROR,
+            failure=DownloadFailure("selection_failed", detail=str(e)),
+        )
 
     if not plan.output_path:
         safe_name = artifact_title_to_filename(
@@ -876,9 +908,8 @@ async def _execute_download_single(
         # kept stable for scripts parsing ``--json`` envelopes.
         return DownloadResult(
             outcome=DownloadOutcome.ERROR,
-            error=f"File exists: {final_path}",
+            failure=DownloadFailure("file_exists", path=str(final_path)),
             artifact=dict(selected),
-            suggestion="Use --force to overwrite or choose a different path",
         )
 
     final_path = resolved_path
@@ -901,7 +932,11 @@ async def _execute_download_single(
     except AuthError:
         raise
     except Exception as e:
-        return DownloadResult(outcome=DownloadOutcome.ERROR, error=str(e), artifact=dict(selected))
+        return DownloadResult(
+            outcome=DownloadOutcome.ERROR,
+            failure=DownloadFailure("download_failed", detail=str(e)),
+            artifact=dict(selected),
+        )
 
 
 async def execute_download(
@@ -945,8 +980,7 @@ async def execute_download(
     if not type_artifacts:
         return DownloadResult(
             outcome=DownloadOutcome.NO_ARTIFACTS,
-            error=f"No completed {plan.spec.name} artifacts found",
-            suggestion=f"Generate one with: notebooklm generate {plan.spec.name}",
+            failure=DownloadFailure("no_artifacts", artifact_type=plan.spec.name),
         )
 
     if plan.download_all:

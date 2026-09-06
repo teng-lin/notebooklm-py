@@ -6,9 +6,8 @@ These pin the relocated source-mutation business logic at the ``_app`` boundary
 * source-id resolvers — :func:`resolve_source_for_delete` (UUID fast-path,
   partial-prefix match, ambiguity, title-instead-of-id hint, not-found) and
   :func:`resolve_source_by_exact_title`.
-* the typed :class:`SourceMutationError` (carried ``.code`` / ``.extra``).
-* the small pure helpers :func:`looks_like_full_source_id` /
-  :func:`build_id_ambiguity_error`.
+* the typed :class:`SourceMutationError` (semantic reason/token/matches).
+* the small pure helper :func:`looks_like_full_source_id`.
 * the executors — delete / delete-by-title from immutable resolved targets,
   rename / refresh (injected ``resolve_source_id``), add-drive (mime mapping).
 
@@ -31,9 +30,9 @@ from notebooklm._app.source_mutations import (
     SourceDeletePlan,
     SourceIdResolution,
     SourceMutationError,
+    SourceMutationMatch,
     SourceRefreshPlan,
     SourceRenamePlan,
-    build_id_ambiguity_error,
     execute_source_add_drive,
     execute_source_add_drive_file,
     execute_source_delete,
@@ -74,19 +73,6 @@ class TestPureHelpers:
     def test_looks_like_full_source_id_rejects_partial(self, partial: str) -> None:
         assert looks_like_full_source_id(partial) is False
 
-    def test_build_id_ambiguity_error_lists_matches(self) -> None:
-        matches = [Source(id="src_aaa111", title="One"), Source(id="src_aaa222", title=None)]
-        msg = build_id_ambiguity_error("src_aaa", matches)
-        assert "Ambiguous ID 'src_aaa'" in msg
-        assert "matches 2 sources" in msg
-        assert "src_aaa111" in msg
-        assert "(untitled)" in msg  # None title rendered as placeholder
-
-    def test_build_id_ambiguity_error_truncates_overflow(self) -> None:
-        matches = [Source(id=f"src_{i:06d}", title=f"T{i}") for i in range(7)]
-        msg = build_id_ambiguity_error("src", matches)
-        assert "... and 2 more" in msg
-
 
 # ===========================================================================
 # SourceMutationError
@@ -97,18 +83,14 @@ class TestSourceMutationError:
     def test_is_notebooklm_error_subclass(self) -> None:
         assert issubclass(SourceMutationError, NotebookLMError)
 
-    def test_carries_code_and_extra(self) -> None:
-        err = SourceMutationError("boom", "NOT_FOUND", {"source_id": "s"})
-        assert err.code == "NOT_FOUND"
-        assert err.extra == {"source_id": "s"}
-        # The metadata is embedded in the str message.
-        assert "code=NOT_FOUND" in str(err)
-        assert "extra=" in str(err)
-
-    def test_no_extra_omits_extra_from_message(self) -> None:
-        err = SourceMutationError("boom", "AMBIGUOUS_ID")
-        assert "code=AMBIGUOUS_ID" in str(err)
-        assert "extra=" not in str(err)
+    def test_carries_semantic_reason_and_matches(self) -> None:
+        match = SourceMutationMatch("src_1", "One")
+        err = SourceMutationError("ambiguous_id", token="src", matches=(match,))
+        assert err.reason == "ambiguous_id"
+        assert err.token == "src"
+        assert err.matches == (match,)
+        assert "notebooklm " not in str(err)
+        assert "--" not in str(err)
 
 
 # ===========================================================================
@@ -171,7 +153,7 @@ class TestResolveSourceForDelete:
         )
         with pytest.raises(SourceMutationError) as exc:
             await resolve_source_for_delete(client, "nb_1", "src_aaa")
-        assert exc.value.code == "AMBIGUOUS_ID"
+        assert exc.value.reason == "ambiguous_id"
 
     @pytest.mark.asyncio
     async def test_genuine_ambiguity_without_exact_still_raises(self) -> None:
@@ -181,22 +163,22 @@ class TestResolveSourceForDelete:
         )
         with pytest.raises(SourceMutationError) as exc:
             await resolve_source_for_delete(client, "nb_1", "abc")
-        assert exc.value.code == "AMBIGUOUS_ID"
+        assert exc.value.reason == "ambiguous_id"
 
     @pytest.mark.asyncio
     async def test_title_match_suggests_delete_by_title(self) -> None:
         client = _client(sources=[Source(id="src_xyz999", title="My Title")])
         with pytest.raises(SourceMutationError) as exc:
             await resolve_source_for_delete(client, "nb_1", "My Title")
-        assert exc.value.code == "VALIDATION_ERROR"
-        assert "delete-by-title" in str(exc.value)
+        assert exc.value.reason == "title_used_as_id"
+        assert "delete-by-title" not in str(exc.value)
 
     @pytest.mark.asyncio
     async def test_no_match_raises_not_found(self) -> None:
         client = _client(sources=[Source(id="src_aaa111", title="One")])
         with pytest.raises(SourceMutationError) as exc:
             await resolve_source_for_delete(client, "nb_1", "zzz")
-        assert exc.value.code == "NOT_FOUND"
+        assert exc.value.reason == "id_not_found"
 
     @pytest.mark.asyncio
     async def test_exact_match_parity_with_shared_resolver(self) -> None:
@@ -241,14 +223,14 @@ class TestResolveSourceByExactTitle:
         client = _client(sources=[Source(id="src_1", title="Dup"), Source(id="src_2", title="Dup")])
         with pytest.raises(SourceMutationError) as exc:
             await resolve_source_by_exact_title(client, "nb_1", "Dup")
-        assert exc.value.code == "AMBIGUOUS_TITLE"
+        assert exc.value.reason == "ambiguous_title"
 
     @pytest.mark.asyncio
     async def test_no_title_match_raises_not_found(self) -> None:
         client = _client(sources=[Source(id="src_1", title="Other")])
         with pytest.raises(SourceMutationError) as exc:
             await resolve_source_by_exact_title(client, "nb_1", "Missing")
-        assert exc.value.code == "NOT_FOUND"
+        assert exc.value.reason == "title_not_found"
 
 
 # ===========================================================================

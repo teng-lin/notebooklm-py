@@ -59,9 +59,11 @@ from .resolve import (
     resolve_notebook_id,
 )
 from .services.research import (
+    ResearchValidationError,
     ResearchWaitPlan,
     ResearchWaitResult,
     execute_research_wait,
+    research_validation_message,
 )
 
 # UI-only cap for the research summary preview shown in `research status` /
@@ -562,7 +564,8 @@ def research_wait(
     """
     try:
         validate_research_wait_flags(import_all=import_all, cited_only=cited_only)
-    except ValidationError as exc:
+    except ResearchValidationError as exc:
+        message = research_validation_message(exc)
         # Per ADR-0015 §2: under --json this flag-combination conflict must
         # emit the typed JSON envelope and exit 1 (VALIDATION_ERROR), not
         # ride Click's parse-time UsageError path (exit 2, usage text on
@@ -570,9 +573,9 @@ def research_wait(
         # existing Click UX so interactive users still get the
         # ``Usage: ... / Error: ...`` formatting.
         if json_output:
-            _output_error(str(exc), "VALIDATION_ERROR", json_output, 1)
+            _output_error(message, "VALIDATION_ERROR", json_output, 1)
         raise click.UsageError(  # cli-input-validation: --cited-only requires --import-all
-            str(exc)
+            message
         ) from exc
 
     nb_id = require_notebook(notebook_id)

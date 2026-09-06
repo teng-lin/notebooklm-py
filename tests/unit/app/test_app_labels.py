@@ -11,7 +11,7 @@ a ``MagicMock`` client (no Click / ``CliRunner``):
 * ``create`` / ``sources`` / ``generate`` / ``rename`` / ``emoji`` /
   ``add`` / ``remove`` / ``delete`` executors delegate to the right
   ``client.labels`` RPC and project the typed results,
-* :class:`LabelResolutionError` carries ``message`` / ``code`` / ``extra`` and
+* :class:`LabelResolutionError` carries semantic reason/token/candidates and
   stays inside the public ``ValidationError`` hierarchy.
 """
 
@@ -49,21 +49,20 @@ def _client() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_label_resolution_error_carries_code_and_extra() -> None:
-    err = LabelResolutionError("No match", "NOT_FOUND", {"id": "x"})
-    assert err.message == "No match"
-    assert err.code == "NOT_FOUND"
-    assert err.extra == {"id": "x"}
+def test_label_resolution_error_carries_semantic_reason() -> None:
+    err = LabelResolutionError("not_found", notebook_id="nb", token="x")
+    assert err.reason == "not_found"
+    assert err.notebook_id == "nb"
+    assert err.token == "x"
     # Stays inside the public NotebookLMError hierarchy (errors.classify covers it).
     assert isinstance(err, ValidationError)
-    # The str includes the code for adapter-agnostic diagnostics.
-    assert "code=NOT_FOUND" in str(err)
+    assert "notebooklm " not in str(err)
 
 
-def test_label_resolution_error_extra_defaults_to_none() -> None:
-    err = LabelResolutionError("Ambiguous", "AMBIGUOUS_NAME")
-    assert err.extra is None
-    assert err.code == "AMBIGUOUS_NAME"
+def test_label_resolution_error_candidates_default_empty() -> None:
+    err = LabelResolutionError("ambiguous_name", notebook_id="nb", token="x")
+    assert err.candidates == ()
+    assert err.matches == ()
 
 
 # ---------------------------------------------------------------------------

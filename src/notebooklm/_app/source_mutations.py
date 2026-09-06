@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from ..exceptions import NotebookLMError, ValidationError
 from ..types import DriveMimeType, Source, SourceType
@@ -57,30 +57,37 @@ ValidateIdFn = Callable[[str, str], str]
 ResolveSourceIdFn = Callable[..., Awaitable[str]]
 
 
-class SourceMutationError(NotebookLMError):
-    """Typed source-mutation error for command-layer rendering and exit policy.
+SourceMutationReason = Literal[
+    "ambiguous_id",
+    "title_used_as_id",
+    "id_not_found",
+    "ambiguous_title",
+    "title_not_found",
+]
 
-    Subclasses :class:`~notebooklm.exceptions.NotebookLMError` (was bare
-    ``Exception``) so ``_app.errors.classify`` covers it — it classifies as
-    :attr:`~notebooklm._app.errors.ErrorCategory.SOURCE_MUTATION`, the
-    class-sensitive category that lets adapters recover its carried ``.code``
-    vocabulary. The CLI renderer (``_handle_source_mutation_error``) still reads
-    its ``.code`` / ``.message`` / ``.extra`` attributes to emit the historical
-    per-error ``--json`` codes (``AMBIGUOUS_ID`` /
-    ``NOT_FOUND`` / ``CONFIRM_REQUIRED`` / …) + exit codes unchanged.
-    """
+
+@dataclass(frozen=True)
+class SourceMutationMatch:
+    """Candidate source carried by a semantic resolution failure."""
+
+    id: str
+    title: str
+
+
+class SourceMutationError(NotebookLMError):
+    """Typed source-mutation failure with adapter-neutral reason data."""
 
     def __init__(
         self,
-        message: str,
-        code: str,
-        extra: dict[str, Any] | None = None,
+        reason: SourceMutationReason,
+        *,
+        token: str,
+        matches: tuple[SourceMutationMatch, ...] = (),
     ) -> None:
-        self.message = message
-        self.code = code
-        self.extra = extra
-        metadata = f" (code={code}, extra={extra})" if extra else f" (code={code})"
-        super().__init__(f"{message}{metadata}")
+        self.reason = reason
+        self.token = token
+        self.matches = matches
+        super().__init__(f"source resolution {reason.replace('_', ' ')}: {token}")
 
 
 @dataclass(frozen=True)
@@ -166,16 +173,9 @@ class SourceAddDriveResult:
 # ---------------------------------------------------------------------------
 
 
-def build_id_ambiguity_error(source_id: str, matches: list[Source]) -> str:
-    """Build a consistent ambiguity error for source ID prefix matches."""
-    lines = [f"Ambiguous ID '{source_id}' matches {len(matches)} sources:"]
-    for item in matches[:5]:
-        title = item.title or "(untitled)"
-        lines.append(f"  {item.id[:12]}... {title}")
-    if len(matches) > 5:
-        lines.append(f"  ... and {len(matches) - 5} more")
-    lines.append("Specify more characters to narrow down.")
-    return "\n".join(lines)
+def _source_matches(matches: list[Source]) -> tuple[SourceMutationMatch, ...]:
+    """Project source objects onto transport-neutral resolution candidates."""
+    return tuple(SourceMutationMatch(item.id, item.title or "") for item in matches)
 
 
 def looks_like_full_source_id(source_id: str) -> bool:
@@ -230,26 +230,22 @@ async def resolve_source_for_delete(
 
     if len(matches) > 1:
         raise SourceMutationError(
-            build_id_ambiguity_error(source_id, matches),
-            "AMBIGUOUS_ID",
+            "ambiguous_id",
+            token=source_id,
+            matches=_source_matches(matches),
         )
 
     title_matches = [item for item in sources if item.title == source_id]
     if title_matches:
-        lines = [
-            f"'{source_id}' matches {len(title_matches)} source title(s), not source IDs.",
-            f"Use 'notebooklm source delete-by-title \"{source_id}\"' or delete by ID:",
-        ]
-        for item in title_matches[:5]:
-            lines.append(f"  {item.id[:12]}... {item.title}")
-        if len(title_matches) > 5:
-            lines.append(f"  ... and {len(title_matches) - 5} more")
-        raise SourceMutationError("\n".join(lines), "VALIDATION_ERROR")
+        raise SourceMutationError(
+            "title_used_as_id",
+            token=source_id,
+            matches=_source_matches(title_matches),
+        )
 
     raise SourceMutationError(
-        f"No source found starting with '{source_id}'. "
-        "Run 'notebooklm source list' to see available sources.",
-        "NOT_FOUND",
+        "id_not_found",
+        token=source_id,
     )
 
 
@@ -269,17 +265,15 @@ async def resolve_source_by_exact_title(
         return matches[0]
 
     if len(matches) > 1:
-        lines = [f"Title '{title}' matches {len(matches)} sources. Delete by ID instead:"]
-        for item in matches[:5]:
-            lines.append(f"  {item.id[:12]}... {item.title}")
-        if len(matches) > 5:
-            lines.append(f"  ... and {len(matches) - 5} more")
-        raise SourceMutationError("\n".join(lines), "AMBIGUOUS_TITLE")
+        raise SourceMutationError(
+            "ambiguous_title",
+            token=title,
+            matches=_source_matches(matches),
+        )
 
     raise SourceMutationError(
-        f"No source found with title '{title}'. "
-        "Run 'notebooklm source list' to see available sources.",
-        "NOT_FOUND",
+        "title_not_found",
+        token=title,
     )
 
 
@@ -574,7 +568,8 @@ __all__ = [
     "SourceRefreshResult",
     "SourceRenamePlan",
     "SourceRenameResult",
-    "build_id_ambiguity_error",
+    "SourceMutationMatch",
+    "SourceMutationReason",
     "drive_mime_type_code",
     "execute_source_add_drive",
     "execute_source_add_drive_file",

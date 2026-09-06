@@ -73,6 +73,7 @@ from ._source_render import (  # noqa: F401
     _render_source_stale_result,
     _render_source_wait_outcome,
     _resolve_source_fulltext_output_path,
+    _source_add_validation_message,
     _validate_upload_path,
     source_add_payload,
 )
@@ -104,9 +105,11 @@ from .resolve import (
     resolve_source_ids,
 )
 from .runtime import is_quiet
-from .services.label_listing import LabelResolutionError
+from .services.label_listing import LabelResolutionError, label_resolution_projection
+from .services.research import ResearchValidationError, research_validation_message
 from .services.source_listing import SourceListPlan, execute_source_list
 from .services.source_mutations import (
+    CliSourceMutationError,
     SourceAddDriveFilePlan,
     SourceAddDrivePlan,
     SourceMutationError,
@@ -219,12 +222,13 @@ def source_list(
             try:
                 render = await execute_source_list(client, plan)
             except LabelResolutionError as exc:
+                message, code, extra = label_resolution_projection(exc)
                 output_error(
-                    exc.message,
-                    code=exc.code,
+                    message,
+                    code=code,
                     json_output=json_output,
                     exit_code=1,
-                    extra=dict(exc.extra) if exc.extra else None,
+                    extra=extra,
                 )
                 raise AssertionError("unreachable") from None  # pragma: no cover
             render_list(render)
@@ -390,7 +394,12 @@ def source_add(
             allow_internal=allow_internal,
         )
     except source_add_service.SourceAddValidationError as exc:
-        _output_error(f"Error: {exc}", "VALIDATION_ERROR", json_output, 1)
+        _output_error(
+            f"Error: {_source_add_validation_message(exc)}",
+            "VALIDATION_ERROR",
+            json_output,
+            1,
+        )
         raise AssertionError("unreachable") from None  # pragma: no cover
 
     for warning in plan.warnings:
@@ -469,7 +478,7 @@ def source_delete(ctx, source_id, notebook_id, yes, json_output, client_auth):
                     noninteractive=json_output,
                     confirm=click.confirm,
                 )
-            except SourceMutationError as exc:
+            except (SourceMutationError, CliSourceMutationError) as exc:
                 _handle_source_mutation_error(exc, json_output=json_output)
             _render_source_delete_result(result, json_output=json_output, ctx=ctx)
 
@@ -498,7 +507,7 @@ def source_delete_by_title(ctx, title, notebook_id, yes, json_output, client_aut
                     noninteractive=json_output,
                     confirm=click.confirm,
                 )
-            except SourceMutationError as exc:
+            except (SourceMutationError, CliSourceMutationError) as exc:
                 _handle_source_mutation_error(exc, json_output=json_output)
             _render_source_delete_result(result, json_output=json_output, ctx=ctx)
 
@@ -769,8 +778,8 @@ def source_add_research(
     # contract (ADR-0015 §2): --json → typed envelope, else Click ``UsageError``.
     try:
         validate_add_research_flags(import_all=import_all, cited_only=cited_only, no_wait=no_wait)
-    except ValidationError as exc:
-        _emit_add_research_flag_conflict(str(exc), json_output=json_output)
+    except ResearchValidationError as exc:
+        _emit_add_research_flag_conflict(research_validation_message(exc), json_output=json_output)
 
     nb_id = require_notebook(notebook_id)
 
@@ -1079,7 +1088,7 @@ def _dispatch_source_clean_result(
         # its explicit destructive-operation approval.
         if result.status == "cancelled" and not yes:
             try:
-                raise SourceMutationError(
+                raise CliSourceMutationError(
                     "Pass --yes to confirm destructive operation in --json mode",
                     "CONFIRM_REQUIRED",
                     {
@@ -1089,7 +1098,7 @@ def _dispatch_source_clean_result(
                         "candidates": candidate_payload,
                     },
                 )
-            except SourceMutationError as exc:
+            except (SourceMutationError, CliSourceMutationError) as exc:
                 _handle_source_mutation_error(exc, json_output=json_output)
 
         payload: dict[str, Any] = {
@@ -1185,8 +1194,16 @@ def source_add_async(ctx, urls, allow_internal, notebook_id, json_output, client
     nb_id = require_notebook(notebook_id)
     # Same scheme / SSRF gate as ``source add`` — the async route must not be a
     # way around it. Raises SourceAddValidationError before any RPC.
-    for url in urls:
-        source_add_service.validate_url(url, allow_internal=allow_internal)
+    try:
+        for url in urls:
+            source_add_service.validate_url(url, allow_internal=allow_internal)
+    except source_add_service.SourceAddValidationError as exc:
+        _output_error(
+            f"Error: {_source_add_validation_message(exc)}",
+            "VALIDATION_ERROR",
+            json_output,
+            1,
+        )
 
     async def _run():
         async with resolve_client_factory(ctx)(client_auth) as client:

@@ -25,6 +25,7 @@ from functools import partial
 from typing import Any
 
 from ..._app.research import (
+    ResearchValidationError,
     ResearchWaitOutcome,
     ResearchWaitPlan,
     ResearchWaitResult,
@@ -35,6 +36,19 @@ from ..._app.research import (
 )
 from ..research_import import ResearchImportResult, import_research_sources
 from ..resolve import resolve_notebook_id
+
+
+def research_validation_message(exc: ResearchValidationError) -> str:
+    """Render a neutral research conflict using the established CLI wording."""
+    if exc.reason == "cited_requires_import":
+        return "--cited-only requires --import-all"
+    if exc.reason == "import_requires_wait":
+        return (
+            "--import-all requires --wait (the default), or after --no-wait a "
+            "separate 'research wait --import-all' (blocks) or 'research import' "
+            "(imports an already-completed run, never blocks)."
+        )
+    raise AssertionError(f"Unhandled research validation reason: {exc.reason}")
 
 
 async def execute_research_wait(
@@ -83,7 +97,9 @@ __all__ = [
     "ResearchWaitOutcome",
     "ResearchWaitPlan",
     "ResearchWaitResult",
+    "ResearchValidationError",
     "execute_research_wait",
     "import_research_sources",
     "resolve_notebook_id",
+    "research_validation_message",
 ]

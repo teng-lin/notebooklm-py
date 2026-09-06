@@ -37,11 +37,11 @@ from ..._app.source_mutations import (
     SourceDeleteResult,
     SourceIdResolution,
     SourceMutationError,
+    SourceMutationMatch,
     SourceRefreshPlan,
     SourceRefreshResult,
     SourceRenamePlan,
     SourceRenameResult,
-    build_id_ambiguity_error,
     execute_source_add_drive,
     execute_source_add_drive_file,
     looks_like_full_source_id,
@@ -68,6 +68,78 @@ from ..resolve import resolve_source_id, validate_id
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
+
+
+class CliSourceMutationError(Exception):
+    """CLI-only failure carrying the historical envelope projection."""
+
+    def __init__(
+        self,
+        message: str,
+        code: str,
+        extra: dict[str, object] | None = None,
+    ) -> None:
+        self.message = message
+        self.code = code
+        self.extra = extra
+        super().__init__(message)
+
+
+def _append_source_matches(lines: list[str], matches: tuple[SourceMutationMatch, ...]) -> None:
+    for match in matches[:5]:
+        lines.append(f"  {match.id[:12]}... {match.title or '(untitled)'}")
+    if len(matches) > 5:
+        lines.append(f"  ... and {len(matches) - 5} more")
+
+
+def build_id_ambiguity_error(source_id: str, matches) -> str:
+    """Compatibility renderer for the established CLI ambiguity wording."""
+    semantic = tuple(SourceMutationMatch(item.id, item.title or "") for item in matches)
+    lines = [f"Ambiguous ID '{source_id}' matches {len(semantic)} sources:"]
+    _append_source_matches(lines, semantic)
+    lines.append("Specify more characters to narrow down.")
+    return "\n".join(lines)
+
+
+def source_mutation_error_details(
+    exc: SourceMutationError | CliSourceMutationError,
+) -> tuple[str, str, dict[str, object] | None]:
+    """Map neutral resolution failures or CLI-only policy failures to CLI output."""
+    if isinstance(exc, CliSourceMutationError):
+        return exc.message, exc.code, exc.extra
+
+    matches = exc.matches
+    if exc.reason == "ambiguous_id":
+        lines = [f"Ambiguous ID '{exc.token}' matches {len(matches)} sources:"]
+        _append_source_matches(lines, matches)
+        lines.append("Specify more characters to narrow down.")
+        return "\n".join(lines), "AMBIGUOUS_ID", None
+    if exc.reason == "title_used_as_id":
+        lines = [
+            f"'{exc.token}' matches {len(matches)} source title(s), not source IDs.",
+            f"Use 'notebooklm source delete-by-title \"{exc.token}\"' or delete by ID:",
+        ]
+        _append_source_matches(lines, matches)
+        return "\n".join(lines), "VALIDATION_ERROR", None
+    if exc.reason == "id_not_found":
+        return (
+            f"No source found starting with '{exc.token}'. "
+            "Run 'notebooklm source list' to see available sources.",
+            "NOT_FOUND",
+            None,
+        )
+    if exc.reason == "ambiguous_title":
+        lines = [f"Title '{exc.token}' matches {len(matches)} sources. Delete by ID instead:"]
+        _append_source_matches(lines, matches)
+        return "\n".join(lines), "AMBIGUOUS_TITLE", None
+    if exc.reason == "title_not_found":
+        return (
+            f"No source found with title '{exc.token}'. "
+            "Run 'notebooklm source list' to see available sources.",
+            "NOT_FOUND",
+            None,
+        )
+    raise AssertionError(f"Unhandled source mutation reason: {exc.reason}")
 
 
 async def resolve_source_for_delete(
@@ -114,7 +186,7 @@ async def run_source_delete(
     """Resolve, obtain adapter authorization, and execute one source delete."""
     target = await resolve_source_for_delete(client, notebook_id, source_id)
     if noninteractive and not approved:
-        extra = {
+        extra: dict[str, object] = {
             "action": "delete",
             "source_id": target.source_id,
             "notebook_id": notebook_id,
@@ -123,7 +195,7 @@ async def run_source_delete(
             extra["status_message"] = (
                 f"Matched: {target.source_id[:12]}... ({target.matched_title})"
             )
-        raise SourceMutationError(
+        raise CliSourceMutationError(
             "Pass --yes to confirm destructive operation in --json mode",
             "CONFIRM_REQUIRED",
             extra,
@@ -152,7 +224,7 @@ async def run_source_delete_by_title(
     target = await resolve_source_by_exact_title(client, notebook_id, title)
     target_title = target.title or ""
     if noninteractive and not approved:
-        raise SourceMutationError(
+        raise CliSourceMutationError(
             "Pass --yes to confirm destructive operation in --json mode",
             "CONFIRM_REQUIRED",
             {
@@ -211,6 +283,7 @@ async def execute_source_refresh(
 
 __all__ = [
     "DriveMimeChoice",
+    "CliSourceMutationError",
     "SourceAddDriveFilePlan",
     "SourceAddDriveFileResult",
     "SourceAddDrivePlan",
@@ -238,5 +311,6 @@ __all__ = [
     "resolve_source_id",
     "run_source_delete",
     "run_source_delete_by_title",
+    "source_mutation_error_details",
     "validate_id",
 ]

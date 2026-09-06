@@ -374,9 +374,7 @@ def register(mcp: Any) -> None:
             src_id = await resolve_source(client, nb_id, source)
             result = await mut_core.execute_source_rename(
                 client,
-                mut_core.SourceRenamePlan(
-                    notebook_id=nb_id, source_id=src_id, new_title=new_title, json_output=False
-                ),
+                mut_core.SourceRenamePlan(notebook_id=nb_id, source_id=src_id, new_title=new_title),
                 resolve_source_id=passthrough_child_id,
             )
             return {"status": "renamed", **to_jsonable(result)}

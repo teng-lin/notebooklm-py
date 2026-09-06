@@ -97,12 +97,14 @@ class TestValidateAddResearchFlags:
     def test_cited_only_without_import_all_rejected(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_add_research_flags(import_all=False, cited_only=True, no_wait=False)
-        assert "--cited-only requires --import-all" in str(exc.value)
+        assert exc.value.reason == "cited_requires_import"
+        assert "--" not in str(exc.value)
 
     def test_no_wait_with_import_all_rejected(self) -> None:
         with pytest.raises(ValidationError) as exc:
             validate_add_research_flags(import_all=True, cited_only=False, no_wait=True)
-        assert "--import-all requires" in str(exc.value)
+        assert exc.value.reason == "import_requires_wait"
+        assert "--" not in str(exc.value)
 
 
 # ===========================================================================

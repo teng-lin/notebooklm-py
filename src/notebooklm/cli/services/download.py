@@ -30,6 +30,7 @@ from ..._app.download import (
     ArtifactDict,
     DownloadEvent,
     DownloadEventSink,
+    DownloadFailure,
     DownloadOutcome,
     DownloadPlan,
     DownloadPlanValidationError,
@@ -54,10 +55,45 @@ __all__ = [
     "DownloadTypeSpec",
     "build_download_envelope",
     "build_download_plan",
+    "download_validation_message",
     "execute_download",
     "require_notebook",
     "resolve_notebook_id",
 ]
+
+
+def download_validation_message(exc: DownloadPlanValidationError) -> str:
+    """Render a semantic validation reason using the established CLI wording."""
+    if exc.reason == "missing_notebook":
+        return "notebook_id is required"
+    if exc.reason == "conflicting_overwrite_policy":
+        return "Cannot specify both --force and --no-clobber"
+    if exc.reason == "conflicting_selection_order":
+        return "Cannot specify both --latest and --earliest"
+    if exc.reason == "all_with_artifact":
+        return "Cannot specify both --all and --artifact"
+    if exc.reason == "unsupported_format":
+        return (
+            f"Invalid {exc.format_parameter} {exc.format_choice!r}; "
+            f"expected one of {list(exc.supported_formats)}"
+        )
+    raise AssertionError(f"Unhandled download validation reason: {exc.reason}")
+
+
+def _download_failure_message(failure: DownloadFailure) -> str:
+    """Render a semantic failure using the legacy CLI error string."""
+    if failure.reason == "no_artifacts":
+        return f"No completed {failure.artifact_type} artifacts found"
+    if failure.reason == "name_not_found":
+        return (
+            f"No artifacts matching '{failure.name}'. "
+            f"Available: {', '.join(failure.available_titles)}"
+        )
+    if failure.reason == "file_exists":
+        return f"File exists: {failure.path}"
+    if failure.reason == "authentication":
+        return f"Authentication error: {failure.detail}"
+    return failure.detail or failure.reason.replace("_", " ")
 
 
 def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
@@ -70,14 +106,21 @@ def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
     stays stable for scripts that parse it.
     """
     if result.outcome is DownloadOutcome.NO_ARTIFACTS:
-        return {"error": result.error, "suggestion": result.suggestion}
+        failure = result.failure
+        assert failure is not None
+        return {
+            "error": _download_failure_message(failure),
+            "suggestion": f"Generate one with: notebooklm generate {failure.artifact_type}",
+        }
 
     if result.outcome is DownloadOutcome.ERROR:
-        envelope: dict[str, Any] = {"error": result.error}
+        failure = result.failure
+        assert failure is not None
+        envelope: dict[str, Any] = {"error": _download_failure_message(failure)}
         if result.artifact is not None:
             envelope["artifact"] = result.artifact
-        if result.suggestion is not None:
-            envelope["suggestion"] = result.suggestion
+        if failure.reason == "file_exists":
+            envelope["suggestion"] = "Use --force to overwrite or choose a different path"
         return envelope
 
     if result.outcome is DownloadOutcome.ALL_DRY_RUN:
@@ -101,12 +144,10 @@ def build_download_envelope(result: DownloadResult) -> dict[str, Any]:
         }
         if result.is_failure:
             envelope["error"] = True
-        if result.error_code is not None:
-            envelope["code"] = result.error_code
-        if result.message is not None:
-            envelope["message"] = result.message
-        if result.hint is not None:
-            envelope["hint"] = result.hint
+        if result.failure is not None and result.failure.reason == "authentication":
+            envelope["code"] = "AUTH_ERROR"
+            envelope["message"] = _download_failure_message(result.failure)
+            envelope["hint"] = "Run 'notebooklm login' to re-authenticate."
         return envelope
 
     if result.outcome is DownloadOutcome.SINGLE_DRY_RUN:

@@ -70,7 +70,7 @@ _EXEMPLARS: list[tuple[ErrorCategory, BaseException]] = [
     (ErrorCategory.TIMEOUT, exc.WaitTimeoutError("generic wait timed out")),
     (ErrorCategory.SERVER, exc.ServerError("upstream 503")),
     (ErrorCategory.RPC, exc.RPCError("decode failed", method_id="abc123")),
-    (ErrorCategory.SOURCE_MUTATION, SourceMutationError("ambiguous", "AMBIGUOUS_ID")),
+    (ErrorCategory.SOURCE_MUTATION, SourceMutationError("ambiguous_id", token="ambiguous")),
     (ErrorCategory.SOURCE_ADD, exc.SourceAddError("http://bad.example")),
     (ErrorCategory.LIBRARY, exc.NotebookLMError("some library error")),
     (ErrorCategory.UNEXPECTED, RuntimeError("boom")),

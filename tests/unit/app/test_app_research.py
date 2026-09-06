@@ -89,7 +89,8 @@ async def _resolve_passthrough(client: Any, nb_id: str, *, json_output: bool = F
 def test_validate_flags_cited_only_requires_import_all() -> None:
     with pytest.raises(ValidationError) as caught:
         validate_research_wait_flags(import_all=False, cited_only=True)
-    assert "--cited-only requires --import-all" in str(caught.value)
+    assert caught.value.reason == "cited_requires_import"
+    assert "--" not in str(caught.value)
 
 
 def test_validate_flags_cited_only_with_import_all_ok() -> None:

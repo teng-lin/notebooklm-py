@@ -51,6 +51,16 @@ logger = logging.getLogger(__name__)
 
 ResearchStatusKind = Literal["no_research", "in_progress", "completed", "other"]
 
+ResearchValidationReason = Literal["cited_requires_import", "import_requires_wait"]
+
+
+class ResearchValidationError(ValidationError):
+    """Typed research-option conflict for adapter-owned presentation."""
+
+    def __init__(self, reason: ResearchValidationReason) -> None:
+        self.reason = reason
+        super().__init__(reason.replace("_", " "))
+
 
 @dataclass(frozen=True)
 class ResearchStatusResult:
@@ -522,7 +532,7 @@ def validate_research_wait_flags(*, import_all: bool, cited_only: bool) -> None:
     text-mode ``click.UsageError`` and JSON-mode envelope branches).
     """
     if cited_only and not import_all:
-        raise ValidationError("--cited-only requires --import-all")
+        raise ResearchValidationError("cited_requires_import")
 
 
 async def execute_research_wait(
@@ -647,6 +657,8 @@ __all__ = [
     "ResearchImportOutcome",
     "ResearchStatusKind",
     "ResearchStatusResult",
+    "ResearchValidationError",
+    "ResearchValidationReason",
     "ResearchWaitOutcome",
     "ResearchWaitPlan",
     "ResearchWaitResult",

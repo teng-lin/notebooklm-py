@@ -43,6 +43,7 @@ from .rendering import (
     json_output_response,
 )
 from .services.source_mutations import (
+    CliSourceMutationError,
     SourceAddDriveFileResult,
     SourceAddDriveResult,
     SourceDeleteByTitleResult,
@@ -50,6 +51,7 @@ from .services.source_mutations import (
     SourceMutationError,
     SourceRefreshResult,
     SourceRenameResult,
+    source_mutation_error_details,
 )
 from .services.source_research import SourceAddResearchResult
 from .services.source_serializers import (
@@ -103,12 +105,50 @@ def _looks_like_path(content: str) -> bool:
     return source_add_service.looks_like_path(content)
 
 
+def _source_add_validation_message(exc: source_add_service.SourceAddValidationError) -> str:
+    """Render a neutral source-add reason using the established CLI wording."""
+    if exc.reason == "invalid_url":
+        return f"Invalid URL: {exc.url} ({exc.detail})"
+    if exc.reason == "unsupported_url_scheme":
+        return (
+            f"URL scheme {exc.scheme!r} is not allowed; only http and https URLs "
+            f"are accepted as sources. Got: {exc.url}"
+        )
+    if exc.reason == "url_missing_host":
+        return f"URL has no host component: {exc.url}"
+    if exc.reason == "local_host_disallowed":
+        return (
+            f"URL targets the local host {exc.host!r}; pass --allow-internal "
+            f"to override. Got: {exc.url}"
+        )
+    if exc.reason == "internal_ip_disallowed":
+        return (
+            f"URL targets an internal IP address {exc.host}; pass --allow-internal "
+            f"to override. Got: {exc.url}"
+        )
+    if exc.reason == "symlink_disallowed":
+        return (
+            "Path is a symlink; pass --follow-symlinks to follow it explicitly. "
+            f"Refusing to upload: {exc.path}"
+        )
+    if exc.reason == "not_regular_file":
+        return f"Not a regular file: {exc.path}"
+    if exc.reason == "missing_upload_path":
+        return "upload_path must be set when detected_type == 'file'"
+    raise AssertionError(f"Unhandled source-add validation reason: {exc.reason}")
+
+
 def _validate_upload_path(content: str, follow_symlinks: bool) -> Path:
     """Compatibility wrapper for tests patching source-add upload validation."""
     try:
         return source_add_service.validate_upload_path(content, follow_symlinks)
     except source_add_service.SourceAddValidationError as exc:
-        _output_error(f"Error: {exc}", "VALIDATION_ERROR", current_json_output(), 1)
+        _output_error(
+            f"Error: {_source_add_validation_message(exc)}",
+            "VALIDATION_ERROR",
+            current_json_output(),
+            1,
+        )
         raise AssertionError("unreachable") from None  # pragma: no cover
 
 
@@ -459,15 +499,17 @@ def _render_source_stale_result(
         exit_with_code(0)
 
 
-def _handle_source_mutation_error(exc: SourceMutationError, *, json_output: bool) -> NoReturn:
+def _handle_source_mutation_error(
+    exc: SourceMutationError | CliSourceMutationError, *, json_output: bool
+) -> NoReturn:
     """Render a typed source-mutation error through the CLI error contract."""
-    extra = dict(exc.extra) if exc.extra else None
+    message, code, extra = source_mutation_error_details(exc)
     _output_error(
-        exc.message,
-        code=exc.code,
+        message,
+        code=code,
         json_output=json_output,
         exit_code=1,
-        extra=extra,
+        extra=dict(extra) if extra else None,
     )
     raise AssertionError("unreachable")  # pragma: no cover
 

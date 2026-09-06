@@ -50,12 +50,54 @@ def _handle_collection_resolution_error(
 ) -> NoReturn:
     """Render a typed collection-resolution error through the CLI error contract."""
     candidates = list(exc.candidates)
+    matches = exc.matches
+    candidate_payload = [
+        {"id": match.id, "emoji": match.emoji, "notebook_count": match.notebook_count}
+        for match in matches
+    ]
+    if exc.reason == "ambiguous_id":
+        lines = [f"Ambiguous collection id '{exc.token}' matches {len(matches)} collections:"]
+        for match in matches[:5]:
+            emoji = f"{match.emoji} " if match.emoji else ""
+            lines.append(
+                f"  {match.id} {emoji}"
+                f"({match.notebook_count} notebook{'s' if match.notebook_count != 1 else ''})"
+            )
+        if len(matches) > 5:
+            lines.append(f"  ... and {len(matches) - 5} more")
+        lines.append("Specify more characters to disambiguate.")
+        message, code = "\n".join(lines), "AMBIGUOUS_ID"
+        extra: dict[str, Any] = {"id": exc.token, "candidates": candidate_payload}
+    elif exc.reason == "ambiguous_name":
+        lines = [
+            f"Name '{exc.token}' matches {len(matches)} collections. Use a collection id instead:"
+        ]
+        for match in matches[:5]:
+            emoji = f"{match.emoji} " if match.emoji else ""
+            lines.append(
+                f"  {match.id} {emoji}"
+                f"({match.notebook_count} notebook{'s' if match.notebook_count != 1 else ''})"
+            )
+        if len(matches) > 5:
+            lines.append(f"  ... and {len(matches) - 5} more")
+        lines.append("Specify the collection id to disambiguate.")
+        message, code = "\n".join(lines), "AMBIGUOUS_NAME"
+        extra = {"name": exc.token, "candidates": candidate_payload}
+    else:
+        message = (
+            f"No collection found matching '{exc.token}'. "
+            "Run 'notebooklm collection list' to see available collections."
+        )
+        code = "NOT_FOUND"
+        extra = {"id": exc.token}
+        if candidates:
+            extra["candidates"] = candidates
     output_error(
-        exc.message,
-        code=exc.code,
+        message,
+        code=code,
         json_output=json_output,
         exit_code=1,
-        extra=dict(exc.extra) if exc.extra else None,
+        extra=extra,
         hint=did_you_mean_hint(candidates) if candidates else None,
     )
     raise AssertionError("unreachable")  # pragma: no cover
