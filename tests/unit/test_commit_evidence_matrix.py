@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from types import SimpleNamespace
@@ -621,8 +622,12 @@ async def test_real_android_readback_cancellation_preserves_decoded_commit_batch
     finally:
         await session.close_resources()
 
-    assert raised.value is cancellation
-    metadata = cancellation._operation_metadata  # type: ignore[attr-defined]
+    propagated = raised.value
+    # Python 3.10 recreates CancelledError when it crosses the child Task used
+    # by asyncio.wait_for; 3.11+ preserves the raised exception instance.
+    if sys.version_info >= (3, 11):
+        assert propagated is cancellation
+    metadata = propagated._operation_metadata  # type: ignore[attr-defined]
     assert metadata.commit_state is CommitState.CONFIRMED
     assert metadata.known_resource_ids == _SOURCE_IDS
     assert [entry.commit_state for entry in metadata.entries] == [
