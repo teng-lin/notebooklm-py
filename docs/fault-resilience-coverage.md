@@ -2,8 +2,9 @@
 
 This inventory extends [the harness](fault-injection.md). Acceptance follows current
 production contracts and [ADR-0038](adr/0038-local-fault-injection-harness.md).
-Cases remain pending until their production-decoded success fixture, explicit fault,
-independent evidence, cleanup, and same-client recovery have passed.
+Cases pair production-decoded fixtures with explicit faults, independent evidence,
+cleanup, and recovery. The integration parametrizations and stress runner share the
+same scenario registries.
 
 ## Baseline
 
@@ -82,8 +83,9 @@ before a commit. Outcomes export exception type/stage and retained-identity bool
 | `upload_cancel_after_prefix` | R4 cancellation after server body consumption |
 | `upload_close_reopen` | R4 forced owner close and same-client reopen recovery |
 
-Initial combined validation: 110 helper, integration and runner tests passed in 6.09 seconds.
-This is partial implementation evidence; remaining cases in the inventories are still pending.
+The direct-upload deck also includes registration transport failure, positive registration
+refusal, and repeated cancellation while the actual native writer settles. Captured file
+objects, child tasks, HTTP clients, and semaphore permits must settle before recovery.
 
 ## Implemented Android download mechanisms
 
@@ -113,3 +115,40 @@ injected instance clock for cleanup-fence arithmetic: production has a 300-secon
 Drive lifetime. The clock advances only after readiness reaches its server gate. This case
 does not claim real-clock deadline coverage; `drive_import_timeout` uses the actual clock
 and public RPC timeout for that separate property.
+
+
+## Expanded implementation and measured validation
+
+The portable deck contains **174 cases: 105 Web and 69 Android**. The separate real-curl
+deck contains **10 cases**. Registration is shared with the integration tests; all nine
+adapter cases, including the three live disconnect cases, belong to the portable deck.
+
+| Families | Implementation |
+| --- | --- |
+| R1, R2 | Web and Android replay/refusal/loss contracts; independent retry counters across auth refresh; pre-send cancellation and aggregate deadlines |
+| R3, R4 | Web/native uploads with issued-session validation, incremental body/digest commit, lost acknowledgements, cancellation, forced close, and captured resource settlement |
+| R5, R9 | Web and Android guarded single/batch publication, truncation, redirects, expired/error content, and per-hop credential evidence |
+| R6 | Chat stream loss, stall, cancellation, and UTF-8 fragmentation through the actual decoder |
+| R7, R8 | Mixed RPC admission, transfers and shared pollers; waiter cancellation, shared refresh/mint failures, old-generation fences, close/reopen |
+| R10, R11 | Generation kickoff/poll outcomes and original deadline; ordered research-import outcomes, incomplete lookup, and confirmed mutation/readback failure |
+| R12 | Drive staging/import ownership, safe cleanup, retained ambiguous prerequisites, cancellation, and cleanup failure precedence |
+| R13 | Actual keepalive connection reuse, restart, slow consumers, and native curl upload/download handles |
+| R14 | REST/MCP/CLI mappings; real downstream transfer disconnects and detached MCP job survival |
+
+At candidate `d821ecf5a`, on macOS 26.6.2 arm64 with Python 3.12.12:
+
+| Command selection | Executed | Time |
+| --- | --- | --- |
+| Portable, seed 42, concurrency 4, `--iterations 400 --require-all-scenarios` | 400/400; all 174 selected cases, zero skipped | 11.66 seconds |
+| `--backend web --transport curl_cffi`, seed 42, concurrency 2, 40 iterations | 40/40; all 10 selected cases, zero skipped | 2.42 seconds |
+
+Polling retry exhaustion records the production 2/4/8-second arithmetic through an
+instance-owned sleeper; the separate shared-poller case measures a real two-second
+aggregate deadline. Drive cleanup-fence arithmetic uses the explicitly injected clock
+already described above. Neither arithmetic case claims to measure elapsed waiting.
+
+The fault-stress CI job selects at least the full portable deck; its separate curl job
+installs `impersonate` and executes the complete curl selection on Ubuntu. Local curl
+measurements cover macOS arm64; CI provides the Ubuntu result. The ordinary compatibility
+matrix runs portable tests on its configured supported Python/OS cells. Local results do
+not claim that those remote checks have completed.

@@ -173,6 +173,9 @@ tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upl
 tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_finalize_401] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_finalize_403] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_prefix_disconnect] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_registration_failure] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_registration_refusal] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_repeated_cancel] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_start_401] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_start_403] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py::test_android_fault_scenario[upload_start_failure] # real loopback fault service; socket failures cannot be reproduced by VCR
@@ -190,8 +193,11 @@ tests/integration/faults/test_curl_faults.py::test_curl_fault_scenario[curl_uplo
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_cli_ambiguous_create] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_cli_transient_read] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_mcp_ambiguous_create] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_mcp_chat_start_disconnect] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_mcp_download_disconnect] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_mcp_transient_read] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_rest_ambiguous_create] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_rest_download_disconnect] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_rest_transient_read] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[auth_refresh] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[auth_refresh_cancelled_waiter] # real loopback fault service; socket failures cannot be reproduced by VCR

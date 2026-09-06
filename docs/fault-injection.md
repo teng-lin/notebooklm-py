@@ -23,7 +23,7 @@ upstream traffic. No cassette recording or login is necessary.
 ```bash
 uv run python scripts/stress_fault_server.py --list-scenarios
 uv run python scripts/stress_fault_server.py \
-  --backend both --seed 42 --iterations 100 --concurrency 4 \
+  --backend both --seed 42 --iterations 400 --concurrency 4 --require-all-scenarios \
   --timeout 120 --scenario-timeout 15 \
   --json-report /tmp/fault-stress-report.json
 ```
@@ -49,6 +49,20 @@ counts, credential transitions, committed state, and cleanup.
 The **Fault Server Stress** workflow runs a bounded workload on pull requests
 and a longer workload daily or on manual dispatch. Its report artifact contains
 the seed and event trace even when the runner reports a failure.
+
+The optional real-curl lane must be selected explicitly:
+
+```bash
+uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate
+uv run python scripts/stress_fault_server.py \
+  --backend web --transport curl_cffi --seed 42 --iterations 40 --concurrency 2 \
+  --require-all-scenarios --json-report /tmp/curl-fault-report.json
+```
+
+Reports separate selected, executed, and skipped cases. A small local sample can leave
+cases unexecuted; `--require-all-scenarios` rejects that incomplete coverage. Missing
+optional transport dependencies fail the requested lane. See the
+[coverage inventory](fault-resilience-coverage.md) for implemented families and measurements.
 
 ## What the harness covers
 
