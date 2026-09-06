@@ -19,8 +19,11 @@ tests/integration/concurrency/test_upload_blocks_loop.py # existing mock-only in
 tests/integration/concurrency/test_upload_cancel_dangling_session.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_upload_timeout_config.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/concurrency/test_wait_for_sources_leak.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
+tests/integration/faults/test_adapter_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_curl_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_web_workflows.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/test_artifact_generation_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_artifacts_integration.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/test_auto_refresh.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

@@ -609,7 +609,6 @@ async def run_scenario(
             "cleanup_timeout_s": _CLOSE_TIMEOUT,
         },
         required_checks=_REQUIRED_CHECKS[name],
-
     )
     await implementation(result)
     return result

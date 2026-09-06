@@ -246,7 +246,7 @@ def test_cli_writes_report_and_returns_failed_invariant_exit_code(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: bool
 ) -> None:
     async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
-        result.record("plan", faults=["commit_then_disconnect"])
+        result.record("plan", faults=["commit_then_disconnect"], required_checks=["one commit"])
         result.record("cleanup", completed=True)
         result.require("one commit", not failure)
         return result

@@ -563,7 +563,11 @@ async def run_scenario(
             name,
             {"scenario_timeout_s": 20.0, "rpc_timeout_s": 0.5, "cleanup_timeout_s": 2.0},
         ),
-        required_checks=list(GENERATION_REQUIRED_CHECKS[name] if name in GENERATION_REQUIRED_CHECKS else _REQUIRED_CHECKS[name]),
+        required_checks=list(
+            GENERATION_REQUIRED_CHECKS[name]
+            if name in GENERATION_REQUIRED_CHECKS
+            else _REQUIRED_CHECKS[name]
+        ),
     )
     if name == "workflow_artifact_incomplete_lookup":
         result.record(

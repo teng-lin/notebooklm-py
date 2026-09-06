@@ -1,8 +1,8 @@
 # Fault-resilience case contracts
 
-**Status:** F0 inventory for R1, R2, R7, R8, R10, and R11. Existing evidence is
-identified below; every row marked **new socket evidence** remains pending until its owning
-test is implemented and passes.
+**Status:** Implemented socket contracts for R1, R2, R7, R8, R10, and R11.
+The tables distinguish predecessor evidence from the new local socket cases.
+The coverage index records integrated validation; these tables describe contracts, not test runs.
 
 **Source baseline:** `65dbd21d70f5be8c892da40a3660987b4118cd1c`
 
@@ -17,7 +17,7 @@ The mandatory registry baseline is 25 scenarios: 16 Web scenarios in
 `tests/_fault_server/web_scenarios.py` and 9 Android scenarios in
 `tests/_fault_server/android_scenarios.py`. The new cases below add coverage; they do not replace
 or narrow any registered socket scenario. The [measured baseline](fault-resilience-coverage.md#baseline) records suite and stress durations. The plan's
-provisional stress bounds remain 64 iterations per PR cohort, 400 scheduled iterations, 600 seconds
+stress bounds use at least the complete selected deck (64 minimum PR iterations), 400 scheduled iterations, 600 seconds
 aggregate, 15 seconds per scenario, and 15 minutes per job; these are budgets, not measured results.
 
 All new cases use one local client and only local fault services. Each case has a watchdog of at
@@ -153,7 +153,7 @@ production create/list response shapes pinned by
 
 | Case | Backend and public/first-party entry | Fixture, counts, and gates | Required result/evidence and cleanup | Evidence status and invariants |
 | --- | --- | --- | --- | --- |
-| R11-01 earlier batch member confirmed | Web `execute_source_clean(preview, client=client)`, which calls public `client.sources.delete_many_with_outcomes` and then one public delete per occurrence | Use 12 source IDs so the first ten-member wave and an unscheduled tail are visible. Gate delete `b`; let delete `a` return confirmed, then make `b` fail and cancel/stop the wave before the tail. Exact requests depend on the intentionally concurrent first wave, so assert per-ID counts: `a=1`, `b=1`, every dispatched peer `<=1`, tail `=0`; no confirmed ID is replayed. | Escaping error metadata keeps `a` `CONFIRMED`, `b` at its production failure state, and unscheduled tail `NOT_SENT`, in original occurrence order. `whole_request_retriable` is false. Settle siblings before escape; recovery list succeeds. | Existing direct evidence: `tests/unit/test_source_delete_outcomes.py::test_cleanup_timeout_keeps_confirmed_sibling_evidence`. **New socket evidence.** I1, I2, I4, I6, I8. |
+| R11-01 earlier research member confirmed | Web first-party `execute_research_import` and production research import namespace | `workflow_research_import_ordered_loss` imports the earlier candidate successfully, then independently records the later import before losing its reply. Exact occurrence order and one dispatch per member are asserted. | Earlier confirmed evidence survives the later unknown outcome; no replay or fabricated whole-batch success. Reconciliation candidates remain candidates; recovery succeeds. | New socket evidence in `web_workflows.py`. I1, I2, I4, I6, I8. |
 | R11-02 aggregate component unavailable | Web `client.artifacts.lookup(notebook_id, artifact_id)` and first-party strict projection `require_complete_artifact_listing`/artifact getter | Studio list returns no match; note-backed mind-map component returns 503 through its production RPC retries. Exactly one logical Studio read and one logical notes read; wire count is initial plus configured notes retries. | Lookup is `UNKNOWN` with unavailable component `notes`; strict first-party projection raises the established `RPCError` for incomplete lookup. It must not return `NOT_FOUND` or an empty authoritative result. Recovery with notes available returns the fixture artifact or authoritative absence. | Existing unit evidence: `tests/unit/test_artifact_completeness.py::test_no_hit_plus_secondary_outage_is_unknown` and `tests/unit/app/test_app_artifacts.py::test_require_complete_artifact_listing_refuses_partial_inventory`. **New socket evidence.** I2, I6, I8. |
 | R11-03 confirmed mutation, readback failure | Web `client.collections.create("Research")` | Baseline `LIST_LABELS` returns the fixture set; `CREATE_LABEL` returns a decoded collection-set response and records one commit; mandatory second `LIST_LABELS` exhausts on 503 or disconnect. Gate the create response so its confirmed journal transition precedes readback. | Escaping `ServerError`/`NetworkError` retains primary mutation `CONFIRMED`, recovery `INSPECT_AND_RECONCILE`, mutation known/candidate evidence only as supported, and a separate failed readback entry. Exactly 1 create request/commit; readback wire count is initial plus configured safe-read retries. It never returns a guessed collection and never resends create. Recovery list observes the candidate without promoting it to this call's confirmed result. | Existing evidence: `tests/unit/test_collections_api.py::test_collection_readback_cancellation_retains_confirmed_mutation_journal`. **New socket evidence.** I1, I2, I6, I8. |
 | R11-04 verified research-import candidates | Web `client.research.import_sources_with_verification(...)`, also exercised through `_app.research.execute_research_import(..., oneshot=False)` | Strict completed research poll supplies sources. Baseline source list succeeds; import commits or may commit then loses its response; reconciliation list exposes matching new source IDs. Gate import commit before disconnect. Exactly 1 import mutation, bounded read-only reconciliation attempts under `max_elapsed`, and no mutation replay. | Original `NetworkError`/`RPCError` still escapes as `UNKNOWN`/unconfirmed. Matching IDs appear only in `reconciliation_candidates`; `newly_imported` is never fabricated. `REJECTED`/`NOT_SENT` failures skip reconciliation and preserve their state. Recovery list succeeds. | Existing unit evidence: `tests/unit/test_research_reconciliation.py::test_visible_rows_after_loss_are_candidates_not_success`; happy VCR evidence in `tests/integration/test_research_import_verification_vcr.py`. **New socket evidence.** I1, I2, I6, I8. |
@@ -181,8 +181,11 @@ report schema, and global baseline measurements.
 - Every explicit variant in R1, R2, R7, R8, R10, and R11 has a concrete backend, public or
   first-party entry point, fixture provenance, exception/result assertion, counts, gates, budgets,
   cleanup rule, invariant set, and existing-versus-new evidence disposition.
-- The known Web decoded-auth retry-counter discontinuity is recorded as a production gap and a
-  failing regression target, not assumed away.
-- Socket evidence remains pending where stated. The existing 16 Web and 9 Android scenarios remain
-  mandatory, including both ambiguous notebook-create loss cases.
+- Web decoded-auth recursion now carries the independent retry counters; socket regressions
+  verify exhaustion across that boundary. Queued RPC admission also rechecks generation
+  state after acquiring its permit, preventing dispatch during forced close.
+- The predecessor 16 Web and 9 Android scenarios remain mandatory, including both ambiguous
+  notebook-create loss cases. New cases live in `web_resilience_scenarios.py`,
+  `android_resilience_scenarios.py`, `web_concurrency.py`, `web_workflows.py`, and
+  `web_generation_faults.py`; the integration parametrizations and stress runner share them.
 - Companion [transfer](fault-resilience-seams.md) and [adapter](fault-resilience-adapters.md) inventories cover the other families; the [coverage index](fault-resilience-coverage.md) records measured baseline evidence.
