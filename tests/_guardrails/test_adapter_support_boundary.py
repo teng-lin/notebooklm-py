@@ -123,6 +123,7 @@ def test_support_leaf_exports_only_adapter_hosting_primitives() -> None:
         "LoopBoundPrimitive",
         "addr_is_loopback",
         "check_bind_allowed",
+        "client_generation_epoch",
         "host_header_is_loopback",
         "is_loopback",
         "redact",

@@ -379,6 +379,7 @@ def register(mcp: Any) -> None:
                     _run_ask,
                     notebook_id=nb_id,
                     conversation_id=resolved_conversation_id,
+                    client=client,
                 )
             except ChatTaskCapacityError as exc:
                 # Nothing about the arguments is wrong and the same call succeeds

@@ -10,8 +10,8 @@ from urllib.parse import quote
 
 from ._env import get_base_url
 from ._idempotency import (
-    JournalEntry,
     OperationJournal,
+    bind_operation_journal_entries,
     call_unconfirmed_on_transport_loss,
     unresolved_commit_error,
 )
@@ -160,7 +160,8 @@ class NotebooksAPI(ABC):
             entry = OperationJournal("notebooks.create").new_entry(method=self._create_method_id)
 
             async def _create() -> Notebook:
-                return await self._send_create(title, journal_entry=entry)
+                with bind_operation_journal_entries(entry):
+                    return await self._send_create(title)
 
             return await call_unconfirmed_on_transport_loss(
                 _create,
@@ -170,9 +171,7 @@ class NotebooksAPI(ABC):
             )
 
     @abstractmethod
-    async def _send_create(
-        self, title: str, *, journal_entry: JournalEntry | None = None
-    ) -> Notebook:
+    async def _send_create(self, title: str) -> Notebook:
         """Send one backend create operation and decode the notebook."""
 
     async def copy(self, notebook_id: str, title: str) -> Notebook:

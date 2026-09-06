@@ -758,7 +758,7 @@
       "path": "src/notebooklm/_auth/refresh.py"
     },
     {
-      "lines": 268,
+      "lines": 293,
       "name": "single_flight",
       "path": "src/notebooklm/_auth/single_flight.py"
     },
@@ -786,7 +786,7 @@
     "function_local_edges": 12,
     "module_edges": 111,
     "modules": 32,
-    "total_lines": 13686,
+    "total_lines": 13711,
     "unique_edges": 123
   },
   "version": 1

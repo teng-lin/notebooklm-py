@@ -46,6 +46,7 @@ from notebooklm._android.upload import (
     validate_upload_session_url,
 )
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._types.sources import _UPLOAD_FILE_EXTENSIONS
 from notebooklm.exceptions import (
     AuthError,
@@ -103,9 +104,7 @@ class FakeSession:
             raise RuntimeError("retired fake epoch")
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.pop("journal_entry", None)
-        journal_entries = kwargs.pop("journal_entries", None)
-        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         result = self.handlers[method]

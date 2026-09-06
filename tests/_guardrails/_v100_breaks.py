@@ -70,6 +70,17 @@ V100_BREAKING_CHANGES: Mapping[str, BreakingChange] = MappingProxyType(
             "Remove NotebookLMClient.rpc_call Android-to-Web compatibility entrypoint",
             _spec("client_rpc_call_android", "client.py"),
         ),
+        "artifact_poll_follower_options": BreakingChange(
+            "Make artifact polling options per waiter",
+            Runway(
+                module="_artifact/polling.py",
+                symbol='warn_registered_deprecation("artifact_poll_follower_options",',
+            ),
+        ),
+        "artifact_poll_follower_callback": BreakingChange(
+            "Deliver every observed artifact status to follower callbacks",
+            _spec("artifact_poll_follower_callback", "_artifact/polling.py"),
+        ),
         "`NotebookLMClient.rpc_call(...)`::Remove Android LazyWebSidecar": BreakingChange(
             "Remove the Android LazyWebSidecar compatibility graph",
             Runway(module="_client_compat.py", symbol="class LazyWebSidecar"),

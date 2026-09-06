@@ -29,7 +29,11 @@ from notebooklm._android.sources import GET_PROJECT_METHOD, AndroidSourcesAPI
 from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._client_metrics import ClientMetrics
-from notebooklm._idempotency import OperationJournal, SendIdentity
+from notebooklm._idempotency import (
+    OperationJournal,
+    SendIdentity,
+    bind_operation_journal_entries,
+)
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._web.sources.batch import SourceBatchAddService
 from notebooklm.auth import AuthTokens
@@ -527,14 +531,14 @@ async def test_real_web_auth_refresh_reposts_replay_safe_read_once() -> None:
     identity = entry.identity
     assert isinstance(identity, SendIdentity)
     async with client:
-        assert (
-            await client._web_runtime.executor.rpc_call(
-                RPCMethod.LIST_NOTEBOOKS,
-                [],
-                journal_entry=entry,
+        with bind_operation_journal_entries(entry):
+            assert (
+                await client._web_runtime.executor.rpc_call(
+                    RPCMethod.LIST_NOTEBOOKS,
+                    [],
+                )
+                == []
             )
-            == []
-        )
 
     assert len(requests) == 2
     assert requests[0].content != requests[1].content
@@ -552,13 +556,13 @@ async def test_real_android_stream_cancellation_retains_unknown_attempt() -> Non
     entry = journal.new_entry(method=GENERATE_FREE_FORM_STREAMED_METHOD)
 
     async def consume() -> None:
-        async for _ in session.stream(
-            GENERATE_FREE_FORM_STREAMED_METHOD,
-            sources_pb2.AddTentativeSourcesRequest(),
-            response_type=sources_pb2.AddTentativeSourcesResponse,
-            journal_entry=entry,
-        ):
-            pass
+        with bind_operation_journal_entries(entry):
+            async for _ in session.stream(
+                GENERATE_FREE_FORM_STREAMED_METHOD,
+                sources_pb2.AddTentativeSourcesRequest(),
+                response_type=sources_pb2.AddTentativeSourcesResponse,
+            ):
+                pass
 
     task = asyncio.create_task(consume())
     await _BlockingStream.entered.wait()

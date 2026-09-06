@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from notebooklm._client_metrics import ClientMetrics
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm._sources import SourcesAPI
 from notebooklm._web.sources.upload import (
@@ -124,11 +125,9 @@ class RecordingRpc:
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        journal_entry: Any = None,
-        journal_entries: Any = None,
     ) -> Any:
-        assert journal_entries is None
-        if journal_entry is not None:
+        journal_entries = bound_operation_journal_entries()
+        for journal_entry in journal_entries:
             journal_entry.mark_dispatched()
         self.calls.append(
             {
@@ -926,20 +925,18 @@ async def test_register_file_source_preserves_real_decoder_rejection(
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        journal_entry: Any = None,
-        journal_entries: Any = None,
     ) -> Any:
         nonlocal calls
         calls += 1
-        assert journal_entries is None
-        if journal_entry is not None:
+        journal_entries = bound_operation_journal_entries()
+        for journal_entry in journal_entries:
             journal_entry.mark_dispatched()
         frames = user_displayable_rejection_chunks(method.value)[0]
         raw = raw_batchexecute_body(frames)
         try:
             return decode_response(raw, method.value, allow_null=allow_null)
         except RateLimitError:
-            if journal_entry is not None:
+            for journal_entry in journal_entries:
                 journal_entry.record(CommitState.REJECTED, "decoded refusal")
             raise
 

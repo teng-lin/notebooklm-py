@@ -42,8 +42,6 @@ class _RpcCallerImpl:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
-        journal_entry: Any | None = None,
-        journal_entries: tuple[Any, ...] | None = None,
     ) -> Any:
         return None
 
@@ -123,8 +121,6 @@ def test_rpc_caller_signature_matches_legacy_session_rpc_call() -> None:
         "operation_variant",
         "read_timeout",
         "raise_on_null_status",
-        "journal_entry",
-        "journal_entries",
     ]
     assert sig.parameters["source_path"].default == "/"
     assert sig.parameters["allow_null"].default is False
@@ -143,10 +139,6 @@ def test_rpc_caller_signature_matches_legacy_session_rpc_call() -> None:
     # to None, so an artifact rejection reports the server's reason.
     assert sig.parameters["raise_on_null_status"].kind is inspect.Parameter.KEYWORD_ONLY
     assert sig.parameters["raise_on_null_status"].default is False
-    assert sig.parameters["journal_entry"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert sig.parameters["journal_entry"].default is None
-    assert sig.parameters["journal_entries"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert sig.parameters["journal_entries"].default is None
 
 
 def test_kernel_protocol_signatures_are_pinned() -> None:

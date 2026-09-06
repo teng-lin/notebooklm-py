@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._app.errors import ErrorCategory, classify
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.rows.sources import unwrap_add_source_rows
 from notebooklm._web.sources import WebSourcesAPI
@@ -52,7 +53,7 @@ class RecordingRpc:
         self.calls: list[dict[str, Any]] = []
 
     async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
-        journal_entries = kwargs.pop("journal_entries", ())
+        journal_entries = bound_operation_journal_entries()
         self.calls.append({"method": method, "params": params, **kwargs})
         for entry in journal_entries:
             entry.mark_dispatched()

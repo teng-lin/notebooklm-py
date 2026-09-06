@@ -17,8 +17,9 @@ from typing import Any, Literal, TypeVar, cast
 
 from .._deadline import RuntimeDeadline
 from .._idempotency import (
-    JournalEntry,
     attach_journal_entry,
+    bind_operation_journal_entries,
+    bound_operation_journal_entries,
 )
 from .._runtime.call_supervisor import OperationLease
 from .._source.batch import SourceUrlBatchItem
@@ -432,8 +433,8 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
         names: Sequence[str],
         *,
         expected_epoch: int,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> builtins.list[_Registration]:
+        journal_entries = bound_operation_journal_entries()
         request = _write_proto().AddTentativeSourcesRequest(
             tentative_sources_metadata=[
                 _write_proto().TentativeSourceMetadata(name=name) for name in names
@@ -446,19 +447,17 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
             replay_safe=False,
             response_type=_write_proto().AddTentativeSourcesResponse,
             expected_epoch=expected_epoch,
-            journal_entries=journal_entries,
         )
         registrations = _correlate_registrations(names, response)
-        if journal_entries is not None:
-            for entry, registration in zip(journal_entries, registrations, strict=True):
-                if registration.omitted:
-                    entry.record(CommitState.REJECTED, "decoded registration omission")
-                elif registration.source_id is not None and not registration.ambiguous:
-                    entry.record(
-                        CommitState.CONFIRMED,
-                        "decoded tentative registration",
-                        known_resource_ids=(registration.source_id,),
-                    )
+        for entry, registration in zip(journal_entries, registrations, strict=True):
+            if registration.omitted:
+                entry.record(CommitState.REJECTED, "decoded registration omission")
+            elif registration.source_id is not None and not registration.ambiguous:
+                entry.record(
+                    CommitState.CONFIRMED,
+                    "decoded tentative registration",
+                    known_resource_ids=(registration.source_id,),
+                )
         return registrations
 
     async def _register_file_tentative(
@@ -685,8 +684,8 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
         expected_epoch: int,
         metadata_augmentor: Any = None,
         metadata_refresher: Any = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> tuple[dict[str, _CommitProof], set[str]]:
+        journal_entries = bound_operation_journal_entries()
         candidate_ids = [source_id for _, source_id in entries]
         request = _write_proto().AddSourcesRequest(
             user_content=[content for content, _ in entries],
@@ -703,7 +702,6 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 response_type=_write_proto().AddSourcesResponse,
                 expected_epoch=expected_epoch,
                 metadata_augmentor=metadata_augmentor,
-                journal_entries=journal_entries,
             )
         except asyncio.CancelledError:
             raise
@@ -727,14 +725,17 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
 
         record_commit_proofs(journal_entries, candidate_ids, response_proofs)
 
-        read_proofs, read_unresolved, read_tentative = await preserve_readback(
-            self._read_commit_proofs(
-                notebook_id,
-                candidate_ids,
-                expected_epoch=expected_epoch,
-            ),
-            journal_entries,
-        )
+        # The exact-ID observation is not another AddSources attempt. Mask the
+        # mutation binding while retaining the local entries for settlement.
+        with bind_operation_journal_entries():
+            read_proofs, read_unresolved, read_tentative = await preserve_readback(
+                self._read_commit_proofs(
+                    notebook_id,
+                    candidate_ids,
+                    expected_epoch=expected_epoch,
+                ),
+                journal_entries,
+            )
         unresolved = response_unresolved | read_unresolved
         merged: dict[str, _CommitProof] = {}
         for source_id in candidate_ids:
@@ -764,7 +765,6 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
         entries: Sequence[tuple[str, str]],
         *,
         expected_epoch: int,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> tuple[dict[str, _CommitProof], set[str]]:
         user_contents = []
         for url, source_id in entries:
@@ -786,7 +786,6 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
             notebook_id,
             user_contents,
             expected_epoch=expected_epoch,
-            journal_entries=journal_entries,
         )
 
     async def _add_registered_content(
@@ -815,12 +814,12 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 )
                 metadata_augmentor = static_metadata_augmentor(prepared)
             try:
-                (registration,) = await self._register_tentative_sources(
-                    notebook_id,
-                    [correlation],
-                    expected_epoch=lease.epoch,
-                    journal_entries=(registration_entry,),
-                )
+                with bind_operation_journal_entries(registration_entry):
+                    (registration,) = await self._register_tentative_sources(
+                        notebook_id,
+                        [correlation],
+                        expected_epoch=lease.epoch,
+                    )
             except asyncio.CancelledError:
                 raise
             except (KeyboardInterrupt, SystemExit):
@@ -852,14 +851,14 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 raise attach_journal_entry(error, registration_entry, workflow=True)
 
             source_id = registration.source_id
-            proofs, _ = await self._commit_user_contents(
-                notebook_id,
-                [(build_content(source_id), source_id)],
-                expected_epoch=lease.epoch,
-                metadata_augmentor=metadata_augmentor,
-                metadata_refresher=metadata_refresher,
-                journal_entries=(commit_entry,),
-            )
+            with bind_operation_journal_entries(commit_entry):
+                proofs, _ = await self._commit_user_contents(
+                    notebook_id,
+                    [(build_content(source_id), source_id)],
+                    expected_epoch=lease.epoch,
+                    metadata_augmentor=metadata_augmentor,
+                    metadata_refresher=metadata_refresher,
+                )
             proof = proofs.get(source_id)
             if proof is None:
                 error = _unresolved_add_error(
@@ -905,12 +904,12 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
 
         async with self._transport.operation_scope("source.add_url") as lease:
             try:
-                (registration,) = await self._register_tentative_sources(
-                    notebook_id,
-                    [correlation],
-                    expected_epoch=lease.epoch,
-                    journal_entries=(registration_entry,),
-                )
+                with bind_operation_journal_entries(registration_entry):
+                    (registration,) = await self._register_tentative_sources(
+                        notebook_id,
+                        [correlation],
+                        expected_epoch=lease.epoch,
+                    )
             except asyncio.CancelledError:
                 raise
             except (KeyboardInterrupt, SystemExit):
@@ -931,12 +930,12 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 error = _unresolved_add_error(url, stage="tentative registration correlation")
                 raise attach_journal_entry(error, registration_entry, workflow=True)
 
-            proofs, _ = await self._commit_urls(
-                notebook_id,
-                [(url, registration.source_id)],
-                expected_epoch=lease.epoch,
-                journal_entries=(commit_entry,),
-            )
+            with bind_operation_journal_entries(commit_entry):
+                proofs, _ = await self._commit_urls(
+                    notebook_id,
+                    [(url, registration.source_id)],
+                    expected_epoch=lease.epoch,
+                )
             proof = proofs.get(registration.source_id)
             if proof is None:
                 error = _unresolved_add_error(url, stage="source commit acceptance")

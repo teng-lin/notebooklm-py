@@ -34,6 +34,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm._android.proto.labs.language.tailwind.common.protos import common_pb2
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import notebooks_pb2
 from notebooklm._android.session import AndroidSession
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._notebooks import NotebooksAPI
 from notebooklm.exceptions import (
     DecodingError,
@@ -67,9 +68,7 @@ class SequenceTransport:
         return asyncio.create_task(factory(), name=label)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.pop("journal_entry", None)
-        journal_entries = kwargs.pop("journal_entries", None)
-        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         outcome = self.outcomes[method].pop(0)

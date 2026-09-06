@@ -50,7 +50,8 @@ class _FakeSupervisor:
     def register_drain_hook(self, name: str, hook: object) -> None:
         self.drain_hooks[name] = hook
 
-    async def spawn_child(self, label, factory):
+    async def spawn_child(self, label, factory, *, inherit_operation=True):
+        assert inherit_operation is False
         self.spawn_labels.append(label)
         return asyncio.create_task(factory(), name=label)
 

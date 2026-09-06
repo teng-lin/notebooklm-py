@@ -77,6 +77,8 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
         "client_legacy_constructor_options",
         "client_legacy_from_storage_options",
         "mcp_confirmed_name_references",
+        "artifact_poll_follower_options",
+        "artifact_poll_follower_callback",
     )
     assert [field.name for field in fields(DeprecationSpec)] == [
         "key",
@@ -216,6 +218,20 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
             "notebooklm.options.ClientConfig",
             "0.9.0",
             3,
+        ),
+        "artifact_poll_follower_options": (
+            "ArtifactsAPI.wait_for_completion follower polling options are leader-only today "
+            "and ignored while another waiter leads; they become per-waiter in v1.0.",
+            "notebooklm.NotebookLMClient",
+            "0.9.0",
+            5,
+        ),
+        "artifact_poll_follower_callback": (
+            "ArtifactsAPI.wait_for_completion follower on_status_change currently receives "
+            "only the final status; in v1.0 it will receive every observed status.",
+            "notebooklm.NotebookLMClient",
+            "0.9.0",
+            5,
         ),
     }
     for key, spec in DEPRECATION_SPECS.items():

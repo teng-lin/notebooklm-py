@@ -1267,6 +1267,7 @@ Per-file index plus the full `src/notebooklm` + `tests` repository tree. The tre
 | `_web/contracts.py` | Web-only `Kernel` and `RpcCaller` Protocols |
 | `options.py` | Import-light public frozen client construction options grouped by runtime, retry, backend, transfer, feature, and Web session ownership |
 | `outcomes.py` | Public bounded outcome vocabulary: `CommitState`, `RecoveryAction`, `OperationMetadata`, `BatchOutcome`, `BatchItemOutcome`, public `SourceBatchItemOutcome`, `ReconciliationReport`, `ReconciliationCandidate`, and `LookupSuggestion`; also owns the shared redacted CLI/MCP/REST projection |
+| `_runtime/operation_context.py` | Supervisor-qualified task-local operation carrier: absolute monotonic deadline, owning task/loop/epoch, mutation-journal aggregation, and Python 3.10/3.11 cancellation attribution for `client.operation(...)` |
 | `_idempotency.py` | Transport-neutral private evidence journal (`OperationJournal`, stable `SendIdentity`, `JournalEntry`, ordered `AttemptRecord`), replay decision gate, one-shot mutation wrapper, and metadata attachment helpers; imports neither `_web` nor `rpc` |
 | `_web/policy.py` | Web RPC idempotency types, declarative per-RPC classifications, resolution, and the one production `IDEMPOTENCY_REGISTRY` seed. Holds the load-bearing two-pass order (pre-seed `register()` → `_seed_defaults()` → post-seed `register()` + the read/set-op loop). |
 | `_atomic_io.py`, `io.py` | Atomic JSON write/update internals and public I/O re-export surface for CLI boundary compliance |
@@ -1408,6 +1409,7 @@ src/notebooklm/
 ├── log.py                       # Public logging helper facade
 ├── migration.py                 # Legacy flat-layout to profile migration
 ├── outcomes.py                  # Public operation/batch/reconciliation evidence + adapter projection
+├── options.py                   # Public owner-grouped client construction options
 ├── paths.py                     # Profile-aware path resolution
 ├── research.py                  # Public research citation/report helpers
 ├── raw.py                       # Public backend-selected raw wire APIs and gRPC descriptors
@@ -1420,6 +1422,7 @@ src/notebooklm/
 ├── _client_assembly.py          # Typed graph composition + sole client installer
 ├── _client_compat.py            # Pure 0.x Android-to-Web sidecar factory/proxy
 ├── _client_contracts.py         # Frozen assembly graphs + private P4 carriers
+├── _client_options.py           # Legacy-flat to owner-grouped option normalization
 ├── _deadline.py                 # RuntimeDeadline helper for aggregate timeouts
 ├── _deprecation.py              # Immutable auth/raw-call specs + gated deprecation emitters
 ├── _env.py                      # Runtime environment/default endpoint helpers
@@ -1513,6 +1516,7 @@ src/notebooklm/
 │   ├── source_batch.py          # Two-phase positional URL batch journal + outcome owner
 │   ├── source_search.py         # Native RetrieveRelevantChunks search service
 │   ├── upload.py                # Epoch-fenced generic Android Scotty transaction
+│   ├── upload_deadlines.py      # Android upload/Drive aggregate deadline ownership
 │   ├── drive_staging.py         # Drive round-trip for types the mobile upload frontend rejects
 │   ├── evidence.py              # Pinned captured app/UA evidence profile
 │   ├── artifacts.py             # Publicly selected complete Artifact API
@@ -1658,6 +1662,7 @@ src/notebooklm/
 │   ├── error_injection.py       # Backend-neutral synthetic-error configuration and guard
 │   ├── helpers.py               # Auth classification, Google HTTP status, sleep, keepalive
 │   ├── init.py                  # Runtime collaborator construction + validation
+│   ├── operation_context.py     # Task-local operation deadline and journal context
 │   └── lifecycle.py             # Root lifecycle waves + phased transport orchestration
 ├── _source/                     # Neutral source services + lazy compatibility exports
 │   ├── __init__.py              # Lazy package-level shims for moved web service names

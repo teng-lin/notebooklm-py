@@ -24,6 +24,7 @@ from ..._idempotency import (
     attach_batch_outcome,
     attach_journal_entry,
     attach_operation_journal,
+    bind_operation_journal_entries,
     reconciliation_report,
     unresolved_commit_error,
 )
@@ -184,6 +185,7 @@ def _attach_whole_batch_failure(
     entries: Sequence[JournalEntry],
     outcome: BatchOutcome,
 ) -> None:
+    primary_entry = next(iter(entries))
     recovery_action = (
         RecoveryAction.RETRY
         if outcome.items
@@ -195,12 +197,11 @@ def _attach_whole_batch_failure(
     if recovery_action is RecoveryAction.RETRY:
         # A lower compatibility wrapper may already have synthesized UNKNOWN.
         # Positive zero-send evidence is authoritative at this owner boundary.
-        primary = entries[0]
-        primary.recovery_action = RecoveryAction.RETRY
+        primary_entry.recovery_action = RecoveryAction.RETRY
     attach_operation_journal(
         error,
         journal,
-        primary=entries[0],
+        primary=primary_entry,
         recovery_action=recovery_action,
     )
     attach_batch_outcome(error, outcome)
@@ -249,18 +250,18 @@ class SourceBatchAddService:
         ]
         rpc_error: RPCError | None = None
         try:
-            payload = await rpc.rpc_call(
-                RPCMethod.ADD_SOURCE,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=False,
-                disable_internal_retries=True,
-                # Reuse the established URL idempotency-registry variant while
-                # explicitly disabling its internal replay above.  The outer
-                # single-item probe loop is intentionally not used here.
-                operation_variant="url",
-                journal_entries=journal_entries,
-            )
+            with bind_operation_journal_entries(*journal_entries):
+                payload = await rpc.rpc_call(
+                    RPCMethod.ADD_SOURCE,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                    allow_null=False,
+                    disable_internal_retries=True,
+                    # Reuse the established URL idempotency-registry variant while
+                    # explicitly disabling its internal replay above.  The outer
+                    # single-item probe loop is intentionally not used here.
+                    operation_variant="url",
+                )
         except AuthError as exc:
             _attach_whole_batch_failure(
                 exc,

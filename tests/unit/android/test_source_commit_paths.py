@@ -44,6 +44,7 @@ from notebooklm._android.sources import (
     _ProofKind,
 )
 from notebooklm._android.upload import AndroidUploadPipeline
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm.exceptions import (
     AuthError,
     ConfigurationError,
@@ -97,9 +98,7 @@ class FakeTransport:
         return asyncio.create_task(factory(), name=label)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.pop("journal_entry", None)
-        journal_entries = kwargs.pop("journal_entries", None)
-        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         if method == GET_PROJECT_METHOD and method not in self.handlers:

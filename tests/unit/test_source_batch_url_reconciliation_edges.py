@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from notebooklm._idempotency import OperationJournal
+from notebooklm._idempotency import OperationJournal, bound_operation_journal_entries
 from notebooklm._web.rows.source_models import decode_source
 from notebooklm._web.sources.batch import (
     SourceBatchAddService,
@@ -58,7 +58,7 @@ class _RecordingRpc:
         self.calls = 0
 
     async def rpc_call(self, method: RPCMethod, params: list[Any], **kwargs: Any) -> Any:
-        for entry in kwargs.get("journal_entries", ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         del method, params, kwargs
         self.calls += 1

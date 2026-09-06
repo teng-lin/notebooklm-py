@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from notebooklm._chat import ChatAPI
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.chat import WebChatAPI
 from notebooklm.exceptions import ValidationError
@@ -76,9 +77,7 @@ def mock_core():
     )
 
     async def _rpc_call_dispatch(method, params, **kwargs):
-        journal_entry = kwargs.get("journal_entry")
-        journal_entries = kwargs.get("journal_entries")
-        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         if method == _RPC.GET_LAST_CONVERSATION_ID:
             return [[["mock-core-conv-id"]]]
@@ -104,9 +103,8 @@ def mock_core():
         disable_read_timeout_retries=False,
         **kwargs,
     ):
-        journal_entry = kwargs.get("journal_entry")
-        if journal_entry is not None:
-            journal_entry.mark_dispatched()
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         snapshot = AuthSnapshot(
             csrf_token=auth.csrf_token,
             session_id=auth.session_id,

@@ -10,9 +10,9 @@ from typing import Any, Protocol
 from urllib.parse import parse_qs
 
 from ..._idempotency import (
-    JournalEntry,
     OperationJournal,
     attach_journal_entry,
+    bind_operation_journal_entries,
     call_unconfirmed_on_transport_loss,
     mark_commit_state,
     mark_unconfirmed,
@@ -39,9 +39,7 @@ WaitUntilReady = Callable[..., Awaitable[Source]]
 
 
 class RawSourceAdder(Protocol):
-    async def __call__(
-        self, notebook_id: str, url: str, *, journal_entry: JournalEntry | None = None
-    ) -> Any: ...
+    async def __call__(self, notebook_id: str, url: str) -> Any: ...
 
 
 RenameSource = Callable[[str, str, str], Awaitable[Source | None]]
@@ -189,7 +187,8 @@ class SourceAddService:
             # committed the write.
             try:
                 adder = add_youtube_source if video_id else add_url_source
-                result = await adder(notebook_id, url, journal_entry=journal_entry)
+                with bind_operation_journal_entries(journal_entry):
+                    result = await adder(notebook_id, url)
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
@@ -279,13 +278,13 @@ class SourceAddService:
 
         async def _create() -> Source:
             try:
-                result = await rpc.rpc_call(
-                    RPCMethod.ADD_SOURCE,
-                    params,
-                    source_path=f"/notebook/{notebook_id}",
-                    operation_variant="text",
-                    journal_entry=journal_entry,
-                )
+                with bind_operation_journal_entries(journal_entry):
+                    result = await rpc.rpc_call(
+                        RPCMethod.ADD_SOURCE,
+                        params,
+                        source_path=f"/notebook/{notebook_id}",
+                        operation_variant="text",
+                    )
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
@@ -406,15 +405,15 @@ class SourceAddService:
             # ServerError -> transient retry). Transport exceptions propagate
             # so the one-shot ambiguity boundary can mark them without replay.
             try:
-                result = await rpc.rpc_call(
-                    RPCMethod.ADD_SOURCE,
-                    params,
-                    source_path=f"/notebook/{notebook_id}",
-                    allow_null=True,
-                    disable_internal_retries=True,
-                    operation_variant="drive",
-                    journal_entry=journal_entry,
-                )
+                with bind_operation_journal_entries(journal_entry):
+                    result = await rpc.rpc_call(
+                        RPCMethod.ADD_SOURCE,
+                        params,
+                        source_path=f"/notebook/{notebook_id}",
+                        allow_null=True,
+                        disable_internal_retries=True,
+                        operation_variant="drive",
+                    )
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as e:
@@ -557,7 +556,6 @@ class SourceAddService:
         url: str,
         *,
         rpc: RpcCaller,
-        journal_entry: JournalEntry | None = None,
     ) -> Any:
         """Add a YouTube video as a source.
 
@@ -578,7 +576,6 @@ class SourceAddService:
             allow_null=False,
             disable_internal_retries=True,
             operation_variant="url",
-            journal_entry=journal_entry,
         )
 
     async def add_url_source(
@@ -587,7 +584,6 @@ class SourceAddService:
         url: str,
         *,
         rpc: RpcCaller,
-        journal_entry: JournalEntry | None = None,
     ) -> Any:
         """Add a regular URL as a source.
 
@@ -608,7 +604,6 @@ class SourceAddService:
             source_path=f"/notebook/{notebook_id}",
             disable_internal_retries=True,
             operation_variant="url",
-            journal_entry=journal_entry,
         )
 
 

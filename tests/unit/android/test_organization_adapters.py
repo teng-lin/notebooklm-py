@@ -33,6 +33,7 @@ from notebooklm._android.proto.notebooklm.android.wire.v1 import (
 from notebooklm._android.session import AndroidSession
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._collections import CollectionsAPI
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._labels import LabelsAPI
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm.exceptions import (
@@ -167,9 +168,8 @@ class FakeOrganizationServer:
         )
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.pop("journal_entry", None)
-        if journal_entry is not None:
-            journal_entry.mark_dispatched()
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         failure = self.failures.get(len(self.calls))
         if failure is not None:
@@ -464,9 +464,9 @@ async def test_android_collection_create_cancellation_retains_journal(
             if method != CREATE_LABEL_METHOD:
                 return await super().unary(method, request, **kwargs)
             self.calls.append((method, request, kwargs))
-            entry = kwargs["journal_entry"]
             if dispatched:
-                entry.mark_dispatched()
+                for entry in bound_operation_journal_entries():
+                    entry.mark_dispatched()
             raise cancellation
 
     server = CancellingServer()

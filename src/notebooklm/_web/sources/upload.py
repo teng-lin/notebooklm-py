@@ -17,10 +17,10 @@ import httpx
 from ..._auth.account import authuser_query, format_authuser_value
 from ..._callbacks import maybe_await_callback
 from ..._idempotency import (
-    JournalEntry,
     OperationJournal,
     attach_journal_entry,
     attach_reconciliation_report,
+    bind_operation_journal_entries,
     call_unconfirmed_on_transport_loss,
     mark_commit_state,
     reconciliation_report,
@@ -143,8 +143,6 @@ class RpcCallback(Protocol):
         *,
         disable_internal_retries: bool = False,
         operation_variant: str | None = None,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> Any: ...
 
 
@@ -806,14 +804,14 @@ class SourceUploadPipeline(EpochFenced):
 
         async def _create() -> str:
             try:
-                result = await rpc_call(
-                    RPCMethod.ADD_SOURCE_FILE,
-                    params,
-                    source_path=f"/notebook/{notebook_id}",
-                    allow_null=False,
-                    disable_internal_retries=True,
-                    journal_entry=journal_entry,
-                )
+                with bind_operation_journal_entries(journal_entry):
+                    result = await rpc_call(
+                        RPCMethod.ADD_SOURCE_FILE,
+                        params,
+                        source_path=f"/notebook/{notebook_id}",
+                        allow_null=False,
+                        disable_internal_retries=True,
+                    )
             except (AuthError, RateLimitError, ServerError, NetworkError):
                 raise
             except RPCError as exc:

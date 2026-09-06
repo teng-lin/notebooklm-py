@@ -29,6 +29,7 @@ from notebooklm._android.research import (
 )
 from notebooklm._app.errors import ErrorCategory, classify
 from notebooklm._app.research import poll_and_classify
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._research import BaseResearchAPI
 from notebooklm._runtime.config import (
     AUTO_READ_TIMEOUT,
@@ -74,9 +75,7 @@ class _Transport:
         yield _Lease(17)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.pop("journal_entry", None)
-        journal_entries = kwargs.pop("journal_entries", None)
-        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         self.calls.append((method, request, kwargs))
         value = self.responses[method].popleft()

@@ -25,7 +25,8 @@ import asyncio
 import importlib
 import logging
 import os
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import AsyncIterator, Callable, Generator, Mapping
+from contextlib import asynccontextmanager
 from functools import wraps
 from pathlib import Path
 from types import TracebackType
@@ -221,7 +222,7 @@ class NotebookLMClient:
         def storage_aware_new(
             subclass: type[NotebookLMClient], *args: Any, **new_kwargs: Any
         ) -> Any:
-            auth = args[0] if args else new_kwargs.get("auth")
+            auth = next(iter(args), new_kwargs.get("auth"))
             with storage_construction_allocation(subclass, auth) as claim:
                 instance = custom_new(subclass, *args, **new_kwargs)
                 claim(instance)
@@ -240,7 +241,7 @@ class NotebookLMClient:
     def __new__(cls, *args: Any, **kwargs: Any) -> NotebookLMClient:
         """Allocate normally while claiming the exact stored-auth target instance."""
 
-        auth = args[0] if args else kwargs.get("auth")
+        auth = next(iter(args), kwargs.get("auth"))
         with storage_construction_allocation(cls, auth) as claim:
             mro_tail = cls.__mro__[cls.__mro__.index(NotebookLMClient) + 1 :]
             next_allocator = next(base for base in mro_tail if "__new__" in base.__dict__)
@@ -536,6 +537,30 @@ class NotebookLMClient:
         client remains connected, but rejects new top-level work until closed.
         """
         await self._lifecycle.drain(timeout=timeout)
+
+    @asynccontextmanager
+    async def operation(self, timeout: float | None = None) -> AsyncIterator[NotebookLMClient]:
+        """Group namespace calls under one admitted aggregate deadline.
+
+        ``timeout=None`` preserves unbounded explicit-operation behavior. Plain
+        top-level namespace calls use any configured default. Nested contexts inherit the
+        original absolute deadline and can only shorten it. The deadline stops
+        local waiting and new dispatch; it does not cancel an already-accepted
+        upstream artifact or research job, and required resource settlement may
+        extend the cancellation tail.
+
+        Example::
+
+            async with client.operation(timeout=30):
+                notebook = await client.notebooks.create("Quarterly review")
+                await client.sources.add_url(notebook.id, "https://example.com")
+        """
+
+        async with self._collaborators.call_supervisor.operation_scope(
+            "client.operation",
+            timeout=timeout,
+        ):
+            yield self
 
     async def close(
         self,

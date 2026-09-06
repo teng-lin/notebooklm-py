@@ -39,7 +39,7 @@ async def _opened_recovery(auth: AuthTokens):
     try:
         collaborators = client._collaborators
         web = client._web_runtime
-        lifecycle = collaborators.lifecycle
+        lifecycle = client._lifecycle
         generation = collaborators.call_supervisor._current
         expected_epoch = lifecycle._epoch
         assert lifecycle.is_open()

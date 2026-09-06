@@ -1,6 +1,6 @@
 {
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 76
+    "_DOCUMENTED_PUBLIC_IMPORTS": 77
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
@@ -131,7 +131,7 @@
     "_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES": 32,
     "_REEXPORTED_RPC_ENUMS": 24,
     "_RPC_LEGACY_REEXPORTS": 47,
-    "_TOP_LEVEL_EXCEPTION_EXPORTS": 52,
+    "_TOP_LEVEL_EXCEPTION_EXPORTS": 53,
     "_TOP_LEVEL_TYPE_EXPORTS": 61
   },
   "tests/_guardrails/test_server_classify_consistency.py": {

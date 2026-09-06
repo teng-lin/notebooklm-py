@@ -28,10 +28,11 @@ import httpx
 
 from .._deadline import RuntimeDeadline
 from .._idempotency import (
-    JournalEntry,
     OperationJournal,
     attach_journal_entry,
     attach_prerequisite_ids,
+    bind_operation_journal_entries,
+    bound_operation_journal_entry,
     mark_unconfirmed,
 )
 from .._runtime.helpers import map_google_http_status
@@ -227,11 +228,10 @@ class DriveStagingTransfer:
         file_path: Path,
         filename: str,
         content_type: str,
-        *,
-        journal_entry: JournalEntry | None = None,
     ) -> str:
         """Upload one local file to the caller's Drive; return the new file id."""
 
+        journal_entry = bound_operation_journal_entry()
         deadline = self._deadline()
 
         def _read_regular_file_bounded() -> bytes:
@@ -346,11 +346,10 @@ class DriveStagingTransfer:
     async def unstage(
         self,
         file_id: str,
-        *,
-        journal_entry: JournalEntry | None = None,
     ) -> None:
         """Delete a staged Drive file. Best effort: never masks the real outcome."""
 
+        journal_entry = bound_operation_journal_entry()
         deadline = self._deadline()
         client: Any | None = None
         try:
@@ -438,12 +437,8 @@ class DriveStagingTransfer:
         file_id: str | None = None
         failure: BaseException | None = None
         try:
-            file_id = await transfer.stage(
-                file_path,
-                filename,
-                content_type,
-                journal_entry=stage_entry,
-            )
+            with bind_operation_journal_entries(stage_entry):
+                file_id = await transfer.stage(file_path, filename, content_type)
         except BaseException as error:
             # Match ``drive_download_scope``: a transport-level failure reaches
             # callers as NetworkError, so retry-by-public-exception-type works
@@ -494,7 +489,8 @@ class DriveStagingTransfer:
             if _cleanup_allowed_after_import_error(escaping) and transfer._cleanup_fence_open(
                 expected_epoch, cleanup_deadline
             ):
-                await transfer.unstage(file_id, journal_entry=cleanup_entry)
+                with bind_operation_journal_entries(cleanup_entry):
+                    await transfer.unstage(file_id)
             else:
                 # An exception class alone does not prove that the dependent
                 # import stopped reading this prerequisite. Retention is the
@@ -510,7 +506,8 @@ class DriveStagingTransfer:
             raise escaping from error
         else:
             if transfer._cleanup_fence_open(expected_epoch, cleanup_deadline):
-                await transfer.unstage(file_id, journal_entry=cleanup_entry)
+                with bind_operation_journal_entries(cleanup_entry):
+                    await transfer.unstage(file_id)
             else:
                 logger.warning(
                     "Left the staged Drive file %s in place because the workflow cleanup "

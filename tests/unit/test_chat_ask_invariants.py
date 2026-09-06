@@ -118,7 +118,10 @@ class TestChatTimeoutRouting:
 
         async def successful_post(*args: Any, **kwargs: Any) -> httpx.Response:
             del args
-            kwargs["journal_entry"].mark_dispatched()
+            from notebooklm._idempotency import bound_operation_journal_entries
+
+            for entry in bound_operation_journal_entries():
+                entry.mark_dispatched()
             return httpx.Response(
                 200,
                 request=httpx.Request("POST", "https://example.test/chat"),
@@ -586,7 +589,10 @@ class TestChatNewConversationLocks:
                 return [[[None, None, 1, "Existing question?"]]]
 
         async def fake_perform_authed_post(*args: Any, **kwargs: Any) -> httpx.Response:
-            kwargs["journal_entry"].mark_dispatched()
+            from notebooklm._idempotency import bound_operation_journal_entries
+
+            for entry in bound_operation_journal_entries():
+                entry.mark_dispatched()
             return httpx.Response(
                 200,
                 request=httpx.Request("POST", "https://notebooklm.google.com/_/LabsTailwindUi"),

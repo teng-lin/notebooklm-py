@@ -66,6 +66,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 
+from notebooklm._idempotency import bound_operation_journal_entries
+
 
 def _journalize_rpc_mock(mock: AsyncMock) -> AsyncMock:
     """Make a test RPC mock emulate the production terminal's dispatch handoff."""
@@ -75,9 +77,7 @@ def _journalize_rpc_mock(mock: AsyncMock) -> AsyncMock:
     execute = mock._execute_mock_call
 
     async def execute_with_journal(*args: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.get("journal_entry")
-        journal_entries = kwargs.get("journal_entries")
-        for entry in journal_entries or ((journal_entry,) if journal_entry is not None else ()):
+        for entry in bound_operation_journal_entries():
             entry.mark_dispatched()
         return await execute(*args, **kwargs)
 

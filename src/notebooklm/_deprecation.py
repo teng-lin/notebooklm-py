@@ -295,6 +295,30 @@ DEPRECATION_SPECS: Mapping[str, DeprecationSpec] = MappingProxyType(
             removal="1.0",
             stacklevel=4,
         ),
+        "artifact_poll_follower_options": DeprecationSpec(
+            key="artifact_poll_follower_options",
+            message=(
+                "ArtifactsAPI.wait_for_completion follower polling options are leader-only "
+                "today and ignored while another waiter leads; they become per-waiter in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=5,
+        ),
+        "artifact_poll_follower_callback": DeprecationSpec(
+            key="artifact_poll_follower_callback",
+            message=(
+                "ArtifactsAPI.wait_for_completion follower on_status_change currently receives "
+                "only the final status; in v1.0 it will receive every observed status."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=5,
+        ),
     }
 )
 

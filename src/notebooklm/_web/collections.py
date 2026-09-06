@@ -26,6 +26,7 @@ from .._collections import CollectionsAPI, ListNotebooks
 from .._idempotency import (
     OperationJournal,
     attach_operation_journal,
+    bind_operation_journal_entries,
     reconciliation_report,
 )
 from ..exceptions import CollectionError, NotebookLMError, UnknownRPCMethodError
@@ -173,15 +174,15 @@ class WebCollectionsAPI(CollectionsAPI):
                 invocation_id=invocation_id,
             )
             try:
-                await self._rpc.rpc_call(
-                    RPCMethod.CREATE_LABEL,
-                    build_create_collection_params(name),
-                    source_path=_ACCOUNT_PATH,
-                    allow_null=True,
-                    # #2290: a status-tagged null is a server rejection, not an empty success.
-                    raise_on_null_status=True,
-                    journal_entry=mutation_entry,
-                )
+                with bind_operation_journal_entries(mutation_entry):
+                    await self._rpc.rpc_call(
+                        RPCMethod.CREATE_LABEL,
+                        build_create_collection_params(name),
+                        source_path=_ACCOUNT_PATH,
+                        allow_null=True,
+                        # #2290: a status-tagged null is a server rejection, not an empty success.
+                        raise_on_null_status=True,
+                    )
             except asyncio.CancelledError as exc:
                 attach_operation_journal(
                     exc,
@@ -200,13 +201,13 @@ class WebCollectionsAPI(CollectionsAPI):
             mutation_entry.record(CommitState.CONFIRMED, "decoded collection-set response")
             mutation_entry.recovery_action = RecoveryAction.INSPECT_AND_RECONCILE
             try:
-                result = await self._rpc.rpc_call(
-                    RPCMethod.LIST_LABELS,
-                    build_list_collections_params(),
-                    source_path=_ACCOUNT_PATH,
-                    allow_null=True,
-                    journal_entry=readback_entry,
-                )
+                with bind_operation_journal_entries(readback_entry):
+                    result = await self._rpc.rpc_call(
+                        RPCMethod.LIST_LABELS,
+                        build_list_collections_params(),
+                        source_path=_ACCOUNT_PATH,
+                        allow_null=True,
+                    )
                 after = self._collections_from_envelope(
                     result,
                     method_id=RPCMethod.LIST_LABELS.value,

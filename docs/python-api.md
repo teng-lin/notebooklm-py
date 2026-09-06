@@ -98,6 +98,31 @@ callbacks, and `RpcEventCallback` names the neutral telemetry callback shape.
 `ReadWindow` is the public read-window type alias and `AutoReadWindow` is the
 enum type behind its exported `AUTO` member.
 
+### Aggregate operation deadlines
+
+`RuntimeOptions.operation_timeout` sets an optional whole-workflow default.
+`None` preserves the historical unbounded aggregate behavior; existing RPC,
+read, transfer, and polling budgets remain independent and can still expire
+first. Group several calls under one absolute budget with `client.operation`:
+
+```python
+from notebooklm import OperationTimeoutError
+
+try:
+    async with client.operation(timeout=30):
+        notebook = await client.notebooks.create("Quarterly review")
+        await client.sources.add_url(notebook.id, "https://example.com")
+except OperationTimeoutError as exc:
+    # Unknown writes carry inspect/reconcile metadata; do not blindly replay.
+    inspect(exc.operation_metadata)
+```
+
+Nested operation contexts inherit the original monotonic deadline and can only
+shorten it. The budget covers admission, queueing, auth waits, retry backoff,
+wire work, reconciliation, polling, and transfers. It prevents new dispatch
+after expiry but still permits required local settlement to finish; it does not
+cancel an already-accepted upstream artifact or research job.
+
 ### Concurrency model
 
 `NotebookLMClient` is **async re-entrant on a single event loop**. You can freely await multiple operations concurrently via `asyncio.gather` or `asyncio.TaskGroup`:
@@ -386,6 +411,7 @@ sit at the intersection — they're catchable as **any** of `NotFoundError`
 | `SourceTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `SourceError`, `NotebookLMError` |
 | `ArtifactTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ArtifactError`, `NotebookLMError` |
 | `ResearchTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `ResearchError`, `NotebookLMError` |
+| `OperationTimeoutError` | `WaitTimeoutError`, `TimeoutError`, `NotebookLMError` |
 
 `MindMapNotFoundError` is raised by `client.mind_maps.get(...)` and mutation
 paths such as `rename` on a missing target. `NoteNotFoundError` is raised by

@@ -88,6 +88,7 @@ def build_collaborators(
     call_supervisor = CallSupervisor(
         metrics=metrics,
         max_concurrent_rpcs=config.max_concurrent_rpcs,
+        operation_timeout=config.operation_timeout,
     )
     return SharedRuntime(
         metrics=metrics,
