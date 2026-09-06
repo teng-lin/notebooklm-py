@@ -8,6 +8,7 @@ import contextlib
 import io
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -142,10 +143,22 @@ def _markdown_list(values: list[str], *, empty: str = "None.") -> str:
     return "\n".join(f"- `{value}`" for value in values)
 
 
-def _allowlist(entries: list[str], rationale: str) -> str:
+def _allowlist(entries: list[str], rationale: str | Callable[[str], str]) -> str:
     if not entries:
         return "# No entries.\n"
-    return "\n".join(f"{entry} # {rationale}" for entry in sorted(entries)) + "\n"
+    return (
+        "\n".join(
+            f"{entry} # {rationale(entry) if callable(rationale) else rationale}"
+            for entry in sorted(entries)
+        )
+        + "\n"
+    )
+
+
+def _no_vcr_rationale(entry: str) -> str:
+    if entry.startswith("tests/integration/faults/"):
+        return "real loopback fault service; socket failures cannot be reproduced by VCR"
+    return ALLOW_NO_VCR_RATIONALE
 
 
 def allowlist_entries_from_text(content: str) -> list[str]:
@@ -338,11 +351,11 @@ def rendered_baseline_outputs(records: list[ItemRecord]) -> dict[Path, str]:
     return {
         ALLOW_NO_VCR_FILES_PATH: _allowlist(
             _sorted_paths({record.path for record in allow_no_vcr}),
-            ALLOW_NO_VCR_RATIONALE,
+            _no_vcr_rationale,
         ),
         ALLOW_NO_VCR_NODEIDS_PATH: _allowlist(
             [record.nodeid for record in allow_no_vcr],
-            ALLOW_NO_VCR_RATIONALE,
+            _no_vcr_rationale,
         ),
         VCR_ALLOW_NO_VCR_NODEIDS_PATH: _allowlist(
             [record.nodeid for record in overlap],
