@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Client Construction, Open, Close, and Reopen",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 566],
+    "views": [
+      {"id": "construction", "label": "Construction", "focus": ["spec", "normalized", "assembled", "opening"], "note": "Direct synchronous construction resolves options and installs a complete graph without opening resources or reading credentials."},
+      {"id": "open-close", "label": "Open and close", "focus": ["assembled", "opening", "open", "shutdown", "reopenable"], "note": "One root lifecycle coordinates frozen participants through coalesced open and close waves."},
+      {"id": "rollback-reopen", "label": "Rollback and reopen", "focus": ["opening", "rollback", "reopenable"], "note": "An open failure cleans up every participant; reopening reuses the selected graph under a fresh epoch."}
+    ]
+  },
+  "lanes": [
+    {"id": "main", "label": "Construction and root lifecycle"},
+    {"id": "coordination", "label": "Shutdown, rollback, and reopen"}
+  ],
+  "states": [
+    {"id": "spec", "type": "start", "label": "Specification", "sublabel": "ClientConfig", "lane": "main", "col": 0, "step": "01", "tag": "direct sync · no I/O"},
+    {"id": "normalized", "type": "active", "label": "Normalized", "sublabel": "backend frozen", "lane": "main", "col": 1, "step": "02", "tag": "typed owners"},
+    {"id": "assembled", "type": "waiting", "label": "Installed · CLOSED", "sublabel": "assembly + owner", "lane": "main", "col": 2, "step": "03", "tag": "complete graph"},
+    {"id": "opening", "type": "active", "label": "OPENING", "sublabel": "bind + open", "lane": "main", "col": 3, "step": "04", "tag": "new epoch"},
+    {"id": "open", "type": "success", "label": "OPEN", "sublabel": "admission open", "lane": "main", "col": 4, "step": "05", "tag": "selected graph"},
+    {"id": "rollback", "type": "failure", "label": "Open Rollback", "sublabel": "clean prepared resources", "lane": "coordination", "col": 1, "tag": "recoverable"},
+    {"id": "shutdown", "type": "waiting", "label": "DRAIN → CLOSING", "sublabel": "await idle · teardown", "lane": "coordination", "col": 2, "yOffset": -50, "tag": "graceful or forced"},
+    {"id": "reopenable", "type": "success", "label": "CLOSED", "sublabel": "generation retired", "lane": "coordination", "col": 2, "yOffset": 105, "tag": "fresh open allowed"}
+  ],
+  "transitions": [
+    {"id": "opening-rollback", "from": "opening", "to": "rollback", "label": "open failed", "variant": "security", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [556, 224]},
+    {"id": "rollback-reopenable", "from": "rollback", "to": "reopenable", "label": "cleanup settled", "variant": "emphasis", "route": "bottom-channel", "labelAt": [510, 432]},
+    {"id": "open-shutdown", "from": "open", "to": "shutdown", "label": "close(drain=…)", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [710, 224]},
+    {"id": "shutdown-reopenable", "from": "shutdown", "to": "reopenable", "label": "mark closed", "variant": "emphasis", "route": "straight", "fromSide": "bottom", "toSide": "top", "labelAt": [760, 340]},
+    {"id": "reopenable-opening", "from": "reopenable", "to": "opening", "label": "fresh epoch", "variant": "dashed", "route": "auto", "labelAt": [836, 376]}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "Construction evidence", "items": ["Options and normalization: src/notebooklm/options.py:49-233; src/notebooklm/_client_options.py:269-430", "Sole graph install: src/notebooklm/_client_assembly.py:60-110"]},
+    {"dot": "rose", "title": "Lifecycle evidence", "items": ["Open, drain, close, and rollback: src/notebooklm/_runtime/lifecycle.py:178-634; lazy compatibility: src/notebooklm/_client_compat.py:85-229", "https://github.com/teng-lin/notebooklm-py @ 719378b8af7023b8eca0c33d2de6d44d35db3434"]}
+  ]
+}

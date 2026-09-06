@@ -19,8 +19,8 @@ The runtime is organized into six ownership layers:
 | Library and frontend adapters | Python calls, Click parsing/rendering, MCP tools, REST routes | Raw RPC payload construction |
 | Application layer (`_app/`) | Transport-neutral plans, resolution, waits, retries, status projection, error classification | Click, Rich, FastMCP, FastAPI, or wire decoding |
 | Public client and feature contracts | `NotebookLMClient`, eleven typed namespaces, public dataclasses and exceptions | Backend selection after construction |
-| Client-owned runtime | Loop binding, admission, metrics, drain, lifecycle, Web execution and transport | Domain-specific parameter or result shapes |
-| Selected backend | Web batchexecute/HTTP or Android protobuf/gRPC adapters | Mixing typed namespace operations across backends |
+| Client-owned neutral runtime | Typed configuration, loop binding, admission, metrics, operation contexts, drain, and the root lifecycle | Domain-specific parameter/result shapes or backend transport state |
+| Selected backend | One complete Web batchexecute/HTTP or Android protobuf/gRPC assembly, including its namespaces, raw adapter, runtime, and lifecycle participants | Mixing typed namespace operations across backends or owning root lifecycle state |
 | Transfer participants | Scotty uploads, Drive staging, artifact asset downloads, Phenotype token acquisition | Passing file bytes through the ordinary RPC executor |
 
 CLI, MCP, and REST are frontend adapters over the same neutral application and client layers.
@@ -61,13 +61,15 @@ The per-module index and the full tree are in [File map](#file-map) below.
 
 ## Library call flows
 
-`_client_assembly` is the composition root that installs `NotebookLMClient`.
-It constructs the shared runtime collaborator graph once, asks the selected
-backend for a complete typed graph, wires feature APIs to narrow runtime Protocols, and
+`_client_assembly` is the sole composition root that installs `NotebookLMClient`.
+It receives one normalized, frozen `ClientConfig`, constructs the shared runtime
+collaborator graph once, asks exactly one backend builder for a complete typed
+`BackendAssembly`, wires feature APIs to narrow runtime Protocols, and
 injects stateful services such as `SourceUploadPipeline`, `NoteService`,
 `NoteBackedMindMapService`, and `ArtifactDownloadService`. Feature modules
-build NotebookLM params and parse domain rows; client-owned collaborators own
-dispatch, transport, auth refresh, metrics, and lifecycle.
+build NotebookLM params and parse domain rows. The selected backend owns
+dispatch, transport, and auth refresh; neutral client services own admission,
+metrics, operation context, and root lifecycle coordination.
 
 Backend preference is resolved once at construction: the explicit `backend=`
 argument wins over `NOTEBOOKLM_BACKEND`, and the default is `"web"`. Selection
@@ -84,7 +86,10 @@ lazy Web compatibility sidecar during the 0.x warning window. The root
 runtime factory; neither backend assembly owns the bridge.
 
 Use the [runtime and transport view](https://teng-lin.github.io/notebooklm-py/diagrams/03-client-runtime-and-transport.html)
-for ownership, the [RPC sequence](https://teng-lin.github.io/notebooklm-py/diagrams/07-rpc-call-path.html) for call order, and
+and the [ownership-boundary view](https://teng-lin.github.io/notebooklm-py/diagrams/34-client-ownership-boundaries.html)
+for ownership. The [construction and lifecycle view](https://teng-lin.github.io/notebooklm-py/diagrams/35-client-construction-and-lifecycle.html)
+shows normalization, selected-graph installation, open, close, rollback, and reopen. The
+[RPC sequence](https://teng-lin.github.io/notebooklm-py/diagrams/07-rpc-call-path.html) shows call order, and
 the [runtime class model](https://teng-lin.github.io/notebooklm-py/diagrams/23-runtime-class-model.html) for constructor
 relationships. The [capability-contract map](https://teng-lin.github.io/notebooklm-py/diagrams/27-capability-contracts.html)
 shows why feature APIs receive narrow collaborators instead of the whole client runtime.
@@ -329,8 +334,8 @@ the visual counterparts to the detailed ownership table below.
 
 ## Cross-cutting policies
 
-Three policies thread through the layers above and are easy to violate by
-accident. Each is pinned by an ADR.
+The policies below thread through the layers above and are easy to violate by
+accident. ADRs and guardrails pin the established contracts.
 
 The [client resource lifecycle](https://teng-lin.github.io/notebooklm-py/diagrams/19-client-resource-lifecycle.html) shows
 open, drain, close, and rollback states. The
@@ -372,6 +377,28 @@ feature APIs surface the same check without taking a `Session` dependency.
 
 See [ADR-0004](./adr/0004-loop-affinity-contract.md) and the consumer
 notes in [`docs/python-api.md`](./python-api.md#concurrency-contract).
+
+### Operation lifetime, deadlines, and evidence
+
+`CallSupervisor` owns admission for every complete public workflow, not just
+its terminal RPC calls. Plain top-level namespace operations use
+`ClientConfig.runtime.operation_timeout` (`None` by default). An explicit
+`async with client.operation(timeout=...)` creates one task-local aggregate
+budget; passing `None` explicitly keeps that grouped operation unbounded.
+Nested scopes inherit the original absolute deadline and may only shorten it,
+while an inner transport or feature deadline is clamped to the earlier of its
+own budget and the operation budget.
+
+The task-local `OperationContext` also owns the workflow's mutation journal.
+Stable semantic-send identities and every physical attempt accumulate in the
+private `OperationJournal`; timeout or cancellation attaches bounded public
+`OperationMetadata` without changing an ambiguous mutation into success.
+Supervisor-spawned exclusive child work inherits the operation context and its
+deadline. Shared producer work and detached compatibility work clear copied
+waiter context, so one waiter's deadline cannot cancel or contaminate work
+owned by other waiters. The implementation boundary is
+[`_runtime/operation_context.py`](../src/notebooklm/_runtime/operation_context.py),
+with evidence storage in [`_idempotency.py`](../src/notebooklm/_idempotency.py).
 
 ### Idempotency (ADR-0005)
 
@@ -532,53 +559,52 @@ the executor on direct collaborator dependencies.
 ## Client-owned runtime collaborator graph
 
 ```text
-                        +---------------------+
-                        |  NotebookLMClient   |
-                        +----------+----------+
-                                   |
-        +--------------------------+--------------------------+
-        |                          |                          |
-        v                          v                          v
-  _auth: AuthTokens        _seams: selected holder     feature API objects
-  one mutable instance     Web ClientSeams or inert    notebooks/sources/
-                           sidecar overrides           artifacts/chat/...
-        |
-        v
-  _collaborators: SharedRuntime       _lifecycle: ClientLifecycle
-  metrics | call_supervisor           root resource-state owner
-        |
-        v
-  ClientLifecycle orchestrates immutable transport/loop-participant tuples
-      |-- Web: WebTransportLifecycle + SourceUploadPipeline
-      `-- Android: AndroidRuntime participants + inert LazyWebSidecar proxy
+ ClientConfig or legacy kwargs
+            |
+            v
+ _client_options: normalize once and freeze backend preference
+            |
+            +--------------------------+
+            |                          |
+            v                          v
+ SharedRuntime                  selected backend builder
+ config | metrics | supervisor  web or android, exactly once
+                                       |
+                                       v
+                              BackendAssembly (complete graph)
+                              runtime | namespaces | raw
+                              lifecycle participants | seams
+            |                          |
+            +------------+-------------+
+                         v
+             _client_assembly: sole installer
+                         |
+                         v
+                  NotebookLMClient
+             shared runtime | primary runtime
+             namespaces/raw | ClientLifecycle
+                         |
+                         v
+  ClientLifecycle: sole resource-state and generation owner
+      |-- Web participants: WebTransportLifecycle + upload pipeline
+      `-- Android participants + inert LazyWebSidecar proxy
 
-        +----------------------------------+
-        | _web_runtime: WebRuntime | None  |
-        +----------------------------------+
-        | reqid | auth_coord | kernel      |
-        | cookie persistence | web transport|
-        | executor | source uploader       |
-        | composed: ClientComposed         |
-        +----------------------------------+
-             |
-             v
-  RpcExecutor.rpc_call → CallSupervisor → RuntimeTransport.perform_authed_post
-      → web-only ADR-0009 chain → RuntimeTransport.terminal → Kernel.post → httpx
-
-  Selected typed namespaces:
-      web     → Web*API → RpcExecutor / Web upload and asset services
-      android → Android*API → AndroidSession / Android transfer services
-
-  Supported raw namespace:
-      web     → WebRawAPI.call → installed WebRuntime
-      android → AndroidRawAPI.unary/unary_stream → AndroidSession
+ LazyWebSidecar is outside the selected typed graph. It materializes one
+ WebRuntime only for deprecated Android client.rpc_call(...) use, then joins
+ later root close/open generations without adding a keepalive or drain hook.
 ```
+
+The explorable [ownership-boundary diagram](https://teng-lin.github.io/notebooklm-py/diagrams/34-client-ownership-boundaries.html)
+expands this hand-off, while the [construction/lifecycle diagram](https://teng-lin.github.io/notebooklm-py/diagrams/35-client-construction-and-lifecycle.html)
+shows the state transitions and rollback paths.
 
 | Collaborator | Module | Responsibility |
 |--------------|--------|----------------|
 | `NotebookLMClient` | [`client.py`](../src/notebooklm/client.py) | Public surface installed once from a complete backend assembly. Owns `_auth`, `_seams`, the neutral `_collaborators`, a separate `_lifecycle`, exactly one primary backend runtime, backend preference/reporting, the backend-selected `raw` adapter, and the eleven feature API attributes (`notebooks`, `sources`, `artifacts`, `chat`, `notes`, `mind_maps`, `research`, `settings`, `sharing`, `labels`, `collections`). An Android client also owns an inert `LazyWebSidecar` lifecycle proxy solely for the deprecated `rpc_call` warning window. Keep non-trivial additions in focused assembly/runtime/feature seams rather than accreting the composition root; the module-size ratchet in `tests/_guardrails/test_module_size_ratchet.py` is the enforceable ceiling, not a line count copied into this document. |
+| `ClientConfig` | [`options.py`](../src/notebooklm/options.py) | Public frozen construction specification grouping backend, runtime, retry, transfer, feature, and telemetry owners. `_client_options.py` is the sole compatibility normalizer for legacy flat kwargs; normalization does not construct backend resources. |
+| `BackendAssembly` | [`_client_contracts.py`](../src/notebooklm/_client_contracts.py) | Discriminated `WebAssembly | AndroidAssembly` hand-off returned by exactly one branch-local builder. It is complete before installation: selected runtime, all eleven namespaces, raw adapter, lifecycle participants, backend report, and Web seams where applicable travel together. `_client_assembly.py` alone installs it and constructs `ClientLifecycle`. |
 | `ClientSeams` | [`_web/transport/seams.py`](../src/notebooklm/_web/transport/seams.py) | Web-owned mutable holder for runtime callables that Web closures re-read after construction: `decode_response`, `sleep`, and `is_auth_error`. Android construction retains only unresolved test overrides in the root compatibility owner; defaults resolve if the deprecated Web sidecar materializes. Construction-only seams such as `async_client_factory` stay on `compose_client_internals(...)` and the client-shell test helper, not on the public constructor. |
-| `SharedRuntimeConfig` / `SharedRuntime` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Backend-neutral input containing only `max_concurrent_rpcs`, plus the resulting metrics and shared call supervisor. The lifecycle is deliberately client-held rather than installed by replacing this frozen bundle. `on_rpc_event` remains a separate builder input and `RuntimeCollaborators` remains a private compatibility alias. |
+| `SharedRuntimeConfig` / `SharedRuntime` | [`_runtime/init.py`](../src/notebooklm/_runtime/init.py) | Backend-neutral validated `max_concurrent_rpcs` and `operation_timeout`, plus the resulting config, metrics, and shared call supervisor. The bundle owns no backend transport and no lifecycle state; `ClientLifecycle` is constructed separately at the root. `on_rpc_event` remains a separate builder input and `RuntimeCollaborators` remains a private compatibility alias. |
 | `WebSessionConfig` | [`_web/transport/config.py`](../src/notebooklm/_web/transport/config.py) | Web-owned validated connection, retry, keepalive, decoder/classifier, sleep, and HTTP-client-factory settings. Android construction creates none of this state; the deprecated sidecar creates it only on materialization. |
 | `WebRuntime` | [`_web/transport/init.py`](../src/notebooklm/_web/transport/init.py) | Web-only bundle containing request IDs, auth coordination, Kernel, cookie persistence, web lifecycle, composition holder, executor, and upload pipeline. |
 | `AndroidRuntime` | [`_android/runtime.py`](../src/notebooklm/_android/runtime.py) | Android-only bundle containing the bearer provider, gRPC session, upload/asset transports, and Phenotype token provider. |
@@ -939,8 +965,10 @@ Authed POST leaf             (RuntimeTransport.terminal → Kernel → httpx)
 
 ## Client as composition root
 
-`NotebookLMClient` is the public surface installed by the private composition root. It owns
-the shared collaborator bundle, a separate lifecycle, one primary backend runtime, backend
+`NotebookLMClient` is the public surface installed by the private composition root. A normalized
+`ClientConfig` drives one `SharedRuntime` build and exactly one selected builder; its complete
+`BackendAssembly` is installed as one graph. The client owns the shared collaborator bundle, a
+separate lifecycle, one primary backend runtime, backend
 preference/reporting, the backend-selected raw adapter, and the feature API instances. The protocol-neutral `ClientLifecycle` owns resource state and
 open/drain/close wave orchestration across the installed transport participants.
 Web selection builds `WebRuntime`; `WebTransportLifecycle` owns the Kernel,
@@ -1011,7 +1039,11 @@ publication, or polling settlement. Nested terminal calls acquire their RPC
 semaphore slots independently; the outer operation lease is admission-only.
 Parallel notebook-metadata reads and source-wait fanout are created with
 `CallSupervisor.spawn_child`, so drain observes every child in the originating
-generation instead of relying on task-context inheritance alone.
+generation instead of relying on task-context inheritance alone. Plain
+top-level scopes inherit `RuntimeOptions.operation_timeout`; explicit
+`client.operation(timeout=...)` scopes share one absolute deadline and one
+mutation journal, nested scopes can only shorten the deadline, and shared or
+detached producers deliberately do not inherit a waiter's deadline.
 
 ## Testing patterns
 

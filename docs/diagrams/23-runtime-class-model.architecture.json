@@ -2,89 +2,48 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Client Runtime Class Model",
+    "title": "Client Construction Class Model",
     "locale": "en",
     "quality_profile": "showcase",
+    "repository": {"url": "https://github.com/teng-lin/notebooklm-py", "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"},
     "views": [
-      {
-        "id": "shared",
-        "label": "Neutral runtime",
-        "focus": ["client", "assembly", "shared", "supervisor", "lifecycle"],
-        "note": "SharedRuntime is the neutral metrics, admission and lifecycle bundle built for every client."
-      },
-      {
-        "id": "web",
-        "label": "Web classes",
-        "focus": ["assembly", "webruntime", "composed", "chainhost", "sidecar"],
-        "note": "WebRuntime owns every Web-only collaborator; LazyWebSidecar creates one only for deprecated Android rpc_call."
-      },
-      {
-        "id": "android",
-        "label": "Android classes",
-        "focus": ["assembly", "androidruntime", "session", "epoch"],
-        "note": "AndroidRuntime owns the selected transport participants; namespace operation scopes propagate task-local workflow epochs."
-      }
+      {"id": "specification", "label": "Specification types", "focus": ["config", "normalized"], "note": "ClientConfig groups public values by owner; the compatibility normalizer freezes one selected backend."},
+      {"id": "assembly-types", "label": "Assembly types", "focus": ["root", "assembly", "namespaces", "webruntime", "androidruntime"], "note": "BackendAssembly variants carry typed raw, runtime, namespace, and lifecycle participants."},
+      {"id": "installed-client", "label": "Installed client", "focus": ["assembly", "shared", "lifecycle", "sidecar", "client"], "note": "The root creates the only ClientLifecycle and installs the finished graph on NotebookLMClient once."}
     ]
   },
+  "layout": {"mode": "grid", "origin": [45, 52], "cols": 6, "gapX": 55, "gapY": 70, "cellW": 120, "cellH": 82},
   "components": [
-    {"id": "shared", "type": "database", "label": "SharedRuntime", "sublabel": "_runtime/init.py", "tag": "neutral bundle", "pos": [282, 60], "size": [170, 84]},
-    {"id": "supervisor", "type": "backend", "label": "CallSupervisor", "sublabel": "generation leases", "tag": "admission · metrics · semaphore", "pos": [544, 60], "size": [170, 84]},
-    {"id": "lifecycle", "type": "backend", "label": "ClientLifecycle", "sublabel": "root state machine", "tag": "participant tuples", "pos": [806, 60], "size": [165, 84]},
-    {"id": "sidecar", "type": "backend", "label": "LazyWebSidecar", "sublabel": "_client_compat.py", "tag": "root-owned · inert", "pos": [1063, 60], "size": [155, 84]},
-    {"id": "client", "type": "backend", "label": "NotebookLMClient", "sublabel": "public surface", "tag": "composition root", "pos": [30, 260], "size": [160, 90]},
-    {"id": "assembly", "type": "backend", "label": "_client_assembly", "sublabel": "selects branch assembler", "tag": "one primary runtime", "pos": [282, 260], "size": [170, 90]},
-    {"id": "webruntime", "type": "backend", "label": "WebRuntime", "sublabel": "reqid · session auth · kernel", "tag": "transport · executor · uploader", "pos": [544, 260], "size": [170, 90]},
-    {"id": "composed", "type": "database", "label": "ClientComposed", "sublabel": "write-once Web holder", "tag": "transport · executor · chain", "pos": [806, 260], "size": [165, 90]},
-    {"id": "chainhost", "type": "backend", "label": "MiddlewareChainHost", "sublabel": "retry · auth refresh", "tag": "error injection · tracing", "pos": [1063, 260], "size": [155, 90]},
-    {"id": "androidruntime", "type": "backend", "label": "AndroidRuntime", "sublabel": "bearer · session · upload", "tag": "assets · phenotype", "pos": [282, 460], "size": [170, 84]},
-    {"id": "session", "type": "backend", "label": "AndroidSession", "sublabel": "lazy gRPC transport", "tag": "shared supervisor", "pos": [544, 460], "size": [170, 84]},
-    {"id": "epoch", "type": "backend", "label": "Workflow Epoch", "sublabel": "_android/epoch.py", "tag": "session-tagged ContextVar", "pos": [806, 460], "size": [165, 84]}
+    {"id": "config", "type": "frontend", "label": "ClientConfig", "sublabel": "five owner groups", "tag": "frozen public spec", "row": 0, "col": 0, "sources": [{"path": "src/notebooklm/options.py", "line": 49, "end_line": 233, "label": "owner groups"}]},
+    {"id": "normalized", "type": "backend", "label": "Normalized Options", "sublabel": "config · preference", "tag": "private frozen record", "row": 0, "col": 1, "sources": [{"path": "src/notebooklm/_client_options.py", "line": 69, "end_line": 77, "label": "normalized record"}]},
+    {"id": "root", "type": "backend", "label": "_assemble_client", "sublabel": "composition root", "tag": "selected import", "row": 0, "col": 2, "sources": [{"path": "src/notebooklm/_client_assembly.py", "line": 131, "end_line": 158, "label": "composition root"}]},
+    {"id": "assembly", "type": "database", "label": "BackendAssembly", "sublabel": "Web | Android", "tag": "discriminated union", "row": 0, "col": 3, "sources": [{"path": "src/notebooklm/_client_contracts.py", "line": 87, "end_line": 116, "label": "assembly variants"}]},
+    {"id": "client", "type": "backend", "label": "NotebookLMClient", "sublabel": "installed object", "tag": "stable identities", "row": 0, "col": 4, "sources": [{"path": "src/notebooklm/_client_assembly.py", "line": 60, "end_line": 110, "label": "single install"}]},
+    {"id": "shared", "type": "database", "label": "SharedRuntime", "sublabel": "metrics · supervisor", "tag": "neutral handoff", "row": 1, "col": 0, "sources": [{"path": "src/notebooklm/_runtime/init.py", "line": 25, "end_line": 42, "label": "shared runtime"}]},
+    {"id": "lifecycle", "type": "backend", "label": "ClientLifecycle", "sublabel": "supervisor · participants", "tag": "separate root owner", "row": 1, "col": 1, "sources": [{"path": "src/notebooklm/_runtime/lifecycle.py", "line": 140, "end_line": 165, "label": "lifecycle owner"}]},
+    {"id": "namespaces", "type": "backend", "label": "FeatureNamespaces", "sublabel": "eleven required APIs", "tag": "complete graph", "row": 1, "col": 2, "sources": [{"path": "src/notebooklm/_client_contracts.py", "line": 70, "end_line": 84, "label": "namespace record"}]},
+    {"id": "webruntime", "type": "cloud", "label": "WebRuntime", "sublabel": "HTTP · executor", "tag": "WebAssembly.runtime", "row": 1, "col": 3, "sources": [{"path": "src/notebooklm/_web/assembly.py", "line": 194, "end_line": 204, "label": "WebAssembly return"}]},
+    {"id": "androidruntime", "type": "cloud", "label": "AndroidRuntime", "sublabel": "gRPC · transfers", "tag": "AndroidAssembly.runtime", "row": 1, "col": 4, "sources": [{"path": "src/notebooklm/_android/assembly.py", "line": 189, "end_line": 204, "label": "AndroidAssembly return"}]},
+    {"id": "sidecar", "type": "external", "label": "LazyWebSidecar", "sublabel": "compatibility proxy", "tag": "Android only · inert", "row": 1, "col": 5, "sources": [{"path": "src/notebooklm/_client_compat.py", "line": 85, "end_line": 112, "label": "sidecar factory"}]}
   ],
   "boundaries": [
-    {"kind": "region", "label": "transport-neutral runtime", "wraps": ["shared", "supervisor", "lifecycle"]},
-    {"kind": "region", "label": "Web-only runtime", "wraps": ["webruntime", "composed", "chainhost"]},
-    {"kind": "region", "label": "Android-only runtime", "wraps": ["androidruntime", "session", "epoch"]}
+    {"kind": "region", "label": "public construction values", "wraps": ["config"]},
+    {"kind": "region", "label": "root-owned neutral graph", "wraps": ["shared", "lifecycle"]},
+    {"kind": "region", "label": "typed backend variants", "wraps": ["webruntime", "androidruntime"]}
   ],
   "connections": [
-    {"id": "client-assembly", "from": "client", "to": "assembly", "label": "constructs", "variant": "emphasis"},
-    {"id": "assembly-shared", "from": "assembly", "to": "shared", "label": "builds", "labelAt": [367, 202]},
-    {"id": "shared-supervisor", "from": "shared", "to": "supervisor", "label": "owns"},
-    {"id": "supervisor-lifecycle", "from": "supervisor", "to": "lifecycle", "label": "generation state"},
-    {"id": "lifecycle-sidecar", "from": "lifecycle", "to": "sidecar", "label": "pre-registers proxy", "variant": "dashed", "labelAt": [1017, 158]},
-    {"id": "assembly-web", "from": "assembly", "to": "webruntime", "label": "via _web/assembly", "variant": "emphasis"},
-    {"id": "web-composed", "from": "webruntime", "to": "composed", "label": "binds once"},
-    {"id": "composed-chain", "from": "composed", "to": "chainhost", "label": "owns chain"},
-    {"id": "assembly-android", "from": "assembly", "to": "androidruntime", "label": "via _android/assembly", "variant": "dashed", "labelAt": [367, 405]},
-    {"id": "android-session", "from": "androidruntime", "to": "session", "label": "owns"},
-    {"id": "session-epoch", "from": "session", "to": "epoch", "label": "reads task-local tag", "variant": "dashed", "labelAt": [760, 558]}
+    {"id": "config-normalized", "from": "config", "to": "normalized", "label": "normalizes", "variant": "emphasis", "labelAt": [225, 126]},
+    {"id": "normalized-root", "from": "normalized", "to": "root", "label": "typed options", "variant": "emphasis", "labelAt": [435, 126]},
+    {"id": "root-assembly", "from": "root", "to": "assembly", "label": "returns", "variant": "emphasis"},
+    {"id": "assembly-client", "from": "assembly", "to": "client", "label": "installs", "variant": "emphasis"},
+    {"id": "root-lifecycle", "from": "root", "to": "lifecycle", "label": "constructs"},
+    {"id": "assembly-namespaces", "from": "assembly", "to": "namespaces", "label": "contains"},
+    {"id": "assembly-web", "from": "assembly", "to": "webruntime", "label": "Web runtime", "labelAt": [630, 126]},
+    {"id": "assembly-android", "from": "assembly", "to": "androidruntime", "label": "Android runtime"},
+    {"id": "client-sidecar", "from": "client", "to": "sidecar", "label": "compatibility", "variant": "dashed"}
   ],
   "cards": [
-    {
-      "dot": "cyan",
-      "title": "Split bundles",
-      "items": [
-        "RuntimeCollaborators remains only a private alias for neutral SharedRuntime",
-        "WebRuntime and AndroidRuntime contain their backend-specific collaborators",
-        "The root selector imports only the chosen branch-local assembler"
-      ]
-    },
-    {
-      "dot": "violet",
-      "title": "Narrowed policy owners",
-      "items": [
-        "CallSupervisor supplies generation leases and the neutral admission, metrics and semaphore policy",
-        "MiddlewareChainHost owns only the Web Retry, AuthRefresh, ErrorInjection and Tracing chain",
-        "Transport drain is no longer implemented as middleware"
-      ]
-    },
-    {
-      "dot": "rose",
-      "title": "Android compatibility",
-      "items": [
-        "Namespace operation scopes bind an epoch.py session-tagged ContextVar for nested Android calls",
-        "_client_compat.py alone installs the Android compatibility proxy",
-        "A materialised sidecar owns close and reopen but never installs keepalive or a drain hook"
-      ]
-    }
+    {"dot": "cyan", "title": "Complete handoff", "items": ["Backend assemblers receive typed config, credentials, and private dependencies, then return complete graphs without assigning client fields", "_install_client alone mutates the client; SharedRuntime and ClientLifecycle remain separate attributes"]},
+    {"dot": "rose", "title": "One selected branch", "items": ["Web and Android assembly records carry exact raw and runtime types", "LazyWebSidecar is a lifecycle proxy, not a second selected backend"]}
   ]
 }
