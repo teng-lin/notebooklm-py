@@ -46,7 +46,7 @@
           "module_counts": {
             "android": 49,
             "auth": 33,
-            "root": 70,
+            "root": 71,
             "runtime": 10,
             "types": 18
           },
@@ -165,6 +165,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -285,7 +286,7 @@
           "module_counts": {
             "android": 49,
             "auth": 33,
-            "root": 70,
+            "root": 71,
             "runtime": 10,
             "types": 18
           },
@@ -404,6 +405,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -540,9 +542,9 @@
           "module_counts": {
             "android": 74,
             "auth": 33,
-            "root": 70,
+            "root": 71,
             "rpc": 3,
-            "runtime": 10,
+            "runtime": 11,
             "types": 18,
             "web": 94
           },
@@ -686,6 +688,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -712,6 +715,7 @@
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
             "notebooklm._runtime.operation_context",
+            "notebooklm._runtime.retry_budget",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -929,7 +933,7 @@
           },
           "module_counts": {
             "auth": 33,
-            "root": 66,
+            "root": 67,
             "runtime": 9,
             "types": 18
           },
@@ -998,6 +1002,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -1109,7 +1114,7 @@
           "module_counts": {
             "android": 74,
             "auth": 33,
-            "root": 70,
+            "root": 71,
             "runtime": 10,
             "types": 18
           },
@@ -1253,6 +1258,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -1429,7 +1435,7 @@
           "module_counts": {
             "android": 74,
             "auth": 33,
-            "root": 70,
+            "root": 71,
             "runtime": 10,
             "types": 18
           },
@@ -1573,6 +1579,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -1778,9 +1785,9 @@
           },
           "module_counts": {
             "auth": 33,
-            "root": 69,
+            "root": 70,
             "rpc": 3,
-            "runtime": 10,
+            "runtime": 11,
             "types": 18,
             "web": 94
           },
@@ -1850,6 +1857,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -1876,6 +1884,7 @@
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
             "notebooklm._runtime.operation_context",
+            "notebooklm._runtime.retry_budget",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -2090,9 +2099,9 @@
           },
           "module_counts": {
             "auth": 33,
-            "root": 69,
+            "root": 70,
             "rpc": 3,
-            "runtime": 10,
+            "runtime": 11,
             "types": 18,
             "web": 94
           },
@@ -2162,6 +2171,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -2188,6 +2198,7 @@
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
             "notebooklm._runtime.operation_context",
+            "notebooklm._runtime.retry_budget",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -2338,7 +2349,7 @@
           },
           "module_counts": {
             "auth": 33,
-            "root": 66,
+            "root": 67,
             "runtime": 9,
             "types": 18
           },
@@ -2407,6 +2418,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -2541,9 +2553,9 @@
           },
           "module_counts": {
             "auth": 33,
-            "root": 69,
+            "root": 70,
             "rpc": 3,
-            "runtime": 10,
+            "runtime": 11,
             "types": 18,
             "web": 94
           },
@@ -2613,6 +2625,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -2639,6 +2652,7 @@
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
             "notebooklm._runtime.operation_context",
+            "notebooklm._runtime.retry_budget",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -2855,9 +2869,9 @@
           },
           "module_counts": {
             "auth": 33,
-            "root": 69,
+            "root": 70,
             "rpc": 3,
-            "runtime": 10,
+            "runtime": 11,
             "types": 18,
             "web": 94
           },
@@ -2927,6 +2941,7 @@
             "notebooklm._deprecation",
             "notebooklm._env",
             "notebooklm._hop_credentials",
+            "notebooklm._http_client_factory",
             "notebooklm._idempotency",
             "notebooklm._labels",
             "notebooklm._logging",
@@ -2953,6 +2968,7 @@
             "notebooklm._runtime.init",
             "notebooklm._runtime.lifecycle",
             "notebooklm._runtime.operation_context",
+            "notebooklm._runtime.retry_budget",
             "notebooklm._secrets",
             "notebooklm._settings",
             "notebooklm._sharing",
@@ -3112,7 +3128,7 @@
       "module_counts": {
         "android": 4,
         "auth": 33,
-        "root": 66,
+        "root": 67,
         "runtime": 9,
         "types": 18
       },
@@ -3185,6 +3201,7 @@
         "notebooklm._deprecation",
         "notebooklm._env",
         "notebooklm._hop_credentials",
+        "notebooklm._http_client_factory",
         "notebooklm._idempotency",
         "notebooklm._labels",
         "notebooklm._logging",
@@ -3253,7 +3270,7 @@
     "client_reexport": {
       "module_counts": {
         "auth": 33,
-        "root": 66,
+        "root": 67,
         "runtime": 9,
         "types": 18
       },
@@ -3322,6 +3339,7 @@
         "notebooklm._deprecation",
         "notebooklm._env",
         "notebooklm._hop_credentials",
+        "notebooklm._http_client_factory",
         "notebooklm._idempotency",
         "notebooklm._labels",
         "notebooklm._logging",
@@ -3390,7 +3408,7 @@
     "legacy_client_attribute": {
       "module_counts": {
         "auth": 33,
-        "root": 66,
+        "root": 67,
         "runtime": 9,
         "types": 18,
         "web": 3
@@ -3460,6 +3478,7 @@
         "notebooklm._deprecation",
         "notebooklm._env",
         "notebooklm._hop_credentials",
+        "notebooklm._http_client_factory",
         "notebooklm._idempotency",
         "notebooklm._labels",
         "notebooklm._logging",
@@ -3531,7 +3550,7 @@
     "package": {
       "module_counts": {
         "auth": 33,
-        "root": 66,
+        "root": 67,
         "runtime": 9,
         "types": 18
       },
@@ -3600,6 +3619,7 @@
         "notebooklm._deprecation",
         "notebooklm._env",
         "notebooklm._hop_credentials",
+        "notebooklm._http_client_factory",
         "notebooklm._idempotency",
         "notebooklm._labels",
         "notebooklm._logging",
@@ -3668,7 +3688,7 @@
     "raw_module": {
       "module_counts": {
         "auth": 33,
-        "root": 66,
+        "root": 67,
         "runtime": 9,
         "types": 18
       },
@@ -3737,6 +3757,7 @@
         "notebooklm._deprecation",
         "notebooklm._env",
         "notebooklm._hop_credentials",
+        "notebooklm._http_client_factory",
         "notebooklm._idempotency",
         "notebooklm._labels",
         "notebooklm._logging",
@@ -3805,7 +3826,7 @@
     "web_raw_api": {
       "module_counts": {
         "auth": 33,
-        "root": 66,
+        "root": 67,
         "rpc": 3,
         "runtime": 9,
         "types": 18,
@@ -3876,6 +3897,7 @@
         "notebooklm._deprecation",
         "notebooklm._env",
         "notebooklm._hop_credentials",
+        "notebooklm._http_client_factory",
         "notebooklm._idempotency",
         "notebooklm._labels",
         "notebooklm._logging",

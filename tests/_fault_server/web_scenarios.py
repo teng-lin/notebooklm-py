@@ -37,16 +37,20 @@ from .web import (
     list_response,
     rpc_response,
 )
+from .web_concurrency import BUDGETS as CONCURRENCY_BUDGETS
 from .web_concurrency import IMPLEMENTATIONS as CONCURRENCY_IMPLEMENTATIONS
 from .web_concurrency import PLANS as CONCURRENCY_PLANS
+from .web_concurrency import REQUIRED_CHECKS as CONCURRENCY_REQUIRED_CHECKS
 from .web_connections import IMPLEMENTATIONS as CONNECTION_IMPLEMENTATIONS
 from .web_connections import PLANS as CONNECTION_PLANS
+from .web_resilience_scenarios import BUDGETS as RESILIENCE_BUDGETS
 from .web_resilience_scenarios import (
     IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
 )
 from .web_resilience_scenarios import (
     PLANS as RESILIENCE_PLANS,
 )
+from .web_resilience_scenarios import REQUIRED_CHECKS as RESILIENCE_REQUIRED_CHECKS
 from .web_resilience_scenarios import (
     SCENARIOS as RESILIENCE_SCENARIOS,
 )
@@ -739,7 +743,12 @@ async def run_scenario(
         faults=list(faults),
         cohort_ids=[f"{operation_id}:{index}" for index in range(cohort_count)],
         transport="httpx",
-        required_checks=_required_checks(name),
+        budgets={**RESILIENCE_BUDGETS, **CONCURRENCY_BUDGETS}.get(
+            name, {"scenario_timeout_s": 15.0, "cleanup_timeout_s": 2.0}
+        ),
+        required_checks={**RESILIENCE_REQUIRED_CHECKS, **CONCURRENCY_REQUIRED_CHECKS}.get(
+            name, _required_checks(name)
+        ),
     )
     await implementation(result)
     return result
