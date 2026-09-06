@@ -1,7 +1,7 @@
 # CLI Reference
 
 **Status:** Active
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-05
 
 Complete command reference for the `notebooklm` CLI—providing full programmatic access to all NotebookLM features, including capabilities not exposed in the web UI.
 
@@ -63,6 +63,9 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `status` | Show current context | `notebooklm status` |
 | `status --paths` | Show configuration paths | `notebooklm status --paths` |
 | `status --json` | Output status as JSON | `notebooklm status --json` |
+| `usage` | Show live account compute usage and reset times | `notebooklm usage` |
+| `usage --categories` | Include usage categories, availability, and estimated costs | `notebooklm usage --categories` |
+| `usage --json` | Output the full usage snapshot as JSON | `notebooklm -p work usage --json` |
 | `clear` | Clear current context | `notebooklm clear` |
 | `auth check` | Diagnose authentication issues | `notebooklm auth check` |
 | `auth check --test` | Validate with network test | `notebooklm auth check --test` |
@@ -76,6 +79,59 @@ See [Configuration](configuration.md) for full env-var precedence and CI/CD setu
 | `doctor --fix` | Auto-fix detected issues | `notebooklm doctor --fix` |
 | `doctor --json` | Output diagnostics as JSON | `notebooklm doctor --json` |
 | `completion <shell>` | Print shell completion script (`bash`/`zsh`/`fish`) | `notebooklm completion zsh > ~/.zfunc/_notebooklm` |
+
+### Live Compute Usage (`notebooklm usage`)
+
+Shows the current account's five-hour and weekly compute usage percentages and the reset timestamps
+supplied by the server. It requires authentication but no active notebook. Global `--profile`,
+`--storage`, and `--backend web|android` options apply as usual.
+
+```bash
+notebooklm usage
+notebooklm usage --categories
+notebooklm -p work usage --json
+notebooklm --backend android usage --json
+```
+
+`--categories` (alias `--actions`) adds a table of category codes, names, quota sufficiency, relative
+cost tiers, estimated cost percentages, and remaining deferred artifact generations. JSON always
+includes these details.
+Text percentages are rounded to two decimal places; JSON preserves the returned precision.
+
+The category table uses readable feature names: for example, Cinematic video (code 3), Slide deck
+(6), Data table (8), Chat Q&A (18), Source guide (21), and Suggested questions (22). JSON retains the
+`actions` array and exact protocol enum names in `kind` for scripts. `NOS` (16) and
+`NOS_IMAGE_GENERATION` (19) are internal server names without a verified public feature mapping;
+the table marks that uncertainty instead of guessing a feature name. See the
+[protocol evidence](android/usage-quota-evidence.md).
+
+`Est. cost*` is the server's estimated percentage of budget. In the recorded Flashcards and Quiz
+generations it matched the initial reservation against the **five-hour** window; the weekly debit
+was a different percentage, and final usage settled lower. The response does not explicitly name
+the estimate's budget window, so the CLI describes the five-hour basis as observed behavior. The
+`Quota` column is the current account-level availability flag for that category, not a separate
+five-hour or weekly availability reading.
+
+The JSON object contains:
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `ready`, `disabled` (meter not enabled for the account), or `skipped` (temporarily unavailable) |
+| `enabled`, `available` | Account eligibility and whether a snapshot is ready |
+| `is_exhausted` | Whether the active window is exhausted; `null` when unavailable |
+| `active_window` | `weekly` when weekly usage is at least 100%, otherwise `five_hour`; `null` when unavailable |
+| `windows` | Rows with `kind` (`five_hour` or `weekly`), `used_percent`, `remaining_percent`, and `resets_at` (ISO 8601 UTC, e.g. `2026-09-05T18:30:00+00:00`) |
+| `actions` | Rows with `code`, `kind` (lowercase enum name, e.g. `audio_overview`), `has_sufficient_quota`, `cost_tier` (`low`, `medium`, `high`, `very_high`, or `null`), `remaining_deferred_artifact_generations`, and `estimated_cost_percent` |
+
+Unknown action codes remain in JSON with `kind: null`. Absent cost estimates, cost tiers, and
+deferred-generation counts are `null`, distinct from zero. Disabled and skipped meters return empty
+`windows` and `actions` arrays and exit `0`; transport, authentication, and decoding failures use the
+standard error envelope and exit nonzero. An exhausted snapshot also exits `0`: the command reports
+usage rather than enforcing it.
+
+This is the live compute meter, separate from [static published plan limits](quota-limits.md).
+Percentages may change after generation settles. Advertised action costs are estimates, not final
+charges or a credit balance; reset timestamps are reported directly without calculating a countdown.
 
 ### Profile Commands (`notebooklm profile <cmd>`)
 

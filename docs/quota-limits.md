@@ -12,6 +12,11 @@ implemented API. The historical investigation is in
 [#2283](https://github.com/teng-lin/notebooklm-py/issues/2283). This document remains **prose
 reference, not shipped code** (see [Why this lives in docs](#why-this-lives-in-docs-not-code)).
 
+Inspect the live meter with `notebooklm usage`, add `--categories` for category availability and estimated
+costs, or use `notebooklm usage --json` for the full snapshot. See the
+[CLI usage reference](cli-reference.md#live-compute-usage-notebooklm-usage) for fields and unavailable
+states.
+
 The rotating CI account pool proposed in
 [#2331](https://github.com/teng-lin/notebooklm-py/issues/2331) is load distribution across
 authorized, independently managed accounts—not quota telemetry and not an attempt to infer or

@@ -65,8 +65,8 @@ def test_capture_missing_browser_extra_preserves_explicit_cause_and_scrubs(monke
 
 
 def test_capture_timeout_preserves_active_context_and_scrubs_resources(monkeypatch):
+    """Timeout cleanup preserves the caller's exception context and scrubs resources."""
     page = Mock()
-    page.evaluate.return_value = 0
     context = Mock()
     context.new_page.return_value = page
     browser_obj = Mock()
@@ -201,8 +201,8 @@ def test_capture_passes_valid_cdp_unchanged_and_preserves_connector_error(monkey
 def test_capture_cdp_preserves_external_ownership_and_closes_created_resources(
     monkeypatch, existing_context
 ):
+    """CDP capture closes only the resources it creates in the attached browser."""
     page = Mock()
-    page.evaluate.return_value = 0
     context = Mock()
     context.new_page.return_value = page
     context.cookies.return_value = [{"name": "oauth_token", "value": "CAPTURED"}]
@@ -234,8 +234,8 @@ def test_capture_cdp_preserves_external_ownership_and_closes_created_resources(
 
 
 def test_capture_local_launch_closes_owned_page_context_and_browser(monkeypatch):
+    """Successful local capture releases its owned page, context, and browser."""
     page = Mock()
-    page.evaluate.return_value = 0
     context = Mock()
     context.new_page.return_value = page
     context.cookies.return_value = [{"name": "oauth_token", "value": "CAPTURED"}]
@@ -262,9 +262,9 @@ def test_capture_local_launch_closes_owned_page_context_and_browser(monkeypatch)
 
 
 def test_capture_cleanup_failure_preserves_parent_precedence(monkeypatch):
+    """A page cleanup failure retains its existing exception and cleanup precedence."""
     cleanup_failure = RuntimeError("page close")
     page = Mock()
-    page.evaluate.return_value = 0
     page.close.side_effect = cleanup_failure
     context = Mock()
     context.new_page.return_value = page
@@ -285,3 +285,113 @@ def test_capture_cleanup_failure_preserves_parent_precedence(monkeypatch):
     assert raised.value is cleanup_failure
     context.close.assert_not_called()
     browser_obj.close.assert_not_called()
+
+
+@pytest.mark.parametrize("poll_duration", [0.0, 2.0], ids=["empty-polls", "slow-poll"])
+def test_capture_timeout_uses_host_clock_and_bounds_sleep(monkeypatch, poll_duration):
+    """Empty or slow cookie polls expire without relying on a live login page."""
+    clock = SimpleNamespace(now=1000.0)
+
+    def sleep(seconds):
+        """Advance simulated time and reject negative waits."""
+        assert seconds >= 0
+        clock.now += seconds
+
+    monkeypatch.setattr(
+        capture_service, "time", SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep)
+    )
+    page = Mock()
+    page.evaluate.side_effect = AssertionError("The login page cannot supply the clock")
+    page.wait_for_timeout.side_effect = AssertionError("The login page cannot supply the wait")
+    context = Mock()
+    context.new_page.return_value = page
+
+    def cookies():
+        """Model a cookie read that consumes time without finding a token."""
+        clock.now += poll_duration
+        return []
+
+    context.cookies.side_effect = cookies
+    browser = Mock()
+    browser.new_context.return_value = context
+    chromium = SimpleNamespace(launch=Mock(return_value=browser))
+
+    @contextmanager
+    def playwright_context():
+        """Supply the fake browser while retaining the real capture loop."""
+        yield SimpleNamespace(chromium=chromium)
+
+    monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)
+
+    with pytest.raises(MasterTokenError, match="Did not observe an oauth_token cookie"):
+        capture_service.capture_oauth_token(timeout_s=1.5)
+
+    assert clock.now == 1000.0 + max(1.5, poll_duration)
+    page.close.assert_called_once_with()
+    context.close.assert_called_once_with()
+    browser.close.assert_called_once_with()
+
+
+@pytest.mark.requires_chromium
+@pytest.mark.parametrize("attached", [False, True], ids=["launched", "attached"])
+def test_capture_reads_cookie_after_login_page_closes_in_real_chromium(monkeypatch, attached):
+    """A closed login tab must not discard a cookie in its still-live context."""
+    with capture_service.sync_playwright_context() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            context.route(
+                "**/*",
+                lambda route: route.fulfill(
+                    content_type="text/html", body="<title>Synthetic sign-in</title>"
+                ),
+            )
+            read_cookies = context.cookies
+            closed_pages = []
+
+            def cookies():
+                """Set a dummy token and close the tab after the first cookie snapshot."""
+                snapshot = read_cookies()
+                if not closed_pages:
+                    # Complete sign-in just after the first cookie snapshot,
+                    # before capture gets another chance to observe the token.
+                    context.add_cookies(
+                        [
+                            {
+                                "name": "oauth_token",
+                                "value": "SYNTHETIC-NONCREDENTIAL",
+                                "url": "https://accounts.google.com/",
+                            }
+                        ]
+                    )
+                    page = context.pages[0]
+                    page.close()
+                    closed_pages.append(page)
+                return snapshot
+
+            monkeypatch.setattr(context, "cookies", cookies)
+            monkeypatch.setattr(browser, "new_context", Mock(return_value=context))
+            chromium = SimpleNamespace(
+                launch=Mock(return_value=browser), connect_over_cdp=Mock(return_value=browser)
+            )
+
+            @contextmanager
+            def playwright_context():
+                """Expose real browser objects through either capture ownership path."""
+                yield SimpleNamespace(chromium=chromium)
+
+            monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)
+
+            assert (
+                capture_service.capture_oauth_token(
+                    cdp_url="http://localhost:9222" if attached else None, timeout_s=5
+                )
+                == "SYNTHETIC-NONCREDENTIAL"
+            )
+            assert len(closed_pages) == 1
+            assert closed_pages[0].is_closed()
+            assert browser.is_connected() is attached
+            if attached:
+                assert read_cookies()[0]["name"] == "oauth_token"
+        finally:
+            browser.close()

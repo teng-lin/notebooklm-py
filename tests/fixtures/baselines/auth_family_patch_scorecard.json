@@ -6276,6 +6276,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
+      "owner_qualname": "test_capture_reads_cookie_after_login_page_closes_in_real_chromium",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
       "owner_qualname": "test_capture_rejected_cdp_scrubs_retained_frame_and_exception_chain",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
@@ -6301,6 +6311,26 @@
       "path": "tests/unit/test_browser_oauth_token.py"
     },
     {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "time",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
       "attribute": "write_master_token",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -6313,17 +6343,17 @@
   ],
   "packages": {
     "notebooklm._auth": 85,
-    "notebooklm._browser": 21,
+    "notebooklm._browser": 24,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
-    "distinct_targets": 61,
+    "distinct_targets": 62,
     "files": 84,
-    "lexical_owners": 595,
+    "lexical_owners": 597,
     "private": 50,
-    "public": 582,
-    "total": 632
+    "public": 585,
+    "total": 635
   },
   "version": 1
 }

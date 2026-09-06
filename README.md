@@ -272,6 +272,8 @@ notebooklm agent show codex          # Print bundled Codex instructions
 notebooklm agent show claude         # Print bundled Claude Code skill template
 notebooklm language list             # List supported output languages
 notebooklm metadata --json           # Export notebook metadata and sources
+notebooklm usage                     # Show live compute usage and reset times
+notebooklm usage --json              # Export the full usage snapshot, including categories
 notebooklm share status              # Inspect sharing state
 notebooklm source add-research "AI" --import-all  # web research + import found sources
 notebooklm skill status              # Check local agent skill installation

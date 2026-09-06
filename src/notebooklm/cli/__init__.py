@@ -24,6 +24,7 @@ break Python's package-attribute shadowing — see
   rename, summary, metadata)
 - ``chat_cmd``: Chat commands (ask, configure, history)
 - ``doctor_cmd``: Diagnostic and migration commands
+- ``usage_cmd``: Live compute usage command
 
 The click groups themselves are still exported here under their historical
 names (``source``, ``artifact``, …) so ``from notebooklm.cli import source``
@@ -90,6 +91,7 @@ from .session_cmd import register_session_commands
 from .share_cmd import share
 from .skill_cmd import skill
 from .source_cmd import source
+from .usage_cmd import usage
 
 __all__ = [
     # Command groups (subcommand style)
@@ -107,6 +109,7 @@ __all__ = [
     "language",
     "profile",
     "mcp",
+    "usage",
     # Language config
     "get_language",
     # Register functions (top-level command style)

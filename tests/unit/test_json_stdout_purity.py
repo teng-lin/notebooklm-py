@@ -22,7 +22,7 @@ import json
 import math
 import sys
 from collections.abc import Generator
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -58,6 +58,10 @@ from notebooklm.types import (
     ShareStatus,
     Source,
     SourceGuide,
+    UsageSummary,
+    UsageSummaryStatus,
+    UsageWindow,
+    UsageWindowKind,
 )
 
 
@@ -622,7 +626,21 @@ _FS_SETUPS = {
 }
 
 
+def _customize_usage(client: MagicMock) -> None:
+    """Exercise ready usage JSON, including timezone-aware reset timestamps."""
+    client.settings.get_usage = AsyncMock(
+        return_value=UsageSummary(
+            status=UsageSummaryStatus.READY,
+            windows=tuple(
+                UsageWindow(kind, 25.0, 75.0, datetime(2026, 9, 5, tzinfo=timezone.utc))
+                for kind in (UsageWindowKind.FIVE_HOUR, UsageWindowKind.WEEKLY)
+            ),
+        )
+    )
+
+
 JSON_COMMANDS: list[tuple[str, list[str], object]] = [
+    ("usage", ["usage", "--json"], _customize_usage),
     # source group
     ("source_list", ["source", "list", "-n", "abc123def456ghi789jkl", "--json"], None),
     (

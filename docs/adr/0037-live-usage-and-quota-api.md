@@ -158,8 +158,8 @@ usage = await client.settings.get_usage()
 ```
 
 `SettingsAPI` already owns `get_account_limits()` and account RPCs. A new root namespace would add
-assembly, backend-manifest, fake, and lifecycle surface without a distinct state owner. A future
-CLI can still expose `notebooklm usage --json`.
+assembly, backend-manifest, fake, and lifecycle surface without a distinct state owner. The
+CLI exposes this API through `notebooklm usage --json`.
 
 ### Public model
 
@@ -375,8 +375,11 @@ processes with `NOTEBOOKLM_PROFILE=YOUR_STANDARD_PROFILE` and
 `NOTEBOOKLM_PROFILE=YOUR_PRO_PROFILE`; an operation never switches identity mid-run. Ordinary CI
 performs no generation and consumes no metered usage.
 
-CLI, MCP, and REST *usage projections* are additive follow-ups. If a top-level CLI command is added,
-it must be assigned to a `SectionedGroup` section and update CLI/docs/JSON datetime baselines.
+The top-level `notebooklm usage` command projects this API in the `SectionedGroup` Session section.
+It shows both windows, optionally expands usage categories with `--categories` (alias `--actions`), and emits the full
+snapshot with `--json`, including explicit ISO 8601 reset timestamps. The CLI contract baseline,
+documentation, and JSON timestamp assertions cover this projection. MCP and REST usage projections
+remain additive follow-ups.
 
 ## Consequences
 

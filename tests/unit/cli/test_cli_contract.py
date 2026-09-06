@@ -44,6 +44,13 @@ BASELINE_PATH = _find_repo_root() / "tests/fixtures/cli_contract_baseline.json"
 HELP_SNIPPETS = {
     "": ("NotebookLM CLI", "notebooklm login", "completion"),
     "completion": ("Print the shell completion script", "bash", "zsh", "fish"),
+    "usage": (
+        "Show live compute usage",
+        "--categories",
+        "--actions",
+        "--json",
+        "No active notebook",
+    ),
     "download": ("Download generated content", "cinematic-video", "flashcards"),
     "download audio": ("Download audio", "--latest", "--no-clobber"),
     "source add": ("--follow-symlinks", "--mime-type", "--json"),
