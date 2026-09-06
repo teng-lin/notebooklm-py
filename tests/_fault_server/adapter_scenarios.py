@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
 import sys
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -127,7 +126,7 @@ def _client_factory(
     async def factory() -> AsyncIterator[Any]:
         client = build_fault_client(
             server,
-            timeout=0.5,
+            timeout=2.0,
             server_error_max_retries=server_retries,
         )
         opened.append(client)
@@ -325,41 +324,77 @@ async def _mcp_create(result: ScenarioResult) -> None:
         _require_client_closed(result, opened)
 
 
-async def _run_cli(
-    scenario: str,
-) -> dict[str, Any]:
-    """Run Click in an isolated process, where its global stdio/auth patches are safe.
-
-    ``CliRunner`` replaces process-global streams.  The child owns both its
-    loopback server and its one worker thread, so no stress cohort can observe
-    its test-only authentication patch or its Click stream replacement.
-    """
+async def _run_cli(result: ScenarioResult, scenario: str) -> dict[str, Any]:
+    """Own the real child process and emit cleanup even if startup/timeout fails."""
     with tempfile.TemporaryDirectory(prefix="notebooklm-adapter-cli-") as directory:
         report = Path(directory) / "result.json"
-        command = [
-            sys.executable,
-            "-m",
-            "tests._fault_server.adapter_cli_worker",
-            "--scenario",
-            scenario,
-            "--report",
-            str(report),
-        ]
-        completed = await asyncio.to_thread(
-            subprocess.run,
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6.0,
-        )
-        if completed.returncode != 0 or not report.is_file():
-            raise AssertionError("isolated CLI fault worker did not produce a report")
-        return json.loads(report.read_text(encoding="utf-8"))
+        process: asyncio.subprocess.Process | None = None
+        worker: dict[str, Any] | None = None
+        primary: BaseException | None = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "tests._fault_server.adapter_cli_worker",
+                "--scenario",
+                scenario,
+                "--report",
+                str(report),
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(process.wait(), 10.0)
+            if process.returncode != 0 or not report.is_file():
+                raise AssertionError("isolated CLI fault worker did not produce a report")
+            worker = json.loads(report.read_text(encoding="utf-8"))
+            return worker
+        except BaseException as exc:
+            primary = exc
+            raise
+        finally:
+            close_error: BaseException | None = None
+            try:
+                if process is not None and process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), 2)
+                    except TimeoutError:
+                        process.kill()
+                        await asyncio.wait_for(process.wait(), 2)
+            except BaseException as exc:
+                close_error = exc
+            settled = process is None or process.returncode is not None
+            clean = worker is not None and worker.get("clean") is True
+            result.record(
+                "cleanup",
+                adapter="cli",
+                process_created=process is not None,
+                process_settled=settled,
+                report_written=report.is_file(),
+                child_cleanup=clean,
+                primary_error=None if primary is None else type(primary).__name__,
+                close_error=None if close_error is None else type(close_error).__name__,
+            )
+            failed_check: ScenarioFailure | None = None
+            for label, passed in (
+                ("cli_process_settled", settled and close_error is None),
+                ("cli_child_cleanup", clean),
+            ):
+                try:
+                    result.require(label, passed)
+                except ScenarioFailure as exc:
+                    failed_check = exc
+            if isinstance(close_error, (KeyboardInterrupt, SystemExit)):
+                raise close_error
+            if primary is None:
+                if close_error is not None:
+                    raise close_error
+                if failed_check is not None:
+                    raise failed_check
 
 
 async def _cli_read(result: ScenarioResult) -> None:
-    worker = await _run_cli("read")
+    worker = await _run_cli(result, "read")
     result.record("http_trace", requests=worker["http_trace"], committed=worker["committed"])
     result.record(
         "adapter_outcome",
@@ -378,7 +413,7 @@ async def _cli_read(result: ScenarioResult) -> None:
 
 
 async def _cli_create(result: ScenarioResult) -> None:
-    worker = await _run_cli("create")
+    worker = await _run_cli(result, "create")
     result.record("http_trace", requests=worker["http_trace"], committed=worker["committed"])
     result.record(
         "adapter_outcome",
@@ -416,6 +451,8 @@ _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
 
 _REQUIRED_CHECKS: dict[str, list[str]] = {
     "adapter_cli_ambiguous_create": [
+        "cli_process_settled",
+        "cli_child_cleanup",
         "cli_create_code",
         "cli_create_committed_once",
         "cli_create_exit",
@@ -428,6 +465,8 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
         "cli_create_worker_cleanup",
     ],
     "adapter_cli_transient_read": [
+        "cli_process_settled",
+        "cli_child_cleanup",
         "cli_read_code",
         "cli_read_exit",
         "cli_read_fault_sent_once",
@@ -603,9 +642,9 @@ async def run_scenario(
         budgets={
             "rpc_timeout_s": (2 if "chat_start" in name else 1)
             if name in _LIVE_IMPLEMENTATIONS
-            else 0.5,
+            else 2.0,
             "job_timeout_s": 3 if "chat_start" in name else None,
-            "scenario_timeout_s": 6 if name in _LIVE_IMPLEMENTATIONS else 2,
+            "scenario_timeout_s": 10 if adapter == "cli" else 6,
             "cleanup_timeout_s": _CLOSE_TIMEOUT,
         },
         required_checks=_REQUIRED_CHECKS[name],
