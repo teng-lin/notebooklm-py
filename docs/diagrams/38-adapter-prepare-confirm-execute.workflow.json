@@ -71,7 +71,7 @@
       "dot": "rose",
       "title": "Safety Contract",
       "items": [
-        "Resource deletes resolve canonical parent and target IDs",
+        "Resource deletes resolve their canonical ID operands",
         "Sharing keeps a canonical notebook ID plus email/access operands",
         "Preview sends no mutation; the confirmed call holds no cross-delay lease"
       ]
