@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Client Ownership Boundaries",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {"url": "https://github.com/teng-lin/notebooklm-py", "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"},
+    "views": [
+      {"id": "call-path", "label": "Call ownership", "focus": ["frontends", "app", "client", "assembly", "web", "android"], "note": "Adapters own presentation, _app owns neutral orchestration, and the selected backend owns wire behavior."},
+      {"id": "construction-path", "label": "Construction ownership", "focus": ["config", "normalizer", "root", "assembly", "client"], "note": "One compatibility boundary resolves owner-grouped values before the root installs a complete selected graph."},
+      {"id": "lifetime-path", "label": "Lifetime ownership", "focus": ["root", "shared", "lifecycle", "sidecar"], "note": "SharedRuntime owns neutral services; ClientLifecycle owns resource state; the Web sidecar remains isolated and lazy."}
+    ]
+  },
+  "layout": {"mode": "grid", "origin": [45, 50], "cols": 6, "gapX": 55, "gapY": 72, "cellW": 120, "cellH": 82},
+  "components": [
+    {"id": "frontends", "type": "frontend", "label": "Frontend Adapters", "sublabel": "CLI · MCP · REST", "tag": "presentation owners", "row": 0, "col": 0, "sources": [{"path": "src/notebooklm/cli/__init__.py", "line": 1, "end_line": 30, "label": "CLI adapter"}, {"path": "src/notebooklm/mcp/__init__.py", "line": 1, "end_line": 28, "label": "MCP adapter"}, {"path": "src/notebooklm/server/__init__.py", "line": 1, "end_line": 26, "label": "REST adapter"}]},
+    {"id": "app", "type": "backend", "label": "_app", "sublabel": "neutral operations", "tag": "transport-neutral", "row": 0, "col": 1, "sources": [{"path": "src/notebooklm/_app/generation_requests.py", "line": 1, "end_line": 35, "label": "typed requests"}]},
+    {"id": "client", "type": "backend", "label": "NotebookLMClient", "sublabel": "public operations", "tag": "installed graph owner", "row": 0, "col": 2, "sources": [{"path": "src/notebooklm/client.py", "line": 533, "end_line": 604, "label": "public lifetime"}]},
+    {"id": "web", "type": "cloud", "label": "Web Owners", "sublabel": "HTTP · executor", "tag": "batchexecute graph", "row": 0, "col": 4, "sources": [{"path": "src/notebooklm/_web/assembly.py", "line": 60, "end_line": 116, "label": "Web composition"}]},
+    {"id": "android", "type": "cloud", "label": "Android Owners", "sublabel": "gRPC · transfers", "tag": "gRPC graph", "row": 0, "col": 5, "sources": [{"path": "src/notebooklm/_android/assembly.py", "line": 71, "end_line": 130, "label": "Android composition"}]},
+    {"id": "config", "type": "frontend", "label": "ClientConfig", "sublabel": "owner-grouped spec", "tag": "public specification", "row": 1, "col": 0, "sources": [{"path": "src/notebooklm/options.py", "line": 49, "end_line": 233, "label": "option owners"}]},
+    {"id": "normalizer", "type": "backend", "label": "_client_options", "sublabel": "legacy → typed", "tag": "compatibility only", "row": 1, "col": 1, "sources": [{"path": "src/notebooklm/_client_options.py", "line": 269, "end_line": 430, "label": "single normalizer"}]},
+    {"id": "root", "type": "backend", "label": "_client_assembly", "sublabel": "select · install", "tag": "sole root owner", "row": 1, "col": 2, "sources": [{"path": "src/notebooklm/_client_assembly.py", "line": 60, "end_line": 110, "label": "install graph"}, {"path": "src/notebooklm/_client_assembly.py", "line": 131, "end_line": 216, "label": "select graph"}]},
+    {"id": "assembly", "type": "database", "label": "BackendAssembly", "sublabel": "namespaces · raw", "tag": "complete handoff", "row": 1, "col": 4, "sources": [{"path": "src/notebooklm/_client_contracts.py", "line": 70, "end_line": 116, "label": "typed handoff"}]},
+    {"id": "shared", "type": "database", "label": "SharedRuntime", "sublabel": "metrics · admission", "tag": "neutral services", "row": 0, "col": 3, "sources": [{"path": "src/notebooklm/_runtime/init.py", "line": 17, "end_line": 97, "label": "shared construction"}]},
+    {"id": "lifecycle", "type": "security", "label": "ClientLifecycle", "sublabel": "state · epochs · waves", "tag": "resource authority", "row": 1, "col": 3, "sources": [{"path": "src/notebooklm/_runtime/lifecycle.py", "line": 140, "end_line": 165, "label": "root lifecycle"}]},
+    {"id": "sidecar", "type": "external", "label": "LazyWebSidecar", "sublabel": "lazy rpc_call bridge", "tag": "Android only · inert", "row": 1, "col": 5, "sources": [{"path": "src/notebooklm/_client_compat.py", "line": 105, "end_line": 229, "label": "sidecar lifetime"}]}
+  ],
+  "boundaries": [
+    {"kind": "region", "label": "frontend and neutral application", "wraps": ["frontends", "app"]},
+    {"kind": "region", "label": "public and root construction", "wraps": ["client", "config", "normalizer", "root", "assembly"]},
+    {"kind": "security-group", "label": "root-owned lifetime authority", "wraps": ["shared", "lifecycle"]},
+    {"kind": "region", "label": "lazy compatibility island", "wraps": ["sidecar"]},
+    {"kind": "region", "label": "Web backend owner", "wraps": ["web"]},
+    {"kind": "region", "label": "Android backend owner", "wraps": ["android"]}
+  ],
+  "connections": [
+    {"id": "frontends-app", "from": "frontends", "to": "app", "label": "typed requests", "variant": "emphasis", "labelAt": [193, 124]},
+    {"id": "app-client", "from": "app", "to": "client", "label": "public operations", "variant": "emphasis", "labelAt": [368, 124]},
+    {"id": "config-normalizer", "from": "config", "to": "normalizer", "label": "normalizes", "variant": "emphasis"},
+    {"id": "normalizer-root", "from": "normalizer", "to": "root", "label": "typed options", "variant": "emphasis", "labelAt": [368, 278]},
+    {"id": "root-assembly", "from": "root", "to": "assembly", "label": "selects", "variant": "emphasis", "fromSide": "bottom", "toSide": "bottom", "via": [[455, 340], [805, 340]]},
+    {"id": "root-client", "from": "root", "to": "client", "label": "installs"},
+    {"id": "shared-lifecycle", "from": "shared", "to": "lifecycle", "label": "supervisor", "labelAt": [630, 124]},
+    {"id": "root-lifecycle", "from": "root", "to": "lifecycle", "label": "constructs"},
+    {"id": "root-sidecar", "from": "root", "to": "sidecar", "label": "pre-registers", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[455, 380], [980, 380]], "labelAt": [720, 380]},
+    {"id": "assembly-web", "from": "assembly", "to": "web", "label": "Web variant", "variant": "emphasis"},
+    {"id": "assembly-android", "from": "assembly", "to": "android", "label": "Android variant", "variant": "emphasis"}
+  ],
+  "cards": [
+    {"dot": "cyan", "title": "Construction ownership", "items": ["ClientConfig contains no credentials or private dependency seams", "Backend builders return complete typed graphs and do not mutate the public client"]},
+    {"dot": "rose", "title": "Runtime ownership", "items": ["The selected backend owns wire, authentication, transport, and transfer resources", "The root owns lifecycle state; SharedRuntime owns neutral metrics, admission, and deadlines"]}
+  ]
+}

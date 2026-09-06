@@ -2,50 +2,49 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Capability Contracts and Their Satisfiers",
+    "title": "Capability and Operation Contracts",
     "locale": "en",
     "quality_profile": "showcase",
+    "repository": {"url": "https://github.com/teng-lin/notebooklm-py", "revision": "719378b8af7023b8eca0c33d2de6d44d35db3434"},
     "views": [
-      { "id": "rpc", "label": "RPC contract", "focus": ["rpccaller", "executor", "features", "bases"], "note": "One chokepoint Protocol every web feature API depends on." },
-      { "id": "loop", "label": "Loop affinity", "focus": ["loopguard", "supervisor", "chatapi", "loopbound"], "note": "Loop binding is a single-method contract plus a shared mixin." },
-      { "id": "kernel", "label": "Transport contract", "focus": ["kernelp", "kernelc", "upload", "authmeta"], "note": "A single-consumer contract lives beside its consumer, not in a shared module." }
+      {"id": "web-dispatch", "label": "Web dispatch", "focus": ["rpccaller", "executor", "webapis", "namespaces"], "note": "Web feature adapters receive the narrow RpcCaller capability satisfied by RpcExecutor."},
+      {"id": "resource-lifecycle", "label": "Resource lifecycle", "focus": ["assembly", "lifecycle", "transportcontract", "resources"], "note": "A typed backend assembly freezes concrete transports behind root lifecycle protocols."},
+      {"id": "operation-lifetime", "label": "Operation lifetime", "focus": ["workflows", "supervisor", "lease", "context"], "note": "CallSupervisor creates or joins one qualified operation context spanning admission, deadline, and mutation evidence."}
     ]
   },
+  "layout": {"mode": "grid", "origin": [45, 52], "cols": 6, "gapX": 55, "gapY": 72, "cellW": 120, "cellH": 82},
   "components": [
-    { "id": "rpccaller", "type": "backend", "label": "RpcCaller", "sublabel": "rpc_call(...)", "tag": "Protocol", "pos": [282, 60], "size": [170, 84] },
-    { "id": "executor", "type": "backend", "label": "RpcExecutor", "sublabel": "production satisfier", "pos": [544, 60], "size": [170, 84] },
-    { "id": "features", "type": "backend", "label": "Web Feature APIs", "sublabel": "declare RpcCaller", "pos": [806, 60], "size": [165, 84] },
-    { "id": "bases", "type": "backend", "label": "Namespace ABCs", "sublabel": "eleven bases", "tag": "abstract", "pos": [1063, 60], "size": [155, 84] },
-    { "id": "loopguard", "type": "backend", "label": "LoopGuard", "sublabel": "assert_bound_loop()", "tag": "Protocol", "pos": [282, 260], "size": [170, 90] },
-    { "id": "supervisor", "type": "backend", "label": "CallSupervisor", "sublabel": "production satisfier", "pos": [544, 260], "size": [170, 90] },
-    { "id": "chatapi", "type": "backend", "label": "ChatAPI", "sublabel": "declares LoopGuard", "pos": [806, 260], "size": [165, 90] },
-    { "id": "loopbound", "type": "backend", "label": "LoopBoundPrimitive", "sublabel": "seven direct subclasses", "tag": "mixin", "pos": [1063, 260], "size": [155, 90] },
-    { "id": "kernelp", "type": "backend", "label": "Kernel", "sublabel": "post · cookies · close", "tag": "Protocol", "pos": [282, 460], "size": [170, 84] },
-    { "id": "kernelc", "type": "backend", "label": "Kernel (concrete)", "sublabel": "epoch-fenced client", "pos": [544, 460], "size": [170, 84] },
-    { "id": "upload", "type": "backend", "label": "SourceUploadPipeline", "sublabel": "sole consumer", "pos": [806, 460], "size": [165, 84] },
-    { "id": "authmeta", "type": "backend", "label": "AuthMetadata", "sublabel": "lives beside consumer", "tag": "Protocol", "pos": [1063, 460], "size": [155, 84] }
+    {"id": "rpccaller", "type": "backend", "label": "RpcCaller", "sublabel": "rpc_call(...) Protocol", "tag": "Web capability", "row": 0, "col": 0, "sources": [{"path": "src/notebooklm/_web/contracts.py", "line": 37, "end_line": 53, "label": "RpcCaller"}]},
+    {"id": "executor", "type": "backend", "label": "RpcExecutor", "sublabel": "production satisfier", "tag": "batchexecute owner", "row": 0, "col": 1, "sources": [{"path": "src/notebooklm/_web/transport/executor.py", "line": 101, "end_line": 128, "label": "executor"}]},
+    {"id": "webapis", "type": "backend", "label": "Web Feature APIs", "sublabel": "narrow collaborators", "tag": "backend adapters", "row": 0, "col": 2, "sources": [{"path": "src/notebooklm/_web/assembly.py", "line": 117, "end_line": 179, "label": "injection"}]},
+    {"id": "namespaces", "type": "frontend", "label": "Namespace ABCs", "sublabel": "eleven neutral APIs", "tag": "abstract operation scope", "row": 0, "col": 3, "sources": [{"path": "src/notebooklm/_client_contracts.py", "line": 70, "end_line": 84, "label": "typed namespaces"}]},
+    {"id": "assembly", "type": "database", "label": "BackendAssembly", "sublabel": "transport tuples", "tag": "typed handoff", "row": 0, "col": 4, "sources": [{"path": "src/notebooklm/_client_contracts.py", "line": 87, "end_line": 116, "label": "assembly types"}]},
+    {"id": "lifecycle", "type": "backend", "label": "ClientLifecycle", "sublabel": "root coordinator", "tag": "root owner", "row": 0, "col": 5, "sources": [{"path": "src/notebooklm/_runtime/lifecycle.py", "line": 140, "end_line": 165, "label": "lifecycle"}]},
+    {"id": "transportcontract", "type": "backend", "label": "TransportLifecycle", "sublabel": "open · close phases", "tag": "Protocol", "row": 1, "col": 4, "sources": [{"path": "src/notebooklm/_runtime/lifecycle.py", "line": 23, "end_line": 33, "label": "transport protocol"}]},
+    {"id": "resources", "type": "cloud", "label": "Concrete Resources", "sublabel": "Web / Android", "tag": "selected participants", "row": 1, "col": 5, "sources": [{"path": "src/notebooklm/_android/assembly.py", "line": 189, "end_line": 203, "label": "Android participants"}, {"path": "src/notebooklm/_web/assembly.py", "line": 194, "end_line": 203, "label": "Web participants"}]},
+    {"id": "workflows", "type": "frontend", "label": "Namespace Workflows", "sublabel": "await → settlement", "tag": "operation_scope", "row": 1, "col": 0, "sources": [{"path": "src/notebooklm/_chat.py", "line": 188, "end_line": 202, "label": "scope hook"}]},
+    {"id": "supervisor", "type": "backend", "label": "CallSupervisor", "sublabel": "admission · metrics", "tag": "LifecycleSupervisor satisfier", "row": 1, "col": 1, "sources": [{"path": "src/notebooklm/_runtime/call_supervisor.py", "line": 106, "end_line": 133, "label": "supervisor"}]},
+    {"id": "lease", "type": "security", "label": "OperationLease", "sublabel": "epoch + context", "tag": "generation-qualified", "row": 1, "col": 2, "sources": [{"path": "src/notebooklm/_runtime/call_supervisor.py", "line": 82, "end_line": 89, "label": "lease"}]},
+    {"id": "context", "type": "database", "label": "OperationContext", "sublabel": "deadline · task · journal", "tag": "task-local carrier", "row": 1, "col": 3, "sources": [{"path": "src/notebooklm/_runtime/operation_context.py", "line": 25, "end_line": 73, "label": "context carrier"}]}
+  ],
+  "boundaries": [
+    {"kind": "region", "label": "Web-only dispatch contract", "wraps": ["rpccaller", "executor", "webapis"]},
+    {"kind": "region", "label": "root lifecycle contracts", "wraps": ["assembly", "lifecycle", "transportcontract", "resources"]},
+    {"kind": "security-group", "label": "qualified operation", "wraps": ["supervisor", "lease", "context"]}
   ],
   "connections": [
-    { "id": "rpc-executor", "from": "rpccaller", "to": "executor", "label": "satisfied by", "variant": "emphasis" },
-    { "id": "executor-features", "from": "executor", "to": "features", "label": "injected into", "variant": "emphasis" },
-    { "id": "features-bases", "from": "features", "to": "bases", "label": "subclass" },
-    { "id": "loop-supervisor", "from": "loopguard", "to": "supervisor", "label": "satisfied by", "variant": "emphasis" },
-    { "id": "supervisor-chat", "from": "supervisor", "to": "chatapi", "label": "injected into", "variant": "emphasis" },
-    { "id": "chat-loopbound", "from": "chatapi", "to": "loopbound", "label": "mixes in" },
-    { "id": "bases-loopbound", "from": "bases", "to": "loopbound", "label": "ChatAPI only", "variant": "dashed", "labelAt": [1140.5, 202] },
-    { "id": "kernel-concrete", "from": "kernelp", "to": "kernelc", "label": "satisfied by", "variant": "emphasis" },
-    { "id": "kernel-upload", "from": "kernelc", "to": "upload", "label": "injected into", "variant": "emphasis" },
-    { "id": "upload-authmeta", "from": "upload", "to": "authmeta", "label": "declares" }
+    {"id": "rpc-executor", "from": "rpccaller", "to": "executor", "label": "satisfied by", "variant": "emphasis", "labelAt": [193, 126]},
+    {"id": "executor-webapis", "from": "executor", "to": "webapis", "label": "injected into", "variant": "emphasis", "labelAt": [368, 126]},
+    {"id": "webapis-namespaces", "from": "webapis", "to": "namespaces", "label": "implements"},
+    {"id": "assembly-lifecycle", "from": "assembly", "to": "lifecycle", "label": "freezes", "variant": "emphasis"},
+    {"id": "lifecycle-contract", "from": "lifecycle", "to": "transportcontract", "label": "calls phases"},
+    {"id": "contract-resources", "from": "transportcontract", "to": "resources", "label": "satisfied by", "variant": "emphasis", "labelAt": [893, 280]},
+    {"id": "workflows-supervisor", "from": "workflows", "to": "supervisor", "label": "enters scope", "variant": "emphasis", "labelAt": [193, 280]},
+    {"id": "supervisor-lease", "from": "supervisor", "to": "lease", "label": "yields", "variant": "emphasis"},
+    {"id": "lease-context", "from": "lease", "to": "context", "label": "exposes", "variant": "emphasis"}
   ],
   "cards": [
-    { "dot": "cyan", "title": "Narrow contracts", "items": [
-      "Web features depend on narrow capability Protocols rather than a generic Session facade",
-      "Production satisfies them structurally; no explicit registration exists"]},
-    { "dot": "violet", "title": "Where contracts live", "items": [
-      "RpcCaller and Kernel live in _web/contracts.py; LoopGuard in _runtime/contracts.py",
-      "AuthMetadata has one consumer, so it lives in that consumer's module"]},
-    { "dot": "rose", "title": "Deleted abstractions", "items": [
-      "AsyncWorkRuntime and the feature-local composite runtimes were removed",
-      "They no longer represented independently varying production dependencies"]}
+    {"dot": "cyan", "title": "Narrow capabilities", "items": ["Features receive only the collaborators they use; backend assembly records stay at the composition boundary", "Transport resources satisfy root lifecycle phases without exposing backend state to namespace contracts"]},
+    {"dot": "rose", "title": "Qualified operation", "items": ["A context joins only for the same supervisor, task, loop, and generation; nested scopes keep the earlier deadline and journal", "Shared producers clear waiter-specific state while root lifecycle still fences owned work"]}
   ]
 }
