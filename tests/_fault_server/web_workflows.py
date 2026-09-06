@@ -37,6 +37,7 @@ SCENARIOS = (
     "workflow_generation_lost_kickoff",
     "workflow_generation_terminal_failure",
     "workflow_research_import_candidates",
+    "workflow_research_import_ordered_loss",
 )
 
 
@@ -108,13 +109,13 @@ def _source_list_response(source_id: str | None = None, *, url: str = "") -> byt
     return rpc_response(_GET_NOTEBOOK.rpc_id or "", [["Notebook", sources, "nb-workflow"]])
 
 
-def _completed_research_poll() -> tuple[str, bytes, str]:
+def _completed_research_poll() -> tuple[str, bytes, tuple[str, ...]]:
     fixture = Path(__file__).parents[1] / "unit/fixtures/research_poll_task_metadata.json"
     polls = json.loads(fixture.read_text(encoding="utf-8"))["polls"]
     payload = polls[2]
     (task,) = parse_research_task_models(payload)
-    source = next(source for source in task.sources if source.url)
-    return task.task_id, rpc_response(_POLL_RESEARCH.rpc_id or "", payload), source.url
+    urls = tuple(source.url for source in task.sources if source.url)
+    return task.task_id, rpc_response(_POLL_RESEARCH.rpc_id or "", payload), urls
 
 
 async def _lost_kickoff(result: ScenarioResult) -> None:
@@ -206,7 +207,7 @@ async def _terminal_failure(result: ScenarioResult) -> None:
 
 
 async def _research_import_candidates(result: ScenarioResult) -> None:
-    task_id, poll, source_url = _completed_research_poll()
+    task_id, poll, (source_url, *_rest) = _completed_research_poll()
     server = HttpFaultServer()
     server.enqueue(_POLL_RESEARCH, Reply(body=poll))
     server.enqueue(
@@ -244,10 +245,58 @@ async def _research_import_candidates(result: ScenarioResult) -> None:
     )
 
 
+async def _research_import_ordered_loss(result: ScenarioResult) -> None:
+    task_id, poll, (first_url, second_url, *_rest) = _completed_research_poll()
+    server = HttpFaultServer()
+    server.enqueue(_POLL_RESEARCH, Reply(body=poll), Reply(body=poll))
+    server.enqueue(
+        _GET_NOTEBOOK,
+        Reply(body=_source_list_response()),
+        Reply(body=_source_list_response("imported-first", url=first_url)),
+        Reply(body=_source_list_response("candidate-second", url=second_url)),
+        Reply(body=_source_list_response("candidate-second", url=second_url)),
+    )
+    server.enqueue(
+        _IMPORT_RESEARCH,
+        Reply(body=rpc_response(_IMPORT_RESEARCH.rpc_id or "", [[["imported-first"], "First"]])),
+        Disconnect(commit_id="research-import-later"),
+    )
+    error: BaseException | None = None
+    async with _cohort(result, server) as client:
+        first = await execute_research_import(client, "nb-workflow", task_id, oneshot=False)
+        try:
+            await execute_research_import(client, "nb-workflow", task_id, oneshot=False)
+        except Exception as exc:  # first operation remains settled after the later failure
+            error = exc
+        recovered = await client.sources.list("nb-workflow")
+    candidates = tuple(getattr(error, "reconciliation_candidates", ()))
+    result.record(
+        "workflow_outcome",
+        first_imported=[entry["id"] for entry in first.imported.newly_imported],
+        later_error=None if error is None else type(error).__name__,
+        later_candidates=len(candidates),
+        recovery_ids=[source.id for source in recovered],
+    )
+    result.require(
+        "research_ordered_first_succeeds",
+        first.imported.newly_imported == [{"id": "imported-first", "title": "First"}],
+    )
+    result.require("research_ordered_later_fails", isinstance(error, NetworkError))
+    result.require(
+        "research_ordered_no_replay",
+        len([r for r in server.journal if r.route == _IMPORT_RESEARCH]) == 2,
+    )
+    result.require("research_ordered_later_candidate", candidates == ("candidate-second",))
+    result.require(
+        "research_ordered_recovery", [source.id for source in recovered] == ["candidate-second"]
+    )
+
+
 _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
     "workflow_generation_lost_kickoff": _lost_kickoff,
     "workflow_generation_terminal_failure": _terminal_failure,
     "workflow_research_import_candidates": _research_import_candidates,
+    "workflow_research_import_ordered_loss": _research_import_ordered_loss,
 }
 
 
