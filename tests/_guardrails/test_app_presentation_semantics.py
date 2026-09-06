@@ -73,7 +73,9 @@ def test_download_result_contains_semantic_failure_not_presentation_fields() -> 
     "error",
     [
         DownloadPlanValidationError("conflicting_overwrite_policy"),
-        SourceAddValidationError("internal_ip_disallowed", url="http://127.0.0.1", host="127.0.0.1"),
+        SourceAddValidationError(
+            "internal_ip_disallowed", url="http://127.0.0.1", host="127.0.0.1"
+        ),
         SourceMutationError("id_not_found", token="missing"),
         CollectionResolutionError("not_found", token="missing"),
         LabelResolutionError("not_found", notebook_id="nb", token="missing"),
