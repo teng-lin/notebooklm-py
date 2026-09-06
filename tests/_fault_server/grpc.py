@@ -31,11 +31,13 @@ SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrat
 GET_PROJECT = f"/{SERVICE}/GetProject"
 CREATE_PROJECT = f"/{SERVICE}/CreateProject"
 ADD_TENTATIVE_SOURCES = f"/{SERVICE}/AddTentativeSources"
+ADD_SOURCES = f"/{SERVICE}/AddSources"
 LIST_ARTIFACTS = f"/{SERVICE}/ListArtifacts"
 LIST_CHAT_SESSIONS = f"/{SERVICE}/ListChatSessions"
 GENERATE_STREAMED = f"/{SERVICE}/GenerateFreeFormStreamed"
 _METHOD_KINDS = {
     ADD_TENTATIVE_SOURCES: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
+    ADD_SOURCES: frozenset({"reply", "abort", "wait_reply", "wait_abort", "commit_abort"}),
     LIST_ARTIFACTS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     GET_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     CREATE_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort", "commit_abort"}),
@@ -237,6 +239,11 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                     request_deserializer=sources_pb2.AddTentativeSourcesRequest.FromString,
                     response_serializer=sources_pb2.AddTentativeSourcesResponse.SerializeToString,
                 ),
+                "AddSources": grpc.unary_unary_rpc_method_handler(
+                    self._add_sources,
+                    request_deserializer=sources_pb2.AddSourcesRequest.FromString,
+                    response_serializer=sources_pb2.AddSourcesResponse.SerializeToString,
+                ),
                 "ListArtifacts": grpc.unary_unary_rpc_method_handler(
                     self._list_artifacts,
                     request_deserializer=artifacts_pb2.ListArtifactsRequest.FromString,
@@ -345,6 +352,8 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                 return self._project("created-1", request.name)
             if method == ADD_TENTATIVE_SOURCES:
                 return sources_pb2.AddTentativeSourcesResponse()
+            if method == ADD_SOURCES:
+                return sources_pb2.AddSourcesResponse()
             if method == LIST_ARTIFACTS:
                 return artifacts_pb2.ListArtifactsResponse()
             return chat_pb2.ListChatSessionsResponse()
@@ -371,6 +380,9 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         self, request: Any, context: grpc.aio.ServicerContext
     ) -> Any:
         return await self._apply_unary(ADD_TENTATIVE_SOURCES, request, context)
+
+    async def _add_sources(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+        return await self._apply_unary(ADD_SOURCES, request, context)
 
     async def _list_artifacts(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(LIST_ARTIFACTS, request, context)
@@ -410,6 +422,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
 __all__ = [
     "ADD_TENTATIVE_SOURCES",
+    "ADD_SOURCES",
     "CREATE_PROJECT",
     "GENERATE_STREAMED",
     "GET_PROJECT",
