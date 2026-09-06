@@ -91,7 +91,7 @@ dev = [
     # Deterministic Android protobuf toolchain: grpcio-tools 1.76.0 embeds
     # libprotoc 31.1; the generated code accepts the patched 6.33.5 runtime.
     "grpcio==1.76.0",
-    "grpcio-tools==1.76.0",
+    "grpcio-tools==1.83.1",
     "protobuf==6.33.5",
     "gpsoauth>=1.1.0",
 ]
