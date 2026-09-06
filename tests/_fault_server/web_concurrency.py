@@ -68,10 +68,14 @@ async def shared_poll_last_waiter_cancelled(result: ScenarioResult) -> None:
         first.cancel()
         first_outcome = await asyncio.gather(first, return_exceptions=True)
         key = (NOTEBOOK, task_id)
-        result.require("poll_survives_first_cancel", client.artifacts._poll_registry.get(key) is not None)
+        result.require(
+            "poll_survives_first_cancel", client.artifacts._poll_registry.get(key) is not None
+        )
         second.cancel()
         second_outcome = await asyncio.gather(second, return_exceptions=True)
-        result.require("poll_survives_last_cancel", client.artifacts._poll_registry.get(key) is not None)
+        result.require(
+            "poll_survives_last_cancel", client.artifacts._poll_registry.get(key) is not None
+        )
         server.release("poll-reply")
         for _ in range(100):
             if client.artifacts._poll_registry.get(key) is None:
@@ -191,7 +195,9 @@ async def mixed_rpc_transfer_poll_progress(result: ScenarioResult) -> None:
             await server.wait_for_requests(LIST_ASSETS, 2)
             await server.wait_for_event("response_prefix")
             body_free = await client.notebooks.list()
-            result.require("mixed_body_outside_rpc_permit", [row.id for row in body_free] == ["body-free"])
+            result.require(
+                "mixed_body_outside_rpc_permit", [row.id for row in body_free] == ["body-free"]
+            )
             result.require("mixed_download_still_gated", not download.done())
             server.release("asset-body")
             downloaded, polled = await asyncio.gather(download, poll)
@@ -200,8 +206,12 @@ async def mixed_rpc_transfer_poll_progress(result: ScenarioResult) -> None:
             result.require("mixed_poll_complete", polled.is_complete)
             result.require("mixed_two_descriptor_rpcs", len(_requests(server, LIST_ASSETS)) == 2)
             result.require("mixed_recovery", [row.id for row in probe] == ["recovered"])
-            result.require("mixed_poll_registry_empty", not client.artifacts._poll_registry.active_tasks())
-            result.require("mixed_transfer_clients_empty", not client.artifacts._asset_downloads._clients)
+            result.require(
+                "mixed_poll_registry_empty", not client.artifacts._poll_registry.active_tasks()
+            )
+            result.require(
+                "mixed_transfer_clients_empty", not client.artifacts._asset_downloads._clients
+            )
     _require_clean(result, server)
 
 
@@ -297,12 +307,15 @@ async def close_mixed_load_and_reopen(result: ScenarioResult) -> None:
                 ),
             )
             result.require("close_mixed_no_queued_dispatch", len(_requests(server, READ)) == 2)
-            result.require(
-                "close_mixed_no_poll_dispatch", len(_requests(server, LIST_ASSETS)) == 1
-            )
+            result.require("close_mixed_no_poll_dispatch", len(_requests(server, LIST_ASSETS)) == 1)
             result.require("close_mixed_reopened", [row.id for row in reopened] == ["reopened"])
-            result.require("close_mixed_poll_registry_empty", not client.artifacts._poll_registry.active_tasks())
-            result.require("close_mixed_transfer_clients_empty", not client.artifacts._asset_downloads._clients)
+            result.require(
+                "close_mixed_poll_registry_empty",
+                not client.artifacts._poll_registry.active_tasks(),
+            )
+            result.require(
+                "close_mixed_transfer_clients_empty", not client.artifacts._asset_downloads._clients
+            )
     _require_clean(result, server)
 
 

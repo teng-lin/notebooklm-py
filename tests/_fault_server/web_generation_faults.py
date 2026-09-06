@@ -60,7 +60,14 @@ def _completed_poll(task_id: str) -> Reply:
         None,
         3,
         None,
-        [None, None, None, None, None, [["https://lh3.googleusercontent.com/audio", None, "audio/wav"]]],
+        [
+            None,
+            None,
+            None,
+            None,
+            None,
+            [["https://lh3.googleusercontent.com/audio", None, "audio/wav"]],
+        ],
     ]
     return Reply(body=rpc_response(_LIST_ARTIFACTS.rpc_id or "", [[artifact]]))
 
@@ -221,13 +228,18 @@ async def shared_poller_original_operation_timeout(result: ScenarioResult) -> No
         follower_status = await follower
         recovered = await client.notebooks.list()
         result.require("shared_timeout_public_error", isinstance(error, OperationTimeoutError))
-        result.require("shared_timeout_one_kickoff", sum(item.route == _CREATE_ARTIFACT for item in server.journal) == 1)
+        result.require(
+            "shared_timeout_one_kickoff",
+            sum(item.route == _CREATE_ARTIFACT for item in server.journal) == 1,
+        )
         result.require("shared_timeout_one_poll", polls_before_release == 1)
         result.require(
             "shared_timeout_follower_retains_task",
             follower_status.task_id == "task-4" and follower_status.is_complete,
         )
-        result.require("shared_timeout_registry_settled", client.artifacts._poll_registry.get(key) is None)
+        result.require(
+            "shared_timeout_registry_settled", client.artifacts._poll_registry.get(key) is None
+        )
         result.require("shared_timeout_recovery", [row.id for row in recovered] == ["recovered"])
 
 

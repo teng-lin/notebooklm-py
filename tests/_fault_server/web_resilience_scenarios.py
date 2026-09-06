@@ -372,6 +372,7 @@ async def _configured_queue_expiry_no_dispatch(result: ScenarioResult) -> None:
         max_concurrent_rpcs=1,
         operation_timeout=0.05,
     ) as client:
+
         async def hold_without_default_deadline() -> list[Any]:
             async with client.operation(timeout=None):
                 return await client.notebooks.list()
@@ -431,9 +432,7 @@ async def _retry_auth_rate_exhaustion(result: ScenarioResult) -> None:
     )
     server.enqueue(_HOME, Reply(body=homepage_response()))
     error: BaseException | None = None
-    async with _cohort(
-        result, server, timeout=10.0, server_retries=2, rate_retries=1
-    ) as client:
+    async with _cohort(result, server, timeout=10.0, server_retries=2, rate_retries=1) as client:
         try:
             await client.notebooks.list()
         except BaseException as caught:
@@ -559,9 +558,7 @@ async def _retry_auth_server_budget(result: ScenarioResult) -> None:
     result.require("shared_server_budget_error", isinstance(error, ServerError))
     result.require("shared_server_budget_three_attempts", attempts_before_recovery == 3)
     result.require("shared_server_budget_one_refresh", len(_requests(server, _HOME)) == 1)
-    result.require(
-        "shared_server_budget_recovery", [row.id for row in probe] == ["must-not-run"]
-    )
+    result.require("shared_server_budget_recovery", [row.id for row in probe] == ["must-not-run"])
     _clean(result, server, remaining=1)
 
 

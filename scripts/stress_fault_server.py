@@ -165,8 +165,10 @@ def _validate_evidence(result: ScenarioResult) -> None:
     for event in result.events:
         if event.get("kind") == "plan":
             required = event.get("required_checks", [])
-            if not required or not isinstance(required, (list, tuple)) or any(
-                not isinstance(name, str) or not name for name in required
+            if (
+                not required
+                or not isinstance(required, (list, tuple))
+                or any(not isinstance(name, str) or not name for name in required)
             ):
                 raise ValueError("invalid required check declaration")
             if set(required) - recorded.keys():

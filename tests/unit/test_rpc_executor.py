@@ -933,9 +933,9 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
         _refresh_budget: Any = None,
-            _retry_deadline: Any = None,
-            _retry_budget: Any = None,
-            _resource_epoch: int | None = None,
+        _retry_deadline: Any = None,
+        _retry_budget: Any = None,
+        _resource_epoch: int | None = None,
     ) -> dict[str, bool]:
         assert method is RPCMethod.LIST_NOTEBOOKS
         assert params == ["param"]
