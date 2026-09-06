@@ -449,6 +449,15 @@ class CallSupervisor(LoopBoundPrimitive):
                 # Keep queue-deadline behavior interpreter-independent; on
                 # Python 3.10 asyncio.TimeoutError is a distinct class.
                 raise TimeoutError from None
+        # A force-close can fence this generation while the caller is queued.
+        # Acquiring a slot after that fence must not authorize transport I/O.
+        # Return the permit locally and let the already-admitted operation
+        # settle against its retired generation.
+        if generation.state in {AdmissionState.CLOSING, AdmissionState.CLOSED}:
+            semaphore.release()
+            raise RuntimeError(
+                "NotebookLMClient operation belongs to a closing resource generation."
+            )
         return semaphore
 
     def _retain_settlement(
