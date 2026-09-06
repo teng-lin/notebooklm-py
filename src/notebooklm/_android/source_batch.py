@@ -6,7 +6,6 @@ import asyncio
 from collections.abc import Awaitable, Sequence
 from typing import Any, Protocol, TypeVar, cast
 
-from .._app.source_batch import validate_source_batch_occurrences
 from .._idempotency import (
     JournalEntry,
     OperationJournal,
@@ -16,7 +15,7 @@ from .._idempotency import (
     bind_operation_journal_entries,
     reconciliation_report,
 )
-from .._source.batch import SourceUrlBatchItem
+from .._source.batch import SourceUrlBatchItem, validate_source_batch_occurrences
 from ..exceptions import (
     AuthError,
     DecodingError,

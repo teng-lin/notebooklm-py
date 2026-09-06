@@ -28,7 +28,7 @@ from ..._idempotency import (
     reconciliation_report,
     unresolved_commit_error,
 )
-from ..._source.batch import SourceUrlBatchItem
+from ..._source.batch import SourceUrlBatchItem, validate_source_batch_occurrences
 from ..._types.enums import GrpcStatusCode, SourceStatus, normalize_rpc_code
 from ...exceptions import (
     AuthError,
@@ -598,4 +598,4 @@ class SourceBatchAddService:
         return outcomes
 
 
-__all__ = ["SourceBatchAddService", "SourceUrlBatchItem"]
+__all__ = ["SourceBatchAddService", "SourceUrlBatchItem", "validate_source_batch_occurrences"]

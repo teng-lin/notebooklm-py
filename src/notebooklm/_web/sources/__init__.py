@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from ..._app.source_batch import validate_source_batch_occurrences
 from ..._runtime.call_supervisor import CallSupervisor, OperationLease
 from ..._runtime.config import DEFAULT_MAX_CONCURRENT_UPLOADS
 from ..._sources import SourcesAPI, _TransferResult, _validate_add_text_idempotency, validate_search
@@ -39,7 +38,7 @@ from .add import (
     _validate_drive_file_id,
     honor_requested_title_if_fresh,
 )
-from .batch import SourceBatchAddService, SourceUrlBatchItem
+from .batch import SourceBatchAddService, SourceUrlBatchItem, validate_source_batch_occurrences
 from .content import SourceContentRenderer
 from .listing import SourceLister
 from .play_books import PlayBooksService

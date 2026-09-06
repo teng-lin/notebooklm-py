@@ -7,11 +7,10 @@ exception category.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import replace
 
-from ..exceptions import ValidationError
 from ..outcomes import (
+    _MAX_BATCH_OUTCOME_ITEMS,
     BatchItemOutcome,
     CommitState,
     ReconciliationReport,
@@ -23,25 +22,11 @@ __all__ = [
     "remap_source_batch_item",
     "unattempted_source_batch_item",
     "unknown_source_batch_item",
-    "validate_source_batch_occurrences",
 ]
 
-#: Max URL entries accepted by one batch add. Bounds one request's wire payload,
-#: backend work, result projection, and time in the shared source-mutation slot.
-MAX_BATCH_URLS = 20
-
-
-def validate_source_batch_occurrences(urls: Sequence[str]) -> None:
-    """Reject an oversized public batch before any backend mutation can run.
-
-    The bound applies to input occurrences, not unique URL values, because each
-    occurrence owns a distinct ordered outcome and operation-journal member.
-    """
-
-    if len(urls) > MAX_BATCH_URLS:
-        raise ValidationError(
-            f"urls must contain at most {MAX_BATCH_URLS} entries; got {len(urls)}"
-        )
+#: Max URL entries accepted by one batch add. It aliases the capacity of the
+#: canonical public ``BatchOutcome`` so admission and evidence cannot diverge.
+MAX_BATCH_URLS = _MAX_BATCH_OUTCOME_ITEMS
 
 
 def unattempted_source_batch_item(
