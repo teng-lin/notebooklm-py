@@ -322,3 +322,49 @@ capability host or reject an untrusted hop before dispatch. The strengthened Web
 legacy cancellation and uploader tests passed together: 166 tests in 2.55 seconds.
 Two concurrent decks of the new transfer/chat cases (four active cohorts) also
 passed, including exported-event scans for the synthetic credential values.
+
+
+## Implemented optional transport and connection evidence
+
+The separate `tests/_fault_server/curl_scenarios.py` registry has ten cases:
+`curl_read_recovery`, four `curl_upload_*` cases (success, prefix failure,
+commit loss, cancellation), and five `curl_download_*` cases (success, prefix
+failure, body stall, cancellation, forced close/reopen). It is selected explicitly
+with `--backend web --transport curl_cffi`; this is representative Web coverage,
+not a claim of an Android curl matrix. Portable registry imports do not require
+the optional dependency.
+
+`curl_routing.py` uses real `AsyncSession` and independent `Curl` handles through
+captured constructors. The checked-in certificate/key under
+`tests/_fault_server/fixtures/loopback-test-*.pem` are synthetic public test
+material generated with `openssl req -x509 -newkey rsa:2048 -nodes`, 100-year
+validity, and exact SANs for notebook.google.com, accounts.google.com,
+lh3.googleusercontent.com, and storage.googleapis.com. They enter only the
+per-handle CA setting. A final wildcard CONNECT_TO entry contains libcurl's own
+redirect engine within the same loopback listener; unknown TLS redirect hosts
+fail exact hostname verification against that certificate. Initial unmapped
+session and upload URLs fail before dispatch. Routing lists are freed only after
+sessions, low-level handles and observed source descriptors settle.
+
+The negative tests in `tests/unit/test_curl_fault_routing.py` exercise real TLS:
+unmapped initial destinations are refused on both paths; an unknown automatic
+redirect reaches local TLS and fails hostname validation; removing explicit test
+CA trust fails certificate validation. Peer/hostname verification remain enabled.
+These thirteen optional integration/helper tests passed on macOS with the installed
+curl extra. CI's Ubuntu lane must run the same commands; other platforms have no
+new execution claim here.
+
+`web_connections.py` adds four portable R13 cases. `connection_peer_close` and
+`connection_server_restart` first establish two public reads on one connection ID,
+then recover on a different connection using the same client and captured endpoint.
+`connection_slow_read_consumer` proves progress after releasing actual request-body
+consumption. `connection_slow_upload_consumer` reuses the upload backpressure case,
+including body prefix, incomplete consumption and bounded public settlement.
+The read consumer gate is not presented as proof of socket write backpressure.
+
+Combined portable Web, optional curl, routing, framing and construction-seam
+validation passed: 113 tests in 4.14 seconds; mypy passed all 477 source modules.
+A separate 30-case optional curl deck passed at concurrency three with per-case
+8-second watchdogs and exported-event synthetic-secret scans. Curl upload reports
+also count the actual source descriptors observed by the native READFUNCTION;
+route-list cleanup verifies those descriptors and both native handles have closed.
