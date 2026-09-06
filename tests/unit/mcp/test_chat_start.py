@@ -217,36 +217,35 @@ def _supervised_client() -> tuple[Any, CallSupervisor]:
 
 
 async def test_registry_job_timeout_includes_queue_and_prevents_dispatch() -> None:
-    registry = ChatTaskRegistry(concurrency=1, job_timeout=0.01)
+    registry = ChatTaskRegistry(concurrency=1, job_timeout=0.1)
     client, _supervisor = _supervised_client()
-    first_started = asyncio.Event()
-    second_calls = 0
+    calls = 0
 
-    async def _first() -> dict[str, Any]:
-        first_started.set()
-        await asyncio.Event().wait()
+    async def _work() -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
         return {}
 
-    async def _second() -> dict[str, Any]:
-        nonlocal second_calls
-        second_calls += 1
-        return {}
-
-    first, _ = registry.start("deadline-1", _first, client=client)
-    second, _ = registry.start("deadline-2", _second, client=client)
-    await first_started.wait()
-    assert first.task is not None and second.task is not None
-    await asyncio.gather(first.task, second.task)
-    assert isinstance(first.error, OperationTimeoutError)
-    assert isinstance(second.error, OperationTimeoutError)
-    assert second.started_at is None
-    assert second_calls == 0
+    # Hold the slot independently of another job's deadline. Two jobs accepted
+    # in succession have different deadlines, so the first may legitimately
+    # time out and release its slot before the second's deadline expires.
+    registry.set_bound_loop(asyncio.get_running_loop())
+    async with registry._gate:
+        entry, _ = registry.start("queued-deadline", _work, client=client)
+        assert entry.task is not None
+        await asyncio.wait_for(entry.task, timeout=5.0)
+    assert isinstance(entry.error, OperationTimeoutError)
+    assert entry.started_at is None
+    assert calls == 0
 
 
 async def test_registry_preserves_metadata_timeout_from_fresh_client_operation() -> None:
-    registry = ChatTaskRegistry(concurrency=1, job_timeout=0.01)
+    # Allow instrumentation/setup to enter the operation before its real timer
+    # expires: this test checks dispatched-mutation metadata, not queue expiry.
+    registry = ChatTaskRegistry(concurrency=1, job_timeout=1.0)
     client, supervisor = _supervised_client()
     observed_deadlines: list[float | None] = []
+    mutation_entered = asyncio.Event()
 
     async def _mutation() -> dict[str, Any]:
         context = current_operation_context(supervisor)
@@ -259,12 +258,19 @@ async def test_registry_preserves_metadata_timeout_from_fresh_client_operation()
         )
         assert journal_entry is not None
         journal_entry.mark_dispatched()
+        mutation_entered.set()
         await asyncio.Event().wait()
         raise AssertionError("unreachable")
 
     entry, _ = registry.start("metadata-timeout", _mutation, client=client)
     assert entry.task is not None
-    await entry.task
+    try:
+        await asyncio.wait_for(mutation_entered.wait(), timeout=5.0)
+        await asyncio.wait_for(entry.task, timeout=5.0)
+    finally:
+        if not entry.task.done():
+            entry.task.cancel()
+        await asyncio.gather(entry.task, return_exceptions=True)
 
     assert isinstance(entry.error, OperationTimeoutError)
     assert observed_deadlines == [entry.absolute_deadline]
