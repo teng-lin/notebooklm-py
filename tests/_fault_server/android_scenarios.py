@@ -17,6 +17,8 @@ from notebooklm.raw import GrpcUnaryStreamMethod
 from .android import SyntheticOAuthMinter, build_android_client
 from .android_downloads import SCENARIOS as DOWNLOAD_SCENARIOS
 from .android_downloads import run_scenario as run_download_scenario
+from .android_drive import SCENARIOS as DRIVE_SCENARIOS
+from .android_drive import run_scenario as run_drive_scenario
 from .android_resilience_scenarios import (
     IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
 )
@@ -56,7 +58,7 @@ SCENARIOS = (
     *RESILIENCE_SCENARIOS,
 )
 
-SCENARIOS = tuple(sorted((*SCENARIOS, *TRANSFER_SCENARIOS, *DOWNLOAD_SCENARIOS)))
+SCENARIOS = tuple(sorted((*SCENARIOS, *TRANSFER_SCENARIOS, *DOWNLOAD_SCENARIOS, *DRIVE_SCENARIOS)))
 
 _FAULTS = {
     "auth": ("GetProject:UNAUTHENTICATED->reply", "GetProject:UNAUTHENTICATED->UNAUTHENTICATED"),
@@ -530,6 +532,8 @@ async def run_scenario(
 ) -> ScenarioResult:
     """Run one fresh Android fault cohort and preserve its evidence trace."""
 
+    if name in DRIVE_SCENARIOS:
+        return await run_drive_scenario(name, operation_id=operation_id, result=result)
     if name in DOWNLOAD_SCENARIOS:
         return await run_download_scenario(name, operation_id=operation_id, result=result)
     if name in TRANSFER_SCENARIOS:

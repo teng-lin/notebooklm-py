@@ -485,3 +485,24 @@ def test_unhandled_background_exception_diagnostics_hide_capabilities(capsys) ->
     assert report["failures"] == ["event loop error: RuntimeError"]
     assert secret not in json.dumps(report)
     assert secret not in capsys.readouterr().err
+
+
+def test_optional_transport_selection_cannot_claim_android_coverage() -> None:
+    with pytest.raises(ValueError, match="requires --backend web"):
+        stress.RunConfig(transport="curl_cffi")
+    with pytest.raises(ValueError, match="transport must"):
+        stress.RunConfig(transport="invented")
+    config = stress.RunConfig(backend="web", transport="curl_cffi")
+    assert config.transport == "curl_cffi"
+
+
+@pytest.mark.asyncio
+async def test_missing_cleanup_cannot_be_replaced_by_unrelated_passing_check() -> None:
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        result.record("plan", faults=[name])
+        result.require("received expected result", True)
+        return result
+
+    report = await stress.run_stress(stress.RunConfig(iterations=1), {("web", "read"): scenario})
+    assert not report["summary"]["ok"]
+    assert report["operations"][0]["error"] == "ValueError"

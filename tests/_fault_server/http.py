@@ -124,6 +124,7 @@ class RequestRecord:
     body_bytes: int = 0
     body_digest: str = ""
     body_complete: bool = False
+    response_status: int | None = None
     headers: Mapping[str, str] = field(default_factory=dict)
 
     @property
@@ -517,6 +518,13 @@ class HttpFaultServer:
         writer: asyncio.StreamWriter,
         record: RequestRecord,
     ) -> None:
+        record.response_status = (
+            action.status
+            if isinstance(action, (Reply, Truncate))
+            else action.reply.status
+            if isinstance(action, Stall)
+            else None
+        )
         if isinstance(action, Reply):
             await self._write_reply(writer, action)
         elif isinstance(action, Disconnect):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from tests._fault_server.android_scenarios import SCENARIOS, run_scenario
@@ -11,7 +13,9 @@ from tests._fault_server.android_scenarios import SCENARIOS, run_scenario
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scenario", SCENARIOS)
 async def test_android_fault_scenario(scenario: str) -> None:
-    result = await run_scenario(scenario, operation_id=f"pytest-{scenario}")
+    result = await asyncio.wait_for(
+        run_scenario(scenario, operation_id=f"pytest-{scenario}"), timeout=20.0
+    )
 
     assert result.events
     assert result.checks

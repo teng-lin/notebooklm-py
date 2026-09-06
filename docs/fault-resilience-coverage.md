@@ -96,3 +96,20 @@ Each case preserves an existing destination on failure, checks the staging direc
 asserts owned clients/tasks settle, and downloads successfully again on the same client.
 Per-hop checks prove bearer removal remains sticky across a bounce and resets for the
 next download. Initial concurrent validation: 30/30 cases passed with concurrency 2.
+
+## Implemented Android Drive staging
+
+`android_drive.py` registers successful staging/import/readiness/cleanup, positively
+refused registration, ambiguous registration/import, import timeout, terminal processing
+failure, cleanup failures after success/refusal, and cancellation during stage, after stage,
+during import, and forced close. Exact multipart size/digest is independently validated
+before Drive commit; prerequisite IDs survive supported public failures. No unknown import
+causes a Drive DELETE, and no case deletes a NotebookLM source. Failed DELETE status remains
+observable without masking the primary outcome. Owned tasks settle before their input
+directory is removed.
+
+`drive_deadline_before_cleanup` combines real staging/import sockets with an explicitly
+injected instance clock for cleanup-fence arithmetic: production has a 300-second minimum
+Drive lifetime. The clock advances only after readiness reaches its server gate. This case
+does not claim real-clock deadline coverage; `drive_import_timeout` uses the actual clock
+and public RPC timeout for that separate property.

@@ -48,6 +48,7 @@ _MAX_CONCURRENCY = 64
 @dataclass(frozen=True)
 class RunConfig:
     backend: str = "both"
+    transport: str = "httpx"
     seed: int = 0
     iterations: int = 100
     concurrency: int = 4
@@ -60,6 +61,10 @@ class RunConfig:
     def __post_init__(self) -> None:
         if self.backend not in {"web", "android", "both"}:
             raise ValueError("backend must be web, android, or both")
+        if self.transport not in {"httpx", "curl_cffi"}:
+            raise ValueError("transport must be httpx or curl_cffi")
+        if self.transport == "curl_cffi" and self.backend != "web":
+            raise ValueError("the representative curl_cffi lane requires --backend web")
         for name, maximum in (("iterations", _MAX_ITERATIONS), ("concurrency", _MAX_CONCURRENCY)):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
@@ -77,11 +82,14 @@ class OperationPlan:
     scenario: str
 
 
-def load_registry(backend: str) -> dict[tuple[str, str], Scenario]:
+def load_registry(backend: str, transport: str = "httpx") -> dict[tuple[str, str], Scenario]:
     """Import only selected transports, after environment isolation is active."""
     registry: dict[tuple[str, str], Scenario] = {}
     for selected in ("web", "android") if backend == "both" else (backend,):
-        module = importlib.import_module(f"tests._fault_server.{selected}_scenarios")
+        if transport == "curl_cffi" and selected != "web":
+            raise ValueError("the representative curl_cffi lane requires --backend web")
+        module_name = "curl_scenarios" if transport == "curl_cffi" else f"{selected}_scenarios"
+        module = importlib.import_module(f"tests._fault_server.{module_name}")
         names = module.SCENARIOS
         if not isinstance(names, tuple) or not names or tuple(sorted(set(names))) != names:
             raise ValueError(f"{selected} SCENARIOS must be a nonempty sorted unique tuple")
@@ -381,6 +389,7 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend", choices=("web", "android", "both"), default="both")
+    parser.add_argument("--transport", choices=("httpx", "curl_cffi"), default="httpx")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--concurrency", type=int, default=4)
@@ -394,6 +403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = RunConfig(
             backend=args.backend,
+            transport=args.transport,
             seed=args.seed,
             iterations=args.iterations,
             concurrency=args.concurrency,
@@ -406,7 +416,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(exc))
     try:
         with isolated_environment():
-            registry = load_registry(config.backend)
+            registry = (
+                load_registry(config.backend)
+                if config.transport == "httpx"
+                else load_registry(config.backend, config.transport)
+            )
             # Validate selection before creating an event loop or opening sockets.
             build_plan(config, registry)
             if args.list_scenarios:

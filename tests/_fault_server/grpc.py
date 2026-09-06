@@ -111,6 +111,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
     _server: grpc.aio.Server | None = None
     _port: int | None = None
     _active: set[asyncio.Task[Any]] = field(default_factory=set)
+    _changed: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
     def target(self) -> str:
@@ -160,6 +161,14 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             raise AssertionError(f"unconsumed gRPC actions: {pending}")
         if self._active:
             raise AssertionError(f"active gRPC handlers leaked: {len(self._active)}")
+
+    async def wait_for_requests(self, method: str, count: int, *, timeout: float = 2.0) -> None:
+        async def wait() -> None:
+            while sum(record.method == method for record in self.requests) < count:
+                self._changed.clear()
+                await self._changed.wait()
+
+        await asyncio.wait_for(wait(), timeout)
 
     async def wait_for_idle(self, *, timeout: float = 1.0) -> None:
         async def wait() -> None:
@@ -294,6 +303,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             tuple((str(k), str(v)) for k, v in context.invocation_metadata()),
         )
         self.requests.append(recorded)
+        self._changed.set()
         return recorded
 
     async def wait_for_cancellation(self, request: GrpcRequest, *, timeout: float = 1.0) -> None:
@@ -341,7 +351,8 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                 assert action.status is not None
                 await context.abort(action.status, "synthetic fault")
             if action.response is not None:
-                return action.response
+                # Stateful fixtures may echo production-generated correlation IDs.
+                return action.response(request) if callable(action.response) else action.response
             if method == GET_PROJECT:
                 return wire_notebooks_pb2.WireGetProjectResponse(
                     project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
@@ -376,9 +387,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
     async def _create_project(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(CREATE_PROJECT, request, context)
 
-    async def _add_tentative_sources(
-        self, request: Any, context: grpc.aio.ServicerContext
-    ) -> Any:
+    async def _add_tentative_sources(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(ADD_TENTATIVE_SOURCES, request, context)
 
     async def _add_sources(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
