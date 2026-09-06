@@ -85,7 +85,7 @@ other termination paths distinct:
 | Aggregate deadline fires with no competing cancellation | `OperationTimeoutError`, including the journal snapshot captured so far |
 | Caller, `TaskGroup`, or outer timeout cancels the task | The original `asyncio.CancelledError` propagates |
 | Client generation is retired while the task unwinds | Cancellation propagates; stale work is not mislabeled as a deadline |
-| Deadline and external cancellation arrive in the same event-loop turn | External cancellation wins; on Python 3.11+ the runtime removes only its own cancellation request |
+| Deadline and external cancellation arrive in the same event-loop turn | Python 3.10 cannot count and remove individual cancellation requests, so this exact raw race is attributed to the owned deadline and surfaces as `OperationTimeoutError`. Python 3.11+ removes only the owned request and preserves the external `CancelledError`. |
 
 Code must not catch `CancelledError` and retry a mutation. Cancellation says
 why the local task stopped; `commit_state` says what is known about the remote

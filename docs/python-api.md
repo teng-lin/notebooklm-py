@@ -637,7 +637,8 @@ Mutation failures carry public `CommitState` evidence when the client can
 classify the outcome. `NOT_SENT` and `REJECTED` are the only states that permit
 an explicitly owned replay. `UNKNOWN` means the write may have committed, while
 `CONFIRMED` means a caller-correlated response proved it did. Absence of a
-`commit_state` attribute must be treated conservatively as unknown.
+`commit_state` value, including a present property that returns `None`, must be
+treated conservatively as unknown.
 
 ```python
 from notebooklm.outcomes import CommitState
@@ -645,7 +646,7 @@ from notebooklm.outcomes import CommitState
 try:
     source = await client.sources.add_url(nb_id, url)
 except Exception as exc:
-    state = getattr(exc, "commit_state", CommitState.UNKNOWN)
+    state = getattr(exc, "commit_state", None) or CommitState.UNKNOWN
     if state is CommitState.UNKNOWN:
         # Reconcile manually; do not blindly repeat the mutation.
         candidates = getattr(exc, "reconciliation_candidates", ())
@@ -673,9 +674,10 @@ dropped connection, `ValidationError` on a rejected file, or a bare
 `SourceAddError`. An existing `except ValidationError:` around `add_file()` keeps
 working unchanged — there is no new exception type to catch.
 
-To identify the retained row, read the `source_id` and `stage` attributes the
-client attaches to that exception. They are present *only* on a
-post-registration upload failure, so read them defensively:
+`source_id` and `stage` are declared on every `NotebookLMError`, but return
+`None` unless the operation has corresponding evidence. For `add_file()`, a
+non-`None` `source_id` identifies the retained row after registration, and a
+non-`None` `stage` identifies the failed upload phase. Read both defensively:
 
 ```python
 try:
@@ -692,7 +694,11 @@ except NotebookLMError as error:
 `stage` says **where** the failure happened, not whether any bytes were sent: it
 advances to `"upload_finalize"` before the body request is issued, so a
 connection that drops before the first byte still reports that stage.
-Cancellation still propagates as `CancelledError`, with no attributes attached.
+Cancellation still propagates as `CancelledError`. A direct low-level
+`add_file()` cancellation has no `source_id` or `stage` attributes. When the
+call runs inside public `client.operation()`, that outer scope may attach its
+aggregate journal metadata for adapter projection without changing the
+exception type or claiming upload-stage evidence.
 
 A raw transport failure is the one case where the raised exception is not the
 original object: an `httpx.RequestError` is normalised to a library
