@@ -19,5 +19,8 @@ async def test_web_workflow_fault_scenario(scenario: str) -> None:
 
     assert result.checks
     assert all(result.checks.values())
+    required = result.events[0]["required_checks"]
+    assert required
+    assert all(result.checks.get(check) is True for check in required)
     assert result.events[0]["kind"] == "plan"
     assert any(event["kind"] == "http_trace" for event in result.events)

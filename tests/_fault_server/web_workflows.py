@@ -25,7 +25,7 @@ from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 from notebooklm.types import ArtifactListingComponent, ArtifactLookupStatus
 
-from .common import ScenarioResult
+from .common import ScenarioFailure, ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route
 from .web import build_fault_client, list_response, rpc_response
 
@@ -56,12 +56,20 @@ async def _cohort(
 ) -> AsyncIterator[Any]:
     client = build_fault_client(server, timeout=0.5, server_error_max_retries=server_retries)
     await server.__aenter__()
-    await client.__aenter__()
+    primary: BaseException | None = None
     try:
+        await client.__aenter__()
         yield client
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
-        await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
-        await asyncio.wait_for(server.aclose(), _CLOSE_TIMEOUT)
+        close_errors: list[BaseException] = []
+        for close in (lambda: client.close(drain=False), server.aclose):
+            try:
+                await asyncio.wait_for(close(), _CLOSE_TIMEOUT)
+            except BaseException as exc:
+                close_errors.append(exc)
         result.record(
             "http_trace",
             requests=[
@@ -80,10 +88,28 @@ async def _cohort(
             active_handlers=server.active_handlers,
             server_errors=list(server.errors),
             remaining_actions=server.remaining(),
+            primary_error=None if primary is None else type(primary).__name__,
+            close_errors=[type(exc).__name__ for exc in close_errors],
         )
-        result.require("client_closed", not client._lifecycle.is_open())
-        result.require("handlers_drained", server.active_handlers == 0)
-        result.require("server_clean", not server.errors and server.remaining() == 0)
+        failed_check: ScenarioFailure | None = None
+        for label, passed in (
+            ("client_closed", not client._lifecycle.is_open()),
+            ("handlers_drained", server.active_handlers == 0),
+            ("server_clean", not server.errors and server.remaining() == 0),
+            ("closed_without_error", not close_errors),
+        ):
+            try:
+                result.require(label, passed)
+            except ScenarioFailure as exc:
+                failed_check = exc
+        for exc in close_errors:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise exc
+        if primary is None:
+            if close_errors:
+                raise close_errors[0]
+            if failed_check is not None:
+                raise failed_check
 
 
 async def _resolve_notebook(_client: Any, notebook_id: str) -> str:
@@ -439,6 +465,82 @@ _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
 }
 
 
+_REQUIRED_CHECKS: dict[str, list[str]] = {
+    "workflow_artifact_incomplete_lookup": [
+        "aggregate_baseline_complete",
+        "both_backings_decoded",
+        "client_closed",
+        "closed_without_error",
+        "exact_primary_and_secondary_reads",
+        "handlers_drained",
+        "incomplete_miss_unknown",
+        "missing_secondary_component_evidenced",
+        "positive_hit_preserved",
+        "recovery_authoritative_missing",
+        "server_clean",
+        "strict_projections_reject_incomplete_inventory",
+    ],
+    "workflow_collection_readback_failure": [
+        "client_closed",
+        "closed_without_error",
+        "collection_one_create",
+        "collection_preflight_decoded",
+        "collection_primary_confirmed",
+        "collection_readback_error",
+        "collection_readback_failed",
+        "collection_recovery",
+        "handlers_drained",
+        "server_clean",
+    ],
+    "workflow_generation_lost_kickoff": [
+        "client_closed",
+        "closed_without_error",
+        "handlers_drained",
+        "lost_kickoff_network_error",
+        "lost_kickoff_no_poll",
+        "lost_kickoff_one_commit",
+        "lost_kickoff_one_send",
+        "lost_kickoff_recovery",
+        "lost_kickoff_unconfirmed",
+        "server_clean",
+    ],
+    "workflow_generation_terminal_failure": [
+        "client_closed",
+        "closed_without_error",
+        "handlers_drained",
+        "server_clean",
+        "terminal_failure_one_kickoff",
+        "terminal_failure_one_poll",
+        "terminal_failure_recovery",
+        "terminal_failure_task_id",
+        "terminal_failure_typed_outcome",
+    ],
+    "workflow_research_import_candidates": [
+        "client_closed",
+        "closed_without_error",
+        "handlers_drained",
+        "research_import_candidate_only",
+        "research_import_committed_once",
+        "research_import_one_mutation",
+        "research_import_original_error",
+        "research_import_recovery",
+        "research_import_unconfirmed",
+        "server_clean",
+    ],
+    "workflow_research_import_ordered_loss": [
+        "client_closed",
+        "closed_without_error",
+        "handlers_drained",
+        "research_ordered_first_succeeds",
+        "research_ordered_later_candidate",
+        "research_ordered_later_fails",
+        "research_ordered_no_replay",
+        "research_ordered_recovery",
+        "server_clean",
+    ],
+}
+
+
 async def run_scenario(
     name: str, *, operation_id: str, result: ScenarioResult | None = None
 ) -> ScenarioResult:
@@ -452,6 +554,7 @@ async def run_scenario(
         cohort_ids=[f"{operation_id}:0"],
         family="R10" if name.startswith("workflow_generation") else "R11",
         budgets={"rpc_timeout_s": 0.5},
+        required_checks=_REQUIRED_CHECKS[name],
     )
     if name == "workflow_artifact_incomplete_lookup":
         result.record(

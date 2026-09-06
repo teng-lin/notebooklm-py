@@ -25,7 +25,7 @@ from notebooklm.mcp.server import create_server
 from notebooklm.server.app import create_app
 
 from .adapter_lifecycle import IMPLEMENTATIONS as _LIVE_IMPLEMENTATIONS
-from .common import ScenarioResult
+from .common import ScenarioFailure, ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route
 from .web import build_fault_client, list_response
 
@@ -73,8 +73,12 @@ async def _fault_server(
     server = HttpFaultServer()
     setup(server)
     await server.__aenter__()
+    primary: BaseException | None = None
     try:
         yield server
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
         close_error: BaseException | None = None
         try:
@@ -88,12 +92,28 @@ async def _fault_server(
             server_errors=list(server.errors),
             remaining_actions=server.remaining(),
             server_close_error=None if close_error is None else type(close_error).__name__,
+            primary_error=None if primary is None else type(primary).__name__,
         )
-        if close_error is not None:
+        failed_check: ScenarioFailure | None = None
+        for label, passed in (
+            ("server_closed_cleanly", close_error is None),
+            ("server_handlers_drained", server.active_handlers == 0),
+            ("server_had_no_errors", not server.errors),
+            ("server_plan_consumed", server.remaining() == 0),
+        ):
+            try:
+                result.require(label, passed)
+            except ScenarioFailure as exc:
+                failed_check = exc
+        # Teardown evidence must not replace the triggering error/cancellation.
+        # Process-exit exceptions always retain their interpreter-level force.
+        if isinstance(close_error, (KeyboardInterrupt, SystemExit)):
             raise close_error
-        result.require("server_handlers_drained", server.active_handlers == 0)
-        result.require("server_had_no_errors", not server.errors)
-        result.require("server_plan_consumed", server.remaining() == 0)
+        if primary is None:
+            if close_error is not None:
+                raise close_error
+            if failed_check is not None:
+                raise failed_check
 
 
 def _client_factory(
@@ -394,6 +414,165 @@ _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
 }
 
 
+_REQUIRED_CHECKS: dict[str, list[str]] = {
+    "adapter_cli_ambiguous_create": [
+        "cli_create_code",
+        "cli_create_committed_once",
+        "cli_create_exit",
+        "cli_create_hint",
+        "cli_create_preflight_decoded",
+        "cli_create_same_client_recovery",
+        "cli_create_sent_once",
+        "cli_create_unconfirmed",
+        "cli_create_unknown_commit",
+        "cli_create_worker_cleanup",
+    ],
+    "adapter_cli_transient_read": [
+        "cli_read_code",
+        "cli_read_exit",
+        "cli_read_fault_sent_once",
+        "cli_read_preflight_decoded",
+        "cli_read_same_client_recovery",
+        "cli_read_worker_cleanup",
+    ],
+    "adapter_mcp_ambiguous_create": [
+        "client_closed",
+        "expected_clients_opened",
+        "mcp_create_code",
+        "mcp_create_committed_once",
+        "mcp_create_not_retriable",
+        "mcp_create_preflight_decoded",
+        "mcp_create_recovery_decoded",
+        "mcp_create_sent_once",
+        "mcp_create_tool_error",
+        "mcp_create_unconfirmed",
+        "server_closed_cleanly",
+        "server_had_no_errors",
+        "server_handlers_drained",
+        "server_plan_consumed",
+    ],
+    "adapter_mcp_chat_start_disconnect": [
+        "accepted_client_epoch_preserved",
+        "ask_running_at_response_boundary",
+        "caller_received_start_prefix",
+        "chat_never_replayed",
+        "client_closed",
+        "detached_ask_survives_disconnect",
+        "detached_result_decoded",
+        "duplicate_attaches_to_same_job",
+        "expected_clients_opened",
+        "finite_job_budget",
+        "listener_handlers_settled",
+        "live_worker_checks_passed",
+        "live_worker_report_written",
+        "live_worker_succeeded",
+        "no_job_failure",
+        "no_pending_owned_tasks",
+        "no_unhandled_task_exceptions",
+        "one_task_accepted",
+        "same_provider_recovery",
+        "server_closed_cleanly",
+        "server_had_no_errors",
+        "server_handlers_drained",
+        "server_plan_consumed",
+        "status_pending_after_disconnect",
+        "valid_chat_baseline",
+    ],
+    "adapter_mcp_download_disconnect": [
+        "all_transfer_clients_closed",
+        "caller_received_prefix",
+        "client_closed",
+        "disconnect_finalizer_removed_spool",
+        "exact_asset_fetches",
+        "expected_clients_opened",
+        "listener_handlers_settled",
+        "live_worker_checks_passed",
+        "live_worker_report_written",
+        "live_worker_succeeded",
+        "mcp_slot_held",
+        "mcp_slot_released",
+        "no_pending_owned_tasks",
+        "no_unhandled_task_exceptions",
+        "recovery_transfer_decoded",
+        "server_closed_cleanly",
+        "server_had_no_errors",
+        "server_handlers_drained",
+        "server_plan_consumed",
+        "spool_held_during_stream",
+        "upstream_spooled_complete_before_abort",
+        "valid_transfer_baseline",
+    ],
+    "adapter_mcp_transient_read": [
+        "client_closed",
+        "expected_clients_opened",
+        "mcp_read_code",
+        "mcp_read_fault_sent_once",
+        "mcp_read_preflight_decoded",
+        "mcp_read_recovery_decoded",
+        "mcp_read_retriable",
+        "mcp_read_tool_error",
+        "server_closed_cleanly",
+        "server_had_no_errors",
+        "server_handlers_drained",
+        "server_plan_consumed",
+    ],
+    "adapter_rest_ambiguous_create": [
+        "client_closed",
+        "expected_clients_opened",
+        "rest_create_category",
+        "rest_create_committed_once",
+        "rest_create_not_retriable",
+        "rest_create_preflight_decoded",
+        "rest_create_recovery_decoded",
+        "rest_create_sent_once",
+        "rest_create_status",
+        "rest_create_unconfirmed",
+        "rest_create_unknown_commit",
+        "server_closed_cleanly",
+        "server_had_no_errors",
+        "server_handlers_drained",
+        "server_plan_consumed",
+    ],
+    "adapter_rest_download_disconnect": [
+        "all_transfer_clients_closed",
+        "caller_received_prefix",
+        "client_closed",
+        "disconnect_finalizer_removed_spool",
+        "exact_asset_fetches",
+        "expected_clients_opened",
+        "listener_handlers_settled",
+        "live_worker_checks_passed",
+        "live_worker_report_written",
+        "live_worker_succeeded",
+        "no_pending_owned_tasks",
+        "no_unhandled_task_exceptions",
+        "recovery_transfer_decoded",
+        "rest_limiter_released",
+        "server_closed_cleanly",
+        "server_had_no_errors",
+        "server_handlers_drained",
+        "server_plan_consumed",
+        "spool_held_during_stream",
+        "upstream_spooled_complete_before_abort",
+        "valid_transfer_baseline",
+    ],
+    "adapter_rest_transient_read": [
+        "client_closed",
+        "expected_clients_opened",
+        "rest_read_category",
+        "rest_read_fault_sent_once",
+        "rest_read_preflight_decoded",
+        "rest_read_recovery_decoded",
+        "rest_read_retriable",
+        "rest_read_status",
+        "server_closed_cleanly",
+        "server_had_no_errors",
+        "server_handlers_drained",
+        "server_plan_consumed",
+    ],
+}
+
+
 async def run_scenario(
     name: str,
     *,
@@ -421,7 +600,16 @@ async def run_scenario(
         adapter=adapter,
         faults=[fault],
         cohort_ids=[f"{operation_id}:0"],
-        budgets={"rpc_timeout_s": 0.5, "cleanup_timeout_s": _CLOSE_TIMEOUT},
+        budgets={
+            "rpc_timeout_s": (2 if "chat_start" in name else 1)
+            if name in _LIVE_IMPLEMENTATIONS
+            else 0.5,
+            "job_timeout_s": 3 if "chat_start" in name else None,
+            "scenario_timeout_s": 6 if name in _LIVE_IMPLEMENTATIONS else 2,
+            "cleanup_timeout_s": _CLOSE_TIMEOUT,
+        },
+        required_checks=_REQUIRED_CHECKS[name],
+
     )
     await implementation(result)
     return result
