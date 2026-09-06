@@ -96,6 +96,7 @@ class Transfer:
     expected_digest: str | None = None
     commit_id: str | None = None
     allow_abandoned_body: bool = False
+    require_session: bool = False
 
     def __post_init__(self) -> None:
         if self.prefix_bytes < 1:
@@ -228,6 +229,9 @@ class HttpFaultServer:
         self.journal: list[RequestRecord] = []
         self.committed: list[str] = []
         self.errors: list[str] = []
+        self._upload_sessions: dict[
+            tuple[str, str, str], Literal["issued", "committed", "cancelled"]
+        ] = {}
 
     @property
     def address(self) -> tuple[str, int]:
@@ -330,9 +334,9 @@ class HttpFaultServer:
             raise AssertionError("HTTP fault server errors: " + "; ".join(self.errors))
         if self._required_gates - self._observed_gates:
             raise AssertionError("unobserved required HTTP gates")
-        remaining = {route: len(actions) for route, actions in self._scripts.items() if actions}
+        remaining = sum(len(actions) for actions in self._scripts.values())
         if remaining:
-            raise AssertionError(f"unconsumed HTTP actions: {remaining!r}")
+            raise AssertionError(f"unconsumed HTTP actions: {remaining}")
 
     async def wait_for_gate(self, name: str, *, count: int = 1, timeout: float = 2.0) -> None:
         async def wait() -> None:
@@ -420,6 +424,10 @@ class HttpFaultServer:
                 self.journal.append(record)
                 expected_disconnect = isinstance(action, (Disconnect, Truncate, Stall, Transfer))
 
+                session_key: tuple[str, str, str] | None = None
+                if transfer is not None and transfer.require_session:
+                    session_key = self._require_active_upload_session(route)
+
                 async def phase(
                     name: str, record: RequestRecord = record, transfer: Transfer | None = transfer
                 ) -> bool:
@@ -481,10 +489,15 @@ class HttpFaultServer:
                             raise AssertionError("duplicate transfer commit")
                         self.committed.append(transfer.commit_id)
                         await phase("commit")
+                    if session_key is not None:
+                        self._upload_sessions[session_key] = "committed"
                     response = transfer.response
                 else:
                     response = action
                 await self._run_action(response, writer, record)
+                if isinstance(response, Reply) and 200 <= response.status < 300:
+                    self._record_upload_session(response)
+                    self._record_upload_cancellation(record)
                 await self._event("response_sent", record)
                 if not self.keep_alive or not isinstance(response, Reply):
                     break
@@ -522,6 +535,41 @@ class HttpFaultServer:
             self._writers.discard(writer)
             if record is not None:
                 await self._event("handler_settled", record)
+
+    def _require_active_upload_session(self, route: Route) -> tuple[str, str, str]:
+        if route.upload_id is None:
+            raise AssertionError("upload session required")
+        key = (route.host, route.path, route.upload_id)
+        if self._upload_sessions.get(key) != "issued":
+            raise AssertionError("upload session is not active")
+        return key
+
+    def _record_upload_session(self, reply: Reply) -> None:
+        upload_url = next(
+            (value for name, value in reply.headers.items() if name.lower() == "x-goog-upload-url"),
+            None,
+        )
+        if upload_url is None:
+            return
+        target = urlsplit(upload_url)
+        upload_ids = parse_qs(target.query, keep_blank_values=True).get("upload_id", [])
+        if target.scheme != "https" or target.hostname is None or len(upload_ids) != 1:
+            raise AssertionError("invalid upload session URL")
+        upload_id = upload_ids[0]
+        if not target.path or not upload_id:
+            raise AssertionError("invalid upload session URL")
+        self._upload_sessions[(target.hostname, target.path, upload_id)] = "issued"
+
+    def _record_upload_cancellation(self, record: RequestRecord) -> None:
+        commands = {
+            command.strip().lower()
+            for command in record.headers.get("x-goog-upload-command", "").split(",")
+        }
+        if "cancel" not in commands or record.route.upload_id is None:
+            return
+        key = (record.route.host, record.route.path, record.route.upload_id)
+        if key in self._upload_sessions:
+            self._upload_sessions[key] = "cancelled"
 
     async def _run_action(
         self,

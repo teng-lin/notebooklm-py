@@ -10,7 +10,7 @@ import pytest
 
 import tests._fault_server.web_scenarios as web_scenarios
 from tests._fault_server.common import ScenarioFailure, ScenarioResult
-from tests._fault_server.http import HttpFaultServer, LogicalHostTransport
+from tests._fault_server.http import HttpFaultServer, LogicalHostTransport, Reply
 
 
 class _FakeLifecycle:
@@ -439,3 +439,167 @@ async def test_upload_route_rejects_wrong_session_capability() -> None:
     assert "wrong-secret" not in str(server.errors)
     with pytest.raises(AssertionError, match="unexpected request"):
         server.assert_drained()
+
+
+def _upload_session_reply(upload_id: str) -> Reply:
+    return Reply(
+        headers={
+            "X-Goog-Upload-URL": (
+                "https://notebook.google.com/upload/session"
+                f"?upload_protocol=resumable&upload_id={upload_id}"
+            )
+        }
+    )
+
+
+async def test_required_upload_session_rejects_finalize_without_issued_start() -> None:
+    from tests._fault_server.http import Route, Transfer
+
+    finalize = Route("PUT", "notebook.google.com", "/upload/session", upload_id="never-issued")
+    server = HttpFaultServer()
+    server.enqueue(finalize, Transfer(require_session=True, commit_id=None))
+
+    async with server, server.client_factory() as client:
+        response = await client.put(
+            "https://notebook.google.com/upload/session?upload_id=never-issued",
+            content=b"must-not-be-consumed",
+        )
+        await server.wait_for_event("handler_settled")
+
+    assert response.status_code == 500
+    assert server.committed == []
+    assert server.journal[0].body_bytes == 0
+    assert not server.journal[0].body_complete
+
+
+async def test_required_upload_session_rejects_missing_id_before_body() -> None:
+    from tests._fault_server.http import Route, Transfer
+
+    finalize = Route("PUT", "notebook.google.com", "/upload/session")
+    server = HttpFaultServer()
+    server.enqueue(finalize, Transfer(require_session=True))
+
+    async with server, server.client_factory() as client:
+        response = await client.put(
+            "https://notebook.google.com/upload/session",
+            content=b"must-not-be-consumed",
+        )
+        await server.wait_for_event("handler_settled")
+
+    assert response.status_code == 500
+    assert server.committed == []
+    assert server.journal[0].body_bytes == 0
+    assert not server.journal[0].body_complete
+
+
+async def test_required_upload_session_rejects_wrong_issued_id() -> None:
+    from tests._fault_server.http import Route, Transfer
+
+    start = Route("POST", "notebook.google.com", "/upload/start")
+    wrong_finalize = Route(
+        "PUT", "notebook.google.com", "/upload/session", upload_id="wrong-session"
+    )
+    server = HttpFaultServer()
+    server.enqueue(start, _upload_session_reply("issued-session"))
+    server.enqueue(wrong_finalize, Transfer(require_session=True))
+
+    async with server, server.client_factory() as client:
+        assert (
+            await client.post("https://notebook.google.com/upload/start", content=b"")
+        ).status_code == 200
+        response = await client.put(
+            "https://notebook.google.com/upload/session?upload_id=wrong-session",
+            content=b"must-not-be-consumed",
+        )
+        await server.wait_for_event("handler_settled", count=2)
+
+    assert response.status_code == 500
+    assert server.committed == []
+    assert server.journal[-1].body_bytes == 0
+    assert not server.journal[-1].body_complete
+
+
+async def test_required_upload_session_rejects_duplicate_finalize() -> None:
+    import hashlib
+
+    from tests._fault_server.http import Route, Transfer
+
+    payload = b"one committed body"
+    start = Route("POST", "notebook.google.com", "/upload/start")
+    finalize = Route("PUT", "notebook.google.com", "/upload/session", upload_id="issued-session")
+    transfer = Transfer(
+        require_session=True,
+        expected_size=len(payload),
+        expected_digest=hashlib.sha256(payload).hexdigest(),
+        commit_id="first",
+    )
+    server = HttpFaultServer()
+    server.enqueue(start, _upload_session_reply("issued-session"))
+    server.enqueue(finalize, transfer, Transfer(require_session=True))
+
+    async with server, server.client_factory() as client:
+        await client.post("https://notebook.google.com/upload/start", content=b"")
+        assert (
+            await client.put(
+                "https://notebook.google.com/upload/session?upload_id=issued-session",
+                content=payload,
+            )
+        ).status_code == 200
+        duplicate = await client.put(
+            "https://notebook.google.com/upload/session?upload_id=issued-session",
+            content=b"must-not-be-consumed",
+        )
+        await server.wait_for_event("handler_settled", count=3)
+
+    assert duplicate.status_code == 500
+    assert server.committed == ["first"]
+    assert server.journal[-1].body_bytes == 0
+    assert not server.journal[-1].body_complete
+
+
+async def test_required_upload_session_rejects_cancelled_session() -> None:
+    from tests._fault_server.http import Reply, Route, Transfer
+
+    start = Route("POST", "notebook.google.com", "/upload/start")
+    session = Route("PUT", "notebook.google.com", "/upload/session", upload_id="cancelled-session")
+    server = HttpFaultServer()
+    server.enqueue(start, _upload_session_reply("cancelled-session"))
+    server.enqueue(session, Reply(), Transfer(require_session=True))
+
+    async with server, server.client_factory() as client:
+        await client.post("https://notebook.google.com/upload/start", content=b"")
+        assert (
+            await client.put(
+                "https://notebook.google.com/upload/session?upload_id=cancelled-session",
+                headers={"X-Goog-Upload-Command": "cancel"},
+            )
+        ).status_code == 200
+        finalize = await client.put(
+            "https://notebook.google.com/upload/session?upload_id=cancelled-session",
+            content=b"must-not-be-consumed",
+        )
+        await server.wait_for_event("handler_settled", count=3)
+
+    assert finalize.status_code == 500
+    assert server.committed == []
+    assert server.journal[-1].body_bytes == 0
+    assert not server.journal[-1].body_complete
+
+
+def test_assert_drained_reports_only_generic_pending_action_count() -> None:
+    from tests._fault_server.http import Route, Transfer
+
+    server = HttpFaultServer()
+    server.enqueue(
+        Route(
+            "PUT",
+            "private-upload.example.com",
+            "/capability/private-path",
+            upload_id="private-upload-id",
+        ),
+        Transfer(),
+    )
+
+    with pytest.raises(AssertionError, match=r"^unconsumed HTTP actions: 1$") as exc_info:
+        server.assert_drained()
+    assert "private" not in str(exc_info.value)
