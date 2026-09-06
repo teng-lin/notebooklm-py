@@ -17,6 +17,15 @@ from notebooklm.raw import GrpcUnaryStreamMethod
 from .android import SyntheticOAuthMinter, build_android_client
 from .android_downloads import SCENARIOS as DOWNLOAD_SCENARIOS
 from .android_downloads import run_scenario as run_download_scenario
+from .android_resilience_scenarios import (
+    IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
+)
+from .android_resilience_scenarios import (
+    PLANS as RESILIENCE_PLANS,
+)
+from .android_resilience_scenarios import (
+    SCENARIOS as RESILIENCE_SCENARIOS,
+)
 from .android_transfers import SCENARIOS as TRANSFER_SCENARIOS
 from .android_transfers import run_scenario as run_transfer_scenario
 from .common import ScenarioResult
@@ -44,6 +53,7 @@ SCENARIOS = (
     "rate_limit",
     "stream_auth",
     "unavailable",
+    *RESILIENCE_SCENARIOS,
 )
 
 SCENARIOS = tuple(sorted((*SCENARIOS, *TRANSFER_SCENARIOS, *DOWNLOAD_SCENARIOS)))
@@ -73,6 +83,7 @@ _FAULTS = {
     ),
     "unavailable": ("GetProject:UNAVAILABLE->reply", "GetProject:UNAVAILABLE exhaustion"),
 }
+_FAULTS.update(RESILIENCE_PLANS)
 
 
 def _result(name: str, operation_id: str, supplied: ScenarioResult | None) -> ScenarioResult:
@@ -535,6 +546,7 @@ async def run_scenario(
         "commit_lost_response": _commit_lost_response,
         "deadline_and_cancellation": _deadline_and_cancellation,
     }
+    handlers.update(RESILIENCE_IMPLEMENTATIONS)
     try:
         await handlers[name](evidence)
     finally:

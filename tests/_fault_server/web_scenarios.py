@@ -37,6 +37,15 @@ from .web import (
     list_response,
     rpc_response,
 )
+from .web_resilience_scenarios import (
+    IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
+)
+from .web_resilience_scenarios import (
+    PLANS as RESILIENCE_PLANS,
+)
+from .web_resilience_scenarios import (
+    SCENARIOS as RESILIENCE_SCENARIOS,
+)
 from .web_streaming import IMPLEMENTATIONS as CHAT_IMPLEMENTATIONS
 from .web_streaming import PLANS as CHAT_PLANS
 from .web_transfers import IMPLEMENTATIONS as TRANSFER_IMPLEMENTATIONS
@@ -68,6 +77,7 @@ SCENARIOS: tuple[str, ...] = tuple(
             "stalled_body",
             "truncated_body",
             "valid_read_create",
+            *RESILIENCE_SCENARIOS,
         )
     )
 )
@@ -106,6 +116,7 @@ _PLANS: dict[str, tuple[tuple[str, ...], int]] = {
     "truncated_body": (("rpc:truncated-body-x3", "retry:exhaust"), 1),
     "valid_read_create": (("read:200", "create:200"), 1),
 }
+_PLANS.update({name: (RESILIENCE_PLANS[name], 1) for name in RESILIENCE_SCENARIOS})
 
 _CLOSE_TIMEOUT = 2.0
 
@@ -586,6 +597,7 @@ _IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
     "truncated_body": _truncated_body,
     "valid_read_create": _valid_read_create,
 }
+_IMPLEMENTATIONS.update(RESILIENCE_IMPLEMENTATIONS)
 
 
 _IMPLEMENTATIONS.update(CHAT_IMPLEMENTATIONS)

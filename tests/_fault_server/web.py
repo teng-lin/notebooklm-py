@@ -39,6 +39,15 @@ def rpc_response(rpc_id: str, payload: object) -> bytes:
     return f")]}}'\n{len(chunk)}\n{chunk}\n".encode()
 
 
+def rpc_status_response(rpc_id: str, status_code: int) -> bytes:
+    """Encode a decoded-RPC status response carried by successful HTTP."""
+    chunk = json.dumps(
+        ["wrb.fr", rpc_id, None, None, None, [status_code], "generic"],
+        separators=(",", ":"),
+    )
+    return f")]}}'\n{len(chunk)}\n{chunk}\n".encode()
+
+
 def notebook_row(notebook_id: str, title: str) -> list[Any]:
     return [
         title,
@@ -158,4 +167,5 @@ __all__ = [
     "list_response",
     "notebook_row",
     "rpc_response",
+    "rpc_status_response",
 ]

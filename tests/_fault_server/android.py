@@ -51,11 +51,11 @@ class SyntheticOAuthMinter:
         assert token.email == "fault@example.test"
         assert spec == NOTEBOOKLM_OAUTH_SPEC
         self.calls += 1
-        if self.error is not None:
-            raise self.error
         if self.block_after is not None and self.calls >= self.block_after:
             assert self.release is not None
             await self.release.wait()
+        if self.error is not None:
+            raise self.error
         value = self.tokens[min(self.calls - 1, len(self.tokens) - 1)]
         return MintedOAuthToken(value, int(time.time()) + 3600)
 
