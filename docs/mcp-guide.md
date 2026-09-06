@@ -256,6 +256,12 @@ These conventions hold across every tool:
   Restricting (`public=false`) and
   `view_level`-only changes are not gated. These tools are *not* flagged `destructiveHint` — the
   gate is on the widening direction only.
+
+  Preparation and execution are separate tool invocations. The preview call resolves references,
+  returns canonical parent and target IDs, and sends no mutation. The caller may pause for human
+  review without holding a request context or client lease; a later `confirm=true` call reacquires
+  the shared client and executes with the previewed IDs. See the
+  [prepare/confirm/execute diagram](https://teng-lin.github.io/notebooklm-py/diagrams/38-adapter-prepare-confirm-execute.html).
 - **Long-running work is non-blocking.** `studio_generate` returns immediately with a `task_id`;
   poll `studio_status` until it's complete, then `studio_download`. Research is the same shape:
   `research_start` → `research_status` → `research_import`. Chat joins the family for slow
@@ -383,6 +389,8 @@ or `not_sent` evidence and the MCP result exposes that value as `commit_state`;
 continuation is never inferred from an HTTP status or error category. NotebookLM can
 admit a subset and omit rejected rows, so the client reconciles omissions with one
 `source_list(status="error")` read while keeping `results[i]` paired with `urls[i]`.
+The `input` value and any returned title are capped and credential-redacted before they reach the
+public outcome or MCP envelope; do not expect the result to echo a secret-bearing URL verbatim.
 The public single-item `sources.add_url()` path is unchanged. A transport failure is
 deliberately not replayed: an unknown subset may already have committed, so first
 reconcile with `source_list` before resubmitting. Avoid exact duplicate URLs within one batch;
@@ -480,6 +488,10 @@ download runs over stdio (`path`) or the remote signed-URL connector.
 and `report_format` (report). `cinematic-video` and `data-table` take no per-kind options. An
 option is valid only for its own kind — passing one to a different `artifact_type` is a
 validation error, not a silent no-op.
+
+The tool converts that input into one of the exact typed generation variants shared by CLI and
+REST. One neutral option table owns the per-kind choices and cross-option rules before any
+generation call is sent; the MCP layer owns only tool-schema parsing and result/error projection.
 
 ### Run deep research and import the findings
 

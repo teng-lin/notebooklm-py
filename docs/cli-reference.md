@@ -343,6 +343,12 @@ Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`,
 
 `quiz`, `flashcards`, and `revise-slide` do not accept `--language`.
 
+All generation commands construct one exact frozen request variant through the same neutral
+per-kind option table used by MCP and REST. Cross-kind options and invalid combinations are
+rejected before generation is sent. The CLI still owns its presentation contract: Click option
+spelling, progress and wait messages, text/JSON rendering, and exit codes are not embedded in the
+request, event, or outcome types.
+
 | Command | Arguments | Type-specific options | Example |
 |---------|-----------|-----------------------|---------|
 | `audio [description]` | Instructions | `--format [deep-dive\|brief\|critique\|debate]`, `--length [short\|default\|long]` | `generate audio "Focus on history"` |
