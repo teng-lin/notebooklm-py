@@ -7,9 +7,20 @@ import asyncio
 import grpc
 import pytest
 
+from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    read_pb2,
+    sources_pb2,
+)
 from tests._fault_server.android_scenarios import SCENARIOS, run_scenario
 from tests._fault_server.common import ScenarioResult
-from tests._fault_server.grpc import GENERATE_STREAMED, GET_PROJECT, GrpcAction, GrpcFaultServer
+from tests._fault_server.grpc import (
+    ADD_TENTATIVE_SOURCES,
+    GENERATE_STREAMED,
+    GET_PROJECT,
+    GrpcAction,
+    GrpcFaultServer,
+    reply,
+)
 
 
 class _LifecycleServer:
@@ -153,7 +164,9 @@ async def test_unknown_grpc_path_is_journaled_as_a_harness_failure() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unexpected_handler_exception_is_retained(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_unexpected_handler_exception_retains_only_its_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     server = GrpcFaultServer()
     server.plan(GET_PROJECT, GrpcAction("reply"))
 
@@ -170,5 +183,40 @@ async def test_unexpected_handler_exception_is_retained(monkeypatch: pytest.Monk
         finally:
             await channel.close()
 
-        with pytest.raises(AssertionError, match="synthetic handler bug"):
+        with pytest.raises(AssertionError, match="RuntimeError") as caught:
             server.assert_consumed()
+        assert "synthetic handler bug" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_tentative_source_handler_round_trips_generated_protobufs() -> None:
+    response = sources_pb2.AddTentativeSourcesResponse(
+        tentative_sources=[
+            read_pb2.Source(source_id=read_pb2.SourceId(id="source-1"), title="payload.pdf")
+        ]
+    )
+    server = GrpcFaultServer()
+    server.plan(ADD_TENTATIVE_SOURCES, reply(response))
+
+    async with server:
+        channel = grpc.aio.insecure_channel(server.target)
+        call = channel.unary_unary(
+            ADD_TENTATIVE_SOURCES,
+            request_serializer=sources_pb2.AddTentativeSourcesRequest.SerializeToString,
+            response_deserializer=sources_pb2.AddTentativeSourcesResponse.FromString,
+        )
+        try:
+            actual = await call(
+                sources_pb2.AddTentativeSourcesRequest(
+                    project_id="notebook-1",
+                    tentative_sources_metadata=[
+                        sources_pb2.TentativeSourceMetadata(name="payload.pdf")
+                    ],
+                )
+            )
+        finally:
+            await channel.close()
+        server.assert_consumed()
+
+    assert actual == response
+    assert server.requests[0].request.project_id == "notebook-1"

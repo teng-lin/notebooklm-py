@@ -20,6 +20,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     chat_pb2,
     notebooks_pb2,
     read_pb2,
+    sources_pb2,
 )
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
     notebooks_pb2 as wire_notebooks_pb2,
@@ -28,9 +29,11 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
 SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT = f"/{SERVICE}/GetProject"
 CREATE_PROJECT = f"/{SERVICE}/CreateProject"
+ADD_TENTATIVE_SOURCES = f"/{SERVICE}/AddTentativeSources"
 LIST_CHAT_SESSIONS = f"/{SERVICE}/ListChatSessions"
 GENERATE_STREAMED = f"/{SERVICE}/GenerateFreeFormStreamed"
 _METHOD_KINDS = {
+    ADD_TENTATIVE_SOURCES: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     GET_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     CREATE_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort", "commit_abort"}),
     LIST_CHAT_SESSIONS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
@@ -186,7 +189,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             # task still completes the bounded cleanup before its own deadline.
             await asyncio.gather(cleanup, return_exceptions=True)
         except BaseException as error:
-            self.handler_errors.append(f"enter cleanup failed: {type(error).__name__}: {error}")
+            self.handler_errors.append(f"enter cleanup failed: {type(error).__name__}")
 
     async def _shutdown(self) -> None:
         server = self._server
@@ -225,6 +228,11 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                     self._create_project,
                     request_deserializer=notebooks_pb2.CreateProjectRequest.FromString,
                     response_serializer=read_pb2.Project.SerializeToString,
+                ),
+                "AddTentativeSources": grpc.unary_unary_rpc_method_handler(
+                    self._add_tentative_sources,
+                    request_deserializer=sources_pb2.AddTentativeSourcesRequest.FromString,
+                    response_serializer=sources_pb2.AddTentativeSourcesResponse.SerializeToString,
                 ),
                 "ListChatSessions": grpc.unary_unary_rpc_method_handler(
                     self._list_chat_sessions,
@@ -286,7 +294,8 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         self.cancellations.append(recorded)
 
     def _record_handler_error(self, method: str, error: BaseException) -> None:
-        self.handler_errors.append(f"{method}: {type(error).__name__}: {error}")
+        del method
+        self.handler_errors.append(type(error).__name__)
 
     @staticmethod
     def _project(project_id: str = "notebook-1", title: str = "Fault notebook") -> Any:
@@ -326,6 +335,8 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                 )
             if method == CREATE_PROJECT:
                 return self._project("created-1", request.name)
+            if method == ADD_TENTATIVE_SOURCES:
+                return sources_pb2.AddTentativeSourcesResponse()
             return chat_pb2.ListChatSessionsResponse()
         except asyncio.CancelledError:
             if recorded is not None:
@@ -345,6 +356,11 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
     async def _create_project(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(CREATE_PROJECT, request, context)
+
+    async def _add_tentative_sources(
+        self, request: Any, context: grpc.aio.ServicerContext
+    ) -> Any:
+        return await self._apply_unary(ADD_TENTATIVE_SOURCES, request, context)
 
     async def _list_chat_sessions(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(LIST_CHAT_SESSIONS, request, context)
@@ -380,6 +396,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
 
 __all__ = [
+    "ADD_TENTATIVE_SOURCES",
     "CREATE_PROJECT",
     "GENERATE_STREAMED",
     "GET_PROJECT",

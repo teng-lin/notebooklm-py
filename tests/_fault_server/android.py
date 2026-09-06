@@ -11,16 +11,19 @@ from typing import Any
 from unittest.mock import patch
 
 import grpc
+import httpx
 
 from notebooklm._android import assembly as android_assembly
 from notebooklm._android.auth import NOTEBOOKLM_OAUTH_SPEC
 from notebooklm._android.session import ANDROID_GRPC_TARGET, AndroidSession
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.mint_service import MintedOAuthToken
+from notebooklm._http_client_factory import HttpClientFactories
 from notebooklm.auth import AuthTokens
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 from .grpc import GrpcFaultServer
+from .http import HttpFaultServer
 
 
 @dataclass
@@ -77,6 +80,8 @@ def build_android_client(
     rate_limit_max_retries: int = 1,
     server_error_max_retries: int = 1,
     minter: SyntheticOAuthMinter | None = None,
+    http_server: HttpFaultServer | None = None,
+    upload_timeout: float | None = None,
     sleep: Callable[[float], Awaitable[Any]] = no_sleep,
 ) -> AndroidHarness:
     """Synchronously assemble a public client with its real bearer provider.
@@ -142,6 +147,12 @@ def build_android_client(
             sleep=sleep,
             master_token_reader=SyntheticMasterTokenReader(),
             oauth_minter=selected_minter,
+            upload_timeout=(httpx.Timeout(upload_timeout) if upload_timeout is not None else None),
+            http_client_factories=(
+                HttpClientFactories(httpx=http_server.client_factory)
+                if http_server is not None
+                else None
+            ),
         )
     assert client._android_runtime is not None
     return AndroidHarness(

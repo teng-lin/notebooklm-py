@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
+from dataclasses import replace
 from functools import partial
 from typing import Any
 from unittest.mock import patch
@@ -80,6 +81,8 @@ def build_fault_client(
     timeout: float = 0.5,
     rate_limit_max_retries: int = 2,
     server_error_max_retries: int = 2,
+    max_concurrent_rpcs: int | None = 16,
+    operation_timeout: float | None = None,
     sleep: Callable[[float], Awaitable[Any]] | None = None,
 ) -> NotebookLMClient:
     """Assemble a production Web graph while varying only private test seams.
@@ -92,8 +95,17 @@ def build_fault_client(
         timeout=timeout,
         rate_limit_max_retries=rate_limit_max_retries,
         server_error_max_retries=server_error_max_retries,
+        max_concurrent_rpcs=max_concurrent_rpcs,
         backend="web",
     )
+    if operation_timeout is not None:
+        options = replace(
+            options,
+            config=replace(
+                options.config,
+                runtime=replace(options.config.runtime, operation_timeout=operation_timeout),
+            ),
+        )
     # The chain builder does not forward the legacy sleep seam to retries.
     # Supply the sleeper through the middleware's constructor during synchronous
     # assembly, restoring the binding before any concurrent cohort can run.
