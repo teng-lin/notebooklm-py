@@ -1,6 +1,6 @@
 {
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 75
+    "_DOCUMENTED_PUBLIC_IMPORTS": 76
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 156,
@@ -108,10 +108,8 @@
     "EXCLUDED_FROM_REQUIRED": 28
   },
   "tests/_guardrails/test_generation_kind_exhaustiveness.py": {
-    "EXPECTED_DURATION_HINT_BEHAVIOR": 22,
     "KIND_TO_PAYLOAD_BUILDERS": 23,
-    "LOC": 42,
-    "_EXECUTOR_RAW_ARGS": 32
+    "LOC": 42
   },
   "tests/_guardrails/test_golden_decode_coverage.py": {
     "GOLDEN_COVERAGE": 54

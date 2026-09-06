@@ -76,6 +76,7 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
         "client_rpc_call_android",
         "client_legacy_constructor_options",
         "client_legacy_from_storage_options",
+        "mcp_confirmed_name_references",
     )
     assert [field.name for field in fields(DeprecationSpec)] == [
         "key",
@@ -181,6 +182,14 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
             "notebooklm.NotebookLMClient.sources",
             "0.9.0",
             3,
+        ),
+        "mcp_confirmed_name_references": (
+            "Using a name or partial id on a confirmed MCP mutation is deprecated; pass the "
+            "canonical notebook and target ids returned by the confirmation preview. Confirmed "
+            "calls using names or partial ids will be rejected in v1.0.",
+            "notebooklm.NotebookLMClient",
+            "0.9.0",
+            4,
         ),
         "client_rpc_call_web": (
             _RPC_CALL_WEB_MESSAGE,

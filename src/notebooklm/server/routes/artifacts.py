@@ -40,7 +40,7 @@ import shutil
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeVar, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
@@ -51,12 +51,28 @@ from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
 from ..._app import download_specs as download_specs_core
 from ..._app import generate as generate_core
+from ..._app.generation_requests import UNSET, GenerationKind, build_generation_request
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
 from ...client import NotebookLMClient
 from ...exceptions import ValidationError
-from ...types import GenerationState
+from ...types import (
+    AudioFormat,
+    AudioLength,
+    GenerationState,
+    InfographicDetail,
+    InfographicOrientation,
+    InfographicStyle,
+    MindMapKind,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    SlideDeckFormat,
+    SlideDeckLength,
+    VideoFormat,
+    VideoStyle,
+)
 from .._context import get_client, get_pending, limit_download, limit_generation
 from .._errors import safe_detail
 from .._pagination import MAX_LIMIT, paginate_envelope
@@ -91,6 +107,16 @@ def _canonical_artifact_id(artifact_id: str) -> str:
 ClientDep = Annotated[NotebookLMClient, Depends(get_client)]
 PendingDep = Annotated[PendingRegistry, Depends(get_pending)]
 
+_EnumT = TypeVar("_EnumT")
+
+
+def _enum_option(
+    options: dict[str, _EnumT], values: dict[str, Any], key: str, default: _EnumT
+) -> _EnumT:
+    value = values.get(key)
+    return options.get(value, default) if isinstance(value, str) else default
+
+
 #: Generation kinds the server exposes. Mirrors the neutral ``GenerationKind``
 #: minus ``revise-slide`` (which mutates an existing deck rather than producing a
 #: fresh artifact).
@@ -109,7 +135,7 @@ GENERATE_TYPES: tuple[str, ...] = (
 
 #: Per-kind default option values (mirroring the CLI ``generate`` Choice
 #: defaults) so a bare generate request succeeds without restating every enum.
-#: ``build_generation_plan`` enum-maps + validates these.
+#: ``build_generation_request`` enum-maps + validates these.
 _KIND_DEFAULTS: dict[str, dict[str, Any]] = {
     "audio": {"audio_format": "deep-dive", "audio_length": "default"},
     "video": {"video_format": "explainer", "style": "auto"},
@@ -133,8 +159,8 @@ _KIND_DEFAULTS: dict[str, dict[str, Any]] = {
 #: * **The ``style`` collision** — ``video`` and ``infographic`` both take a
 #:   ``style`` kwarg with DIFFERENT value sets; keying by ``type`` keeps them apart.
 #: * **Wrong-kind rejection** — an option irrelevant to the chosen type (e.g.
-#:   ``orientation`` on ``quiz``) is rejected rather than silently ignored by the
-#:   neutral core (``build_generation_plan`` "picks the relevant subset").
+#:   ``orientation`` on ``quiz``) is rejected before constructing the exact typed
+#:   request variant.
 #:
 #: The literal tuples are DUPLICATED from the neutral core's private ``_*_MAP``
 #: maps (the server layer must not import the core privates — same rule the MCP
@@ -195,6 +221,38 @@ _KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
     "data-table": {},
     "mind-map": {"map_kind": ("interactive", "note-backed")},
     "report": {"report_format": ("briefing-doc", "study-guide", "blog-post", "custom")},
+}
+
+_AUDIO_FORMAT = dict(zip(_KIND_OPTIONS["audio"]["audio_format"] or (), AudioFormat, strict=True))
+_AUDIO_LENGTH = dict(zip(_KIND_OPTIONS["audio"]["audio_length"] or (), AudioLength, strict=True))
+_VIDEO_FORMAT = dict(zip(_KIND_OPTIONS["video"]["video_format"] or (), VideoFormat, strict=True))
+_VIDEO_STYLE = dict(zip(_KIND_OPTIONS["video"]["style"] or (), VideoStyle, strict=True))
+_SLIDE_FORMAT = dict(
+    zip(_KIND_OPTIONS["slide-deck"]["deck_format"] or (), SlideDeckFormat, strict=True)
+)
+_SLIDE_LENGTH = dict(
+    zip(_KIND_OPTIONS["slide-deck"]["deck_length"] or (), SlideDeckLength, strict=True)
+)
+_QUIZ_QUANTITY = dict(zip(_KIND_OPTIONS["quiz"]["quantity"] or (), QuizQuantity, strict=True))
+_QUIZ_DIFFICULTY = dict(zip(_KIND_OPTIONS["quiz"]["difficulty"] or (), QuizDifficulty, strict=True))
+_INFOGRAPHIC_ORIENTATION = dict(
+    zip(
+        _KIND_OPTIONS["infographic"]["orientation"] or (),
+        InfographicOrientation,
+        strict=True,
+    )
+)
+_INFOGRAPHIC_DETAIL = dict(
+    zip(_KIND_OPTIONS["infographic"]["detail"] or (), InfographicDetail, strict=True)
+)
+_INFOGRAPHIC_STYLE = dict(
+    zip(_KIND_OPTIONS["infographic"]["style"] or (), InfographicStyle, strict=True)
+)
+_REPORT_FORMAT = {
+    "briefing-doc": ReportFormat.BRIEFING_DOC,
+    "study-guide": ReportFormat.STUDY_GUIDE,
+    "blog-post": ReportFormat.BLOG_POST,
+    "custom": ReportFormat.CUSTOM,
 }
 
 
@@ -320,26 +378,53 @@ async def generate(
     # Treat empty / whitespace-only instructions as absent so the default request
     # shape stays byte-identical (no blank prompt slot reaches the server).
     instructions = body.instructions if (body.instructions and body.instructions.strip()) else None
-    raw_args: dict[str, Any] = dict(_KIND_DEFAULTS[body.type])
-    raw_args.update(
-        {
-            "notebook_id": notebook_id,
-            "description": instructions or "",
-            # ``mind-map`` reads ``raw_args["instructions"]`` (every other kind reads
-            # ``description``); forward BOTH so mind-map instructions actually reach
-            # the client — the extra key is ignored by the other builders.
-            "instructions": instructions,
-            "source_ids": tuple(body.source_ids or ()),
-            "language": body.language,
-            "wait": False,
-            "json_output": True,
-        }
+    defaults = {**_KIND_DEFAULTS[body.type], **overrides}
+    report_name = defaults.get("report_format", "briefing-doc")
+    if body.type == "report" and instructions and report_name == "briefing-doc":
+        report_name = "custom"
+    request = build_generation_request(
+        cast(GenerationKind, body.type),
+        notebook_id=notebook_id,
+        # The removed plan builder normalized omitted/explicit-empty source lists
+        # to the existing all-sources contract and an absent/null language to
+        # English. Keep those adapter semantics while the typed request itself can
+        # still represent omission separately for direct callers.
+        source_ids=UNSET if not body.source_ids else tuple(body.source_ids),
+        language=body.language or "en",
+        instructions=instructions,
+        audio_format=_enum_option(_AUDIO_FORMAT, defaults, "audio_format", AudioFormat.DEEP_DIVE),
+        audio_length=_enum_option(_AUDIO_LENGTH, defaults, "audio_length", AudioLength.DEFAULT),
+        video_format=_enum_option(_VIDEO_FORMAT, defaults, "video_format", VideoFormat.EXPLAINER),
+        video_style=_enum_option(_VIDEO_STYLE, defaults, "style", VideoStyle.AUTO_SELECT),
+        style_prompt=defaults.get("style_prompt"),
+        slide_format=_enum_option(
+            _SLIDE_FORMAT, defaults, "deck_format", SlideDeckFormat.DETAILED_DECK
+        ),
+        slide_length=_enum_option(_SLIDE_LENGTH, defaults, "deck_length", SlideDeckLength.DEFAULT),
+        quantity=_enum_option(_QUIZ_QUANTITY, defaults, "quantity", QuizQuantity.STANDARD),
+        difficulty=_enum_option(_QUIZ_DIFFICULTY, defaults, "difficulty", QuizDifficulty.MEDIUM),
+        orientation=_enum_option(
+            _INFOGRAPHIC_ORIENTATION,
+            defaults,
+            "orientation",
+            InfographicOrientation.LANDSCAPE,
+        ),
+        detail_level=_enum_option(
+            _INFOGRAPHIC_DETAIL, defaults, "detail", InfographicDetail.STANDARD
+        ),
+        infographic_style=_enum_option(
+            _INFOGRAPHIC_STYLE, defaults, "style", InfographicStyle.AUTO_SELECT
+        ),
+        map_kind=(
+            MindMapKind.INTERACTIVE
+            if defaults.get("map_kind", "interactive") == "interactive"
+            else MindMapKind.NOTE_BACKED
+        ),
+        report_format=_REPORT_FORMAT[report_name],
+        extra_instructions=None,
     )
-    raw_args.update(overrides)
-
-    plan = generate_core.build_generation_plan(body.type, raw_args)
     result = await generate_core.execute_generation(
-        plan,
+        request,
         client,
         notebook_resolver=passthrough_notebook_id,
         source_resolver=passthrough_source_ids,

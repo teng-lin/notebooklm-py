@@ -329,7 +329,7 @@ async def test_duplicate_returned_name_is_unconfirmed_and_unexpected_row_is_isol
     transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _duplicate
     transport.handlers[ADD_SOURCES_METHOD] = sources_pb2.AddSourcesResponse()
     transport.handlers[GET_PROJECT_METHOD] = _project(_source(SOURCE_B, url=URL_B))
-    results = await _api(transport)._add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
+    results = await _api(transport).add_urls_batch(NOTEBOOK_ID, [URL_A, URL_B])
     assert results[0].error is not None
     assert getattr(results[0].error, "unconfirmed", False) is True
     assert results[1].source is not None and results[1].source.id == SOURCE_B

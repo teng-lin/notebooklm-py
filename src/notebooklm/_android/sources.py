@@ -960,7 +960,7 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 source = await self._best_effort_title(notebook_id, source, requested_title)
             return source
 
-    async def _add_urls_batch(
+    async def add_urls_batch(
         self,
         notebook_id: str,
         urls: builtins.list[str],

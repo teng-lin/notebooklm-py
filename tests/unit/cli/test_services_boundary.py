@@ -115,7 +115,6 @@ GUARDED_PATHS = {
     "cli/services/auth_source.py": SERVICES_ROOT / "auth_source.py",
     "cli/services/confirming_mutation.py": SERVICES_ROOT / "confirming_mutation.py",
     "cli/services/download.py": SERVICES_ROOT / "download.py",
-    "cli/services/generate.py": SERVICES_ROOT / "generate.py",
     "cli/services/label_listing.py": SERVICES_ROOT / "label_listing.py",
     "cli/services/listing.py": SERVICES_ROOT / "listing.py",
     "cli/services/login/browser_accounts.py": LOGIN_ROOT / "browser_accounts.py",

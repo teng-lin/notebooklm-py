@@ -33,6 +33,10 @@ pytest.importorskip("fastmcp")
 SCHEMA_CHAR_BUDGET = (
     44_610  # total serialized inputSchema + description chars (current 44_590; +20 slack)
 )
+# P7 adds canonical-ID confirmation instructions to six existing tools and the
+# public four-state source-batch contract to ``source_add``. Tightening the
+# obsolete fatal-category prose pays for that guidance: 44_590 -> 44_219, so
+# the 44_610 ceiling is held (zero tool/budget growth; 391 chars remain).
 # #2303 adds the discrete mutating `chat_cancel` verb and a mutually exclusive
 # notebook/session mode to existing read-only `chat_status`. Their schemas and
 # the agent-facing cancellation/stream caveat move 43_386 -> 44_590 (+1_204);

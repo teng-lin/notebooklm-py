@@ -737,13 +737,8 @@ class TestLateFailureHasNoReason:
         assert status.error_code is None
 
     @pytest.mark.asyncio
-    async def test_late_failure_renders_the_generic_fallback_message(self):
-        """The reasonless poll result still gives the user *something*.
-
-        Links a late-FAILED poll to ``generate_retry.generation_outcome_from_status``,
-        whose ``or f"{artifact_type.title()} generation failed"`` fallback is the
-        only thing standing between the user and an empty error string.
-        """
+    async def test_late_failure_preserves_the_absent_semantic_reason(self):
+        """A reasonless poll stays semantic; the CLI owns its fallback message."""
         api = _make_api()
         api._list_raw = AsyncMock(return_value=[_art("task_abc", ArtifactStatus.FAILED)])
 
@@ -751,7 +746,7 @@ class TestLateFailureHasNoReason:
         outcome = generation_outcome_from_status(status, "audio")
 
         assert outcome.status == "failed"
-        assert outcome.error == "Audio generation failed"
+        assert outcome.error is None
 
     def test_a_server_reason_would_win_over_the_fallback(self):
         """The fallback is a fallback: a real reason is preferred if one exists.

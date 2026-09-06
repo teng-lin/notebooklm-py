@@ -154,6 +154,10 @@ V100_BREAKING_CHANGES: Mapping[str, BreakingChange] = MappingProxyType(
             "Remove Source.from_row",
             _spec("source_from_row", "_types/sources.py"),
         ),
+        "mcp_confirmed_name_references": BreakingChange(
+            "Reject names and partial ids on confirmed MCP mutations",
+            _spec("mcp_confirmed_name_references", "mcp/_confirm.py"),
+        ),
         "Awaiting `NotebookLMClient.from_storage(...)`::Remove awaitable factory path": BreakingChange(
             "Remove the awaitable NotebookLMClient.from_storage path",
             Runway(

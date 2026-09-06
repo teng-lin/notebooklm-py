@@ -16,7 +16,6 @@ from typing import Any, Generic, Literal, Protocol, TypeVar
 from ._lookup import unwrap_or_raise
 from ._notebook_metadata import reconcile_copy_mapping
 from ._runtime.call_supervisor import OperationLease
-from ._source.batch import SourceUrlBatchItem
 from ._source.polling import SourcePoller, SourceWaitResult, SpawnSourceChild
 from ._types.research import SourceGuide
 from .exceptions import (
@@ -27,6 +26,7 @@ from .exceptions import (
     SourceNotFoundError,
     ValidationError,
 )
+from .outcomes import SourceBatchItemOutcome
 from .types import (
     CopiedSource,
     PlayBook,
@@ -427,13 +427,26 @@ class SourcesAPI(ABC):
         """Add a URL source to a notebook."""
         raise NotImplementedError
 
+    async def add_urls_batch(
+        self,
+        notebook_id: str,
+        urls: builtins.list[str],
+    ) -> builtins.list[SourceBatchItemOutcome]:
+        """Add validated URLs once and return ordered per-input outcomes.
+
+        The returned commit states, rather than an exception category or HTTP
+        status, determine whether a member is confirmed, rejected, unknown, or
+        positively unattempted. The operation never replays the whole batch.
+        """
+        raise NotImplementedError
+
     async def _add_urls_batch(
         self,
         notebook_id: str,
         urls: builtins.list[str],
-    ) -> builtins.list[SourceUrlBatchItem]:
-        """Backend adapter seam used by the existing MCP/REST batch endpoints."""
-        raise NotImplementedError
+    ) -> builtins.list[SourceBatchItemOutcome]:
+        """Compatibility seam for pre-P7 first-party adapter callers."""
+        return await self.add_urls_batch(notebook_id, urls)
 
     @abstractmethod
     async def add_text(

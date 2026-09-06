@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 
 import pytest
@@ -604,12 +605,11 @@ def test_add_batch_stale_auth_is_top_level_401(
     assert resp.json()["error"]["category"] == "auth"
 
 
-def test_add_batch_mid_item_auth_is_top_level_401(
+def test_add_batch_mid_item_auth_uses_typed_unknown_without_status_oracle(
     authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
 ) -> None:
-    # An AUTH failure raised DURING an item's add (not the shared preflight) must
-    # propagate as a top-level 401 — NOT be folded into a per-item error and
-    # returned as a 200/201 batch envelope.
+    # A provenance-free AUTH error returned for a dispatched member is unknown.
+    # Its HTTP category is not a continuation-policy oracle.
     import pytest
 
     from notebooklm.exceptions import AuthError
@@ -625,18 +625,17 @@ def test_add_batch_mid_item_auth_is_top_level_401(
         "/v1/notebooks/nb-1/sources/batch",
         json={"urls": ["https://a.example.com", "https://b.example.com"]},
     )
-    assert resp.status_code == 401
-    assert resp.json()["error"]["category"] == "auth"
-    # It aborted — no batch envelope with per-item results.
-    assert "results" not in resp.json()
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [item["commit_state"] for item in body["results"]] == ["unknown", "unknown"]
+    assert all(item["error"]["category"] == "auth" for item in body["results"])
 
 
-def test_add_batch_transport_rate_limit_is_unconfirmed_502(
+def test_add_batch_transport_rate_limit_projects_unknown_member(
     authed_client: TestClient, fake_client: FakeClient, monkeypatch: object
 ) -> None:
-    # The typed RateLimitError still reaches Python callers, but this batch write
-    # may have committed before the response failed. REST must prevent a blind
-    # retry by projecting it as an unconfirmed, non-retriable RPC failure.
+    # The typed RateLimitError carries UNKNOWN evidence for this member. REST
+    # projects that evidence without converting an HTTP status into batch policy.
     import pytest
 
     from notebooklm.exceptions import RateLimitError
@@ -651,36 +650,30 @@ def test_add_batch_transport_rate_limit_is_unconfirmed_502(
     resp = authed_client.post(
         "/v1/notebooks/nb-1/sources/batch", json={"urls": ["https://a.example.com"]}
     )
-    assert resp.status_code == 502
-    error = resp.json()["error"]
-    assert error["category"] == "rpc"
-    assert error["unconfirmed"] is True
-    assert error["retriable"] is False
-    assert "reconcile" in error["hint"].lower()
-    assert "results" not in resp.json()
+    assert resp.status_code == 200
+    item = resp.json()["results"][0]
+    assert item["commit_state"] == "unknown"
+    assert item["error"]["category"] == "rpc"
+    assert item["error"]["unconfirmed"] is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="E9: REST re-raises a fatal batch member and discards committed siblings",
-)
 def test_e9_rest_batch_error_preserves_committed_sibling_id(
     authed_client: TestClient, fake_client: FakeClient
 ) -> None:
     from unittest.mock import AsyncMock
 
     from notebooklm._idempotency import mark_unconfirmed
-    from notebooklm._web.sources.batch import SourceUrlBatchItem
     from notebooklm.exceptions import RateLimitError
+    from notebooklm.outcomes import SourceBatchItemOutcome
 
     _seed_notebook(fake_client)
     committed = Source(id="committed-before-failure", title="Committed")
-    fatal = RateLimitError("batch response left another member unresolved")
-    mark_unconfirmed(fatal)
-    fake_client.sources._add_urls_batch = AsyncMock(
+    unresolved = RateLimitError("batch response left another member unresolved")
+    mark_unconfirmed(unresolved)
+    fake_client.sources.add_urls_batch = AsyncMock(
         return_value=[
-            SourceUrlBatchItem(url="https://a.example.com", source=committed),
-            SourceUrlBatchItem(url="https://b.example.com", error=fatal),
+            SourceBatchItemOutcome(url="https://a.example.com", source=committed),
+            SourceBatchItemOutcome(url="https://b.example.com", error=unresolved),
         ]
     )
 
@@ -689,8 +682,153 @@ def test_e9_rest_batch_error_preserves_committed_sibling_id(
         json={"urls": ["https://a.example.com", "https://b.example.com"]},
     )
 
-    assert response.status_code >= 400
-    assert "committed-before-failure" in str(response.json())
+    assert response.status_code == 201
+    results = response.json()["results"]
+    assert results[0]["source_id"] == "committed-before-failure"
+    assert results[0]["commit_state"] == "confirmed"
+    assert results[1]["commit_state"] == "unknown"
+
+
+def test_add_batch_projects_all_four_public_commit_states(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    """The REST endpoint preserves one ordered mixed four-state outcome."""
+    from unittest.mock import AsyncMock
+
+    from notebooklm.exceptions import SourceAddError
+    from notebooklm.outcomes import BatchItemOutcome, CommitState, SourceBatchItemOutcome
+
+    _seed_notebook(fake_client)
+    valid = [
+        "https://ok.example.com",
+        "https://rejected.example.com",
+        "https://unknown.example.com",
+    ]
+    rejected = SourceAddError(valid[1])
+    fake_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(
+                url=valid[0], source=Source(id="source-confirmed", title="Committed")
+            ),
+            SourceBatchItemOutcome(
+                url=valid[1],
+                error=rejected,
+                member=1,
+                outcome=BatchItemOutcome(
+                    member=1,
+                    input=valid[1],
+                    commit_state=CommitState.REJECTED,
+                    error=rejected,
+                ),
+            ),
+            SourceBatchItemOutcome(
+                url=valid[2],
+                error=SourceAddError(valid[2]),
+                member=2,
+            ),
+        ]
+    )
+
+    response = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["not a url", *valid]},
+    )
+
+    assert response.status_code == 201
+    rows = response.json()["results"]
+    assert [row["commit_state"] for row in rows] == [
+        "not_sent",
+        "confirmed",
+        "rejected",
+        "unknown",
+    ]
+    assert rows[1]["source_id"] == "source-confirmed"
+    fake_client.sources.add_urls_batch.assert_awaited_once_with("nb-1", valid)
+
+
+def test_add_batch_projection_failure_returns_all_settled_outcomes(
+    authed_client: TestClient,
+    fake_client: FakeClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The endpoint error envelope keeps committed IDs after projection fails."""
+    from unittest.mock import AsyncMock
+
+    from notebooklm.exceptions import SourceAddError
+    from notebooklm.outcomes import SourceBatchItemOutcome
+    from notebooklm.server.routes import sources as sources_route
+
+    _seed_notebook(fake_client)
+    fake_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(
+                url="https://ok.example.com",
+                source=Source(id="source-before-projection", title="Committed"),
+            ),
+            SourceBatchItemOutcome(
+                url="https://unknown.example.com",
+                error=SourceAddError("https://unknown.example.com"),
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        sources_route,
+        "_project_batch_item",
+        lambda _item: (_ for _ in ()).throw(RuntimeError("projection failed")),
+    )
+
+    response = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["https://ok.example.com", "https://unknown.example.com"]},
+    )
+
+    assert response.status_code == 500
+    batch = response.json()["error"]["batch_outcome"]
+    assert [item["commit_state"] for item in batch["items"]] == ["confirmed", "unknown"]
+    assert batch["items"][0]["resource_id"] == "source-before-projection"
+    assert batch["whole_request_retriable"] is False
+
+
+@pytest.mark.asyncio
+async def test_add_batch_projection_cancellation_retains_all_settled_outcomes(
+    fake_client: FakeClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancellation propagates unchanged with already-settled member evidence."""
+    from unittest.mock import AsyncMock
+
+    from fastapi import Response
+
+    from notebooklm.outcomes import SourceBatchItemOutcome, operation_metadata_payload
+    from notebooklm.server._pending import PendingRegistry
+    from notebooklm.server.routes import sources as sources_route
+
+    _seed_notebook(fake_client)
+    fake_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(
+                url="https://ok.example.com",
+                source=Source(id="source-before-cancel", title="Committed"),
+            )
+        ]
+    )
+    cancelled = asyncio.CancelledError("projection cancelled")
+
+    def _cancel_projection(_item: object) -> object:
+        raise cancelled
+
+    monkeypatch.setattr(sources_route, "_project_batch_item", _cancel_projection)
+    with pytest.raises(asyncio.CancelledError):
+        await sources_route.add_batch(
+            "nb-1",
+            sources_route.SourceAddBatch(urls=["https://ok.example.com"]),
+            fake_client,
+            PendingRegistry(),
+            Response(),
+        )
+
+    items = operation_metadata_payload(cancelled)["batch_outcome"]["items"]  # type: ignore[index]
+    assert items[0]["commit_state"] == "confirmed"
+    assert items[0]["resource_id"] == "source-before-cancel"
 
 
 def test_add_batch_mid_item_source_add_error_isolates_not_aborts(
@@ -698,8 +836,7 @@ def test_add_batch_mid_item_source_add_error_isolates_not_aborts(
 ) -> None:
     # A per-URL SourceAddError (bad domain) is a 4xx INPUT failure specific to the
     # one URL — it must isolate as a per-item source_add error (422 partition) while
-    # the rest of the batch proceeds, NOT abort with a misleading top-level 5xx
-    # (regression for #1905; the same shared classifier the MCP tool uses).
+    # the rest of the batch proceeds, without consulting HTTP status policy.
     import pytest
 
     from notebooklm.exceptions import SourceAddError

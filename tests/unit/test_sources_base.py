@@ -177,10 +177,10 @@ async def test_add_file_rejects_blank_title_before_the_upload_hook(title: str) -
 
 
 @pytest.mark.asyncio
-async def test_batch_adapter_seam_is_typed_nonabstract_and_unsupported_by_default() -> None:
-    assert "_add_urls_batch" not in SourcesAPI.__abstractmethods__
+async def test_public_batch_capability_is_typed_nonabstract_and_unsupported_by_default() -> None:
+    assert "add_urls_batch" not in SourcesAPI.__abstractmethods__
     with pytest.raises(NotImplementedError):
-        await _ConcreteSources([])._add_urls_batch("nb_1", ["https://example.com"])
+        await _ConcreteSources([]).add_urls_batch("nb_1", ["https://example.com"])
 
 
 @pytest.mark.asyncio

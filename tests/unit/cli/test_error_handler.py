@@ -750,3 +750,79 @@ def test_ordinary_errors_keep_their_typed_branch_code(capsys):
     data = json.loads(capsys.readouterr().out)
     assert data["code"] == "RATE_LIMITED"
     assert "unconfirmed" not in data
+
+
+def _four_state_batch_error() -> NetworkError:
+    from notebooklm._idempotency import attach_batch_outcome
+    from notebooklm.outcomes import (
+        BatchItemOutcome,
+        BatchOutcome,
+        CommitState,
+        ReconciliationReport,
+    )
+
+    return attach_batch_outcome(
+        NetworkError("lost after dispatch at /home/alice/private.log"),
+        BatchOutcome(
+            items=(
+                BatchItemOutcome(
+                    member=0,
+                    input="https://ok.example",
+                    commit_state=CommitState.CONFIRMED,
+                    resource_id="source-confirmed",
+                ),
+                BatchItemOutcome(
+                    member=1,
+                    input="https://bad.example",
+                    commit_state=CommitState.REJECTED,
+                ),
+                BatchItemOutcome(
+                    member=2,
+                    input="https://unknown.example?access_token=top-secret",
+                    commit_state=CommitState.UNKNOWN,
+                    reconciliation=ReconciliationReport(
+                        unresolved_inputs=("/home/alice/private.log",),
+                        reason="readback inconclusive",
+                    ),
+                ),
+                BatchItemOutcome(
+                    member=3,
+                    input="ftp://not-sent.example",
+                    commit_state=CommitState.NOT_SENT,
+                ),
+            )
+        ),
+    )
+
+
+def test_cli_json_error_projects_public_four_state_batch_progress(capsys) -> None:
+    with pytest.raises(SystemExit) as raised, handle_errors(json_output=True):
+        raise _four_state_batch_error()
+
+    assert raised.value.code == 1
+    payload = json.loads(capsys.readouterr().out)
+    items = payload["batch_outcome"]["items"]
+    assert [item["commit_state"] for item in items] == [
+        "confirmed",
+        "rejected",
+        "unknown",
+        "not_sent",
+    ]
+    assert items[0]["resource_id"] == "source-confirmed"
+    serialized = json.dumps(payload)
+    assert "top-secret" not in serialized
+    assert "/home/alice" not in serialized
+    assert payload["batch_outcome"]["whole_request_retriable"] is False
+
+
+def test_cli_text_error_projects_batch_progress_and_exit_policy(capsys) -> None:
+    with pytest.raises(SystemExit) as raised, handle_errors(json_output=False):
+        raise _four_state_batch_error()
+
+    assert raised.value.code == 1
+    rendered = capsys.readouterr().err
+    assert "source-confirmed" in rendered
+    assert '"commit_state":"confirmed"' in rendered
+    assert '"commit_state":"unknown"' in rendered
+    assert "top-secret" not in rendered
+    assert "/home/alice" not in rendered

@@ -888,7 +888,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 60,
+            "root": 59,
             "runtime": 8,
             "types": 16
           },
@@ -977,7 +977,6 @@
             "notebooklm._settings",
             "notebooklm._sharing",
             "notebooklm._source",
-            "notebooklm._source.batch",
             "notebooklm._source.polling",
             "notebooklm._sources",
             "notebooklm._types",
@@ -2227,7 +2226,7 @@
           },
           "module_counts": {
             "auth": 32,
-            "root": 60,
+            "root": 59,
             "runtime": 8,
             "types": 16
           },
@@ -2316,7 +2315,6 @@
             "notebooklm._settings",
             "notebooklm._sharing",
             "notebooklm._source",
-            "notebooklm._source.batch",
             "notebooklm._source.polling",
             "notebooklm._sources",
             "notebooklm._types",
@@ -2957,7 +2955,7 @@
       "module_counts": {
         "android": 4,
         "auth": 32,
-        "root": 60,
+        "root": 59,
         "runtime": 8,
         "types": 16
       },
@@ -3050,7 +3048,6 @@
         "notebooklm._settings",
         "notebooklm._sharing",
         "notebooklm._source",
-        "notebooklm._source.batch",
         "notebooklm._source.polling",
         "notebooklm._sources",
         "notebooklm._types",
@@ -3088,7 +3085,7 @@
     "client_reexport": {
       "module_counts": {
         "auth": 32,
-        "root": 60,
+        "root": 59,
         "runtime": 8,
         "types": 16
       },
@@ -3177,7 +3174,6 @@
         "notebooklm._settings",
         "notebooklm._sharing",
         "notebooklm._source",
-        "notebooklm._source.batch",
         "notebooklm._source.polling",
         "notebooklm._sources",
         "notebooklm._types",
@@ -3215,7 +3211,7 @@
     "legacy_client_attribute": {
       "module_counts": {
         "auth": 32,
-        "root": 60,
+        "root": 59,
         "runtime": 8,
         "types": 16,
         "web": 3
@@ -3305,7 +3301,6 @@
         "notebooklm._settings",
         "notebooklm._sharing",
         "notebooklm._source",
-        "notebooklm._source.batch",
         "notebooklm._source.polling",
         "notebooklm._sources",
         "notebooklm._types",
@@ -3346,7 +3341,7 @@
     "package": {
       "module_counts": {
         "auth": 32,
-        "root": 60,
+        "root": 59,
         "runtime": 8,
         "types": 16
       },
@@ -3435,7 +3430,6 @@
         "notebooklm._settings",
         "notebooklm._sharing",
         "notebooklm._source",
-        "notebooklm._source.batch",
         "notebooklm._source.polling",
         "notebooklm._sources",
         "notebooklm._types",
@@ -3473,7 +3467,7 @@
     "raw_module": {
       "module_counts": {
         "auth": 32,
-        "root": 60,
+        "root": 59,
         "runtime": 8,
         "types": 16
       },
@@ -3562,7 +3556,6 @@
         "notebooklm._settings",
         "notebooklm._sharing",
         "notebooklm._source",
-        "notebooklm._source.batch",
         "notebooklm._source.polling",
         "notebooklm._sources",
         "notebooklm._types",
@@ -3600,7 +3593,7 @@
     "web_raw_api": {
       "module_counts": {
         "auth": 32,
-        "root": 60,
+        "root": 59,
         "rpc": 3,
         "runtime": 8,
         "types": 16,
@@ -3691,7 +3684,6 @@
         "notebooklm._settings",
         "notebooklm._sharing",
         "notebooklm._source",
-        "notebooklm._source.batch",
         "notebooklm._source.polling",
         "notebooklm._sources",
         "notebooklm._types",

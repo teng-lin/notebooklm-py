@@ -18,6 +18,9 @@ _MACHINERY = {
     "Awaiting NotebookLMClient.from_storage(...) is deprecated": "awaitable factory warning",
     "pre-profiles home-root layout": "pre-profiles storage warning",
     "NotebookMetadata.modified_at is deprecated": "metadata rename warning",
+    'warn_registered_deprecation("mcp_confirmed_name_references")': (
+        "confirmed MCP name-reference warning"
+    ),
 }
 
 

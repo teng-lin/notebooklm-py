@@ -10,8 +10,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from ._redact import redact
+
+if TYPE_CHECKING:
+    from .types import Source
 
 _MAX_TEXT = 200
 _MAX_COLLECTION = 20
@@ -134,6 +138,85 @@ class BatchItemOutcome:
             self.resource_id is not None or self.reconciliation is not None
         ):
             raise ValueError("rejected and unattempted outcomes cannot claim a resource")
+
+
+@dataclass(frozen=True)
+class SourceBatchItemOutcome:
+    """One ordered result from :meth:`SourcesAPI.add_urls_batch`.
+
+    ``outcome`` is the canonical continuation contract. ``source`` is present
+    only when the backend returned a confirmed resource handle; failures retain
+    their typed exception without asking an adapter to infer safety from an
+    HTTP status or exception category.
+    """
+
+    url: str
+    source: Source | None = None
+    error: BaseException | None = field(default=None, repr=False, compare=False)
+    member: int = 0
+    outcome: BatchItemOutcome | None = None
+
+    def __post_init__(self) -> None:
+        if (self.source is None) == (self.error is None):
+            raise ValueError("exactly one of source or error must be set")
+        if self.member < 0:
+            raise ValueError("member must be non-negative")
+        if self.outcome is None:
+            metadata = getattr(self.error, "operation_metadata", None)
+            state = (
+                CommitState.CONFIRMED
+                if self.source is not None
+                else metadata.commit_state
+                if metadata is not None and metadata.commit_state is not None
+                else CommitState.UNKNOWN
+            )
+            object.__setattr__(
+                self,
+                "outcome",
+                BatchItemOutcome(
+                    member=self.member,
+                    input=self.url,
+                    commit_state=state,
+                    resource_id=(
+                        self.source.id
+                        if self.source is not None
+                        else metadata.source_id
+                        if metadata is not None and metadata.source_id is not None
+                        else metadata.known_resource_ids[0]
+                        if metadata is not None and metadata.known_resource_ids
+                        else None
+                    ),
+                    error=self.error,
+                    reconciliation=(
+                        (
+                            ReconciliationReport(
+                                unresolved_inputs=(self.url,),
+                                reason="batch member commit could not be correlated",
+                            )
+                            if metadata is None or metadata.reconciliation is None
+                            else metadata.reconciliation
+                        )
+                        if state is CommitState.UNKNOWN
+                        else None
+                    ),
+                ),
+            )
+        assert self.outcome is not None
+        if self.outcome.member != self.member:
+            raise ValueError("source batch item must match its canonical member outcome")
+        if self.outcome.commit_state is CommitState.CONFIRMED:
+            if self.source is None or self.error is not None:
+                raise ValueError("confirmed source batch outcomes require only a source")
+            if self.source.id != self.outcome.resource_id:
+                raise ValueError("confirmed source id must match the canonical outcome")
+        elif self.source is not None:
+            raise ValueError("unconfirmed source batch outcomes cannot expose a source")
+
+    @property
+    def input(self) -> str:
+        """Return the adapter-neutral input spelling."""
+
+        return self.url
 
 
 @dataclass(frozen=True)
@@ -260,11 +343,7 @@ def _wire_metadata(metadata: OperationMetadata) -> dict[str, object]:
 def operation_metadata_payload(exc: BaseException | None) -> dict[str, object]:
     """Return the bounded adapter projection for a library exception carrier."""
 
-    from .exceptions import NotebookLMError
-
-    if not isinstance(exc, NotebookLMError):
-        return {}
-    metadata = exc.operation_metadata
+    metadata = getattr(exc, "operation_metadata", None) or getattr(exc, "_operation_metadata", None)
     return {} if metadata is None else _wire_metadata(metadata)
 
 
@@ -289,4 +368,5 @@ __all__ = [
     "ReconciliationCandidate",
     "ReconciliationReport",
     "RecoveryAction",
+    "SourceBatchItemOutcome",
 ]

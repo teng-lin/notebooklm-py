@@ -1078,7 +1078,7 @@ def test_kind_options_match_core_maps() -> None:
     CLI/MCP boundary forbids importing them at runtime). Pin them equal so they can't
     silently drift — the parity tests only exercise valid values and would miss a
     *subset* drift (MCP wrongly rejecting a value the core accepts)."""
-    from notebooklm._app import generate_plans as gp
+    from notebooklm.cli import generate_cmd as gp
     from notebooklm.mcp.tools.studio import _KIND_OPTIONS
 
     assert _KIND_OPTIONS["audio"]["audio_format"] == tuple(gp._AUDIO_FORMAT_MAP)
@@ -2068,6 +2068,28 @@ async def test_studio_delete_confirm_false_preview_shape(mcp_call, mock_client) 
     mock_client.notes.delete.assert_not_called()
 
 
+async def test_studio_delete_preview_canonical_target_survives_title_replacement(
+    mcp_call, mock_client
+) -> None:
+    original = _completed_artifact(_ART_FULL, "Podcast")
+    replacement = _completed_artifact("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "Podcast")
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[original])
+    mock_client.mind_maps.list_note_backed = AsyncMock(return_value=[])
+    mock_client.artifacts.delete = AsyncMock()
+
+    preview = await mcp_call("studio_delete", {"notebook": NB_ID, "item": "Podcast"})
+    assert preview.structured_content["preview"]["item_id"] == _ART_FULL
+    mock_client.artifacts.list.return_value = [replacement]
+
+    confirmed = await mcp_call(
+        "studio_delete", {"notebook": NB_ID, "item": _ART_FULL, "confirm": True}
+    )
+    assert confirmed.structured_content["item_id"] == _ART_FULL
+    assert "deprecation" not in confirmed.structured_content
+    mock_client.artifacts.delete.assert_awaited_once_with(NB_ID, _ART_FULL)
+
+
 async def test_studio_delete_note_routes_to_note_delete(mcp_call, mock_client) -> None:
     """A resolved NOTE deletes via the note core (never the artifact delete RPC)."""
     mock_client.notes.list = AsyncMock(
@@ -2108,6 +2130,11 @@ async def test_studio_delete_artifact_routes_to_artifact_delete(mcp_call, mock_c
         "item_id": _ART_FULL,
         "type": "audio",
         "was_note_backed": False,
+        "deprecation": (
+            "Using a name or partial id on a confirmed MCP mutation is deprecated; "
+            "pass the canonical notebook and target ids returned by the confirmation preview. "
+            "Confirmed calls using names or partial ids will be rejected in v1.0."
+        ),
     }
     mock_client.artifacts.delete.assert_awaited_once_with(NB_ID, _ART_FULL)
     mock_client.notes.delete.assert_not_called()
@@ -2255,6 +2282,20 @@ async def test_strict_studio_delete_title_rejected_without_listing(
     assert "NOTEBOOKLM_MCP_STRICT_IDS" in str(excinfo.value)
     mock_client.notes.list.assert_not_called()
     mock_client.artifacts.list.assert_not_called()
+
+
+async def test_strict_studio_delete_parent_name_rejected_before_item_lists(
+    _strict_ids, mcp_call, mock_client
+) -> None:
+    mock_client.artifacts.delete = AsyncMock()
+    with pytest.raises(ToolError, match="NOTEBOOKLM_MCP_STRICT_IDS"):
+        await mcp_call(
+            "studio_delete", {"notebook": "Notebook", "item": _ART_FULL, "confirm": True}
+        )
+    mock_client.notebooks.list.assert_not_called()
+    mock_client.notes.list.assert_not_called()
+    mock_client.artifacts.list.assert_not_called()
+    mock_client.artifacts.delete.assert_not_called()
 
 
 async def test_strict_studio_rename_title_rejected_without_listing(

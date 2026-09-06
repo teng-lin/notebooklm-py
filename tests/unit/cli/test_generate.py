@@ -1328,7 +1328,7 @@ class TestOutputGenerationOutcomeDirect:
     def test_json_completed_with_url(self):
         outcome = GenerationOutcome(
             status="completed",
-            artifact_type="audio",
+            kind="audio",
             task_id="task_123",
             url="https://example.com/audio.mp3",
         )
@@ -1339,9 +1339,7 @@ class TestOutputGenerationOutcomeDirect:
         )
 
     def test_json_failed(self):
-        outcome = GenerationOutcome(
-            status="failed", artifact_type="audio", error="Something went wrong"
-        )
+        outcome = GenerationOutcome(status="failed", kind="audio", error="Something went wrong")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1351,7 +1349,7 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Something went wrong", "GENERATION_FAILED", True, 1)
 
     def test_json_failed_no_error_message(self):
-        outcome = GenerationOutcome(status="failed", artifact_type="audio")
+        outcome = GenerationOutcome(status="failed", kind="audio")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1361,7 +1359,7 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", True, 1)
 
     def test_json_pending_with_task_id(self):
-        outcome = GenerationOutcome(status="pending", artifact_type="audio", task_id="task_456")
+        outcome = GenerationOutcome(status="pending", kind="audio", task_id="task_456")
         with patch.object(self.generate_module, "json_output_response") as mock_json:
             self.generate_module._output_generation_outcome(outcome, json_output=True)
         mock_json.assert_called_once_with({"task_id": "task_456", "status": "pending"})
@@ -1369,7 +1367,7 @@ class TestOutputGenerationOutcomeDirect:
     def test_text_completed_with_url(self):
         outcome = GenerationOutcome(
             status="completed",
-            artifact_type="audio",
+            kind="audio",
             task_id="task_123",
             url="https://example.com/audio.mp3",
         )
@@ -1380,15 +1378,13 @@ class TestOutputGenerationOutcomeDirect:
         )
 
     def test_text_completed_without_url(self):
-        outcome = GenerationOutcome(status="completed", artifact_type="audio", task_id="task_123")
+        outcome = GenerationOutcome(status="completed", kind="audio", task_id="task_123")
         with patch.object(self.generate_module, "console") as mock_console:
             self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once_with("[green]Audio ready[/green]")
 
     def test_text_failed(self):
-        outcome = GenerationOutcome(
-            status="failed", artifact_type="audio", error="Transcription error"
-        )
+        outcome = GenerationOutcome(status="failed", kind="audio", error="Transcription error")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1398,7 +1394,7 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Transcription error", "GENERATION_FAILED", False, 1)
 
     def test_text_failed_no_error_message(self):
-        outcome = GenerationOutcome(status="failed", artifact_type="audio")
+        outcome = GenerationOutcome(status="failed", kind="audio")
         with (
             patch.object(self.generate_module, "output_error") as mock_err,
             pytest.raises(SystemExit),
@@ -1408,14 +1404,14 @@ class TestOutputGenerationOutcomeDirect:
         mock_err.assert_called_once_with("Audio generation failed", "GENERATION_FAILED", False, 1)
 
     def test_text_pending_with_task_id(self):
-        outcome = GenerationOutcome(status="pending", artifact_type="audio", task_id="task_789")
+        outcome = GenerationOutcome(status="pending", kind="audio", task_id="task_789")
         with patch.object(self.generate_module, "console") as mock_console:
             self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once_with("[yellow]Started:[/yellow] task_789")
 
     def test_text_pending_without_task_id_shows_raw_status(self):
         raw_status = object()
-        outcome = GenerationOutcome(status="pending", artifact_type="audio", raw_status=raw_status)
+        outcome = GenerationOutcome(status="pending", kind="audio", raw_status=raw_status)
         with patch.object(self.generate_module, "console") as mock_console:
             self.generate_module._output_generation_outcome(outcome, json_output=False)
         mock_console.print.assert_called_once()

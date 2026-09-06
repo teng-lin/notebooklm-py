@@ -88,6 +88,7 @@ _REGISTERED_SPEC_KEYS = frozenset(
         "client_legacy_from_storage_options",
         "collection_from_api_response",
         "label_from_api_response",
+        "mcp_confirmed_name_references",
         "notebook_from_api_response",
         "share_status_from_api_response",
         "shared_user_from_api_response",

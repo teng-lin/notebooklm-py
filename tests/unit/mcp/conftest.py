@@ -72,20 +72,19 @@ def mock_client() -> MagicMock:
     for namespace in _NAMESPACES:
         setattr(client, namespace, MagicMock())
 
-    from notebooklm._web.sources.batch import SourceUrlBatchItem
+    from notebooklm.outcomes import SourceBatchItemOutcome
 
-    async def _batch_add(notebook_id: str, urls: list[str]) -> list[SourceUrlBatchItem]:
+    async def _batch_add(notebook_id: str, urls: list[str]) -> list[SourceBatchItemOutcome]:
         """Adapter-test seam: model typed batch outcomes through mocked add_url.
 
         Production reaches the real one-RPC ``SourcesAPI._add_urls_batch``;
         this keeps existing tool tests focused on their JSON contract while
         dedicated source-batch service tests pin the wire call count/shape.
         """
-        from notebooklm._app.source_batch import batch_item_is_fatal
         from notebooklm._idempotency import mark_unconfirmed
         from notebooklm.exceptions import NetworkError, RateLimitError, ServerError
 
-        outcomes: list[SourceUrlBatchItem] = []
+        outcomes: list[SourceBatchItemOutcome] = []
         for url in urls:
             try:
                 source = await client.sources.add_url(notebook_id, url)
@@ -95,14 +94,13 @@ def mock_client() -> MagicMock:
                 # projected as non-retriable RPC, not as NETWORK / 429 / 5xx.
                 if isinstance(exc, (NetworkError, RateLimitError, ServerError)):
                     mark_unconfirmed(exc)
-                if batch_item_is_fatal(exc):
-                    raise
-                outcomes.append(SourceUrlBatchItem(url=url, error=exc))  # type: ignore[arg-type]
+                outcomes.append(SourceBatchItemOutcome(url=url, error=exc))
             else:
-                outcomes.append(SourceUrlBatchItem(url=url, source=source))
+                outcomes.append(SourceBatchItemOutcome(url=url, source=source))
         return outcomes
 
-    client.sources._add_urls_batch = AsyncMock(side_effect=_batch_add)
+    client.sources.add_urls_batch = AsyncMock(side_effect=_batch_add)
+    client.sources._add_urls_batch = client.sources.add_urls_batch
     # `_app.download.execute_download` probes `client.artifacts._list_for_download`
     # (the #1488 raw-rows fast path). A bare MagicMock auto-vivifies it as a
     # truthy, non-awaitable attr; pin it to None so download tests exercise the

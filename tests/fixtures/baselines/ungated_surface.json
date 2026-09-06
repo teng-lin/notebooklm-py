@@ -258,7 +258,8 @@
     "OperationMetadata",
     "ReconciliationCandidate",
     "ReconciliationReport",
-    "RecoveryAction"
+    "RecoveryAction",
+    "SourceBatchItemOutcome"
   ],
   "notebooklm.options": [
     "AndroidBackendConfig",

@@ -515,6 +515,7 @@ button (`mattooltip='Close source view'`).
 ### RPC: ADD_SOURCE (izAoDd) - URL
 
 **Sources:** `_web/sources/add.py::SourceAddService.add_url_source()` (single item),
+`SourcesAPI.add_urls_batch()` backed by
 `_web/sources/batch.py::SourceBatchAddService.add_urls()` (true batch)
 
 ```python
@@ -527,12 +528,14 @@ params = [
 ]
 ```
 
-The existing MCP `source_add(urls=[...])` and REST `/sources/batch` endpoints
-put multiple URL specs in `params[0]` and issue this RPC once. `AddSources` is
+The public Python method plus the existing MCP `source_add(urls=[...])` and REST
+`/sources/batch` endpoints put multiple URL specs in `params[0]` and issue this RPC once. `AddSources` is
 per-item rather than atomic: successful Source rows remain in request order,
 while failed entries are silently omitted unless every entry fails (then the
 RPC raises). The adapters reconcile omissions with an ERROR-status source list
-and restore positional result rows. This true-batch path disables transport
+and restore positional `SourceBatchItemOutcome` rows. Each row carries explicit
+confirmed/rejected/unknown/not-sent evidence; adapters do not derive continuation
+policy from an HTTP status or exception category. This true-batch path disables transport
 retries because a timeout leaves the committed subset unknown; the ordinary
 single-item `sources.add_url()` path also sends its mutation once and surfaces
 an unknown outcome without automatic replay.

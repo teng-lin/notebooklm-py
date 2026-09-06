@@ -9,6 +9,7 @@ reaching the tool, the confirm preview-then-delete flow, and error projection.
 from __future__ import annotations
 
 import asyncio
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -21,6 +22,7 @@ pytest.importorskip("fastmcp")
 from fastmcp.exceptions import ToolError  # noqa: E402 - after importorskip guard
 
 from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
+    NetworkError,
     NotebookNotFoundError,
     RPCError,
 )
@@ -318,9 +320,52 @@ async def test_notebook_delete_confirm_preview_then_delete(mcp_call, mock_client
     assert preview.structured_content["preview"]["notebook_id"] == NB2_ID
     mock_client.notebooks.delete.assert_not_called()
 
-    confirmed = await mcp_call("notebook_delete", {"notebook": "Target", "confirm": True})
+    # The title is reassigned before confirmation. Submitting the preview's
+    # canonical id still deletes the reviewed notebook without re-listing.
+    mock_client.notebooks.list.return_value = [
+        FakeNotebook(id=NB_ID, title="Target"),
+        FakeNotebook(id=NB2_ID, title="Renamed"),
+    ]
+    confirmed = await mcp_call("notebook_delete", {"notebook": NB2_ID, "confirm": True})
     assert confirmed.structured_content == {"status": "deleted", "notebook_id": NB2_ID}
     mock_client.notebooks.delete.assert_awaited_once_with(NB2_ID)
+    assert mock_client.notebooks.list.await_count == 2
+
+
+async def test_notebook_delete_confirmed_legacy_name_warns_after_success(
+    mcp_call, mock_client
+) -> None:
+    mock_client.notebooks.list = AsyncMock(return_value=[FakeNotebook(id=NB2_ID, title="Target")])
+    mock_client.notebooks.delete = AsyncMock(return_value=None)
+
+    confirmed = await mcp_call("notebook_delete", {"notebook": "Target", "confirm": True})
+
+    assert "deprecation" in confirmed.structured_content
+    mock_client.notebooks.delete.assert_awaited_once_with(NB2_ID)
+
+
+async def test_notebook_delete_failed_legacy_name_does_not_warn(mcp_call, mock_client) -> None:
+    mock_client.notebooks.list = AsyncMock(return_value=[FakeNotebook(id=NB2_ID, title="Target")])
+    mock_client.notebooks.delete = AsyncMock(side_effect=NetworkError("boom"))
+
+    with warnings.catch_warnings(record=True) as caught, pytest.raises(ToolError):
+        warnings.simplefilter("always")
+        await mcp_call("notebook_delete", {"notebook": "Target", "confirm": True})
+
+    assert not [item for item in caught if issubclass(item.category, DeprecationWarning)]
+
+
+async def test_strict_notebook_delete_name_rejected_before_list_or_mutation(
+    monkeypatch, mcp_call, mock_client
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_MCP_STRICT_IDS", "1")
+    mock_client.notebooks.delete = AsyncMock()
+
+    with pytest.raises(ToolError, match="NOTEBOOKLM_MCP_STRICT_IDS"):
+        await mcp_call("notebook_delete", {"notebook": "Target", "confirm": True})
+
+    mock_client.notebooks.list.assert_not_called()
+    mock_client.notebooks.delete.assert_not_called()
 
 
 async def test_notebook_describe_not_found_projects_tool_error(mcp_call, mock_client) -> None:

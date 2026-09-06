@@ -246,11 +246,14 @@ These conventions hold across every tool:
   `studio_download`'s `artifact_id`; the `source_list(label=…)` name filter is out of scope.)
 - **Destructive tools need confirmation.** `notebook_delete`, `source_delete`,
   `studio_delete`, and `share_remove_user` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
-  (with the resolved title) and delete **nothing**; call again with `confirm=true` to execute.
+  containing canonical parent/target IDs (plus display titles where applicable) and delete **nothing**;
+  re-submit those IDs with `confirm=true`. Confirmed names remain compatible in v0.9 but warn and
+  return a `deprecation` note; v1 rejects them. A confirmed subset is allowed.
 - **Sharing-widening tools need confirmation too.** `share_set_user` (every grant/regrade) and
   `share_set_access` when it would widen link access (`public=true` on a currently-restricted
   notebook) take `confirm` (default `false`) and return a `needs_confirmation` preview instead of
-  mutating; call again with `confirm=true` to apply. Restricting (`public=false`) and
+  mutating; re-submit the preview's canonical `notebook_id` with `confirm=true` to apply.
+  Restricting (`public=false`) and
   `view_level`-only changes are not gated. These tools are *not* flagged `destructiveHint` — the
   gate is on the widening direction only.
 - **Long-running work is non-blocking.** `studio_generate` returns immediately with a `task_id`;
@@ -365,8 +368,8 @@ source_add(notebook="Quantum Computing", urls=[
     "https://www.youtube.com/watch?v=...",
 ])
 # → {"notebook_id": ..., "added": 2, "failed": 0,
-#    "results": [{"input": "https://arxiv.org/abs/2401.00001", "status": "added", "source_id": ..., "title": ...},
-#                {"input": "https://www.youtube.com/watch?v=...", "status": "added", "source_id": ..., "title": ...}]}
+#    "results": [{"input": "https://arxiv.org/abs/2401.00001", "status": "added", "commit_state": "confirmed", "source_id": ..., "title": ...},
+#                {"input": "https://www.youtube.com/watch?v=...", "status": "added", "commit_state": "confirmed", "source_id": ..., "title": ...}]}
 ```
 
 Batch mode is URL-only (a non-URL entry is reported as a per-item `VALIDATION`
@@ -375,12 +378,14 @@ error, never added as text); `source_type`/`url`/`text`/`title`/`path`/
 applies to every entry.
 
 Validated URLs share one batch-capable `ADD_SOURCE` RPC rather than issuing one
-write per item. NotebookLM can admit a subset and omit rejected rows from that
-response, so the client reconciles omissions with one `source_list(status="error")`
-read while keeping `results[i]` paired with `urls[i]`. The public single-item
-`sources.add_url()` path is unchanged. A transport failure is deliberately not
-replayed: an unknown subset may already have committed, so first reconcile with
-`source_list` before resubmitting. Avoid exact duplicate URLs within one batch;
+write per item. The public client returns ordered `confirmed`, `rejected`, `unknown`,
+or `not_sent` evidence and the MCP result exposes that value as `commit_state`;
+continuation is never inferred from an HTTP status or error category. NotebookLM can
+admit a subset and omit rejected rows, so the client reconciles omissions with one
+`source_list(status="error")` read while keeping `results[i]` paired with `urls[i]`.
+The public single-item `sources.add_url()` path is unchanged. A transport failure is
+deliberately not replayed: an unknown subset may already have committed, so first
+reconcile with `source_list` before resubmitting. Avoid exact duplicate URLs within one batch;
 if the backend admits only some identical copies, it returns no request positions
 with which to disambiguate them and the call fails closed with the same guidance.
 

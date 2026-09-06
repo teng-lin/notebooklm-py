@@ -3,12 +3,9 @@
 Thin adapters over the transport-neutral artifact cores:
 
 * ``studio_list`` reads ``client.artifacts.list`` directly (like ``source_list``).
-* ``studio_generate`` is a hybrid over the neutral ``generate`` core: it builds a
-  :class:`~notebooklm._app.generate.GenerationPlan` via ``build_generation_plan``
-  (which enum-maps + validates the per-kind options) and drives
-  ``execute_generation`` with **pass-through** notebook/source resolvers (MCP has
-  already resolved the notebook id and supplies full source ids). Each ``type``
-  routes to the matching ``client.artifacts.generate_*`` method.
+* ``studio_generate`` constructs one frozen per-kind generation request and drives
+  the neutral ``execute_generation`` core with already-resolved notebook/source
+  IDs. Each ``type`` routes to the matching ``client.artifacts.generate_*`` method.
 * ``studio_status`` is the **stateless** poll path (``_app.artifacts.poll_artifact``
   → ``client.artifacts.poll_status``) so an agent can poll a ``task_id`` across
   separate tool calls without holding server state.
@@ -24,7 +21,7 @@ from the canonical neutral ``_app.download_specs`` registry through
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from fastmcp import Context
 
@@ -32,6 +29,7 @@ from ..._app import artifacts as artifact_core
 from ..._app import download as download_core
 from ..._app import generate as generate_core
 from ..._app import notes as note_core
+from ..._app.generation_requests import UNSET, build_generation_request
 from ..._app.language import is_supported_language
 from ..._app.resolve import FULL_ID_PATTERN
 from ..._app.serialize import to_jsonable
@@ -47,8 +45,29 @@ from ...exceptions import (
     ServerError,
     ValidationError,
 )
+from ...types import (
+    AudioFormat,
+    AudioLength,
+    InfographicDetail,
+    InfographicOrientation,
+    InfographicStyle,
+    MindMapKind,
+    QuizDifficulty,
+    QuizQuantity,
+    ReportFormat,
+    SlideDeckFormat,
+    SlideDeckLength,
+    VideoFormat,
+    VideoStyle,
+)
 from .._coerce import coerce_list
-from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
+from .._confirm import (
+    DESTRUCTIVE,
+    READ_ONLY,
+    confirmed_name_deprecation,
+    needs_confirmation,
+    with_confirmation_deprecation,
+)
 from .._context import get_client, get_file_transfer
 from .._errors import mcp_errors
 from .._paginate import DEFAULT_LIMIT, paginate
@@ -82,10 +101,20 @@ from ._studio_payloads import _artifact_rename_payload, _generation_payload
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
 
+_EnumT = TypeVar("_EnumT")
+
+
+def _enum_option(
+    options: dict[str, _EnumT], values: dict[str, Any], key: str, default: _EnumT
+) -> _EnumT:
+    value = values.get(key)
+    return options.get(value, default) if isinstance(value, str) else default
+
+
 #: Per-kind default option values mirroring the CLI ``generate`` Click ``Choice``
 #: defaults, so a bare ``studio_generate(notebook, type=…)`` succeeds without
 #: the agent restating every enum. The agent can override any of these by passing
-#: the matching keyword; ``build_generation_plan`` enum-maps + validates them.
+#: the matching keyword; ``build_generation_request`` enum-maps + validates them.
 _KIND_DEFAULTS: dict[str, dict[str, Any]] = {
     "audio": {"audio_format": "deep-dive", "audio_length": "default"},
     "video": {"video_format": "explainer", "style": "auto"},
@@ -111,9 +140,7 @@ _KIND_DEFAULTS: dict[str, dict[str, Any]] = {
 #:   kwarg but with DIFFERENT choice sets (overlapping only on ``auto``/``anime``/
 #:   ``kawaii``); keying choices by ``artifact_type`` keeps them apart.
 #: * **Wrong-kind rejection** — an option valid for some other kind (e.g. ``orientation``
-#:   passed to ``quiz``) is rejected here, because the neutral core silently *ignores*
-#:   irrelevant extras (``build_generation_plan`` "picks the relevant subset"), which
-#:   would otherwise be a confusing silent no-op for an agent.
+#:   passed to ``quiz``) is rejected here before constructing the exact typed variant.
 #:
 #: The literal choice tuples are DUPLICATED from the neutral core's private ``_*_MAP``
 #: maps (MCP must not import them — the CLI/MCP boundary rule); a guardrail test pins
@@ -174,6 +201,38 @@ _KIND_OPTIONS: dict[str, dict[str, tuple[str, ...] | None]] = {
     "data-table": {},
     "mind-map": {"map_kind": ("interactive", "note-backed")},
     "report": {"report_format": ("briefing-doc", "study-guide", "blog-post", "custom")},
+}
+
+_AUDIO_FORMAT = dict(zip(_KIND_OPTIONS["audio"]["audio_format"] or (), AudioFormat, strict=True))
+_AUDIO_LENGTH = dict(zip(_KIND_OPTIONS["audio"]["audio_length"] or (), AudioLength, strict=True))
+_VIDEO_FORMAT = dict(zip(_KIND_OPTIONS["video"]["video_format"] or (), VideoFormat, strict=True))
+_VIDEO_STYLE = dict(zip(_KIND_OPTIONS["video"]["style"] or (), VideoStyle, strict=True))
+_SLIDE_FORMAT = dict(
+    zip(_KIND_OPTIONS["slide-deck"]["deck_format"] or (), SlideDeckFormat, strict=True)
+)
+_SLIDE_LENGTH = dict(
+    zip(_KIND_OPTIONS["slide-deck"]["deck_length"] or (), SlideDeckLength, strict=True)
+)
+_QUIZ_QUANTITY = dict(zip(_KIND_OPTIONS["quiz"]["quantity"] or (), QuizQuantity, strict=True))
+_QUIZ_DIFFICULTY = dict(zip(_KIND_OPTIONS["quiz"]["difficulty"] or (), QuizDifficulty, strict=True))
+_INFOGRAPHIC_ORIENTATION = dict(
+    zip(
+        _KIND_OPTIONS["infographic"]["orientation"] or (),
+        InfographicOrientation,
+        strict=True,
+    )
+)
+_INFOGRAPHIC_DETAIL = dict(
+    zip(_KIND_OPTIONS["infographic"]["detail"] or (), InfographicDetail, strict=True)
+)
+_INFOGRAPHIC_STYLE = dict(
+    zip(_KIND_OPTIONS["infographic"]["style"] or (), InfographicStyle, strict=True)
+)
+_REPORT_FORMAT = {
+    "briefing-doc": ReportFormat.BRIEFING_DOC,
+    "study-guide": ReportFormat.STUDY_GUIDE,
+    "blog-post": ReportFormat.BLOG_POST,
+    "custom": ReportFormat.CUSTOM,
 }
 
 
@@ -487,26 +546,69 @@ def register(mcp: Any) -> None:
             resolved_source_ids = (
                 await resolve_sources(client, nb_id, source_ids) if source_ids else None
             )
-            raw_args: dict[str, Any] = dict(_KIND_DEFAULTS[artifact_type])
-            raw_args.update(
-                {
-                    "notebook_id": nb_id,
-                    "description": instructions or "",
-                    # ``mind-map`` reads ``raw_args["instructions"]`` (every other kind
-                    # reads ``description``); set it so mind-map instructions actually
-                    # reach the client — the extra key is ignored by the other builders.
-                    "instructions": instructions or None,
-                    "source_ids": tuple(resolved_source_ids or ()),
-                    "language": language,
-                    "wait": False,
-                    "json_output": True,
-                }
+            defaults = {**_KIND_DEFAULTS[artifact_type], **overrides}
+            normalized_instructions = instructions or None
+            report_name = defaults.get("report_format", "briefing-doc")
+            if (
+                artifact_type == "report"
+                and normalized_instructions
+                and report_name == "briefing-doc"
+            ):
+                report_name = "custom"
+            request = build_generation_request(
+                artifact_type,
+                notebook_id=nb_id,
+                source_ids=(UNSET if resolved_source_ids is None else tuple(resolved_source_ids)),
+                # The removed plan builder normalized an omitted MCP language to the
+                # same default as the CLI resolver.  Keep that adapter contract while
+                # still preserving explicit unset semantics inside the typed request.
+                language=language or "en",
+                instructions=normalized_instructions,
+                audio_format=_enum_option(
+                    _AUDIO_FORMAT, defaults, "audio_format", AudioFormat.DEEP_DIVE
+                ),
+                audio_length=_enum_option(
+                    _AUDIO_LENGTH, defaults, "audio_length", AudioLength.DEFAULT
+                ),
+                video_format=_enum_option(
+                    _VIDEO_FORMAT, defaults, "video_format", VideoFormat.EXPLAINER
+                ),
+                video_style=_enum_option(_VIDEO_STYLE, defaults, "style", VideoStyle.AUTO_SELECT),
+                # The artifact API has historically received these optional values as
+                # explicit ``None`` from both CLI and MCP, rather than omission.
+                style_prompt=defaults.get("style_prompt"),
+                slide_format=_enum_option(
+                    _SLIDE_FORMAT, defaults, "deck_format", SlideDeckFormat.DETAILED_DECK
+                ),
+                slide_length=_enum_option(
+                    _SLIDE_LENGTH, defaults, "deck_length", SlideDeckLength.DEFAULT
+                ),
+                quantity=_enum_option(_QUIZ_QUANTITY, defaults, "quantity", QuizQuantity.STANDARD),
+                difficulty=_enum_option(
+                    _QUIZ_DIFFICULTY, defaults, "difficulty", QuizDifficulty.MEDIUM
+                ),
+                orientation=_enum_option(
+                    _INFOGRAPHIC_ORIENTATION,
+                    defaults,
+                    "orientation",
+                    InfographicOrientation.LANDSCAPE,
+                ),
+                detail_level=_enum_option(
+                    _INFOGRAPHIC_DETAIL, defaults, "detail", InfographicDetail.STANDARD
+                ),
+                infographic_style=_enum_option(
+                    _INFOGRAPHIC_STYLE, defaults, "style", InfographicStyle.AUTO_SELECT
+                ),
+                map_kind=(
+                    MindMapKind.INTERACTIVE
+                    if defaults.get("map_kind", "interactive") == "interactive"
+                    else MindMapKind.NOTE_BACKED
+                ),
+                report_format=_REPORT_FORMAT[report_name],
+                extra_instructions=None,
             )
-            raw_args.update(overrides)
-
-            plan = generate_core.build_generation_plan(artifact_type, raw_args)
             result = await generate_core.execute_generation(
-                plan,
+                request,
                 client,
                 notebook_resolver=passthrough_notebook_id,
                 source_resolver=_passthrough_sources,
@@ -908,8 +1010,8 @@ def register(mcp: Any) -> None:
         hard-removing it — Google may garbage collect it later).
 
         Two-step confirmation: with ``confirm=False`` (default) it returns a
-        ``needs_confirmation`` preview of the resolved item without deleting; call
-        again with ``confirm=True`` to perform the delete. Deleting an already-absent
+        ``needs_confirmation`` preview without deleting; re-submit its canonical
+        ``notebook_id``/``item_id`` with ``confirm=True``. Deleting an already-absent
         full id is idempotent (no error) — it routes down the artifact path (a
         present note would have been found in the list).
         """
@@ -942,13 +1044,16 @@ def register(mcp: Any) -> None:
                         }
                     )
                 was_note_backed = await artifact_core.delete_artifact(client, nb_id, item)
-                return {
-                    "status": "deleted",
-                    "notebook_id": nb_id,
-                    "item_id": item,
-                    "type": "mind-map" if was_note_backed else "unknown",
-                    "was_note_backed": was_note_backed,
-                }
+                return with_confirmation_deprecation(
+                    {
+                        "status": "deleted",
+                        "notebook_id": nb_id,
+                        "item_id": item,
+                        "type": "mind-map" if was_note_backed else "unknown",
+                        "was_note_backed": was_note_backed,
+                    },
+                    confirmed_name_deprecation(notebook, item),
+                )
             if not confirm:
                 return needs_confirmation(
                     {
@@ -961,20 +1066,26 @@ def register(mcp: Any) -> None:
                 )
             if resolved.type == "note":
                 await note_core.execute_note_delete(client, nb_id, resolved.item_id)
-                return {
+                return with_confirmation_deprecation(
+                    {
+                        "status": "deleted",
+                        "notebook_id": nb_id,
+                        "item_id": resolved.item_id,
+                        "type": "note",
+                        # Always present for a stable wire shape (a text note is never a
+                        # note-backed mind-map artifact).
+                        "was_note_backed": False,
+                    },
+                    confirmed_name_deprecation(notebook, item),
+                )
+            was_note_backed = await artifact_core.delete_artifact(client, nb_id, resolved.item_id)
+            return with_confirmation_deprecation(
+                {
                     "status": "deleted",
                     "notebook_id": nb_id,
                     "item_id": resolved.item_id,
-                    "type": "note",
-                    # Always present for a stable wire shape (a text note is never a
-                    # note-backed mind-map artifact).
-                    "was_note_backed": False,
-                }
-            was_note_backed = await artifact_core.delete_artifact(client, nb_id, resolved.item_id)
-            return {
-                "status": "deleted",
-                "notebook_id": nb_id,
-                "item_id": resolved.item_id,
-                "type": resolved.type,
-                "was_note_backed": was_note_backed,
-            }
+                    "type": resolved.type,
+                    "was_note_backed": was_note_backed,
+                },
+                confirmed_name_deprecation(notebook, item),
+            )

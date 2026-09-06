@@ -11,6 +11,12 @@ from fastapi.testclient import TestClient
 
 from notebooklm._app.generate import GenerationExecutionResult
 from notebooklm._app.generate_retry import GenerationOutcome
+from notebooklm._app.generation_requests import (
+    UNSET,
+    AudioGenerationRequest,
+    ReportGenerationRequest,
+    VideoGenerationRequest,
+)
 from notebooklm._types.artifacts import GenerationState
 from notebooklm.server._pending import PendingRegistry
 from notebooklm.server.routes import artifacts as artifacts_route
@@ -47,6 +53,57 @@ def test_generate_valid_body_still_202(authed_client: TestClient) -> None:
         json={"type": "audio", "instructions": "Keep it short", "language": "en"},
     )
     assert resp.status_code == 202
+
+
+@pytest.mark.parametrize(
+    "body,request_type,source_ids,language",
+    [
+        ({"type": "audio"}, AudioGenerationRequest, UNSET, "en"),
+        ({"type": "audio", "source_ids": []}, AudioGenerationRequest, UNSET, "en"),
+        (
+            {"type": "audio", "source_ids": ["source-1"], "language": "fr"},
+            AudioGenerationRequest,
+            ("source-1",),
+            "fr",
+        ),
+        ({"type": "video"}, VideoGenerationRequest, UNSET, "en"),
+        ({"type": "report"}, ReportGenerationRequest, UNSET, "en"),
+    ],
+)
+def test_generate_builds_typed_requests_with_preserved_rest_defaults(
+    authed_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    body: dict[str, object],
+    request_type: type[object],
+    source_ids: object,
+    language: str,
+) -> None:
+    """REST normalizes transport defaults before constructing the typed union."""
+    captured: list[object] = []
+
+    async def execute(request, *_args, **_kwargs):
+        captured.append(request)
+        return GenerationExecutionResult(
+            kind=request.kind,
+            generation=GenerationOutcome(status="pending", kind=request.kind, task_id="task-1"),
+        )
+
+    monkeypatch.setattr(artifacts_route.generate_core, "execute_generation", execute)
+    response = authed_client.post("/v1/notebooks/nb-1/artifacts", json=body)
+
+    assert response.status_code == 202
+    assert len(captured) == 1
+    request = captured[0]
+    assert isinstance(request, request_type)
+    if source_ids is UNSET:
+        assert request.source_ids is UNSET
+    else:
+        assert request.source_ids == source_ids
+    assert request.language == language
+    if isinstance(request, VideoGenerationRequest):
+        assert request.style_prompt is None
+    if isinstance(request, ReportGenerationRequest):
+        assert request.extra_instructions is None
 
 
 def test_poll_known_task_not_found_is_200_pending(
@@ -343,9 +400,7 @@ def test_cleanup_missing_path_is_noop(tmp_path: object) -> None:
 
 def test_generation_payload_mind_map_returns_inline() -> None:
     # A mind-map renders synchronously: no task_id, the map is inlined.
-    result = GenerationExecutionResult(
-        kind="mind-map", display_name="Mind map", mind_map={"root": 1}
-    )
+    result = GenerationExecutionResult(kind="mind-map", mind_map={"root": 1})
     payload = artifacts_route._generation_payload("nb-1", result, PendingRegistry())
     assert payload["mind_map"] == {"root": 1}
     assert "task_id" not in payload
@@ -353,7 +408,7 @@ def test_generation_payload_mind_map_returns_inline() -> None:
 
 def test_generation_payload_without_outcome() -> None:
     # No generation outcome and no mind map → bare {notebook_id, kind}.
-    result = GenerationExecutionResult(kind="audio", display_name="Audio", generation=None)
+    result = GenerationExecutionResult(kind="audio", generation=None)
     payload = artifacts_route._generation_payload("nb-1", result, PendingRegistry())
     assert payload == {"notebook_id": "nb-1", "kind": "audio"}
 
@@ -361,8 +416,8 @@ def test_generation_payload_without_outcome() -> None:
 def test_generation_payload_outcome_without_task_id_is_not_recorded() -> None:
     # A falsy task_id is projected but never recorded in the pending registry.
     pending = PendingRegistry()
-    outcome = GenerationOutcome(status="ok", artifact_type="audio", task_id="")
-    result = GenerationExecutionResult(kind="audio", display_name="Audio", generation=outcome)
+    outcome = GenerationOutcome(status="completed", kind="audio", task_id="")
+    result = GenerationExecutionResult(kind="audio", generation=outcome)
     payload = artifacts_route._generation_payload("nb-1", result, pending)
     assert payload["task_id"] == ""
     assert not pending.knows("nb-1", "")
@@ -712,32 +767,6 @@ def test_generate_mind_map_forwards_instructions(
     assert resp.status_code == 202
     assert fake_client.last_mind_map_generate is not None
     assert fake_client.last_mind_map_generate["instructions"] == "group by theme"
-
-
-def test_kind_options_match_core_maps() -> None:
-    """The REST per-kind option table is pinned to the neutral core's choice maps.
-
-    Duplicated (the server layer must not import the core privates) but pinned so
-    a core-map change surfaces here — the same guardrail the MCP ``_KIND_OPTIONS``
-    table carries.
-    """
-    import notebooklm._app.generate_plans as gp
-    from notebooklm.server.routes.artifacts import _KIND_OPTIONS
-
-    assert _KIND_OPTIONS["audio"]["audio_format"] == tuple(gp._AUDIO_FORMAT_MAP)
-    assert _KIND_OPTIONS["audio"]["audio_length"] == tuple(gp._AUDIO_LENGTH_MAP)
-    assert _KIND_OPTIONS["video"]["video_format"] == tuple(gp._VIDEO_FORMAT_MAP)
-    assert _KIND_OPTIONS["video"]["style"] == tuple(gp._VIDEO_STYLE_MAP)
-    assert _KIND_OPTIONS["slide-deck"]["deck_format"] == tuple(gp._SLIDE_FORMAT_MAP)
-    assert _KIND_OPTIONS["slide-deck"]["deck_length"] == tuple(gp._SLIDE_LENGTH_MAP)
-    assert _KIND_OPTIONS["quiz"]["quantity"] == tuple(gp._QUIZ_QUANTITY_MAP)
-    assert _KIND_OPTIONS["quiz"]["difficulty"] == tuple(gp._QUIZ_DIFFICULTY_MAP)
-    assert _KIND_OPTIONS["flashcards"]["quantity"] == tuple(gp._QUIZ_QUANTITY_MAP)
-    assert _KIND_OPTIONS["flashcards"]["difficulty"] == tuple(gp._QUIZ_DIFFICULTY_MAP)
-    assert _KIND_OPTIONS["infographic"]["orientation"] == tuple(gp._INFOGRAPHIC_ORIENTATION_MAP)
-    assert _KIND_OPTIONS["infographic"]["detail"] == tuple(gp._INFOGRAPHIC_DETAIL_MAP)
-    assert _KIND_OPTIONS["infographic"]["style"] == tuple(gp._INFOGRAPHIC_STYLE_MAP)
-    assert _KIND_OPTIONS["report"]["report_format"] == tuple(gp._REPORT_FORMAT_MAP)
 
 
 def test_kind_options_exact_mcp_parity() -> None:

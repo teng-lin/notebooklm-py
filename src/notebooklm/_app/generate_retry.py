@@ -1,10 +1,9 @@
 """Transport-neutral artifact-generation retry + wait orchestration.
 
 This is the retry/wait half of the Click-free ``generate`` core (the sibling
-:mod:`notebooklm._app.generate` owns plan-building + the executor). It holds the
+:mod:`notebooklm._app.generate` owns typed-request dispatch). It holds the
 retry-with-backoff loop, the wait-for-completion orchestration, the typed
-:class:`GenerationOutcome`, the status-extraction helpers, and the spinner
-status-line formatter. Splitting this out keeps each module under the
+:class:`GenerationOutcome`, and the status-extraction helpers. Splitting this out keeps each module under the
 ADR-0008 module-size budget while leaving a single import surface
 (``_app.generate`` re-exports everything callers need).
 
@@ -24,10 +23,11 @@ import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .. import artifacts as artifact_retry
 from ..types import GenerationStatus
+from .generation_requests import GenerationKind
 
 if TYPE_CHECKING:
     from ..client import NotebookLMClient
@@ -41,61 +41,31 @@ RETRY_BACKOFF_MULTIPLIER = artifact_retry.RATE_LIMIT_RETRY_BACKOFF_MULTIPLIER
 # Compatibility export for callers that imported the old CLI-local helper.
 calculate_backoff_delay = artifact_retry.calculate_backoff_delay
 
-# Typical-duration hints for the spinner status line.
-# Empirical observation; the API exposes no progress channel so these are
-# user-facing wall-clock heuristics, not authoritative ETAs. Missing keys fall
-# back to no hint — the spinner still renders kind + elapsed seconds.
-_TYPICAL_DURATIONS: dict[str, str] = {
-    "audio": "typically 2-5 min",
-    "video": "typically 5-15 min",
-    "cinematic-video": "typically 30-40 min",
-    "slide-deck": "typically 1-3 min",
-    "quiz": "typically 30-60 sec",
-    "flashcards": "typically 30-60 sec",
-    "infographic": "typically 1-3 min",
-    "data-table": "typically 30-90 sec",
-    "mind-map": "typically 30-90 sec",
-    "report": "typically 1-3 min",
-}
-
 
 @dataclass(frozen=True)
 class GenerationOutcome:
-    """Typed result of generation orchestration for command-layer rendering."""
+    """Semantic result of generation orchestration, independent of rendering."""
 
-    status: str
-    artifact_type: str
+    status: Literal["failed", "rate_limited", "completed", "pending"]
+    kind: GenerationKind
     task_id: str | None = None
     url: str | None = None
     error: str | None = None
-    error_code: str = "GENERATION_FAILED"
-    hint: str | None = None
     raw_status: Any = None
 
-    @property
-    def exit_code(self) -> int:
-        return 1 if self.status in {"failed", "rate_limited"} else 0
 
+@dataclass(frozen=True)
+class GenerationWaitStarted:
+    """Semantic notification emitted immediately before generation polling."""
 
-def _format_status_message(artifact_type: str, elapsed: float | None = None) -> str:
-    """Build the spinner status line for a long-running generation.
-
-    Kind + typical-duration hint + optional elapsed timer. ``elapsed`` is
-    ``None`` on first paint and an integer seconds value once the periodic
-    ticker starts updating.
-    """
-    hint = _TYPICAL_DURATIONS.get(artifact_type)
-    suffix = f" ({hint})" if hint else ""
-    base = f"Waiting for {artifact_type} generation{suffix}..."
-    if elapsed is None:
-        return base
-    return f"{base} [{int(elapsed)}s elapsed]"
+    kind: GenerationKind
+    task_id: str
+    elapsed: float
 
 
 async def generate_with_retry(
     generate_fn: Callable[[], Awaitable[GenerationStatus | None]],
     max_retries: int,
-    artifact_type: str,
     on_retry: Callable[[artifact_retry.RateLimitRetryEvent], None] | None = None,
 ) -> GenerationStatus | None:
     """Generate artifact with retry on rate limit.
@@ -106,7 +76,6 @@ async def generate_with_retry(
     Args:
         generate_fn: Async function that performs the generation.
         max_retries: Maximum number of retries (0 = no retry, just one attempt).
-        artifact_type: Display name for progress messages.
         on_retry: Optional command-layer callback for retry notices.
 
     Returns:
@@ -120,7 +89,7 @@ async def generate_with_retry(
 
 
 @contextlib.asynccontextmanager
-async def _null_wait_context(_message: str, _resume_hint: str) -> AsyncIterator[None]:
+async def _null_wait_context(_event: GenerationWaitStarted) -> AsyncIterator[None]:
     yield
 
 
@@ -154,8 +123,8 @@ def _extract_task_id(status: Any) -> str | None:
     return None
 
 
-def generation_outcome_from_status(status: Any, artifact_type: str) -> GenerationOutcome:
-    """Map a generation status payload to a command-renderable outcome."""
+def generation_outcome_from_status(status: Any, kind: GenerationKind) -> GenerationOutcome:
+    """Map a generation status payload to a semantic outcome."""
     is_complete = hasattr(status, "is_complete") and status.is_complete
     is_failed = hasattr(status, "is_failed") and status.is_failed
     # A ``removed`` status (artifact delisted by the server) is distinct from
@@ -166,16 +135,16 @@ def generation_outcome_from_status(status: Any, artifact_type: str) -> Generatio
     if is_failed or is_removed:
         return GenerationOutcome(
             status="failed",
-            artifact_type=artifact_type,
+            kind=kind,
             task_id=_extract_task_id(status),
-            error=getattr(status, "error", None) or f"{artifact_type.title()} generation failed",
+            error=getattr(status, "error", None),
             raw_status=status,
         )
 
     if is_complete:
         return GenerationOutcome(
             status="completed",
-            artifact_type=artifact_type,
+            kind=kind,
             task_id=getattr(status, "task_id", None),
             url=getattr(status, "url", None),
             raw_status=status,
@@ -183,7 +152,7 @@ def generation_outcome_from_status(status: Any, artifact_type: str) -> Generatio
 
     return GenerationOutcome(
         status="pending",
-        artifact_type=artifact_type,
+        kind=kind,
         task_id=_extract_task_id(status),
         raw_status=status,
     )
@@ -193,12 +162,14 @@ async def handle_generation_result(
     client: NotebookLMClient,
     notebook_id: str,
     result: Any,
-    artifact_type: str,
+    kind: GenerationKind,
     wait: bool = False,
     timeout: float = 300.0,
     interval: float | None = None,
-    wait_context: Callable[[str, str], AbstractAsyncContextManager[None]] | None = None,
-    wait_start_sink: Callable[[str], None] | None = None,
+    wait_context: (
+        Callable[[GenerationWaitStarted], AbstractAsyncContextManager[None]] | None
+    ) = None,
+    wait_start_sink: Callable[[GenerationWaitStarted], None] | None = None,
 ) -> GenerationOutcome:
     """Handle generation result with optional waiting and typed outcome mapping.
 
@@ -212,7 +183,7 @@ async def handle_generation_result(
         client: The NotebookLM client.
         notebook_id: The notebook ID.
         result: The generation result from artifacts API.
-        artifact_type: Display name for the artifact type (e.g., "audio", "video").
+        kind: The generation variant being executed.
         wait: Whether to wait for completion.
         timeout: Timeout forwarded to ``wait_for_completion``. Callers supply
             per-command defaults; media generators use longer budgets while
@@ -222,11 +193,8 @@ async def handle_generation_result(
             (``initial_interval=2.0``); when supplied, the value is forwarded
             as ``initial_interval`` so callers can tighten or loosen the
             cadence.
-        wait_context: Optional span-context the adapter wraps the awaited poll
-            with (a spinner in the CLI). Receives the status message + a
-            resume-hint string. ``None`` uses a no-op context.
-        wait_start_sink: Optional point notification fired with the task id
-            once the wait begins. ``None`` skips it.
+        wait_context: Optional adapter span receiving a frozen semantic event.
+        wait_start_sink: Optional point notification receiving that same event.
 
     Returns:
         GenerationOutcome describing the final status.
@@ -234,22 +202,16 @@ async def handle_generation_result(
     if result is None:
         return GenerationOutcome(
             status="failed",
-            artifact_type=artifact_type,
-            error=f"{artifact_type.title()} generation failed",
+            kind=kind,
         )
 
     # Check for rate limiting (result exists but failed due to rate limit)
     if isinstance(result, GenerationStatus) and result.is_rate_limited:
         return GenerationOutcome(
             status="rate_limited",
-            artifact_type=artifact_type,
+            kind=kind,
             task_id=result.task_id,
-            error=f"{artifact_type.title()} generation rate limited by Google.",
-            error_code="RATE_LIMITED",
-            hint=(
-                "Daily quota may be exceeded. Try again in 1-24 hours, "
-                "or use --retry N to retry automatically."
-            ),
+            error=result.error,
             raw_status=result,
         )
 
@@ -258,19 +220,17 @@ async def handle_generation_result(
 
     # Wait for completion if requested
     if wait and task_id:
+        event = GenerationWaitStarted(kind=kind, task_id=task_id, elapsed=0.0)
         if wait_start_sink is not None:
-            wait_start_sink(task_id)
+            wait_start_sink(event)
         wait_kwargs: dict[str, Any] = {"timeout": timeout}
         if interval is not None:
             wait_kwargs["initial_interval"] = interval
         context = wait_context or _null_wait_context
-        async with context(
-            _format_status_message(artifact_type),
-            f"notebooklm artifact poll {task_id}",
-        ):
+        async with context(event):
             status = await client.artifacts.wait_for_completion(notebook_id, task_id, **wait_kwargs)
 
-    return generation_outcome_from_status(status, artifact_type)
+    return generation_outcome_from_status(status, kind)
 
 
 __all__ = [
@@ -278,6 +238,7 @@ __all__ = [
     "RETRY_INITIAL_DELAY",
     "RETRY_MAX_DELAY",
     "GenerationOutcome",
+    "GenerationWaitStarted",
     "calculate_backoff_delay",
     "generate_with_retry",
     "generation_outcome_from_status",

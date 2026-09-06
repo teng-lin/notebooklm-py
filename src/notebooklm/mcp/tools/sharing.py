@@ -38,7 +38,13 @@ from ..._app.views import share_status_view as _status_payload
 from ..._types.enums import SharePermission, ShareViewLevel
 from ..._types.sharing import ShareStatus
 from ...exceptions import ValidationError
-from .._confirm import DESTRUCTIVE, READ_ONLY, needs_confirmation
+from .._confirm import (
+    DESTRUCTIVE,
+    READ_ONLY,
+    confirmed_name_deprecation,
+    needs_confirmation,
+    with_confirmation_deprecation,
+)
 from .._context import get_client
 from .._errors import mcp_errors
 from .._resolve import resolve_notebook
@@ -89,8 +95,8 @@ def register(mcp: Any) -> None:
         Provide ``public`` (``True`` = anyone-with-link, ``False`` = restricted)
         and/or ``view_level`` (``full`` or ``chat``). Public *widening*
         (``public=True`` on a restricted notebook) returns a ``needs_confirmation``
-        preview unless ``confirm=True``; restricting and ``view_level`` changes are
-        not gated.
+        preview; confirm with its canonical ``notebook_id``. Restricting and
+        ``view_level`` changes are not gated.
 
         Returns the updated status (or preview). ``view_level`` is echoed only when
         set here (the read API can't report it); with both fields it is applied
@@ -141,7 +147,10 @@ def register(mcp: Any) -> None:
             payload = _status_payload(status, include_view_level=False)
             if view_status is not None:
                 payload["view_level"] = _label(_VIEW_LEVEL_LABELS, view_status.view_level)
-            return {"status": "updated", **payload}
+            return with_confirmation_deprecation(
+                {"status": "updated", **payload},
+                confirmed_name_deprecation(notebook) if confirm else None,
+            )
 
     @mcp.tool
     async def share_set_user(
@@ -156,7 +165,7 @@ def register(mcp: Any) -> None:
         """Grant or change a user's access to a notebook. Accepts a notebook name or ID.
 
         Confirm-gated: every grant/regrade returns a ``needs_confirmation`` preview
-        unless ``confirm=True``. Upsert by email (one backend op for an add or a
+        unless confirmed with its canonical ``notebook_id``. Upsert by email (one backend op for an add or a
         permission change). ``permission``: ``editor`` or ``viewer`` (not OWNER).
         ``notify`` (default ``False``) emails the user on grant/re-grade; ``message``
         is an optional welcome note. Returns the updated status (or a preview).
@@ -182,7 +191,10 @@ def register(mcp: Any) -> None:
                 notify=notify,
                 welcome_message=message,
             )
-            return {"status": "updated", **_status_payload(status)}
+            return with_confirmation_deprecation(
+                {"status": "updated", **_status_payload(status)},
+                confirmed_name_deprecation(notebook),
+            )
 
     @mcp.tool(annotations=DESTRUCTIVE)
     async def share_remove_user(
@@ -191,8 +203,8 @@ def register(mcp: Any) -> None:
         """Remove a user's access to a notebook. Accepts a notebook name or ID.
 
         Confirm-gated: called with ``confirm=False`` (default) it does NOT mutate —
-        it returns a ``needs_confirmation`` preview. Call with ``confirm=True`` to
-        actually remove the user.
+        it returns a preview. Re-submit its canonical ``notebook_id`` and verbatim
+        email with ``confirm=True``.
         """
         with mcp_errors():
             client = await get_client(ctx)
@@ -202,4 +214,7 @@ def register(mcp: Any) -> None:
                     {"action": "remove_share_user", "notebook_id": nb_id, "email": email}
                 )
             await client.sharing.remove_user(nb_id, email)
-            return {"status": "removed", "notebook_id": nb_id, "email": email}
+            return with_confirmation_deprecation(
+                {"status": "removed", "notebook_id": nb_id, "email": email},
+                confirmed_name_deprecation(notebook),
+            )

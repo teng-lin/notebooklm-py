@@ -611,7 +611,7 @@ def test_quiz_option_choices_match_core_and_mcp(subcommand: str, flag: str, axis
     MCP tuples are still hand-written, so this pins the two surfaces together
     rather than comparing the map with itself.
     """
-    from notebooklm._app import generate_plans as gp
+    from notebooklm.cli import generate_cmd as gp
     from notebooklm.mcp.tools.studio import _KIND_OPTIONS
 
     core_map = gp._QUIZ_QUANTITY_MAP if axis == "quantity" else gp._QUIZ_DIFFICULTY_MAP
@@ -646,8 +646,8 @@ def test_quiz_option_flag_default_matches_the_wire_default(
     hardcode-plus-parity-test shape the MCP and REST option tuples already use.
     A test is allowed to import across layers precisely so it can check one.
     """
-    from notebooklm._app import generate_plans as gp
     from notebooklm._web.params.artifacts import DEFAULT_QUIZ_DIFFICULTY, DEFAULT_QUIZ_QUANTITY
+    from notebooklm.cli import generate_cmd as gp
 
     generate = cli.commands["generate"]
     command = generate.commands[subcommand]  # type: ignore[attr-defined]
