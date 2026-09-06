@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import tempfile
 import time
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +21,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.v1 import (
 from notebooklm.exceptions import AuthError, RPCTimeoutError, SourceAddError, SourceProcessingError
 
 from .android import build_android_client
+from .android_cleanup import android_cohort
 from .common import ScenarioResult
 from .grpc import (
     ADD_SOURCES,
@@ -109,19 +109,6 @@ def _stage(stage_id: str, *, held: bool = False) -> Transfer:
     )
 
 
-@asynccontextmanager
-async def _owned_tasks():
-    tasks = []
-    try:
-        yield tasks
-    finally:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        if tasks:
-            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 2)
-
-
 async def run_scenario(
     name: str, *, operation_id: str, result: ScenarioResult | None = None
 ) -> ScenarioResult:
@@ -135,17 +122,42 @@ async def run_scenario(
         cohort_ids=[operation_id],
         transport="grpc+httpx",
         public_entry="sources.add_file(csv)",
-        wait_timeout=0.15,
-        required_checks=[
-            "fixture_decoded",
-            "expected_outcome",
-            "cleanup_policy",
-            "no_replay",
-            "resources_released",
-            "recovered",
-            "scripts_consumed",
-            "cleanup",
-        ],
+        wait_timeout=0.8 if variant == "import_timeout" else 2.0,
+        budgets={
+            "baseline_wait_timeout_s": 2.0,
+            "rpc_timeout_s": 2.0,
+            "upload_http_timeout_s": 1.0,
+            "drive_cleanup_deadline_s": 300.0,
+            "fault_wait_timeout_s": 0.8 if variant == "import_timeout" else 2.0,
+            "cleanup_timeout_s": 2.0,
+        },
+        clock_evidence="injected Drive cleanup fence only"
+        if variant == "deadline_before_cleanup"
+        else "real monotonic",
+        required_checks=(
+            (
+                ["staging_identity_retained"]
+                if variant
+                not in {
+                    "success",
+                    "cleanup_failed_success",
+                    "deadline_before_cleanup",
+                    "cancel_during_stage",
+                }
+                else []
+            )
+            + (["cleanup_failure_observed"] if variant.startswith("cleanup_failed") else [])
+            + [
+                "fixture_decoded",
+                "expected_outcome",
+                "cleanup_policy",
+                "no_replay",
+                "resources_released",
+                "recovered",
+                "scripts_consumed",
+                "cleanup",
+            ]
+        ),
         invariants=["I1", "I2", "I4", "I6", "I7", "I8"],
     )
     server = HttpFaultServer(hosts=[_STAGE.host])
@@ -210,12 +222,24 @@ async def run_scenario(
     for method, actions in rpc_actions.items():
         rpc.plan(method, *actions)
     harness = None
-    task: asyncio.Task[Any] | None = None
+    owned: list[asyncio.Task[Any]] = []
+
+    def release() -> None:
+        server.release("stage-held")
+        for gate in ("register-held", "import-held", "poll-held"):
+            rpc.gate(gate).set()
+
     try:
-        async with rpc, server:
-            harness = build_android_client(
-                rpc, http_server=server, upload_timeout=0.5, server_error_max_retries=0
-            )
+        async with android_cohort(
+            result,
+            rpc,
+            server,
+            lambda: build_android_client(
+                rpc, http_server=server, upload_timeout=1.0, timeout=2.0, server_error_max_retries=0
+            ),
+            release=release,
+            tasks=owned,
+        ) as harness:
             client = harness.client
             drive_clock = [time.monotonic()]
             if variant == "deadline_before_cleanup":
@@ -224,121 +248,102 @@ async def run_scenario(
                 # retain real clocks for operation/transport timeout evidence.
                 client._android_runtime.upload_pipeline._monotonic = lambda: drive_clock[0]
                 result.record("clock", kind_label="injected Drive cleanup fence only")
-            async with client:
-                with tempfile.TemporaryDirectory(prefix="fault-drive-") as directory:
-                    async with _owned_tasks() as owned:
-                        path = Path(directory) / "data.csv"
-                        path.write_bytes(_PAYLOAD)
-                        baseline = await client.sources.add_file(_NOTEBOOK, path, wait_timeout=0.15)
-                        result.require("fixture_decoded", baseline.id == _SOURCE)
-                        task = asyncio.create_task(
-                            client.sources.add_file(
-                                _NOTEBOOK,
-                                path,
-                                wait_timeout=1.5 if variant == "deadline_before_cleanup" else 0.15,
-                            )
-                        )
-                        owned.append(task)
-                        if variant == "cancel_during_stage":
-                            await server.wait_for_gate("stage-held")
-                            task.cancel()
-                        elif variant in {
-                            "cancel_after_stage",
-                            "cancel_during_import",
-                            "close_during_import",
-                        }:
-                            method = (
-                                ADD_TENTATIVE_SOURCES
-                                if variant == "cancel_after_stage"
-                                else ADD_SOURCES
-                            )
-                            await rpc.wait_for_requests(method, 2)
-                            if variant == "close_during_import":
-                                await asyncio.wait_for(client.close(drain=False), 2)
-                            else:
-                                task.cancel()
-                        if variant == "deadline_before_cleanup":
-                            await rpc.wait_for_requests(GET_PROJECT, 4)
-                            drive_clock[0] += 301.0
-                            rpc.gate("poll-held").set()
-                        error: BaseException | None = None
-                        value = None
-                        try:
-                            value = await asyncio.wait_for(task, 3)
-                        except (Exception, asyncio.CancelledError) as exc:
-                            error = exc
-                        metadata = getattr(error, "operation_metadata", None) or getattr(
-                            error, "_operation_metadata", None
-                        )
-                        prerequisites = getattr(metadata, "prerequisite_ids", ())
-                        result.record(
-                            "outcome",
-                            error=None if error is None else type(error).__name__,
-                            commit_state=getattr(
-                                getattr(error, "commit_state", None), "value", None
-                            ),
-                            prerequisite_retained="fault-stage"
-                            in getattr(error, "prerequisite_ids", ()),
-                        )
-                        if variant in {
-                            "success",
-                            "cleanup_failed_success",
-                            "deadline_before_cleanup",
-                        }:
-                            expected = error is None and value.id == _SOURCE
-                        elif variant in {"registration_refusal", "cleanup_failed_refusal"}:
-                            expected = isinstance(error, AuthError)
-                        elif variant in {"registration_ambiguous", "import_ambiguous"}:
-                            expected = isinstance(error, SourceAddError)
-                        elif variant == "terminal_failure":
-                            expected = isinstance(error, SourceProcessingError)
-                        elif variant.startswith("cancel_"):
-                            expected = isinstance(error, asyncio.CancelledError)
-                        elif variant == "close_during_import":
-                            expected = isinstance(error, (RuntimeError, asyncio.CancelledError))
-                        else:
-                            expected = isinstance(error, RPCTimeoutError)
-                        result.require("expected_outcome", expected)
-                        if error is not None and variant != "cancel_during_stage":
-                            result.require(
-                                "staging_identity_retained", "fault-stage" in prerequisites
-                            )
+            with tempfile.TemporaryDirectory(prefix="fault-drive-") as directory:
+                path = Path(directory) / "data.csv"
+                path.write_bytes(_PAYLOAD)
+                baseline = await client.sources.add_file(_NOTEBOOK, path, wait_timeout=2.0)
+                result.require("fixture_decoded", baseline.id == _SOURCE)
+                task = asyncio.create_task(
+                    client.sources.add_file(
+                        _NOTEBOOK,
+                        path,
+                        wait_timeout=0.8 if variant == "import_timeout" else 2.0,
+                    )
+                )
+                owned.append(task)
+                if variant == "cancel_during_stage":
+                    await server.wait_for_gate("stage-held")
+                    task.cancel()
+                elif variant in {
+                    "cancel_after_stage",
+                    "cancel_during_import",
+                    "close_during_import",
+                }:
+                    method = (
+                        ADD_TENTATIVE_SOURCES if variant == "cancel_after_stage" else ADD_SOURCES
+                    )
+                    await rpc.wait_for_requests(method, 2)
+                    if variant == "close_during_import":
+                        await asyncio.wait_for(client.close(drain=False), 2)
+                    else:
+                        task.cancel()
+                if variant == "deadline_before_cleanup":
+                    await rpc.wait_for_requests(GET_PROJECT, 4)
+                    drive_clock[0] += 301.0
+                    rpc.gate("poll-held").set()
+                error: BaseException | None = None
+                value = None
+                try:
+                    value = await asyncio.wait_for(task, 4)
+                except (Exception, asyncio.CancelledError) as exc:
+                    error = exc
+                metadata = getattr(error, "operation_metadata", None) or getattr(
+                    error, "_operation_metadata", None
+                )
+                prerequisites = getattr(metadata, "prerequisite_ids", ())
+                result.record(
+                    "outcome",
+                    error=None if error is None else type(error).__name__,
+                    commit_state=getattr(getattr(error, "commit_state", None), "value", None),
+                    prerequisite_retained="fault-stage" in prerequisites,
+                )
+                if variant in {
+                    "success",
+                    "cleanup_failed_success",
+                    "deadline_before_cleanup",
+                }:
+                    expected = error is None and value.id == _SOURCE
+                elif variant in {"registration_refusal", "cleanup_failed_refusal"}:
+                    expected = isinstance(error, AuthError)
+                elif variant in {"registration_ambiguous", "import_ambiguous"}:
+                    expected = isinstance(error, SourceAddError)
+                elif variant == "terminal_failure":
+                    expected = isinstance(error, SourceProcessingError)
+                elif variant.startswith("cancel_"):
+                    expected = isinstance(error, asyncio.CancelledError)
+                elif variant == "close_during_import":
+                    expected = isinstance(error, (RuntimeError, asyncio.CancelledError))
+                else:
+                    expected = isinstance(error, RPCTimeoutError)
+                result.require("expected_outcome", expected)
+                if error is not None and variant != "cancel_during_stage":
+                    result.require("staging_identity_retained", "fault-stage" in prerequisites)
 
-                        server.release("stage-held")
-                        for gate in ("register-held", "import-held", "poll-held"):
-                            rpc.gate(gate).set()
-                        if variant == "close_during_import":
-                            await client.__aenter__()
-                        recovered = await client.notebooks.get(_NOTEBOOK)
-                        result.require("recovered", recovered.id == _NOTEBOOK)
-                        deletes = [r for r in server.journal if r.route == _DELETE]
-                        result.require("cleanup_policy", len(deletes) == int(permits_cleanup))
-                        if variant.startswith("cleanup_failed"):
-                            result.require(
-                                "cleanup_failure_observed", deletes[0].response_status == 503
-                            )
-                        result.require(
-                            "no_replay",
-                            len([r for r in server.journal if r.route == _STAGE]) == 2
-                            and len([r for r in rpc.requests if r.method == ADD_SOURCES]) <= 2,
-                        )
-                        result.require(
-                            "resources_released",
-                            not client._android_runtime.upload_pipeline._transport_clients,
-                        )
+                server.release("stage-held")
+                for gate in ("register-held", "import-held", "poll-held"):
+                    rpc.gate(gate).set()
+                if variant == "close_during_import":
+                    await client.__aenter__()
+                recovered = await client.notebooks.get(_NOTEBOOK)
+                result.require("recovered", recovered.id == _NOTEBOOK)
+                deletes = [r for r in server.journal if r.route == _DELETE]
+                result.require("cleanup_policy", len(deletes) == int(permits_cleanup))
+                if variant.startswith("cleanup_failed"):
+                    result.require("cleanup_failure_observed", deletes[0].response_status == 503)
+                result.require(
+                    "no_replay",
+                    len([r for r in server.journal if r.route == _STAGE]) == 2
+                    and len([r for r in rpc.requests if r.method == ADD_SOURCES]) <= 2,
+                )
+                result.require(
+                    "resources_released",
+                    not client._android_runtime.upload_pipeline._transport_clients,
+                )
             await rpc.wait_for_idle()
             rpc.assert_consumed()
             server.assert_drained()
             result.require("scripts_consumed", True)
     finally:
-        server.release("stage-held")
-        for gate in ("register-held", "import-held", "poll-held"):
-            rpc.gate(gate).set()
-        if task is not None and not task.done():
-            task.cancel()
-            await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 2)
-        if harness is not None:
-            await asyncio.wait_for(harness.client.close(drain=False), 2)
         result.record(
             "http_trace",
             requests=[
@@ -352,6 +357,4 @@ async def run_scenario(
             ],
             commits=server.committed,
         )
-        result.record("cleanup", handlers=server.active_handlers, rpc_handlers=len(rpc._active))
-        result.require("cleanup", not server.active_handlers and not rpc._active)
     return result

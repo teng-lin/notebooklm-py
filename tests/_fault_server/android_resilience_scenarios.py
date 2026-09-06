@@ -40,6 +40,7 @@ async def _run_server(
             await body(server)
             await server.wait_for_idle()
             server.assert_consumed()
+            result.require("resilience_scripts_consumed", True)
     finally:
         result.record(
             "grpc_journal",
@@ -115,6 +116,28 @@ async def bearer_shared_failure_recovery(result: ScenarioResult) -> None:
 
     await _run_server(result, body)
 
+
+REQUIRED_CHECKS: dict[str, list[str]] = {
+    "bearer_shared_failure_recovery": [
+        "resilience_grpc_handlers_settled",
+        "resilience_scripts_consumed",
+        "shared_mint_failed_once",
+        "shared_mint_no_failed_wave_dispatch",
+        "shared_mint_recovery",
+        "shared_mint_same_failure",
+        "shared_mint_two_waiters",
+    ],
+    "tentative_registration_refused": [
+        "registration_refusal_auth_error",
+        "registration_refusal_no_later_stage",
+        "registration_refusal_positive_evidence",
+        "registration_refusal_recovery",
+        "registration_refusal_recovery_remint",
+        "registration_refusal_sent_once",
+        "resilience_grpc_handlers_settled",
+        "resilience_scripts_consumed",
+    ],
+}
 
 IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
     "bearer_shared_failure_recovery": bearer_shared_failure_recovery,

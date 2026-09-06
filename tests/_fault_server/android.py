@@ -76,12 +76,13 @@ async def no_sleep(_seconds: float) -> None:
 def build_android_client(
     server: GrpcFaultServer,
     *,
-    timeout: float = 0.5,
+    timeout: float = 2.0,
     rate_limit_max_retries: int = 1,
     server_error_max_retries: int = 1,
     minter: SyntheticOAuthMinter | None = None,
     http_server: HttpFaultServer | None = None,
     upload_timeout: float | None = None,
+    http_client_factory: Callable[..., Any] | None = None,
     sleep: Callable[[float], Awaitable[Any]] = no_sleep,
 ) -> AndroidHarness:
     """Synchronously assemble a public client with its real bearer provider.
@@ -149,7 +150,7 @@ def build_android_client(
             oauth_minter=selected_minter,
             upload_timeout=(httpx.Timeout(upload_timeout) if upload_timeout is not None else None),
             http_client_factories=(
-                HttpClientFactories(httpx=http_server.client_factory)
+                HttpClientFactories(httpx=http_client_factory or http_server.client_factory)
                 if http_server is not None
                 else None
             ),

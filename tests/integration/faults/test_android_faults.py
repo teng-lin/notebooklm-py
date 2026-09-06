@@ -20,3 +20,6 @@ async def test_android_fault_scenario(scenario: str) -> None:
     assert result.events
     assert result.checks
     assert all(result.checks.values()), result.events
+    required = result.events[0]["required_checks"]
+    assert required
+    assert all(result.checks.get(name) is True for name in required), result.events

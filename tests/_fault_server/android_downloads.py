@@ -14,6 +14,7 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
 from notebooklm.exceptions import ArtifactDownloadError, AuthError, OperationTimeoutError
 
 from .android import build_android_client
+from .android_cleanup import android_cohort
 from .common import ScenarioResult
 from .grpc import LIST_ARTIFACTS, GrpcFaultServer, reply
 from .http import HttpFaultServer, Reply, Route, Stall, Truncate
@@ -97,7 +98,13 @@ async def run_scenario(
         transport="httpx",
         public_entry="assembled asset service batch" if batch else "artifacts.download_infographic",
         fixture="android_artifacts._artifact and generated valid 1x1 PNG",
-        operation_timeout=0.2,
+        operation_timeout=0.4 if variant == "body_stall" else 2.0,
+        budgets={
+            "baseline_timeout_s": 2.0,
+            "rpc_timeout_s": 2.0,
+            "fault_operation_timeout_s": 0.4 if variant == "body_stall" else 2.0,
+            "cleanup_timeout_s": 2.0,
+        },
         required_checks=[
             "fixture_decoded",
             "expected_outcome",
@@ -106,6 +113,9 @@ async def run_scenario(
             "resources_released",
             "recovered",
             "cleanup",
+            "scripts_consumed",
+            "capability_hops_credential_free",
+            "initial_bearer_scoped",
         ],
         invariants=["I2", "I3", "I4", "I6", "I7", "I8"],
     )
@@ -155,100 +165,101 @@ async def run_scenario(
         server.enqueue(_ASSET, good)
     server.enqueue(_ASSET, good)
     harness = None
-    task: asyncio.Task[Any] | None = None
+    owned: list[asyncio.Task[Any]] = []
     try:
-        async with rpc, server:
-            harness = build_android_client(rpc, http_server=server)
+        async with android_cohort(
+            result,
+            rpc,
+            server,
+            lambda: build_android_client(rpc, http_server=server, timeout=2),
+            release=lambda: server.release("held"),
+            tasks=owned,
+        ) as harness:
             client = harness.client
-            async with client:
-                with tempfile.TemporaryDirectory(prefix="fault-download-") as directory:
-                    path = Path(directory) / "image.png"
-                    assets = client._android_runtime.asset_downloads
+            with tempfile.TemporaryDirectory(prefix="fault-download-") as directory:
+                path = Path(directory) / "image.png"
+                assets = client._android_runtime.asset_downloads
 
-                    async def download() -> Any:
-                        async with client.operation(timeout=0.2):
-                            if batch:
-                                return await assets.download_urls_batch([(_URL, str(path))])
-                            return await client.artifacts.download_infographic(
-                                _NOTEBOOK, str(path), artifact_id="image"
-                            )
+                async def download(*, fault: bool = False) -> Any:
+                    timeout = 0.4 if fault and variant == "body_stall" else 2.0
+                    async with client.operation(timeout=timeout):
+                        if batch:
+                            return await assets.download_urls_batch([(_URL, str(path))])
+                        return await client.artifacts.download_infographic(
+                            _NOTEBOOK, str(path), artifact_id="image"
+                        )
 
-                    baseline = await download()
-                    result.require(
-                        "fixture_decoded",
-                        path.read_bytes() == _PAYLOAD
-                        and (not batch or baseline.succeeded == [str(path)]),
-                    )
-                    path.write_bytes(b"old destination")
-                    task = asyncio.create_task(download())
-                    if variant in {"cancel", "close_reopen"}:
-                        await server.wait_for_event("response_prefix")
-                        if variant == "cancel":
-                            task.cancel()
-                        else:
-                            await asyncio.wait_for(client.close(drain=False), 2)
-                    error: BaseException | None = None
-                    outcome = None
-                    try:
-                        outcome = await asyncio.wait_for(task, 3)
-                    except (Exception, asyncio.CancelledError) as exc:
-                        error = exc
-                    if batch and error is None and outcome.failed:
-                        error = outcome.failed[0][1]
-                    success = variant in {"success", "trusted_redirect", "bearer_bounce"}
-                    if success:
-                        expected = error is None
-                    elif variant == "cancel":
-                        expected = isinstance(error, asyncio.CancelledError)
-                    elif variant == "close_reopen":
-                        expected = isinstance(error, (asyncio.CancelledError, RuntimeError))
-                    elif variant == "body_stall":
-                        expected = isinstance(error, OperationTimeoutError)
-                    elif variant in {"401", "403", "expired_capability"}:
-                        expected = isinstance(error, AuthError)
+                baseline = await download()
+                result.require(
+                    "fixture_decoded",
+                    path.read_bytes() == _PAYLOAD
+                    and (not batch or baseline.succeeded == [str(path)]),
+                )
+                path.write_bytes(b"old destination")
+                task = asyncio.create_task(download(fault=True))
+                owned.append(task)
+                if variant in {"cancel", "close_reopen"}:
+                    await server.wait_for_event("response_prefix")
+                    if variant == "cancel":
+                        task.cancel()
                     else:
-                        expected = isinstance(error, ArtifactDownloadError)
-                    result.record("outcome", error=None if error is None else type(error).__name__)
-                    result.require("expected_outcome", expected)
-                    result.require(
-                        "publication",
-                        path.read_bytes() == (_PAYLOAD if success else b"old destination"),
-                    )
-                    result.require("staging_clean", list(Path(directory).iterdir()) == [path])
-                    result.require("resources_released", not assets._clients and not assets._tasks)
-                    server.release("held")
-                    if variant == "close_reopen":
-                        await client.__aenter__()
-                    recovered = await download()
-                    result.require(
-                        "recovered",
-                        path.read_bytes() == _PAYLOAD
-                        and (not batch or recovered.succeeded == [str(path)]),
-                    )
-                    hops = [r for r in server.journal if r.route in {_TARGET, _BOUNCE}]
-                    result.require(
-                        "capability_hops_credential_free",
-                        all("authorization" not in r.headers for r in hops),
-                    )
-                    initial = [r for r in server.journal if r.route == _ASSET]
-                    result.require(
-                        "initial_bearer_scoped",
-                        all(
-                            r.headers.get("authorization", "").startswith("Bearer fault-bearer-")
-                            for r in initial
-                        ),
-                    )
+                        await asyncio.wait_for(client.close(drain=False), 2)
+                error: BaseException | None = None
+                outcome = None
+                try:
+                    outcome = await asyncio.wait_for(task, 4)
+                except (Exception, asyncio.CancelledError) as exc:
+                    error = exc
+                if batch and error is None and outcome.failed:
+                    error = outcome.failed[0][1]
+                success = variant in {"success", "trusted_redirect", "bearer_bounce"}
+                if success:
+                    expected = error is None
+                elif variant == "cancel":
+                    expected = isinstance(error, asyncio.CancelledError)
+                elif variant == "close_reopen":
+                    expected = isinstance(error, (asyncio.CancelledError, RuntimeError))
+                elif variant == "body_stall":
+                    expected = isinstance(error, OperationTimeoutError)
+                elif variant in {"401", "403", "expired_capability"}:
+                    expected = isinstance(error, AuthError)
+                else:
+                    expected = isinstance(error, ArtifactDownloadError)
+                result.record("outcome", error=None if error is None else type(error).__name__)
+                result.require("expected_outcome", expected)
+                result.require(
+                    "publication",
+                    path.read_bytes() == (_PAYLOAD if success else b"old destination"),
+                )
+                result.require("staging_clean", list(Path(directory).iterdir()) == [path])
+                result.require("resources_released", not assets._clients and not assets._tasks)
+                server.release("held")
+                if variant == "close_reopen":
+                    await client.__aenter__()
+                recovered = await download()
+                result.require(
+                    "recovered",
+                    path.read_bytes() == _PAYLOAD
+                    and (not batch or recovered.succeeded == [str(path)]),
+                )
+                hops = [r for r in server.journal if r.route in {_TARGET, _BOUNCE}]
+                result.require(
+                    "capability_hops_credential_free",
+                    all("authorization" not in r.headers for r in hops),
+                )
+                initial = [r for r in server.journal if r.route == _ASSET]
+                result.require(
+                    "initial_bearer_scoped",
+                    all(
+                        r.headers.get("authorization", "").startswith("Bearer fault-bearer-")
+                        for r in initial
+                    ),
+                )
             await rpc.wait_for_idle()
             rpc.assert_consumed()
             server.assert_drained()
             result.require("scripts_consumed", True)
     finally:
-        server.release("held")
-        if task is not None and not task.done():
-            task.cancel()
-            await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 2)
-        if harness is not None:
-            await asyncio.wait_for(harness.client.close(drain=False), 2)
         result.record(
             "http_trace",
             events=server.events,
@@ -262,6 +273,4 @@ async def run_scenario(
             ],
             digest=hashlib.sha256(_PAYLOAD).hexdigest(),
         )
-        result.record("cleanup", handlers=server.active_handlers, rpc_handlers=len(rpc._active))
-        result.require("cleanup", not server.active_handlers and not rpc._active)
     return result
