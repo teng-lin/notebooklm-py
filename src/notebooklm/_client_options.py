@@ -68,13 +68,15 @@ def resolve_backend_preference(*, explicit: str | None, env: str | None) -> Back
 
 @dataclass(frozen=True)
 class NormalizedClientOptions:
-    """Resolved public specification plus compatibility diagnostics."""
+    """Resolved public specification plus compatibility projections and diagnostics."""
 
     config: ClientConfig
     preference: BackendPreference
     legacy_arguments: tuple[str, ...]
     ignored_web_arguments: tuple[str, ...]
     typed_config: bool
+    # Exact identity retained only for the historical WebSourcesAPI attribute.
+    legacy_upload_timeout: httpx.Timeout | None
 
 
 @dataclass
@@ -333,7 +335,7 @@ def normalize_legacy_client_options(
         if config.backend is not None and config.backend.kind != preference.preferred:
             raise ValueError("The frozen backend preference does not match config.backend.kind")
         resolved = _resolved_config(config, preference)
-        return NormalizedClientOptions(resolved, preference, (), (), True)
+        return NormalizedClientOptions(resolved, preference, (), (), True, None)
 
     normalized_upload = _timeout_options(upload_timeout) if upload_timeout is not None else None
     # Preserve the exact private sentinel identity on the compatibility path;
@@ -427,6 +429,7 @@ def normalize_legacy_client_options(
         legacy_arguments,
         tuple(sorted(ignored)),
         False,
+        upload_timeout,
     )
 
 

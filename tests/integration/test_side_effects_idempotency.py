@@ -555,14 +555,14 @@ async def test_create_families_send_once_without_preflight_or_repost(
 
 
 @pytest.mark.parametrize(
-    ("failure", "status"),
+    ("failure", "status", "expected_commit_state"),
     [
-        pytest.param(None, 429, id="http-429"),
-        pytest.param(None, 502, id="http-5xx"),
-        pytest.param(None, 401, id="http-auth"),
-        pytest.param(httpx.WriteError, None, id="write"),
-        pytest.param(httpx.ConnectError, None, id="connect"),
-        pytest.param(httpx.PoolTimeout, None, id="pool"),
+        pytest.param(None, 429, CommitState.UNKNOWN, id="http-429"),
+        pytest.param(None, 502, CommitState.UNKNOWN, id="http-5xx"),
+        pytest.param(None, 401, CommitState.UNKNOWN, id="http-auth"),
+        pytest.param(httpx.WriteError, None, CommitState.UNKNOWN, id="write"),
+        pytest.param(httpx.ConnectError, None, CommitState.NOT_SENT, id="connect"),
+        pytest.param(httpx.PoolTimeout, None, CommitState.NOT_SENT, id="pool"),
     ],
 )
 @pytest.mark.asyncio
@@ -570,8 +570,9 @@ async def test_mutation_transport_evidence_never_reposts(
     auth_tokens,
     failure: type[httpx.RequestError] | None,
     status: int | None,
+    expected_commit_state: CommitState,
 ) -> None:
-    """Status, write, connect, and pool failures preserve one-send ambiguity in P1."""
+    """Never replay writes; preserve ambiguity only once transport dispatch is possible."""
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -592,5 +593,7 @@ async def test_mutation_transport_evidence_never_reposts(
         await client.close()
 
     assert calls == 1
-    assert getattr(caught.value, "commit_state", None) is CommitState.UNKNOWN
-    assert getattr(caught.value, "unconfirmed", False) is True
+    assert getattr(caught.value, "commit_state", None) is expected_commit_state
+    assert getattr(caught.value, "unconfirmed", False) is (
+        expected_commit_state is CommitState.UNKNOWN
+    )

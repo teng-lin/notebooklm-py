@@ -314,6 +314,7 @@ def _assemble_client(
             decode_response=decode_response,
             sleep=sleep,
             is_auth_error=is_auth_error,
+            legacy_upload_timeout=options.legacy_upload_timeout,
         ),
     )
     _install_client(

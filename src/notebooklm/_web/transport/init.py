@@ -345,6 +345,7 @@ def compose_client_internals(
             decode_response=decode_response,
             sleep=sleep,
             is_auth_error=is_auth_error,
+            legacy_upload_timeout=upload_timeout,
             seams=seams,
             composed=composed,
         ),
