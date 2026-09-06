@@ -361,7 +361,7 @@ jobs:
       # them from the reduced compatibility matrix.
       run: >-
         uv run pytest tests/unit
-        -m "(requires_playwright or requires_chromium) and not reality"
+        -m "(requires_playwright or requires_chromium) and not reality and not refactor_qualification"
         -n 0 --no-cov
 
     - name: Run critical contract guards
@@ -389,7 +389,7 @@ jobs:
       # run nightly, and real Playwright subprocesses stay outside xdist.
       run: >-
         uv run pytest -n auto --dist loadgroup
-        -m "not repo_lint and not requires_playwright and not requires_chromium"
+        -m "not repo_lint and not refactor_qualification and not requires_playwright and not requires_chromium"
         --no-cov
 
     - name: Run Windows Playwright compatibility smoke serially
@@ -432,5 +432,13 @@ jobs:
       # Manual-only deep audits use the runner's available workers and a wider
       # per-test timeout, but never collect coverage or slow pull requests.
       run: >-
-        uv run pytest -n auto --dist loadgroup -m repo_lint
+        uv run pytest -n auto --dist loadgroup
+        -m "repo_lint and not refactor_qualification"
+        --timeout=180 --no-cov
+
+    - name: Run refactor qualification tests
+      # Exhaustive migration inventories and lifecycle race matrices belong in
+      # an explicit manual/release lane, not every required PR matrix cell.
+      run: >-
+        uv run pytest -n auto --dist loadgroup -m refactor_qualification
         --timeout=180 --no-cov

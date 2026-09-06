@@ -95,8 +95,15 @@ jobs:
         smoke-venv/bin/playwright install chromium
         smoke-venv/bin/playwright install-deps chromium
 
-    - name: Run unit tests against wheel
-      run: smoke-venv/bin/pytest tests/unit -q --no-cov -x
+    - name: Run routine unit tests against wheel
+      run: >-
+        smoke-venv/bin/pytest tests/unit -q --no-cov -x
+        -m "not refactor_qualification"
+
+    - name: Run refactor qualification against wheel
+      run: >-
+        smoke-venv/bin/pytest -q --no-cov -x
+        -m refactor_qualification
 
   publish:
     name: Publish to TestPyPI

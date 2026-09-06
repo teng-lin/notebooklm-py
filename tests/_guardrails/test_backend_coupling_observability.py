@@ -16,7 +16,7 @@ from scripts.audit_backend_coupling import (
 
 from tests._baselines.registry import baseline_by_name
 
-pytestmark = pytest.mark.repo_lint
+pytestmark = [pytest.mark.repo_lint, pytest.mark.refactor_qualification]
 
 
 def _runtime_baseline() -> dict[str, object]:

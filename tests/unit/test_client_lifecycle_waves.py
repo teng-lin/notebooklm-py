@@ -14,6 +14,8 @@ from notebooklm._runtime.call_supervisor import AdmissionState, CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
 from notebooklm.types import GenerationState, GenerationStatus
 
+pytestmark = pytest.mark.refactor_qualification
+
 
 def _assert_republished_cancel_message(error: asyncio.CancelledError, expected: str) -> None:
     """Assert first-cancel precedence across supported asyncio versions.
