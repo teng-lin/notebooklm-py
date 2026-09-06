@@ -1148,11 +1148,13 @@ def _writing_download(body: str, *, encoding: str = "utf-8") -> AsyncMock:
     return AsyncMock(side_effect=_dl)
 
 
-async def test_artifact_download_remote_report_returns_inline_text(mock_client, config) -> None:
+@pytest.mark.parametrize("body", ["# Q3 Report\n\nThe numbers are up.", "# Café 😀", ""])
+async def test_artifact_download_remote_report_returns_inline_text(
+    mock_client, config, body
+) -> None:
     # The reporter's exact failure (#1907): a completed report over the remote connector
     # must return the body INLINE alongside the resource_link, so a link-incapable host
     # can still read it.
-    body = "# Q3 Report\n\nThe numbers are up."
     mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
     mock_client.artifacts.download_report = _writing_download(body)
     result = await _call(
@@ -1169,6 +1171,8 @@ async def test_artifact_download_remote_report_returns_inline_text(mock_client, 
     assert sc["content"] == body
     assert sc["char_count"] == len(body)
     assert sc["truncated"] is False
+    assert sc["size_bytes"] == len(body.encode("utf-8"))
+    mock_client.artifacts.download_report.assert_awaited_once()
     # A TextContent block carries the body for a host that renders content, not links.
     text_blocks = [b for b in result.content if getattr(b, "type", None) == "text"]
     assert len(text_blocks) == 1
@@ -1179,7 +1183,7 @@ async def test_artifact_download_remote_report_truncates_long_body(mock_client, 
     # A body over the cap is truncated: content is the bounded prefix, char_count stays
     # the FULL length, truncated is True, and the inline block ends with a marker that
     # points at the link for the full file.
-    body = "x" * (art_mod.INLINE_TEXT_MAX_CHARS + 500)
+    body = "é" * (art_mod.INLINE_TEXT_MAX_CHARS + 500)
     mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A)])
     mock_client.artifacts.download_report = _writing_download(body)
     result = await _call(
@@ -1193,18 +1197,22 @@ async def test_artifact_download_remote_report_truncates_long_body(mock_client, 
     assert len(sc["content"]) == art_mod.INLINE_TEXT_MAX_CHARS
     assert sc["char_count"] == len(body)
     assert sc["truncated"] is True
+    assert sc["size_bytes"] == len(body.encode("utf-8"))
     block = next(b for b in result.content if getattr(b, "type", None) == "text")
     assert block.text.startswith(body[: art_mod.INLINE_TEXT_MAX_CHARS])
     assert "truncated" in block.text.lower()
 
 
+@pytest.mark.parametrize("size_available", [True, False])
 async def test_artifact_download_remote_report_latest_pins_link_to_selected_id(
-    mock_client, config
+    mock_client, config, monkeypatch, size_available
 ) -> None:
     # The "latest" path (no artifact_id) inlines the concrete latest report AND pins the
     # signed link to that same artifact's id — so the inline body and the file the link
     # serves can't drift to different artifacts if a newer one completes in between.
     body = "# Latest\n\nbody"
+    if not size_available:
+        monkeypatch.setattr(art_mod.download_core, "_file_size_or_none", lambda _path: None)
     mock_client.artifacts.list = AsyncMock(return_value=[_report_artifact(_AID_A, "Latest")])
     mock_client.artifacts.download_report = _writing_download(body)
     result = await _call(
@@ -1215,6 +1223,7 @@ async def test_artifact_download_remote_report_latest_pins_link_to_selected_id(
     )
     sc = result.structured_content
     assert sc["content"] == body
+    assert sc["size_bytes"] == (len(body.encode("utf-8")) if size_available else None)
     # The link is pinned: structured payload echoes the resolved id and the token
     # carries it as `aid` (not a moving latest link).
     assert sc["artifact_id"] == _AID_A
@@ -1240,6 +1249,7 @@ async def test_artifact_download_remote_report_no_artifact_is_link_only(
     sc = result.structured_content
     assert sc["status"] == "download_ready"
     assert "content" not in sc
+    assert sc["size_bytes"] is None
     assert not any(getattr(b, "type", None) == "text" for b in result.content)
 
 
@@ -1261,6 +1271,7 @@ async def test_artifact_download_remote_report_inline_failure_is_link_only(
     sc = result.structured_content
     assert sc["status"] == "download_ready"
     assert "content" not in sc
+    assert sc["size_bytes"] is None
     assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
     assert not any(getattr(b, "type", None) == "text" for b in result.content)
 
@@ -1302,6 +1313,7 @@ async def test_artifact_download_remote_inline_skipped_when_cap_exceeded(
     sc = result.structured_content
     assert sc["status"] == "download_ready"
     assert "content" not in sc
+    assert sc["size_bytes"] is None
     mock_client.artifacts.download_report.assert_not_called()
 
 
@@ -1327,6 +1339,7 @@ async def test_artifact_download_remote_report_read_error_is_link_only(
     sc = result.structured_content
     assert sc["status"] == "download_ready"
     assert "content" not in sc
+    assert sc["size_bytes"] is None
     assert any(getattr(b, "type", None) == "resource_link" for b in result.content)
 
 
@@ -1347,3 +1360,6 @@ async def test_artifact_download_remote_data_table_inline_strips_bom(mock_client
     assert sc["content"] == "col_a,col_b\n1,2\n"
     assert not sc["content"].startswith("﻿")  # BOM stripped by utf-8-sig read
     assert sc["truncated"] is False
+    # Size describes the downloaded file, including its BOM and original CRLF.
+    assert sc["size_bytes"] == len(csv_body.encode("utf-8-sig"))
+    mock_client.artifacts.download_data_table.assert_awaited_once()

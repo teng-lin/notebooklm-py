@@ -1,6 +1,6 @@
 # MCP server guide
 
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-06
 
 > **Experimental / preview.** The MCP server ships behind the optional `mcp` extra. Its
 > tool surface (names, parameters, output shapes) is **not** covered by the library's semver
@@ -201,9 +201,14 @@ bearer-only deploy → the two file tools return a clear "not configured" error
   / `artifact_id` it carries `filename` (the artifact title — or the type name on a
   latest-by-type download — plus the format-resolved extension), `mime_type` (from a
   central per-type/format table the `/files/dl` route serves with, so the advertised
-  type and the streamed `Content-Type` can't drift), and `size_bytes` (`null` — the
-  size isn't known without eagerly fetching the artifact, which the broker won't do;
-  the route sets the real `Content-Length` when the link is opened).
+  type and the streamed `Content-Type` can't drift), and `size_bytes`. For reports
+  and data tables successfully fetched for inline text, this is the measured size
+  of the full downloaded file, including any BOM and original line endings, even
+  when the inline preview is truncated. Other link-only results, skipped/failed
+  inline reads, and unavailable file-size metadata keep `size_bytes: null`; no
+  extra download or metadata probe is made just to determine the size. The route
+  sets the actual `Content-Length` when the link is opened. This metadata does not
+  provide a checksum or guarantee that an artifact remains unchanged until then.
 - **Confirm an upload landed:** `await_upload` (pass the `human_upload.url` or bare token)
   polls the in-process completion record and returns `{source_id, file:{name, size, mime,
   sha256}}` once the add commits — `sha256` is the digest of exactly the bytes the server

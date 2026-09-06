@@ -101,6 +101,7 @@ class _InlineText(NamedTuple):
     truncated: bool
     artifact_id: str | None
     title: str | None
+    size_bytes: int | None
 
 
 def _read_bounded_text(path: str) -> tuple[str, int, bool]:
@@ -369,7 +370,9 @@ async def _do_read_inline_artifact_text(
     # The concrete artifact execute_download selected — id + title — so the broker can
     # PIN the link to it (the "latest" path passed no id but resolved one here).
     selected = result.artifact or {}
-    return _InlineText(content, char_count, truncated, selected.get("id"), selected.get("title"))
+    return _InlineText(
+        content, char_count, truncated, selected.get("id"), selected.get("title"), result.size_bytes
+    )
 
 
 def _broker_download(
@@ -381,6 +384,7 @@ def _broker_download(
     *,
     title: str | None = None,
     inline: tuple[str, int, bool] | None = None,
+    size_bytes: int | None = None,
 ) -> ToolResult:
     """Mint a signed download URL + a clickable ``resource_link`` for a remote
     ``studio_download``.
@@ -394,8 +398,11 @@ def _broker_download(
     the type name on the latest-by-type path where no id was resolved — plus the
     format-resolved extension) and ``mime_type`` both come from the SAME central
     helpers the ``/files/dl`` route serves with, so the advertised metadata and the
-    streamed bytes can't drift. ``size_bytes`` is ``None``: it can't be known
-    without eagerly fetching the artifact, which this must not do.
+    streamed bytes can't drift. ``size_bytes`` preserves the measured file size
+    when the existing inline-text fetch downloaded the artifact. It remains
+    ``None`` for link-only results: minting a link must not add an eager fetch.
+    The size describes the full file, including bytes removed by inline decoding
+    or truncation; it must never be inferred from ``content`` or ``char_count``.
 
     ``inline`` (``(content, char_count, truncated)``, from
     :func:`_read_inline_artifact_text` for text kinds — report / data-table) adds the
@@ -420,9 +427,7 @@ def _broker_download(
         "artifact_type": artifact_type,
         "filename": download_filename(spec, title, output_format),
         "mime_type": download_mime_type(spec, output_format),
-        # Unknown without eagerly downloading (which we refuse to do); the route
-        # sets the real Content-Length when the link is opened.
-        "size_bytes": None,
+        "size_bytes": size_bytes,
         "url": url,
         "expires_at": int(time.time()) + DOWNLOAD_TTL,
     }
