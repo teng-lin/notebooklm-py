@@ -73,11 +73,13 @@ def test_public_source_batch_item_retains_only_canonical_input() -> None:
         "https://private-user:private-password@example.com/path?token=private-token&pad="
         + "x" * 300
     )
-    item = SourceBatchItemOutcome(url=raw, source=Source(id="source-ok"))
+    item = SourceBatchItemOutcome(url=raw, source=Source(id="source-ok", url=raw))
 
     assert item.outcome is not None
     assert item.url == item.input == item.outcome.input == redact(raw, max_length=200)
     assert len(item.url) == 201
+    assert item.source is not None and item.source.url == raw
+    assert "resource_id='source-ok'" in repr(item)
     assert "private-user" not in repr(item)
     assert "private-password" not in repr(item)
     assert "private-token" not in repr(item)

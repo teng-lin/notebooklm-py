@@ -151,7 +151,7 @@ class SourceBatchItemOutcome:
     """
 
     url: str
-    source: Source | None = None
+    source: Source | None = field(default=None, repr=False)
     error: BaseException | None = field(default=None, repr=False, compare=False)
     member: int = 0
     outcome: BatchItemOutcome | None = None
