@@ -221,9 +221,7 @@ async def main(url: str) -> None:
             source_ids=[source.id],
             instructions="Focus on the key arguments",
         )
-        final = await client.artifacts.wait_for_completion(
-            notebook.id, task.task_id, timeout=1200
-        )
+        final = await client.artifacts.wait_for_completion(notebook.id, task.task_id, timeout=1200)
         if not final.is_complete:
             raise RuntimeError(f"Generation ended with {final.status}: {final.error}")
         await client.artifacts.download_audio(
