@@ -131,7 +131,9 @@ def build_android_client(
     with patch.object(android_assembly, "AndroidSession", local_session):
         client = build_client_shell_for_tests(
             AuthTokens(
-                cookies={"SID": "fault-cookie"}, csrf_token="fault-csrf", session_id="fault"
+                cookies={("SID", ".google.com", "/"): "fault-cookie"},
+                csrf_token="fault-csrf",
+                session_id="fault",
             ),
             backend="android",
             timeout=timeout,
@@ -141,6 +143,7 @@ def build_android_client(
             master_token_reader=SyntheticMasterTokenReader(),
             oauth_minter=selected_minter,
         )
+    assert client._android_runtime is not None
     return AndroidHarness(
         client=client,
         minter=selected_minter,

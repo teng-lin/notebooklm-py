@@ -30,6 +30,13 @@ GET_PROJECT = f"/{SERVICE}/GetProject"
 CREATE_PROJECT = f"/{SERVICE}/CreateProject"
 LIST_CHAT_SESSIONS = f"/{SERVICE}/ListChatSessions"
 GENERATE_STREAMED = f"/{SERVICE}/GenerateFreeFormStreamed"
+_METHOD_KINDS = {
+    GET_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
+    CREATE_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort", "commit_abort"}),
+    LIST_CHAT_SESSIONS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
+    GENERATE_STREAMED: frozenset({"stream"}),
+}
+_CLEANUP_TIMEOUT = 1.0
 
 
 @dataclass(frozen=True)
@@ -75,10 +82,12 @@ def stream(
 
 @dataclass
 class GrpcRequest:
+    sequence: int
     method: str
     request: Any
     metadata: tuple[tuple[str, str], ...]
     cancelled: bool = False
+    _cancelled_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
 
 @dataclass
@@ -104,11 +113,36 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         return self._gates.setdefault(name, asyncio.Event())
 
     def plan(self, method: str, *actions: GrpcAction) -> None:
-        if method not in {GET_PROJECT, CREATE_PROJECT, LIST_CHAT_SESSIONS, GENERATE_STREAMED}:
+        if method not in _METHOD_KINDS:
             raise ValueError(f"unsupported Android gRPC method: {method}")
+        if not actions:
+            raise ValueError(f"at least one action is required for {method}")
         if self.actions[method]:
             raise ValueError(f"method already planned: {method}")
+        for action in actions:
+            self._validate_action(method, action)
         self.actions[method].extend(actions)
+
+    @staticmethod
+    def _validate_action(method: str, action: GrpcAction) -> None:
+        if action.kind not in _METHOD_KINDS[method]:
+            raise ValueError(f"action {action.kind!r} is invalid for {method}")
+        needs_status = action.kind in {"abort", "wait_abort", "commit_abort"}
+        if action.kind != "stream" and needs_status != (action.status is not None):
+            raise ValueError(f"action {action.kind!r} has invalid status for {method}")
+        if action.status is not None and (
+            not isinstance(action.status, grpc.StatusCode) or action.status is grpc.StatusCode.OK
+        ):
+            raise ValueError(f"action {action.kind!r} requires a non-OK gRPC status")
+        needs_gate = action.kind in {"wait_reply", "wait_abort"}
+        if action.kind != "stream" and needs_gate != (action.gate is not None):
+            raise ValueError(f"action {action.kind!r} has invalid gate for {method}")
+        if action.gate is not None and (not isinstance(action.gate, str) or not action.gate):
+            raise ValueError(f"action {action.kind!r} requires a non-empty gate")
+        if action.kind in {"abort", "wait_abort", "commit_abort"} and action.response is not None:
+            raise ValueError(f"action {action.kind!r} cannot include a response")
+        if action.kind == "stream" and not isinstance(action.response, tuple):
+            raise ValueError("stream action frames must be an immutable tuple")
 
     def assert_consumed(self) -> None:
         if self.handler_errors:
@@ -119,24 +153,64 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         if self._active:
             raise AssertionError(f"active gRPC handlers leaked: {len(self._active)}")
 
+    async def wait_for_idle(self, *, timeout: float = 1.0) -> None:
+        async def wait() -> None:
+            while self._active:
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(wait(), timeout=timeout)
+
     async def __aenter__(self) -> GrpcFaultServer:
         self._server = grpc.aio.server()
-        self._server.add_generic_rpc_handlers((self._handler(),))
-        self._port = self._server.add_insecure_port("127.0.0.1:0")
-        await self._server.start()
+        try:
+            self._server.add_generic_rpc_handlers((self._handler(), self._unknown_handler()))
+            port = self._server.add_insecure_port("127.0.0.1:0")
+            if not port:
+                raise RuntimeError("gRPC fault server failed to bind a loopback port")
+            self._port = port
+            await self._server.start()
+        except BaseException:
+            await self._cleanup_after_failed_enter()
+            raise
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:
+        await self._shutdown()
+
+    async def _cleanup_after_failed_enter(self) -> None:
+        cleanup = asyncio.create_task(self._shutdown(), name="grpc-fault-server-enter-cleanup")
         try:
-            if self._server is not None:
-                await asyncio.wait_for(self._server.stop(0), timeout=1.0)
-            if self._active:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            # A second cancellation may detach this caller, but the strongly held
+            # task still completes the bounded cleanup before its own deadline.
+            await asyncio.gather(cleanup, return_exceptions=True)
+        except BaseException as error:
+            self.handler_errors.append(f"enter cleanup failed: {type(error).__name__}: {error}")
+
+    async def _shutdown(self) -> None:
+        server = self._server
+        if server is None:
+            return
+        errors: list[BaseException] = []
+        try:
+            await asyncio.wait_for(server.stop(0), timeout=_CLEANUP_TIMEOUT)
+        except BaseException as error:
+            errors.append(error)
+        if self._active:
+            try:
                 await asyncio.wait_for(
-                    asyncio.gather(*tuple(self._active), return_exceptions=True), timeout=1.0
+                    asyncio.gather(*tuple(self._active), return_exceptions=True),
+                    timeout=_CLEANUP_TIMEOUT,
                 )
-        finally:
-            if self._server is not None:
-                await asyncio.wait_for(self._server.wait_for_termination(), timeout=1.0)
+            except BaseException as error:
+                errors.append(error)
+        try:
+            await asyncio.wait_for(server.wait_for_termination(), timeout=_CLEANUP_TIMEOUT)
+        except BaseException as error:
+            errors.append(error)
+        if errors:
+            raise errors[0]
 
     def _handler(self) -> grpc.GenericRpcHandler:
         return grpc.method_handlers_generic_handler(
@@ -165,6 +239,23 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             },
         )
 
+    def _unknown_handler(self) -> grpc.GenericRpcHandler:
+        server = self
+
+        class UnknownHandler(grpc.GenericRpcHandler):
+            def service(
+                self, handler_call_details: grpc.HandlerCallDetails
+            ) -> grpc.RpcMethodHandler:
+                method = handler_call_details.method
+                server.handler_errors.append(f"unexpected request: {method}")
+
+                async def reject(_request: bytes, context: grpc.aio.ServicerContext) -> None:
+                    await context.abort(grpc.StatusCode.UNIMPLEMENTED, "unexpected test RPC")
+
+                return grpc.unary_unary_rpc_method_handler(reject)
+
+        return UnknownHandler()
+
     def _next(self, method: str) -> GrpcAction:
         try:
             return self.actions[method].popleft()
@@ -174,10 +265,28 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
     def _record(self, method: str, request: Any, context: grpc.aio.ServicerContext) -> GrpcRequest:
         recorded = GrpcRequest(
-            method, request, tuple((str(k), str(v)) for k, v in context.invocation_metadata())
+            len(self.requests) + 1,
+            method,
+            request,
+            tuple((str(k), str(v)) for k, v in context.invocation_metadata()),
         )
         self.requests.append(recorded)
         return recorded
+
+    async def wait_for_cancellation(self, request: GrpcRequest, *, timeout: float = 1.0) -> None:
+        if not any(item is request for item in self.requests):
+            raise ValueError("request does not belong to this gRPC fault server")
+        await asyncio.wait_for(request._cancelled_event.wait(), timeout=timeout)
+
+    def _mark_cancelled(self, recorded: GrpcRequest) -> None:
+        if recorded.cancelled:
+            return
+        recorded.cancelled = True
+        recorded._cancelled_event.set()
+        self.cancellations.append(recorded)
+
+    def _record_handler_error(self, method: str, error: BaseException) -> None:
+        self.handler_errors.append(f"{method}: {type(error).__name__}: {error}")
 
     @staticmethod
     def _project(project_id: str = "notebook-1", title: str = "Fault notebook") -> Any:
@@ -189,6 +298,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         task = asyncio.current_task()
         if task is not None:
             self._active.add(task)
+        recorded: GrpcRequest | None = None
         try:
             recorded = self._record(method, request, context)
             action = self._next(method)
@@ -218,8 +328,13 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                 return self._project("created-1", request.name)
             return chat_pb2.ListChatSessionsResponse()
         except asyncio.CancelledError:
-            recorded.cancelled = True
-            self.cancellations.append(recorded)
+            if recorded is not None:
+                self._mark_cancelled(recorded)
+            raise
+        except grpc.aio.AbortError:
+            raise
+        except BaseException as error:
+            self._record_handler_error(method, error)
             raise
         finally:
             if task is not None:
@@ -240,6 +355,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         task = asyncio.current_task()
         if task is not None:
             self._active.add(task)
+        recorded: GrpcRequest | None = None
         try:
             recorded = self._record(GENERATE_STREAMED, request, context)
             action = self._next(GENERATE_STREAMED)
@@ -250,8 +366,13 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             if action.status is not None:
                 await context.abort(action.status, "synthetic stream fault")
         except asyncio.CancelledError:
-            recorded.cancelled = True
-            self.cancellations.append(recorded)
+            if recorded is not None:
+                self._mark_cancelled(recorded)
+            raise
+        except grpc.aio.AbortError:
+            raise
+        except BaseException as error:
+            self._record_handler_error(GENERATE_STREAMED, error)
             raise
         finally:
             if task is not None:

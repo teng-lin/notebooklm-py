@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import grpc
@@ -60,7 +60,11 @@ _FAULTS = {
         "GetProject:RESOURCE_EXHAUSTED->reply",
         "GetProject:RESOURCE_EXHAUSTED exhaustion",
     ),
-    "stream_auth": ("chat stream:partial->UNAUTHENTICATED", "later GetProject:fresh bearer"),
+    "stream_auth": (
+        "chat stream:partial->UNAUTHENTICATED",
+        "raw stream:observe partial->UNAUTHENTICATED",
+        "later GetProject:fresh bearer",
+    ),
     "unavailable": ("GetProject:UNAVAILABLE->reply", "GetProject:UNAVAILABLE exhaustion"),
 }
 
@@ -96,6 +100,7 @@ async def _run_server(
     try:
         async with server:
             await setup(server)
+            await server.wait_for_idle()
             server.assert_consumed()
     finally:
         result.record(
@@ -277,8 +282,16 @@ async def _stream_auth(result: ScenarioResult) -> None:
         server.plan(
             GENERATE_STREAMED,
             stream([_frame("partial")], after=abort(grpc.StatusCode.UNAUTHENTICATED)),
+            stream([_frame("raw partial")], after=abort(grpc.StatusCode.UNAUTHENTICATED)),
         )
         harness = build_android_client(server)
+        raw_method: GrpcUnaryStreamMethod[
+            chat_pb2.GenerateFreeFormStreamedRequest,
+            chat_pb2.GenerateFreeFormStreamedResponse,
+        ] = GrpcUnaryStreamMethod(
+            path=GENERATE_STREAMED,
+            response_type=chat_pb2.GenerateFreeFormStreamedResponse,
+        )
         async with harness.client as client:
             try:
                 await client.chat.ask("notebook-1", "Question?")
@@ -286,8 +299,32 @@ async def _stream_auth(result: ScenarioResult) -> None:
                 pass
             else:
                 result.require("stream_auth_raises", False)
+            raw_stream: AsyncIterator[chat_pb2.GenerateFreeFormStreamedResponse] = (
+                client.raw.unary_stream(
+                    raw_method,
+                    chat_pb2.GenerateFreeFormStreamedRequest(project_id="notebook-1"),
+                    metadata=(("x-fault-call", "raw-partial"),),
+                )
+            )
+            partial = await anext(raw_stream)
+            result.require("raw_stream_delivers_partial", partial.answer.response == "raw partial")
+            try:
+                await anext(raw_stream)
+            except AuthError:
+                pass
+            else:
+                result.require("raw_stream_auth_raises_after_partial", False)
             await client.notebooks.get("notebook-1")
-        result.require("stream_never_replays", len(_authorizations(server, GENERATE_STREAMED)) == 1)
+        raw_requests = [
+            request
+            for request in server.requests
+            if request.method == GENERATE_STREAMED
+            and dict(request.metadata).get("x-fault-call") == "raw-partial"
+        ]
+        result.require("feature_and_raw_stream_never_replay", len(raw_requests) == 1)
+        result.require(
+            "two_single_attempt_streams", len(_authorizations(server, GENERATE_STREAMED)) == 2
+        )
         result.require(
             "next_unary_gets_fresh_bearer",
             _authorizations(server, GET_PROJECT)[-1] == "Bearer fault-bearer-2",
@@ -333,19 +370,29 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
             stream([_frame("one")], gate="stream-cancel"),
         )
         harness = build_android_client(server, timeout=0.5)
-        raw_stream = GrpcUnaryStreamMethod(
+        raw_stream: GrpcUnaryStreamMethod[
+            chat_pb2.GenerateFreeFormStreamedRequest,
+            chat_pb2.GenerateFreeFormStreamedResponse,
+        ] = GrpcUnaryStreamMethod(
             path=GENERATE_STREAMED,
             response_type=chat_pb2.GenerateFreeFormStreamedResponse,
         )
         async with harness.client as client:
+            first_supervisor = client._collaborators.call_supervisor
+            first_generation = first_supervisor._current
+            assert first_generation is not None
             try:
                 await client.notebooks.get("notebook-1")
             except RPCTimeoutError:
                 pass
             else:
                 result.require("deadline_raises", False)
+            deadline_request = server.requests[-1]
+            await server.wait_for_cancellation(deadline_request)
+            result.require("deadline_cancels_exact_unary", deadline_request.cancelled)
             blocked = asyncio.create_task(client.notebooks.get("notebook-1"))
             await _wait_for(lambda: len(_authorizations(server, GET_PROJECT)) == 2)
+            cancelled_request = server.requests[-1]
             blocked.cancel()
             try:
                 await blocked
@@ -353,6 +400,8 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
                 pass
             else:
                 result.require("cancellation_propagates", False)
+            await server.wait_for_cancellation(cancelled_request)
+            result.require("caller_cancels_exact_unary", cancelled_request.cancelled)
             timed_stream = client.raw.unary_stream(
                 raw_stream,
                 chat_pb2.GenerateFreeFormStreamedRequest(project_id="notebook-1"),
@@ -364,21 +413,22 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
                 pass
             else:
                 result.require("stream_deadline_raises", False)
+            stream_deadline_request = server.requests[-1]
+            await server.wait_for_cancellation(stream_deadline_request)
+            result.require("deadline_cancels_exact_stream", stream_deadline_request.cancelled)
             cancelling_stream = client.raw.unary_stream(
                 raw_stream,
                 chat_pb2.GenerateFreeFormStreamedRequest(project_id="notebook-1"),
                 timeout=0.5,
             )
             assert (await anext(cancelling_stream)).answer.response == "one"
+            stream_cancel_request = server.requests[-1]
             await cancelling_stream.aclose()
-            await _wait_for(
-                lambda: (
-                    sum(request.method == GENERATE_STREAMED for request in server.cancellations)
-                    == 2
-                )
-            )
+            await server.wait_for_cancellation(stream_cancel_request)
+            result.require("aclose_cancels_exact_stream", stream_cancel_request.cancelled)
             closing = asyncio.create_task(client.notebooks.get("notebook-1"))
             await _wait_for(lambda: len(_authorizations(server, GET_PROJECT)) == 3)
+            close_request = server.requests[-1]
             await client.close(drain=False)
             try:
                 await closing
@@ -386,10 +436,35 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
                 pass
             else:
                 result.require("close_cancels_active_call", False)
+            await server.wait_for_cancellation(close_request)
+            result.require("close_cancels_exact_unary", close_request.cancelled)
+            result.require(
+                "forced_close_shuts_channel",
+                harness.channels[0].get_state() is grpc.ChannelConnectivity.SHUTDOWN,
+            )
+            await _wait_for(lambda: _admission_settled(harness.client, first_generation))
+            result.require(
+                "forced_close_settles_admission",
+                _admission_settled(harness.client, first_generation),
+            )
         # A reopen is a public lifecycle operation and must construct a fresh channel.
         async with harness.client as client:
+            second_generation = client._collaborators.call_supervisor._current
+            assert second_generation is not None
             await client.notebooks.get("notebook-1")
         result.require("fresh_channel_after_reopen", len(harness.channels) == 2)
+        result.require(
+            "all_channels_closed",
+            all(
+                channel.get_state() is grpc.ChannelConnectivity.SHUTDOWN
+                for channel in harness.channels
+            ),
+        )
+        await _wait_for(lambda: _admission_settled(harness.client, second_generation))
+        result.require(
+            "final_close_settles_admission",
+            _admission_settled(harness.client, second_generation),
+        )
         result.require(
             "deadline_and_cancel_are_one_attempt", len(_authorizations(server, GET_PROJECT)) == 4
         )
@@ -421,6 +496,16 @@ async def _wait_for(predicate: Callable[[], bool]) -> None:
             await asyncio.sleep(0)
 
     await asyncio.wait_for(wait(), timeout=1.0)
+
+
+def _admission_settled(client: Any, generation: Any) -> bool:
+    supervisor = client._collaborators.call_supervisor
+    return (
+        supervisor.active_epoch() is None
+        and generation.in_flight == 0
+        and generation.epoch not in supervisor._retired
+        and not supervisor._settlement_tasks
+    )
 
 
 async def run_scenario(
