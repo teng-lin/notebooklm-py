@@ -2297,6 +2297,46 @@ async def test_source_add_batch_all_success(mcp_call, mock_client) -> None:
     assert mock_client.sources.get_fulltext.await_count == 2
 
 
+async def test_source_add_batch_success_redacts_and_caps_provisional_url_title(
+    mcp_call, mock_client
+) -> None:
+    """A provisional URL title is safe on the MCP wire without mutating the source."""
+    from notebooklm.outcomes import SourceBatchItemOutcome
+
+    unsafe_title = (
+        "https://batch-title-user:batch-title-password@example.com/path"
+        "?token=batch-title-token&padding=" + "x" * 300
+    )
+    ordinary_title = "Quarterly research notes"
+    sources = [
+        FakeSource(id=SRC_ID, title=unsafe_title),
+        FakeSource(id=SRC2_ID, title=ordinary_title),
+    ]
+    mock_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(url="https://example.com/a", source=sources[0]),
+            SourceBatchItemOutcome(url="https://example.com/b", source=sources[1]),
+        ]
+    )
+    mock_client.sources.get_fulltext = AsyncMock(
+        return_value=FakeFulltext(content="x" * 500, char_count=500)
+    )
+
+    result = await mcp_call(
+        "source_add",
+        {"notebook": NB_ID, "urls": ["https://example.com/a", "https://example.com/b"]},
+    )
+
+    rows = result.structured_content["results"]
+    assert rows[0]["title"] == redact(unsafe_title, max_length=200)
+    assert len(rows[0]["title"]) <= 201
+    assert "batch-title-user" not in rows[0]["title"]
+    assert "batch-title-password" not in rows[0]["title"]
+    assert "batch-title-token" not in rows[0]["title"]
+    assert rows[1]["title"] == ordinary_title
+    assert sources[0].title == unsafe_title
+
+
 async def test_source_add_batch_partial_failure(mcp_call, mock_client) -> None:
     """One bad URL does NOT abort the batch and is reported per-item, not collapsed."""
     mock_client.sources.add_url = AsyncMock(return_value=FakeSource(id=SRC_ID, title="Good"))

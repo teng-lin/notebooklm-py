@@ -530,6 +530,47 @@ def test_add_batch_all_valid(authed_client: TestClient, fake_client: FakeClient)
     assert "status_label" in body["results"][0]
 
 
+def test_add_batch_success_redacts_and_caps_provisional_url_title(
+    authed_client: TestClient, fake_client: FakeClient
+) -> None:
+    """A provisional URL title is safe on the REST wire without mutating the source."""
+    from unittest.mock import AsyncMock
+
+    from notebooklm.outcomes import SourceBatchItemOutcome
+
+    _seed_notebook(fake_client)
+    unsafe_title = (
+        "https://batch-title-user:batch-title-password@example.com/path"
+        "?token=batch-title-token&padding=" + "x" * 300
+    )
+    ordinary_title = "Quarterly research notes"
+    sources = [
+        Source(id="source-sensitive-title", title=unsafe_title),
+        Source(id="source-ordinary-title", title=ordinary_title),
+    ]
+    fake_client.sources.add_urls_batch = AsyncMock(
+        return_value=[
+            SourceBatchItemOutcome(url="https://example.com/a", source=sources[0]),
+            SourceBatchItemOutcome(url="https://example.com/b", source=sources[1]),
+        ]
+    )
+
+    response = authed_client.post(
+        "/v1/notebooks/nb-1/sources/batch",
+        json={"urls": ["https://example.com/a", "https://example.com/b"]},
+    )
+
+    assert response.status_code == 201
+    rows = response.json()["results"]
+    assert rows[0]["title"] == redact(unsafe_title, max_length=200)
+    assert len(rows[0]["title"]) <= 201
+    assert "batch-title-user" not in rows[0]["title"]
+    assert "batch-title-password" not in rows[0]["title"]
+    assert "batch-title-token" not in rows[0]["title"]
+    assert rows[1]["title"] == ordinary_title
+    assert sources[0].title == unsafe_title
+
+
 def test_add_batch_partial_failure_isolated(
     authed_client: TestClient, fake_client: FakeClient
 ) -> None:

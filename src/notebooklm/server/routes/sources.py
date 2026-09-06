@@ -52,7 +52,7 @@ from ..._app.views import source_view
 from ..._source.batch import preserve_batch_call_failure, preserve_batch_projection_failure
 from ...client import NotebookLMClient
 from ...exceptions import ValidationError
-from ...outcomes import SourceBatchItemOutcome
+from ...outcomes import SourceBatchItemOutcome, redact_operation_text
 from .._context import get_client, get_pending, limit_source_mutation, limit_source_wait
 from .._errors import error_item, safe_detail
 from .._pagination import MAX_LIMIT, paginate_envelope
@@ -94,7 +94,7 @@ def _project_batch_item(item: SourceBatchItemOutcome) -> dict[str, Any]:
         "status": "added",
         "commit_state": "confirmed",
         "source_id": source.id,
-        "title": source.title,
+        "title": None if source.title is None else redact_operation_text(source.title),
         "status_label": view["status_label"],
     }
 

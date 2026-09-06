@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from ..outcomes import SourceBatchItemOutcome
+from ..outcomes import SourceBatchItemOutcome, redact_operation_text
 from ..types import Source, source_status_to_str
 
 
@@ -35,7 +35,7 @@ def project_source_batch_item(
         "status": "added",
         "commit_state": "confirmed",
         "source_id": source.id,
-        "title": source.title,
+        "title": None if source.title is None else redact_operation_text(source.title),
         "status_label": source_status_to_str(source.status),
     }
     if source.is_error:
