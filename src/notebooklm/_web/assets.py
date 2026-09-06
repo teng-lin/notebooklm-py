@@ -15,6 +15,7 @@ from .._artifact._download_client import _is_trusted_download_host
 from .._artifact._guarded_transfer import _await_advisory_cleanup
 from .._artifact.downloads import AssetDownloadService, DownloadResult
 from .._hop_credentials import CredentialPolicy, HopCredentials
+from .._http_client_factory import HttpClientFactories
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import EpochFenced
 from .._request_policy import RequestPolicyOwner, request_scoped
@@ -32,8 +33,13 @@ class WebAssetDownloadService(RequestPolicyOwner, EpochFenced, AssetDownloadServ
         *,
         supervisor: CallSupervisor,
         cookies: Callable[[int], httpx.Cookies],
+        http_client_factories: HttpClientFactories | None = None,
     ) -> None:
-        AssetDownloadService.__init__(self, credential_policy_factory=self._live_policy)
+        AssetDownloadService.__init__(
+            self,
+            credential_policy_factory=self._live_policy,
+            http_client_factories=http_client_factories,
+        )
         EpochFenced.__init__(
             self, "Web asset transfer belongs to a retired resource generation", assert_loop=True
         )

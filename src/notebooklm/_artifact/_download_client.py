@@ -16,6 +16,7 @@ import httpx
 
 from .._curl_cffi_transport import resolve_transport_factory
 from .._hop_credentials import CredentialPolicy, HopCredentials
+from .._http_client_factory import HttpClientFactories
 from ._guarded_transfer import MAX_DOWNLOAD_REDIRECTS
 from ._redirect_guard import redirect_revalidation_hooks
 
@@ -54,6 +55,8 @@ def _make_download_client(
     timeout: Any,
     credential_for: CredentialPolicy | None = None,
     trusted_host: Callable[[str | None], bool] = _is_trusted_download_host,
+    *,
+    http_client_factories: HttpClientFactories | None = None,
 ) -> tuple[Any, Callable[[str], Awaitable[httpx.Response]]]:
     """Build a download client + redirect-guarded GET for the active transport.
 
@@ -76,8 +79,11 @@ def _make_download_client(
             return None
 
         resolved_credential_for = _default_credential_for
-    if factory is httpx.AsyncClient:
-        client: Any = httpx.AsyncClient(
+    uses_httpx = factory is httpx.AsyncClient
+    if http_client_factories is not None:
+        factory = http_client_factories.select(factory)
+    if uses_httpx:
+        client: Any = factory(
             cookies=cookies,
             follow_redirects=True,
             max_redirects=MAX_DOWNLOAD_REDIRECTS,

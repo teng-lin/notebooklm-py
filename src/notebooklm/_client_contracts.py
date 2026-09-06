@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from ._artifacts import ArtifactsAPI
     from ._chat import ChatAPI
     from ._collections import CollectionsAPI
+    from ._http_client_factory import HttpClientFactories
     from ._labels import LabelsAPI
     from ._mind_maps_api import MindMapsAPI
     from ._notebooks import NotebooksAPI
@@ -154,6 +155,7 @@ class WebDependencies:
     legacy_upload_timeout: httpx.Timeout | None
     seams: ClientSeams | None = None
     composed: ClientComposed | None = None
+    http_client_factories: HttpClientFactories | None = None
 
     def __post_init__(self) -> None:
         _validate_refresh_retry_delay(self.refresh_retry_delay)
@@ -185,6 +187,7 @@ class AndroidDependencies:
     oauth_minter: OAuthMinter | None
     sleep: Callable[[float], Awaitable[Any]] | None
     refresh_retry_delay: float
+    http_client_factories: HttpClientFactories | None = None
 
     def __post_init__(self) -> None:
         _validate_refresh_retry_delay(self.refresh_retry_delay)

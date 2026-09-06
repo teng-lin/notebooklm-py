@@ -25,6 +25,7 @@ from notebooklm.types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
     from notebooklm._android.auth import MasterTokenReader, OAuthMinter
+    from notebooklm._http_client_factory import HttpClientFactories
     from notebooklm.types import ConnectionLimits
 
 
@@ -52,6 +53,7 @@ def build_client_shell_for_tests(
     sleep: Callable[[float], Awaitable[Any]] | None = None,
     is_auth_error: Callable[[Exception], bool] | None = None,
     async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
+    http_client_factories: HttpClientFactories | None = None,
     master_token_reader: MasterTokenReader | None = None,
     oauth_minter: OAuthMinter | None = None,
 ) -> NotebookLMClient:
@@ -126,6 +128,7 @@ def build_client_shell_for_tests(
         sleep=sleep,
         is_auth_error=is_auth_error,
         async_client_factory=async_client_factory,
+        http_client_factories=http_client_factories,
         **extra_android_credentials,
     )
     return client

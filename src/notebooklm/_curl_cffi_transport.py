@@ -240,6 +240,8 @@ class CurlCffiAsyncClient:
         follow_redirects: bool = True,
         limits: Any = None,  # noqa: ARG002 — accepted for httpx parity; curl_cffi pools internally
         impersonate: str | None = None,
+        session_factory: Callable[..., Any] | None = None,
+        curl_factory: Callable[[], Any] | None = None,
     ) -> None:
         from curl_cffi.requests import AsyncSession
 
@@ -258,7 +260,8 @@ class CurlCffiAsyncClient:
             "NOTEBOOKLM_IMPERSONATE", DEFAULT_IMPERSONATE
         )
         self._impersonate = impersonate_value  # reused by the low-level streaming upload
-        self._curl: Any = AsyncSession(
+        self._curl_factory = curl_factory
+        self._curl: Any = (session_factory or AsyncSession)(
             headers=dict(headers) if headers else None,
             cookies=self.cookies.jar,
             impersonate=impersonate_value,
@@ -587,7 +590,7 @@ class CurlCffiAsyncClient:
             try:
                 body = io.BytesIO()
                 response_headers = io.BytesIO()
-                curl = Curl()
+                curl = self._curl_factory() if self._curl_factory is not None else Curl()
                 try:
                     curl.impersonate(self._impersonate)
                     curl.setopt(CurlOpt.URL, url.encode())

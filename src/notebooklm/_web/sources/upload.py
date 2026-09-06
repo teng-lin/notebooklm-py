@@ -16,6 +16,7 @@ import httpx
 
 from ..._auth.account import authuser_query, format_authuser_value
 from ..._callbacks import maybe_await_callback
+from ..._http_client_factory import HttpClientFactories
 from ..._idempotency import (
     OperationJournal,
     attach_journal_entry,
@@ -195,6 +196,7 @@ class SourceUploadPipeline(RequestPolicyOwner, EpochFenced):
         max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
         record_upload_queue_wait: QueueWaitRecorder | None = None,
         async_client_factory: AsyncClientFactory | None = None,
+        http_client_factories: HttpClientFactories | None = None,
         get_source_limit: GetSourceLimit | None = None,
         lister: SourceLister | None = None,
         poller: SourcePoller | None = None,
@@ -211,6 +213,7 @@ class SourceUploadPipeline(RequestPolicyOwner, EpochFenced):
         self._drive_timeout = drive_timeout
         self._record_upload_queue_wait = record_upload_queue_wait
         self._async_client_factory = async_client_factory
+        self._http_client_factories = http_client_factories
         self._max_concurrent_uploads = normalize_max_concurrent_uploads(max_concurrent_uploads)
         self._upload_semaphore: asyncio.Semaphore | None = None
         # Bounds concurrent Drive auto-route downloads (#1884); loop-bound.
@@ -266,7 +269,10 @@ class SourceUploadPipeline(RequestPolicyOwner, EpochFenced):
         # (fingerprint/session correlation).
         from ..._curl_cffi_transport import resolve_transport_factory
 
-        return resolve_transport_factory()
+        factory = resolve_transport_factory()
+        if self._http_client_factories is not None:
+            return self._http_client_factories.select(factory)
+        return factory
 
     def _authuser_query(self) -> str:
         return authuser_query(self._auth.authuser, self._auth.account_email)
@@ -554,6 +560,7 @@ class SourceUploadPipeline(RequestPolicyOwner, EpochFenced):
                 cookies_provider=lambda: self.live_cookies(epoch),
                 authuser=self.authuser_value(),
                 timeout=self._drive_timeout,
+                http_client_factories=self._http_client_factories,
             )(parse_drive_ref(document_id))
             try:
                 yield download.path, download.filename, download.content_type

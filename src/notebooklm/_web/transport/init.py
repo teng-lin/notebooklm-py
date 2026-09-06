@@ -17,6 +17,7 @@ from ..._client_contracts import (
     WebDependencies,
 )
 from ..._client_options import normalize_legacy_client_options
+from ..._http_client_factory import HttpClientFactories
 from ..._runtime.config import (
     DEFAULT_CONNECT_TIMEOUT,
     DEFAULT_KEEPALIVE_MIN_INTERVAL,
@@ -372,6 +373,7 @@ def build_web_runtime(
     cookie_rotator: CookieRotator | None,
     seams: ClientSeams,
     composed: ClientComposed | None = None,
+    http_client_factories: HttpClientFactories | None = None,
 ) -> WebRuntime:
     """Build one web-only bundle around an existing neutral runtime.
 
@@ -458,6 +460,7 @@ def build_web_runtime(
         drive_timeout=drive_timeout,
         max_concurrent_uploads=max_concurrent_uploads,
         record_upload_queue_wait=shared.metrics.record_upload_queue_wait,
+        http_client_factories=http_client_factories,
     )
     web_runtime = WebRuntime(
         reqid=reqid,

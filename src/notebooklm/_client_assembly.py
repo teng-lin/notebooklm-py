@@ -34,6 +34,7 @@ from ._client_options import (
     NormalizedClientOptions,
     resolve_backend_preference,
 )
+from ._http_client_factory import HttpClientFactories
 from ._runtime.config import (
     DEFAULT_CONNECT_TIMEOUT,
     validate_read_timeout_kwarg,
@@ -142,6 +143,7 @@ def _assemble_client(
     sleep: Callable[[float], Awaitable[Any]] | None = None,
     is_auth_error: Callable[[Exception], bool] | None = None,
     async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
+    http_client_factories: HttpClientFactories | None = None,
     master_token_reader: MasterTokenReader | _UnsetType = _UNSET,
     oauth_minter: OAuthMinter | _UnsetType = _UNSET,
 ) -> None:
@@ -250,6 +252,7 @@ def _assemble_client(
                     None if isinstance(master_token_reader, _UnsetType) else master_token_reader
                 ),
                 oauth_minter=None if isinstance(oauth_minter, _UnsetType) else oauth_minter,
+                http_client_factories=http_client_factories,
                 sleep=sleep,
                 refresh_retry_delay=refresh_retry_delay,
             ),
@@ -316,6 +319,7 @@ def _assemble_client(
             sleep=sleep,
             is_auth_error=is_auth_error,
             legacy_upload_timeout=options.legacy_upload_timeout,
+            http_client_factories=http_client_factories,
         ),
     )
     _install_client(
