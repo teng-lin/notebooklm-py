@@ -94,24 +94,32 @@ write. Those are separate axes.
 ### Detached shared polling
 
 Artifact completion polling has leader/follower ownership. Each waiter is
-admitted and obeys its own phase and aggregate budget. The first waiter creates
-a registered leader task outside the waiter's operation context; followers
-attach to the same future through `asyncio.shield`. Cancelling or timing out one
-waiter therefore detaches that waiter without cancelling the shared leader or
-other followers. Client drain still owns the leader and cancels and gathers it
-before transport teardown.
+admitted independently, and its own enclosing aggregate operation budget limits
+how long that waiter may remain attached. The first waiter creates a registered
+leader task outside the waiter's operation context; followers attach to the same
+future through `asyncio.shield`. Cancelling or timing out one waiter therefore
+detaches that waiter without cancelling the shared leader or other followers.
+Client drain still owns the leader and cancels and gathers it before transport
+teardown.
 
-The leader's `wait_for_completion(timeout=...)` polling timeout remains its own
-phase budget. It controls retry backoff and terminal pending/in-progress errors;
-it is not silently replaced by whichever waiter happened to start the leader.
+The first waiter's polling knobs govern that shared detached leader: initial and
+maximum intervals, `wait_for_completion(timeout=...)`, not-found count, and
+not-found window. As enforced by
+[`_artifact/polling.py`](../src/notebooklm/_artifact/polling.py), a later
+follower's differing polling knobs are currently ignored and emit a registered
+deprecation warning. The leader's timeout controls its retry backoff and
+terminal pending/in-progress errors; it is not a separate per-follower phase
+budget.
 
 ## The mutation journal
 
-Every operation scope owns one private `OperationJournal`. A `JournalEntry`
-represents a semantic send, keyed by a stable `SendIdentity` containing the
-invocation, operation, method, phase, and optional batch-member occurrence. An
-entry appends one `AttemptRecord` for every physical dispatch, including auth or
-transport retry attempts.
+Each top-level workflow owns one private `OperationJournal`. Nested operation
+scopes and exclusive library child tasks that explicitly inherit the operation
+context share that journal and its ordered entries. A `JournalEntry` represents
+a semantic send, keyed by a stable `SendIdentity` containing the invocation,
+operation, method, phase, and optional batch-member occurrence. An entry appends
+one `AttemptRecord` for every physical dispatch, including auth or transport
+retry attempts.
 
 Dispatch begins conservatively as `UNKNOWN`. Positive evidence can settle the
 attempt, but a later success cannot erase an earlier ambiguous attempt. The
