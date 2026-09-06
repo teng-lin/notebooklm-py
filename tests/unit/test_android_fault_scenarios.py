@@ -8,6 +8,7 @@ import grpc
 import pytest
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    artifacts_pb2,
     read_pb2,
     sources_pb2,
 )
@@ -17,6 +18,7 @@ from tests._fault_server.grpc import (
     ADD_TENTATIVE_SOURCES,
     GENERATE_STREAMED,
     GET_PROJECT,
+    LIST_ARTIFACTS,
     GrpcAction,
     GrpcFaultServer,
     reply,
@@ -214,6 +216,31 @@ async def test_tentative_source_handler_round_trips_generated_protobufs() -> Non
                     ],
                 )
             )
+        finally:
+            await channel.close()
+        server.assert_consumed()
+
+    assert actual == response
+    assert server.requests[0].request.project_id == "notebook-1"
+
+
+@pytest.mark.asyncio
+async def test_list_artifacts_handler_round_trips_generated_protobufs() -> None:
+    response = artifacts_pb2.ListArtifactsResponse(
+        artifacts=[artifacts_pb2.Artifact(artifact_id="artifact-1", title="Diagram")]
+    )
+    server = GrpcFaultServer()
+    server.plan(LIST_ARTIFACTS, reply(response))
+
+    async with server:
+        channel = grpc.aio.insecure_channel(server.target)
+        call = channel.unary_unary(
+            LIST_ARTIFACTS,
+            request_serializer=artifacts_pb2.ListArtifactsRequest.SerializeToString,
+            response_deserializer=artifacts_pb2.ListArtifactsResponse.FromString,
+        )
+        try:
+            actual = await call(artifacts_pb2.ListArtifactsRequest(project_id="notebook-1"))
         finally:
             await channel.close()
         server.assert_consumed()
