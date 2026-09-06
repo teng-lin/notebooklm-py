@@ -5041,8 +5041,9 @@
         <path data-edge-from="assembly" data-edge-to="client" data-edge-label="installs" data-edge-key="3" data-edge-id="assembly-client" data-composition-points="800,75;890,75" d="M 800 75 L 890 75" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="root" data-edge-to="shared" data-edge-label="builds" data-edge-key="4" data-edge-id="root-shared" data-composition-points="470,82;435,82;435,234;380,234" d="M 470 82 L 443 82 Q 435 82 435 90 L 435 226 Q 435 234 427 234 L 380 234" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="root" data-edge-to="lifecycle" data-edge-label="constructs once" data-edge-key="5" data-edge-id="root-lifecycle" data-composition-points="530,112;530,204" d="M 530 112 L 530 204" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="client" data-edge-to="webgraph" data-edge-label="Web graph" data-edge-key="6" data-edge-id="client-web" data-composition-points="890,89;845,89;845,234;800,234" d="M 890 89 L 853 89 Q 845 89 845 97 L 845 226 Q 845 234 837 234 L 800 234" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="client" data-edge-to="androidgraph" data-edge-label="Android graph" data-edge-key="7" data-edge-id="client-android" data-composition-points="950,112;950,204" d="M 950 112 L 950 204" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="root" data-edge-to="sidecar" data-edge-label="pre-registers" data-edge-key="6" data-edge-id="root-sidecar" data-composition-points="530,52;530,25;20,25;20,234;50,234" d="M 530 52 L 530 33 Q 530 25 522 25 L 28 25 Q 20 25 20 33 L 20 226 Q 20 234 28 234 L 50 234" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="client" data-edge-to="webgraph" data-edge-label="Web graph" data-edge-key="7" data-edge-id="client-web" data-composition-points="890,89;845,89;845,234;800,234" d="M 890 89 L 853 89 Q 845 89 845 97 L 845 226 Q 845 234 837 234 L 800 234" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="client" data-edge-to="androidgraph" data-edge-label="Android graph" data-edge-key="8" data-edge-id="client-android" data-composition-points="950,112;950,204" d="M 950 112 L 950 204" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- Components -->
         <g id="node-config" data-node-id="config" data-node-label="ClientConfig" tabindex="0" role="button" aria-label="Focus ClientConfig, owner-grouped spec, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="owner-grouped spec" data-node-tag="frozen values" data-node-context="Architecture component">
@@ -5196,11 +5197,15 @@
           <rect x="494" y="155" width="82" height="14" rx="3" class="c-mask"/>
           <text x="535" y="165" class="t-muted" font-size="8" text-anchor="middle">constructs once</text>
         </g>
-        <g data-detail="context" data-edge-from="client" data-edge-to="webgraph" data-edge-label="Web graph" data-edge-key="6" data-edge-id="client-web">
+        <g data-detail="context" data-edge-from="root" data-edge-to="sidecar" data-edge-label="pre-registers" data-edge-key="6" data-edge-id="root-sidecar">
+          <rect x="293.8" y="15" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="330" y="25" class="t-messagebus" font-size="8" text-anchor="middle">pre-registers</text>
+        </g>
+        <g data-detail="context" data-edge-from="client" data-edge-to="webgraph" data-edge-label="Web graph" data-edge-key="7" data-edge-id="client-web">
           <rect x="818.4" y="141.5" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
           <text x="845" y="151.5" class="t-backend" font-size="8" text-anchor="middle">Web graph</text>
         </g>
-        <g data-detail="context" data-edge-from="client" data-edge-to="androidgraph" data-edge-label="Android graph" data-edge-key="7" data-edge-id="client-android">
+        <g data-detail="context" data-edge-from="client" data-edge-to="androidgraph" data-edge-label="Android graph" data-edge-key="8" data-edge-id="client-android">
           <rect x="713.8" y="326" width="72.4" height="14" rx="3" class="c-mask"/>
           <text x="750" y="336" class="t-backend" font-size="8" text-anchor="middle">Android graph</text>
         </g>
