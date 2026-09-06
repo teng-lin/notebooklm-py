@@ -724,9 +724,11 @@ class TestSharingAPIValidation:
         class CancellingRpc:
             async def rpc_call(self, method: RPCMethod, _params: list[Any], **kwargs: Any) -> Any:
                 assert method is RPCMethod.SHARE_NOTEBOOK
-                entry = kwargs["journal_entry"]
                 if dispatched:
-                    entry.mark_dispatched()
+                    from notebooklm._idempotency import bound_operation_journal_entries
+
+                    for entry in bound_operation_journal_entries():
+                        entry.mark_dispatched()
                 raise cancellation
 
         api = WebSharingAPI(CancellingRpc(), supervisor=make_fake_core())

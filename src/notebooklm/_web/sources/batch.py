@@ -24,6 +24,7 @@ from ..._idempotency import (
     attach_batch_outcome,
     attach_journal_entry,
     attach_operation_journal,
+    bind_operation_journal_entries,
     reconciliation_report,
     unresolved_commit_error,
 )
@@ -249,18 +250,18 @@ class SourceBatchAddService:
         ]
         rpc_error: RPCError | None = None
         try:
-            payload = await rpc.rpc_call(
-                RPCMethod.ADD_SOURCE,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=False,
-                disable_internal_retries=True,
-                # Reuse the established URL idempotency-registry variant while
-                # explicitly disabling its internal replay above.  The outer
-                # single-item probe loop is intentionally not used here.
-                operation_variant="url",
-                journal_entries=journal_entries,
-            )
+            with bind_operation_journal_entries(*journal_entries):
+                payload = await rpc.rpc_call(
+                    RPCMethod.ADD_SOURCE,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                    allow_null=False,
+                    disable_internal_retries=True,
+                    # Reuse the established URL idempotency-registry variant while
+                    # explicitly disabling its internal replay above.  The outer
+                    # single-item probe loop is intentionally not used here.
+                    operation_variant="url",
+                )
         except AuthError as exc:
             _attach_whole_batch_failure(
                 exc,

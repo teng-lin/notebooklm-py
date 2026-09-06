@@ -8,7 +8,7 @@ import logging
 import reprlib
 from typing import TYPE_CHECKING, Any
 
-from .._idempotency import JournalEntry, attach_journal_entry
+from .._idempotency import JournalEntry, attach_journal_entry, bound_operation_journal_entry
 from .._notebook_metadata import (
     NotebookMetadataService,
     NotebookSourceLister,
@@ -612,17 +612,15 @@ class WebNotebooksAPI(NotebooksAPI):
             method_id=RPCMethod.LIST_NOTEBOOKS.value,
         )
 
-    async def _send_create(
-        self, title: str, *, journal_entry: JournalEntry | None = None
-    ) -> Notebook:
+    async def _send_create(self, title: str) -> Notebook:
         """Send CREATE_NOTEBOOK and decode its web response."""
+        journal_entry = bound_operation_journal_entry()
         params = build_create_notebook_params(title)
         try:
             result = await self._rpc.rpc_call(
                 RPCMethod.CREATE_NOTEBOOK,
                 params,
                 disable_internal_retries=True,
-                journal_entry=journal_entry,
             )
         except RPCError as exc:
             await self._raise_quota_error_if_detected(exc, journal_entry=journal_entry)

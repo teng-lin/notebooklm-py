@@ -20,14 +20,25 @@ from .._backoff import (
     compute_backoff_delay,
 )
 from .._deadline import RuntimeDeadline, await_with_deadline
-from .._idempotency import attach_journal_entry
+from .._idempotency import (
+    attach_journal_entry,
+    bind_operation_journal_entries,
+    bound_operation_journal_entries,
+    bound_operation_journal_entry,
+)
 from .._loop_affinity import assert_bound_loop
 from .._loop_bound import EpochFenced
 from .._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from .._runtime.call_supervisor import CallLease, CallSupervisor, OperationLease
 from .._runtime.config import CORE_LOGGER_NAME, DEFAULT_CHAT_RESPONSE_MAX_BYTES
 from .._runtime.helpers import is_auth_error, resolve_sleep
-from ..exceptions import MissingDependencyError, NotebookLMError, RPCResponseTooLargeError
+from .._runtime.operation_context import adopt_operation_journal_entry
+from ..exceptions import (
+    MissingDependencyError,
+    NotebookLMError,
+    OperationTimeoutError,
+    RPCResponseTooLargeError,
+)
 from ..outcomes import CommitState, RecoveryAction
 from .auth import BearerCredential, BearerProvider
 from .epoch import workflow_epoch_for
@@ -553,7 +564,6 @@ class AndroidSession(EpochFenced):
         caller_metadata: Sequence[tuple[str, str | bytes]] = (),
         request_serializer: RequestSerializer[ReqT] | None = None,
         response_deserializer: ResponseDeserializer[RespT] | None = None,
-        journal_entries: tuple[JournalEntry, ...] = (),
     ) -> _AttemptSuccess[RespT] | _AttemptFailure:
         credential: BearerCredential | None = None
         wire_metadata: tuple[tuple[str, str | bytes], ...] | None = None
@@ -598,7 +608,7 @@ class AndroidSession(EpochFenced):
                 self.assert_epoch(lease.epoch)
                 wire_metadata = wire_metadata + tuple(extra)
             try:
-                for journal_entry in journal_entries:
+                for journal_entry in bound_operation_journal_entries():
                     journal_entry.mark_dispatched()
                 wire_call = callable_(
                     request,
@@ -647,8 +657,6 @@ class AndroidSession(EpochFenced):
         request_serializer: RequestSerializer[ReqT] | None = None,
         response_deserializer: ResponseDeserializer[RespT] | None = None,
         raw_replay: _RawReplayClassification | None = None,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> RespT:
         """Invoke a unary RPC without retaining this secret owner in failures."""
 
@@ -658,27 +666,32 @@ class AndroidSession(EpochFenced):
             operation_variant,
             raw_replay,
         )
-        if journal_entry is not None and journal_entries is not None:
-            raise ValueError("journal_entry and journal_entries are mutually exclusive")
-        bound_entries = journal_entries or (() if journal_entry is None else (journal_entry,))
+        bound_entries = bound_operation_journal_entries()
+        if not bound_entries and (not policy_replay_safe or method.endswith("/CancelGeneration")):
+            adopted = adopt_operation_journal_entry(
+                self._call_supervisor,
+                method=method,
+                operation=method.rpartition("/")[2] or method,
+            )
+            bound_entries = () if adopted is None else (adopted,)
         session = self
         failure: BaseException | None = None
         result: RespT | None = None
         try:
-            result = await session._unary_impl(
-                method,
-                request,
-                metadata_augmentor=metadata_augmentor,
-                replay_safe=policy_replay_safe,
-                timeout=timeout,
-                response_type=response_type,
-                telemetry_method=telemetry_method,
-                expected_epoch=expected_epoch,
-                caller_metadata=metadata,
-                request_serializer=request_serializer,
-                response_deserializer=response_deserializer,
-                journal_entries=bound_entries,
-            )
+            with bind_operation_journal_entries(*bound_entries):
+                result = await session._unary_impl(
+                    method,
+                    request,
+                    metadata_augmentor=metadata_augmentor,
+                    replay_safe=policy_replay_safe,
+                    timeout=timeout,
+                    response_type=response_type,
+                    telemetry_method=telemetry_method,
+                    expected_epoch=expected_epoch,
+                    caller_metadata=metadata,
+                    request_serializer=request_serializer,
+                    response_deserializer=response_deserializer,
+                )
         except BaseException as error:
             failure = sanitize_escaping_exception(error)
         finally:
@@ -703,7 +716,6 @@ class AndroidSession(EpochFenced):
         caller_metadata: Sequence[tuple[str, str | bytes]] = (),
         request_serializer: RequestSerializer[ReqT] | None = None,
         response_deserializer: ResponseDeserializer[RespT] | None = None,
-        journal_entries: tuple[JournalEntry, ...] = (),
     ) -> RespT:
         """Invoke one typed unary RPC with bounded replay of safe reads."""
 
@@ -732,7 +744,6 @@ class AndroidSession(EpochFenced):
                         caller_metadata,
                         request_serializer,
                         response_deserializer,
-                        journal_entries,
                     )
                     if isinstance(outcome, _AttemptSuccess):
                         return outcome.value
@@ -803,6 +814,8 @@ class AndroidSession(EpochFenced):
                             self._metrics.increment(rpc_server_error_retries=1)
                         continue
                     raise error
+        except OperationTimeoutError:
+            raise
         except TimeoutError:
             queue_timed_out = True
         if queue_timed_out:
@@ -862,8 +875,6 @@ class AndroidSession(EpochFenced):
         response_sizer: ResponseSizer[RespT] | None = None,
         stop_after: Callable[[RespT], bool] | None = None,
         raw_replay: _RawReplayClassification | None = None,
-        journal_entry: JournalEntry | None = None,
-        journal_entries: tuple[JournalEntry, ...] | None = None,
     ) -> AsyncIterator[RespT]:
         """Yield a stream, optionally stopping after a protocol-terminal response."""
 
@@ -872,18 +883,23 @@ class AndroidSession(EpochFenced):
         # single-attempt even if a future read-only stream is added: the only
         # currently admitted stream creates a chat turn, and web has no stream
         # auth replay to mirror.
-        _resolve_replay_safe(
+        policy_replay_safe = _resolve_replay_safe(
             method,
             replay_safe,
             operation_variant,
             raw_replay,
         )
-        if journal_entries is not None:
-            if journal_entry is not None:
-                raise ValueError("journal_entry and journal_entries are mutually exclusive")
-            if len(journal_entries) != 1:
-                raise ValueError("streams accept one bound journal entry")
-            journal_entry = journal_entries[0]
+        bound_entries = bound_operation_journal_entries()
+        if not bound_entries and (not policy_replay_safe or method.endswith("/CancelGeneration")):
+            adopted = adopt_operation_journal_entry(
+                self._call_supervisor,
+                method=method,
+                operation=method.rpartition("/")[2] or method,
+            )
+            bound_entries = () if adopted is None else (adopted,)
+        if len(bound_entries) > 1:
+            raise ValueError("streams accept one bound journal entry")
+        journal_entry = next(iter(bound_entries), None)
         session = self
         iterator = cast(
             AsyncGenerator[RespT, None],
@@ -899,22 +915,22 @@ class AndroidSession(EpochFenced):
                 response_deserializer=response_deserializer,
                 response_sizer=response_sizer,
                 stop_after=stop_after,
-                journal_entry=journal_entry,
             ),
         )
         failure: BaseException | None = None
-        try:
-            async for item in iterator:
-                yield item
-        except BaseException as error:
-            failure = sanitize_escaping_exception(error)
-        finally:
+        with bind_operation_journal_entries(*bound_entries):
             try:
-                await iterator.aclose()
+                async for item in iterator:
+                    yield item
             except BaseException as error:
-                if failure is None:
-                    failure = sanitize_escaping_exception(error)
-            del self, session, iterator
+                failure = sanitize_escaping_exception(error)
+            finally:
+                try:
+                    await iterator.aclose()
+                except BaseException as error:
+                    if failure is None:
+                        failure = sanitize_escaping_exception(error)
+                del self, session, iterator
         if failure is not None:
             if isinstance(failure, NotebookLMError) and journal_entry is not None:
                 _attach_journal_failure(failure, (journal_entry,))
@@ -934,7 +950,6 @@ class AndroidSession(EpochFenced):
         response_deserializer: ResponseDeserializer[RespT] | None,
         response_sizer: ResponseSizer[RespT] | None,
         stop_after: Callable[[RespT], bool] | None,
-        journal_entry: JournalEntry | None,
     ) -> AsyncIterator[RespT]:
         """Yield a typed server stream while retaining one supervisor lease."""
 
@@ -985,6 +1000,7 @@ class AndroidSession(EpochFenced):
                             caller_metadata
                         )
                         try:
+                            journal_entry = bound_operation_journal_entry()
                             if journal_entry is not None:
                                 journal_entry.mark_dispatched()
                             call = callable_(
@@ -1071,6 +1087,8 @@ class AndroidSession(EpochFenced):
                         method=method,
                         timeout_seconds=None if deadline is None else deadline.timeout,
                     )
+        except OperationTimeoutError:
+            raise
         except TimeoutError:
             queue_timed_out = True
         if queue_timed_out:

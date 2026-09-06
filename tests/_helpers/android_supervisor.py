@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 
 from notebooklm._android.epoch import workflow_epoch_for
 from notebooklm._client_metrics import ClientMetrics
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._runtime.call_supervisor import CallSupervisor
 
 Handler = Callable[[Any, dict[str, Any]], Any]
@@ -43,7 +44,6 @@ class SupervisedAndroidTransport:
         return await self.supervisor.spawn_child(label, factory)
 
     async def unary(self, method: str, request: Any, **kwargs: Any) -> Any:
-        journal_entry = kwargs.pop("journal_entry", None)
         expected_epoch = kwargs.get("expected_epoch")
         if expected_epoch is None:
             expected_epoch = workflow_epoch_for(self)
@@ -53,8 +53,8 @@ class SupervisedAndroidTransport:
             None,
             expected_epoch=expected_epoch,
         ):
-            if journal_entry is not None:
-                journal_entry.mark_dispatched()
+            for entry in bound_operation_journal_entries():
+                entry.mark_dispatched()
             self.calls.append((method, request, kwargs))
             result = self.handlers[method]
             if callable(result):

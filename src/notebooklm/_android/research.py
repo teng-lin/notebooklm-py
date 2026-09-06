@@ -7,7 +7,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import JournalEntry, call_unconfirmed_on_transport_loss, mark_unconfirmed
+from .._idempotency import (
+    bound_operation_journal_entry,
+    call_unconfirmed_on_transport_loss,
+    mark_unconfirmed,
+)
 from .._notebook_metadata import NotebookSourceLister
 from .._research import BaseResearchAPI, validate_discover
 from .._research_import import _ANDROID_RESEARCH_IMPORT_POLICY, _ResearchImportBatch
@@ -314,8 +318,8 @@ class AndroidResearchAPI(BaseResearchAPI):
         batch: _ResearchImportBatch,
         *,
         _remaining_budget: float | None,
-        journal_entry: JournalEntry | None = None,
     ) -> list[dict[str, str]]:
+        journal_entry = bound_operation_journal_entry()
         entries = [
             _source_proto().UserContent(
                 text_content=_source_proto().TextContent(
@@ -350,7 +354,6 @@ class AndroidResearchAPI(BaseResearchAPI):
                 ),
                 response_type=_proto().FinishDiscoverSourcesRunResponse,
                 expected_epoch=lease.epoch,
-                journal_entry=journal_entry,
             )
             imported = [
                 {"id": header.source_id.id, "title": header.title}

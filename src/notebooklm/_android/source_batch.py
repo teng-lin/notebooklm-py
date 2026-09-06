@@ -12,6 +12,7 @@ from .._idempotency import (
     attach_batch_outcome,
     attach_journal_entry,
     attach_operation_journal,
+    bind_operation_journal_entries,
     reconciliation_report,
 )
 from .._source.batch import SourceUrlBatchItem
@@ -43,7 +44,6 @@ class _BatchOwner(Protocol):
         names: Sequence[str],
         *,
         expected_epoch: int,
-        journal_entries: tuple[JournalEntry, ...],
     ) -> Sequence[Any]: ...
 
     async def _commit_urls(
@@ -52,7 +52,6 @@ class _BatchOwner(Protocol):
         entries: Sequence[tuple[str, str]],
         *,
         expected_epoch: int,
-        journal_entries: tuple[JournalEntry, ...],
     ) -> tuple[dict[str, Any], Any]: ...
 
 
@@ -215,12 +214,12 @@ class AndroidSourceBatchMixin:
 
         async with self._transport.operation_scope("source.add_urls_batch") as lease:
             try:
-                registrations = await owner._register_tentative_sources(
-                    notebook_id,
-                    correlations,
-                    expected_epoch=lease.epoch,
-                    journal_entries=registration_entries,
-                )
+                with bind_operation_journal_entries(*registration_entries):
+                    registrations = await owner._register_tentative_sources(
+                        notebook_id,
+                        correlations,
+                        expected_epoch=lease.epoch,
+                    )
             except (asyncio.CancelledError, KeyboardInterrupt, SystemExit, AuthError) as exc:
                 _attach_failure(
                     exc,
@@ -301,14 +300,14 @@ class AndroidSourceBatchMixin:
             proofs: dict[str, Any] = {}
             if entries:
                 try:
-                    proofs, _ = await owner._commit_urls(
-                        notebook_id,
-                        cast(Sequence[tuple[str, str]], entries),
-                        expected_epoch=lease.epoch,
-                        journal_entries=tuple(
-                            commit_entries[index] for index, _, _ in indexed_entries
-                        ),
-                    )
+                    with bind_operation_journal_entries(
+                        *(commit_entries[index] for index, _, _ in indexed_entries)
+                    ):
+                        proofs, _ = await owner._commit_urls(
+                            notebook_id,
+                            cast(Sequence[tuple[str, str]], entries),
+                            expected_epoch=lease.epoch,
+                        )
                 except BaseException as exc:
                     _attach_failure(
                         exc,

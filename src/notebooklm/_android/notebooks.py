@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
-from .._idempotency import JournalEntry, mark_unconfirmed
+from .._idempotency import bound_operation_journal_entry, mark_unconfirmed
 from .._notebook_metadata import NotebookSourceLister
 from .._notebooks import NotebooksAPI
 from .._runtime.call_supervisor import OperationLease
@@ -224,10 +224,9 @@ class AndroidNotebooksAPI(NotebooksAPI):
             )
         ]
 
-    async def _send_create(
-        self, title: str, *, journal_entry: JournalEntry | None = None
-    ) -> Notebook:
+    async def _send_create(self, title: str) -> Notebook:
         # evidence: docs/android/proto-evidence-ledger.md#notebook-method-ledger
+        journal_entry = bound_operation_journal_entry()
         notebook_proto = _notebook_proto()
         read_proto = _read_proto()
         response = await self._transport.unary(
@@ -235,7 +234,6 @@ class AndroidNotebooksAPI(NotebooksAPI):
             notebook_proto.CreateProjectRequest(name=title),
             replay_safe=False,
             response_type=read_proto.Project,
-            journal_entry=journal_entry,
         )
         try:
             notebook = _notebook_codec().decode_project(response, method_id=CREATE_PROJECT_METHOD)

@@ -38,6 +38,7 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
 )
 from notebooklm._android.session import AndroidSession
 from notebooklm._chat import ChatAPI, _TurnRoleSnapshot
+from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm._types.documents import BlockKind, BlockStyle, ListStyle, StructuredDocument
 from notebooklm._types.enums import ChatGoal, ChatResponseLength
 from notebooklm.exceptions import (
@@ -84,6 +85,8 @@ class FakeSession:
         return response
 
     async def stream(self, method: str, request: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        for entry in bound_operation_journal_entries():
+            entry.mark_dispatched()
         self.stream_calls.append((method, request, kwargs))
         stop_after = kwargs.get("stop_after")
         for response in self.stream_responses.pop(0):
@@ -789,8 +792,6 @@ async def test_base_ask_stops_at_authoritative_cumulative_final_without_concaten
     )
     assert request.request_context.client_type == 2
     stop_after = kwargs.pop("stop_after")
-    journal_entry = kwargs.pop("journal_entry")
-    assert journal_entry.identity.operation == "chat"
     assert callable(stop_after)
     assert stop_after(_frame("done", final=True)) is True
     assert stop_after(_frame("partial", final=False)) is False

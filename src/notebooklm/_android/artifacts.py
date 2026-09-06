@@ -15,6 +15,7 @@ import httpx
 from .._artifacts import ArtifactsAPI
 from .._idempotency import (
     attach_journal_entry,
+    bind_operation_journal_entries,
     call_unconfirmed_on_transport_loss,
     claim_generation_entry,
     mark_unconfirmed,
@@ -372,11 +373,8 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
             method=CREATE_ARTIFACT_METHOD,
             semantic_key=fingerprint,
         )
-        response = await create_artifact_once(
-            self._transport,
-            request,
-            journal_entry=journal_entry,
-        )
+        with bind_operation_journal_entries(journal_entry):
+            response = await create_artifact_once(self._transport, request)
         try:
             artifact = decode_artifact(response.artifact, method_id=CREATE_ARTIFACT_METHOD)
             if artifact._artifact_type != expected_type or (

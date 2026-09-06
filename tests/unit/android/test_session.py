@@ -29,13 +29,18 @@ from notebooklm._android.session import (
 from notebooklm._android.source_transfers import ADD_TENTATIVE_SOURCES_METHOD
 from notebooklm._client_metrics import ClientMetrics
 from notebooklm._deadline import RuntimeDeadline, await_with_deadline
-from notebooklm._idempotency import OperationJournal, mark_commit_state
+from notebooklm._idempotency import (
+    OperationJournal,
+    bind_operation_journal_entries,
+    mark_commit_state,
+)
 from notebooklm._runtime.call_supervisor import CallSupervisor
 from notebooklm.exceptions import (
     AuthError,
     ClientError,
     MissingDependencyError,
     NetworkError,
+    OperationTimeoutError,
     RateLimitError,
     RPCError,
     RPCResponseTooLargeError,
@@ -843,15 +848,17 @@ async def test_real_android_unary_cancellation_keeps_every_batch_attempt_unknown
         journal.new_entry(method=MUTATION_METHOD, member=index, invocation_id=invocation_id)
         for index in range(2)
     )
-    call = asyncio.create_task(
-        session.unary(
-            MUTATION_METHOD,
-            _Message(b"request"),
-            replay_safe=False,
-            response_type=_Message,
-            journal_entries=entries,
-        )
-    )
+
+    async def _call() -> _Message:
+        with bind_operation_journal_entries(*entries):
+            return await session.unary(
+                MUTATION_METHOD,
+                _Message(b"request"),
+                replay_safe=False,
+                response_type=_Message,
+            )
+
+    call = asyncio.create_task(_call())
     while not channel.invocations:
         await asyncio.sleep(0)
     call.cancel()
@@ -867,6 +874,28 @@ async def test_real_android_unary_cancellation_keeps_every_batch_attempt_unknown
 
 
 @pytest.mark.asyncio
+async def test_operation_timeout_auto_journals_unbound_android_mutation() -> None:
+    channel = _Channel()
+    channel.unary_outcomes = [asyncio.Future()]
+    session, _, _, _, supervisor = await _open(channel=channel)
+
+    with pytest.raises(OperationTimeoutError) as raised:
+        async with supervisor.operation_scope("raw mutation", timeout=0.01):
+            await session.unary(
+                MUTATION_METHOD,
+                _Message(b"request"),
+                replay_safe=False,
+                response_type=_Message,
+            )
+
+    metadata = raised.value.operation_metadata
+    assert metadata is not None
+    assert metadata.method == MUTATION_METHOD
+    assert metadata.commit_state is CommitState.UNKNOWN
+    assert len(metadata.entries) == 1
+
+
+@pytest.mark.asyncio
 async def test_unary_folds_decoded_rejection_into_the_active_attempt() -> None:
     channel = _Channel()
     channel.unary_outcomes = [_RawRpcError(_Status.UNAUTHENTICATED)]
@@ -874,13 +903,12 @@ async def test_unary_folds_decoded_rejection_into_the_active_attempt() -> None:
     journal = OperationJournal("sources.add_url")
     entry = journal.new_entry(method=ADD_TENTATIVE_SOURCES_METHOD)
 
-    with pytest.raises(AuthError) as raised:
+    with pytest.raises(AuthError) as raised, bind_operation_journal_entries(entry):
         await session.unary(
             ADD_TENTATIVE_SOURCES_METHOD,
             _Message(b"request"),
             replay_safe=False,
             response_type=_Message,
-            journal_entry=entry,
         )
 
     assert raised.value.commit_state is CommitState.REJECTED
@@ -909,13 +937,12 @@ async def test_unary_folds_whole_request_rejection_into_every_bound_attempt() ->
         for index in range(2)
     )
 
-    with pytest.raises(AuthError) as raised:
+    with pytest.raises(AuthError) as raised, bind_operation_journal_entries(*entries):
         await session.unary(
             ADD_TENTATIVE_SOURCES_METHOD,
             _Message(b"request"),
             replay_safe=False,
             response_type=_Message,
-            journal_entries=entries,
         )
 
     assert raised.value.commit_state is CommitState.REJECTED

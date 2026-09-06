@@ -5,7 +5,11 @@ from __future__ import annotations
 import builtins
 from typing import Any, Literal, cast
 
-from .._idempotency import JournalEntry, call_unconfirmed_on_transport_loss, mark_unconfirmed
+from .._idempotency import (
+    bound_operation_journal_entry,
+    call_unconfirmed_on_transport_loss,
+    mark_unconfirmed,
+)
 from ..exceptions import DecodingError, NotebookLMError, NotebookNotFoundError, RPCError
 from ..types import Collection, Label
 from .codecs.organization import decode_collections, decode_labels
@@ -104,8 +108,8 @@ async def create_manual(
     emoji: str,
     notebook_id: str | None,
     expected_epoch: int,
-    journal_entry: JournalEntry | None = None,
 ) -> Any:
+    journal_entry = bound_operation_journal_entry()
     exact = _exact_proto()
     properties = exact.LabelProperties(name=name)
     if emoji:
@@ -120,15 +124,18 @@ async def create_manual(
         request.project_id = notebook_id
     else:
         request.label_type = COLLECTION_TYPE
-    return await call_unconfirmed_on_transport_loss(
-        lambda: transport.unary(
+
+    async def _send() -> Any:
+        return await transport.unary(
             CREATE_LABEL_METHOD,
             request,
             replay_safe=False,
             response_type=exact.CreateLabelResponse,
             expected_epoch=expected_epoch,
-            journal_entry=journal_entry,
-        ),
+        )
+
+    return await call_unconfirmed_on_transport_loss(
+        _send,
         method=CREATE_LABEL_METHOD,
         what="CreateLabel",
         chain=None,

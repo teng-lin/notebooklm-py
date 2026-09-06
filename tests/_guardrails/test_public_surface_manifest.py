@@ -400,6 +400,7 @@ _TOP_LEVEL_EXCEPTION_EXPORTS = [
     "NotebookLimitError",
     "NotebookLMError",
     "NotebookNotFoundError",
+    "OperationTimeoutError",
     "RateLimitError",
     "ResearchError",
     "ResearchStartUnavailableError",

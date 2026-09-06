@@ -16,7 +16,12 @@ from .._chat import (
     _TurnRoleSnapshot,
 )
 from .._conversation_cache import ConversationCache
-from .._idempotency import OperationJournal, attach_journal_entry, mark_unconfirmed
+from .._idempotency import (
+    OperationJournal,
+    attach_journal_entry,
+    bind_operation_journal_entries,
+    mark_unconfirmed,
+)
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.call_supervisor import OperationLease
 from .._runtime.config import (
@@ -377,30 +382,30 @@ class AndroidChatAPI(ChatAPI):
             method=GENERATE_FREE_FORM_STREAMED_METHOD
         )
         try:
-            async for response in self._transport.stream(
-                GENERATE_FREE_FORM_STREAMED_METHOD,
-                request,
-                replay_safe=False,
-                timeout=self._chat_timeout,
-                response_type=proto.GenerateFreeFormStreamedResponse,
-                telemetry_method="chat.ask",
-                max_response_bytes=self._chat_response_max_bytes,
-                stop_after=_is_final_chat_response,
-                journal_entry=journal_entry,
-            ):
-                if response.HasField("next_step_suggestions"):
-                    decoded_next_steps = [
-                        NextStepSuggestion(
-                            question=next_step.suggestion,
-                            type_code=int(next_step.suggestion_type),
-                        )
-                        for next_step in response.next_step_suggestions.next_steps
-                        if next_step.suggestion
-                    ]
-                    if decoded_next_steps:
-                        next_steps = decoded_next_steps
-                if response.is_final_response:
-                    final_response = response
+            with bind_operation_journal_entries(journal_entry):
+                async for response in self._transport.stream(
+                    GENERATE_FREE_FORM_STREAMED_METHOD,
+                    request,
+                    replay_safe=False,
+                    timeout=self._chat_timeout,
+                    response_type=proto.GenerateFreeFormStreamedResponse,
+                    telemetry_method="chat.ask",
+                    max_response_bytes=self._chat_response_max_bytes,
+                    stop_after=_is_final_chat_response,
+                ):
+                    if response.HasField("next_step_suggestions"):
+                        decoded_next_steps = [
+                            NextStepSuggestion(
+                                question=next_step.suggestion,
+                                type_code=int(next_step.suggestion_type),
+                            )
+                            for next_step in response.next_step_suggestions.next_steps
+                            if next_step.suggestion
+                        ]
+                        if decoded_next_steps:
+                            next_steps = decoded_next_steps
+                    if response.is_final_response:
+                        final_response = response
         except NotebookLMError as exc:
             # Android status mapping already supplies UNKNOWN for this
             # non-replayable stream. Add the feature identity at the boundary

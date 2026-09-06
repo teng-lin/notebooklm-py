@@ -16,7 +16,12 @@ from .._chat import (
     _TurnRoleSnapshot,
 )
 from .._conversation_cache import ConversationCache
-from .._idempotency import OperationJournal, attach_journal_entry, mark_unconfirmed
+from .._idempotency import (
+    OperationJournal,
+    attach_journal_entry,
+    bind_operation_journal_entries,
+    mark_unconfirmed,
+)
 from .._logging import get_request_id, reset_request_id, set_request_id
 from .._notebook_metadata import CreatedChatSessionProvider, NotebookSourceIdProvider
 from .._runtime.config import (
@@ -241,15 +246,15 @@ class WebChatAPI(ChatAPI):
         journal = OperationJournal("chat")
         journal_entry = journal.new_entry(method="chat.ask")
         try:
-            response = await chat_aware_authed_post(
-                self._transport,
-                build_request=build_request,
-                parse_label="chat.ask",
-                read_timeout=self._chat_timeout,
-                max_response_bytes=self._chat_response_max_bytes,
-                disable_read_timeout_retries=True,
-                journal_entry=journal_entry,
-            )
+            with bind_operation_journal_entries(journal_entry):
+                response = await chat_aware_authed_post(
+                    self._transport,
+                    build_request=build_request,
+                    parse_label="chat.ask",
+                    read_timeout=self._chat_timeout,
+                    max_response_bytes=self._chat_response_max_bytes,
+                    disable_read_timeout_retries=True,
+                )
         finally:
             if reqid_token is not None:
                 reset_request_id(reqid_token)

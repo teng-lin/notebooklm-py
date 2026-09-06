@@ -100,8 +100,6 @@ class _Owner:
         read_timeout: float | None = None,
         expected_epoch: int | None = None,
         epoch_observer: Callable[[int], None] | None = None,
-        journal_entry: Any = None,
-        journal_entries: Any = None,
     ) -> httpx.Response:
         admitted_epoch = 1 if expected_epoch is None else expected_epoch
         if epoch_observer is not None:
@@ -118,10 +116,6 @@ class _Owner:
             "read_timeout": read_timeout,
             "expected_epoch": expected_epoch,
         }
-        if journal_entry is not None:
-            call["journal_entry"] = journal_entry
-        if journal_entries is not None:
-            call["journal_entries"] = journal_entries
         self.perform_calls.append(call)
         return self.response
 
@@ -288,8 +282,6 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         read_timeout: float | None = None,
         expected_epoch: int | None = None,
         epoch_observer: Callable[[int], None] | None = None,
-        journal_entry: Any = None,
-        journal_entries: Any = None,
     ) -> httpx.Response:
         if epoch_observer is not None:
             epoch_observer(1 if expected_epoch is None else expected_epoch)
@@ -904,8 +896,6 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         operation_variant: str | None = None,
         read_timeout: float | None = None,
         raise_on_null_status: bool = False,
-        journal_entry: Any = None,
-        journal_entries: Any = None,
         _refresh_budget: Any = None,
         _retry_deadline: Any = None,
         _resource_epoch: int | None = None,

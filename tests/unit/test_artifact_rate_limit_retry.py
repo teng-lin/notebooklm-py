@@ -5,7 +5,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from notebooklm._idempotency import call_unconfirmed_on_transport_loss
+from notebooklm._idempotency import (
+    bound_operation_journal_entries,
+    call_unconfirmed_on_transport_loss,
+)
 from notebooklm._web.artifact.generation import ArtifactGenerationService
 from notebooklm._web.wire.decoder import extract_rpc_result
 from notebooklm.artifacts import (
@@ -243,7 +246,7 @@ class TestWithRateLimitRetry:
             async def rpc_call(self, method: Any, params: Any, **kwargs: Any) -> Any:
                 del method, params
                 self.calls += 1
-                entry = kwargs["journal_entry"]
+                (entry,) = bound_operation_journal_entries()
                 entry.mark_dispatched()
                 result = self.results.pop(0)
                 if isinstance(result, BaseException):
@@ -287,7 +290,7 @@ class TestWithRateLimitRetry:
             async def rpc_call(self, method: Any, params: Any, **kwargs: Any) -> Any:
                 del method, params
                 self.calls += 1
-                entry = kwargs["journal_entry"]
+                (entry,) = bound_operation_journal_entries()
                 entry.mark_dispatched()
                 error = _decoded_refusal()
                 entry.record(CommitState.REJECTED, "decoded refusal")

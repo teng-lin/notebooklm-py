@@ -35,6 +35,43 @@ _E = TypeVar("_E", bound=BaseException)
 
 
 @dataclass(frozen=True)
+class _JournalCollector:
+    """Task-qualified sink used by the runtime operation context."""
+
+    owner_task: asyncio.Task[object]
+    collect: Callable[[JournalEntry], None]
+
+
+_JOURNAL_COLLECTORS: ContextVar[tuple[_JournalCollector, ...]] = ContextVar(
+    "notebooklm_operation_journal_collectors", default=()
+)
+
+
+@dataclass(frozen=True)
+class _JournalBinding:
+    """Task-qualified physical-send evidence binding."""
+
+    owner_task: asyncio.Task[object] | None
+    entries: tuple[JournalEntry, ...]
+
+
+_JOURNAL_BINDINGS: ContextVar[tuple[_JournalBinding, ...]] = ContextVar(
+    "notebooklm_operation_journal_bindings", default=()
+)
+
+
+@dataclass(frozen=True)
+class _OperationJournalOwner:
+    owner_task: asyncio.Task[object]
+    journal: OperationJournal
+
+
+_OPERATION_JOURNALS: ContextVar[tuple[_OperationJournalOwner, ...]] = ContextVar(
+    "notebooklm_active_operation_journals", default=()
+)
+
+
+@dataclass(frozen=True)
 class SendIdentity:
     """Value identity for one semantic send within a local invocation."""
 
@@ -135,8 +172,6 @@ class OperationJournal:
         return tuple(self._entries.values())
 
     def entry(self, identity: SendIdentity) -> JournalEntry:
-        if identity.operation != self.operation:
-            raise ValueError("send identity belongs to a different operation")
         return self._entries.setdefault(identity, JournalEntry(identity, self))
 
     def new_entry(
@@ -146,16 +181,26 @@ class OperationJournal:
         phase: str = "mutation",
         member: int | None = None,
         invocation_id: str | None = None,
+        operation: str | None = None,
     ) -> JournalEntry:
-        return self.entry(
+        entry = self.entry(
             SendIdentity(
                 invocation_id or self.invocation_id(),
-                self.operation,
+                redact(operation or self.operation, max_length=200),
                 redact(method, max_length=200),
                 redact(phase, max_length=200),
                 member,
             )
         )
+        try:
+            task = asyncio.current_task()
+        except RuntimeError:
+            task = None
+        if task is not None:
+            for collector in _JOURNAL_COLLECTORS.get():
+                if collector.owner_task is task:
+                    collector.collect(entry)
+        return entry
 
     def mark_dispatched(self, entry: JournalEntry) -> AttemptRecord:
         self._check_entry(entry)
@@ -216,6 +261,7 @@ class OperationJournal:
         entry: JournalEntry | None = None,
         *,
         primary: JournalEntry | None = None,
+        primary_metadata: OperationMetadata | None = None,
         extra_entries: tuple[JournalEntry, ...] = (),
     ) -> OperationMetadata:
         """Freeze one entry or an aggregate of every semantic workflow send."""
@@ -233,7 +279,16 @@ class OperationJournal:
         if primary is not None and not any(primary is item for item in all_entries):
             raise ValueError("primary entry does not belong to the workflow snapshot")
         selected = primary or all_entries[0]
-        leaves = tuple(item._journal._entry_snapshot(item) for item in all_entries)
+        if primary_metadata is not None and (
+            primary is None or primary_metadata.invocation_id != primary.identity.invocation_id
+        ):
+            raise ValueError("primary metadata does not match the selected journal entry")
+        leaves = tuple(
+            primary_metadata
+            if primary_metadata is not None and item is primary
+            else item._journal._entry_snapshot(item)
+            for item in all_entries
+        )
         mutation_leaves = (
             tuple(
                 leaf
@@ -252,7 +307,11 @@ class OperationJournal:
             if CommitState.REJECTED in states
             else CommitState.NOT_SENT
         )
-        selected_leaf = selected._journal._entry_snapshot(selected)
+        selected_leaf = (
+            primary_metadata
+            if primary_metadata is not None
+            else selected._journal._entry_snapshot(selected)
+        )
         return replace(
             selected_leaf,
             commit_state=state,
@@ -320,6 +379,109 @@ def attach_operation_metadata(exc: _E, metadata: OperationMetadata) -> _E:
     return exc
 
 
+@contextmanager
+def collect_operation_journal_entries(
+    collect: Callable[[JournalEntry], None],
+    journal: OperationJournal | None = None,
+) -> Iterator[None]:
+    """Collect entries created by the current admitted task.
+
+    The callback is deliberately task-qualified.  Context variables are copied
+    into newly-created tasks, but shared producers must not inherit a waiter's
+    replay identity merely because their task was spawned from its call stack.
+    Registered exclusive children receive their operation context explicitly
+    through the supervisor instead.
+    """
+
+    task = asyncio.current_task()
+    if task is None:  # pragma: no cover - runtime operation invariant
+        raise RuntimeError("operation journal collection requires an asyncio task")
+    collector = _JournalCollector(task, collect)
+    stack = _JOURNAL_COLLECTORS.get()
+    token = _JOURNAL_COLLECTORS.set((*stack, collector))
+    journals = _OPERATION_JOURNALS.get()
+    journal_token = (
+        None
+        if journal is None
+        else _OPERATION_JOURNALS.set((*journals, _OperationJournalOwner(task, journal)))
+    )
+    try:
+        yield
+    finally:
+        if journal_token is not None:
+            _OPERATION_JOURNALS.reset(journal_token)
+        _JOURNAL_COLLECTORS.reset(token)
+
+
+@contextmanager
+def bind_operation_journal_entries(
+    *entries: JournalEntry | None,
+) -> Iterator[None]:
+    """Bind canonical send evidence around one transport invocation."""
+
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        # A few structural tests synchronously drive a coroutine only to its
+        # first transport raise. ContextVars still scope that path correctly;
+        # real sends always have an owning asyncio task.
+        task = None
+    binding = _JournalBinding(task, tuple(entry for entry in entries if entry is not None))
+    stack = _JOURNAL_BINDINGS.get()
+    token = _JOURNAL_BINDINGS.set((*stack, binding))
+    try:
+        yield
+    except BaseException:
+        raise
+    else:
+        # Structural test doubles and narrow collaborator seams may return a
+        # decoded response without implementing a wire terminal. Treat only a
+        # clean return as acceptance; real terminals have already opened their
+        # attempt, so this is a no-op in production transport paths.
+        for entry in binding.entries:
+            if not entry.attempts and entry.commit_state is CommitState.NOT_SENT:
+                entry.mark_dispatched()
+    finally:
+        _JOURNAL_BINDINGS.reset(token)
+
+
+def bound_operation_journal_entries() -> tuple[JournalEntry, ...]:
+    """Return the innermost send binding owned by the current task."""
+
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    for binding in reversed(_JOURNAL_BINDINGS.get()):
+        if binding.owner_task is task:
+            return binding.entries
+    return ()
+
+
+def bound_operation_journal_entry() -> JournalEntry | None:
+    """Return the sole task-owned send binding, if exactly one is active."""
+
+    entries = bound_operation_journal_entries()
+    return next(iter(entries), None) if len(entries) == 1 else None
+
+
+@contextmanager
+def detached_operation_journal_context() -> Iterator[None]:
+    """Clear waiter-specific evidence/replay bindings in a detached producer."""
+
+    collector_token = _JOURNAL_COLLECTORS.set(())
+    binding_token = _JOURNAL_BINDINGS.set(())
+    journal_token = _OPERATION_JOURNALS.set(())
+    generation_token = _GENERATION_BINDINGS.set(())
+    try:
+        yield
+    finally:
+        _GENERATION_BINDINGS.reset(generation_token)
+        _OPERATION_JOURNALS.reset(journal_token)
+        _JOURNAL_BINDINGS.reset(binding_token)
+        _JOURNAL_COLLECTORS.reset(collector_token)
+
+
 def attach_journal_entry(
     exc: _E,
     entry: JournalEntry,
@@ -358,18 +520,60 @@ def attach_operation_journal(
     """Attach an immutable workflow-wide aggregate while preserving every send."""
 
     existing = getattr(exc, "operation_metadata", None)
-    if existing is not None and primary is not None:
-        primary.remember_resource_ids(*existing.known_resource_ids)
-        primary.source_id = primary.source_id or existing.source_id
-        primary.stage = primary.stage or existing.stage
-        primary.reconciliation = primary.reconciliation or existing.reconciliation
-        primary.batch_outcome = primary.batch_outcome or existing.batch_outcome
-        primary.prerequisite_ids = tuple(
-            dict.fromkeys((*primary.prerequisite_ids, *existing.prerequisite_ids))
+    exact_primary_metadata: OperationMetadata | None = None
+    if existing is not None and existing.invocation_id is not None:
+        escaping_leaf = next(
+            (
+                leaf
+                for leaf in existing.entries
+                if leaf.invocation_id == existing.invocation_id
+                and (existing.operation is None or leaf.operation == existing.operation)
+                and (existing.method is None or leaf.method == existing.method)
+                and (existing.phase is None or leaf.phase == existing.phase)
+                and (existing.member is None or leaf.member == existing.member)
+            ),
+            existing,
         )
-        if primary.recovery_action is RecoveryAction.NONE:
-            primary.recovery_action = existing.recovery_action
-    metadata = journal.snapshot(primary=primary, extra_entries=extra_entries)
+        candidates = (*journal.entries, *extra_entries)
+        matched = next(
+            (
+                entry
+                for entry in candidates
+                if entry.identity.invocation_id == existing.invocation_id
+                and (existing.operation is None or entry.identity.operation == existing.operation)
+                and (existing.method is None or entry.identity.method == existing.method)
+                and (existing.phase is None or entry.identity.phase == existing.phase)
+                and (existing.member is None or entry.identity.member == existing.member)
+            ),
+            None,
+        )
+        if matched is not None:
+            primary = matched
+            exact_primary_metadata = escaping_leaf
+    metadata = journal.snapshot(
+        primary=primary,
+        primary_metadata=exact_primary_metadata,
+        extra_entries=extra_entries,
+    )
+    if existing is not None and exact_primary_metadata is None:
+        metadata = replace(
+            metadata,
+            known_resource_ids=tuple(
+                dict.fromkeys((*metadata.known_resource_ids, *existing.known_resource_ids))
+            ),
+            source_id=metadata.source_id or existing.source_id,
+            stage=metadata.stage or existing.stage,
+            reconciliation=metadata.reconciliation or existing.reconciliation,
+            batch_outcome=metadata.batch_outcome or existing.batch_outcome,
+            prerequisite_ids=tuple(
+                dict.fromkeys((*metadata.prerequisite_ids, *existing.prerequisite_ids))
+            ),
+            recovery_action=(
+                existing.recovery_action
+                if metadata.recovery_action is RecoveryAction.NONE
+                else metadata.recovery_action
+            ),
+        )
     if recovery_action is not None:
         metadata = replace(metadata, recovery_action=recovery_action)
     return attach_operation_metadata(exc, metadata)
@@ -419,9 +623,17 @@ def new_generation_retry_binding() -> GenerationRetryBinding:
     ancestors = _GENERATION_BINDINGS.get()
     for ancestor in ancestors:
         ancestor.replay_disabled = True
+    active_journal = next(
+        (
+            owner.journal
+            for owner in reversed(_OPERATION_JOURNALS.get())
+            if owner.owner_task is task
+        ),
+        None,
+    )
     return GenerationRetryBinding(
         owner_task=task,
-        journal=OperationJournal("artifacts.generate"),
+        journal=active_journal or OperationJournal("artifacts.generate"),
         ancestors=ancestors,
     )
 
@@ -451,7 +663,7 @@ def claim_generation_entry(*, method: str, semantic_key: str) -> JournalEntry:
         return journal.new_entry(method=method)
     if binding.semantic_key is None:
         binding.semantic_key = semantic_key
-        entry = binding.journal.new_entry(method=method)
+        entry = binding.journal.new_entry(method=method, operation="artifacts.generate")
         binding.entries.append(entry)
         for ancestor in binding.ancestors:
             ancestor.linked_entries.append(entry)
@@ -459,7 +671,7 @@ def claim_generation_entry(*, method: str, semantic_key: str) -> JournalEntry:
     if binding.semantic_key == semantic_key and binding.entries:
         return binding.entries[0]
     binding.replay_disabled = True
-    entry = binding.journal.new_entry(method=method)
+    entry = binding.journal.new_entry(method=method, operation="artifacts.generate")
     binding.entries.append(entry)
     for ancestor in binding.ancestors:
         ancestor.linked_entries.append(entry)
@@ -914,6 +1126,10 @@ __all__ = [
     "ReplayGrant",
     "SendIdentity",
     "activate_generation_retry_binding",
+    "bind_operation_journal_entries",
+    "bound_operation_journal_entry",
+    "bound_operation_journal_entries",
+    "detached_operation_journal_context",
     "attach_batch_outcome",
     "attach_journal_entry",
     "attach_operation_metadata",

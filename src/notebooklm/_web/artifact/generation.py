@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from ..._env import get_default_language
 from ..._idempotency import (
     attach_journal_entry,
+    bind_operation_journal_entries,
     call_unconfirmed_on_transport_loss,
     claim_generation_entry,
 )
@@ -584,28 +585,28 @@ class ArtifactGenerationService:
         # v0.8.0 (#1342): a synchronous refusal (couldn't-start, ``RPCError``)
         # propagates rather than being swallowed into a soft
         # ``status="failed"`` return.
-        result = await call_unconfirmed_on_transport_loss(
-            lambda: self._rpc.rpc_call(
-                RPCMethod.CREATE_ARTIFACT,
-                params,
-                source_path=f"/notebook/{notebook_id}",
-                allow_null=True,
-                operation_variant=None,
-                # ``allow_null=True`` keeps the "no task row" case decodable so the
-                # ``ArtifactFeatureUnavailableError`` below can name the artifact
-                # type. ``raise_on_null_status=True`` stops that guess from
-                # overwriting a reason the server DID give: live-verified
-                # 2026-08-13, a source-less notebook answers
-                # ``[["wrb.fr","R7cb6c",null,null,null,[3],"generic"]]`` — an
-                # explicit INVALID_ARGUMENT that used to be reported as
-                # "Audio generation is unavailable" (#2188).
-                raise_on_null_status=True,
+        with bind_operation_journal_entries(journal_entry):
+            result = await call_unconfirmed_on_transport_loss(
+                lambda: self._rpc.rpc_call(
+                    RPCMethod.CREATE_ARTIFACT,
+                    params,
+                    source_path=f"/notebook/{notebook_id}",
+                    allow_null=True,
+                    operation_variant=None,
+                    # ``allow_null=True`` keeps the "no task row" case decodable so the
+                    # ``ArtifactFeatureUnavailableError`` below can name the artifact
+                    # type. ``raise_on_null_status=True`` stops that guess from
+                    # overwriting a reason the server DID give: live-verified
+                    # 2026-08-13, a source-less notebook answers
+                    # ``[["wrb.fr","R7cb6c",null,null,null,[3],"generic"]]`` — an
+                    # explicit INVALID_ARGUMENT that used to be reported as
+                    # "Audio generation is unavailable" (#2188).
+                    raise_on_null_status=True,
+                ),
+                method=RPCMethod.CREATE_ARTIFACT,
+                what="CreateArtifact",
                 journal_entry=journal_entry,
-            ),
-            method=RPCMethod.CREATE_ARTIFACT,
-            what="CreateArtifact",
-            journal_entry=journal_entry,
-        )
+            )
         if result is None and null_result_artifact_type is not None:
             journal_entry.record(CommitState.REJECTED, "decoded null refusal")
             error = ArtifactFeatureUnavailableError(

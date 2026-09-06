@@ -106,7 +106,6 @@ class _StubResearchAPI(BaseResearchAPI):
         batch: _ResearchImportBatch,
         *,
         _remaining_budget: float | None,
-        journal_entry=None,
     ) -> list[dict[str, str]]:
         del notebook_id
         self.import_calls.append(([item.source_input for item in batch.items], _remaining_budget))

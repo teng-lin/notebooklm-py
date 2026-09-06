@@ -9,7 +9,11 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from .._idempotency import OperationJournal, attach_operation_journal
+from .._idempotency import (
+    OperationJournal,
+    attach_operation_journal,
+    bind_operation_journal_entries,
+)
 from .._sharing import SharingAPI
 from .._types.enums import ShareAccess, SharePermission, ShareViewLevel
 from ..exceptions import NotebookLMError
@@ -104,13 +108,13 @@ class WebSharingAPI(SharingAPI):
                 invocation_id=invocation_id,
             )
             try:
-                await self._rpc.rpc_call(
-                    RPCMethod.SHARE_NOTEBOOK,
-                    params,
-                    source_path=f"/notebook/{notebook_id}",
-                    allow_null=True,
-                    journal_entry=mutation_entry,
-                )
+                with bind_operation_journal_entries(mutation_entry):
+                    await self._rpc.rpc_call(
+                        RPCMethod.SHARE_NOTEBOOK,
+                        params,
+                        source_path=f"/notebook/{notebook_id}",
+                        allow_null=True,
+                    )
             except asyncio.CancelledError as exc:
                 attach_operation_journal(
                     exc,
@@ -128,12 +132,12 @@ class WebSharingAPI(SharingAPI):
                 raise
             mutation_entry.record(CommitState.CONFIRMED, "decoded sharing mutation")
             try:
-                result = await self._rpc.rpc_call(
-                    RPCMethod.GET_SHARE_STATUS,
-                    [notebook_id, [2]],
-                    source_path=f"/notebook/{notebook_id}",
-                    journal_entry=readback_entry,
-                )
+                with bind_operation_journal_entries(readback_entry):
+                    result = await self._rpc.rpc_call(
+                        RPCMethod.GET_SHARE_STATUS,
+                        [notebook_id, [2]],
+                        source_path=f"/notebook/{notebook_id}",
+                    )
                 status = decode_share_status(ShareStatus, result, notebook_id)
                 readback_entry.record(CommitState.CONFIRMED, "decoded sharing readback")
                 return status

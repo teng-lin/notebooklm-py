@@ -25,7 +25,8 @@ import asyncio
 import importlib
 import logging
 import os
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import AsyncIterator, Callable, Generator, Mapping
+from contextlib import asynccontextmanager
 from functools import wraps
 from pathlib import Path
 from types import TracebackType
@@ -536,6 +537,30 @@ class NotebookLMClient:
         client remains connected, but rejects new top-level work until closed.
         """
         await self._lifecycle.drain(timeout=timeout)
+
+    @asynccontextmanager
+    async def operation(self, timeout: float | None = None) -> AsyncIterator[NotebookLMClient]:
+        """Group namespace calls under one admitted aggregate deadline.
+
+        ``timeout=None`` preserves unbounded explicit-operation behavior. Plain
+        top-level namespace calls use any configured default. Nested contexts inherit the
+        original absolute deadline and can only shorten it. The deadline stops
+        local waiting and new dispatch; it does not cancel an already-accepted
+        upstream artifact or research job, and required resource settlement may
+        extend the cancellation tail.
+
+        Example::
+
+            async with client.operation(timeout=30):
+                notebook = await client.notebooks.create("Quarterly review")
+                await client.sources.add_url(notebook.id, "https://example.com")
+        """
+
+        async with self._collaborators.call_supervisor.operation_scope(
+            "client.operation",
+            timeout=timeout,
+        ):
+            yield self
 
     async def close(
         self,
