@@ -161,7 +161,8 @@ async def _cohort(
             await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
         await asyncio.wait_for(server.aclose(), _CLOSE_TIMEOUT)
         result.record(
-            "resilience_cleanup",
+            "cleanup",
+            component="resilience",
             client_closed=client is None or not client._lifecycle.is_open(),
             requests=len(server.journal),
             remaining_actions=server.remaining(),
@@ -639,6 +640,14 @@ async def _auth_refresh_old_generation(result: ScenarioResult) -> None:
         server.release("old-refresh")
         await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
         await asyncio.wait_for(server.aclose(), _CLOSE_TIMEOUT)
+        result.record(
+            "cleanup",
+            component="resilience",
+            client_closed=not client._lifecycle.is_open(),
+            requests=len(server.journal),
+            remaining_actions=server.remaining(),
+            server_errors=list(server.errors),
+        )
     result.record(
         "http_trace",
         requests=[
@@ -663,6 +672,7 @@ async def _auth_refresh_old_generation(result: ScenarioResult) -> None:
     )
     result.require("old_refresh_two_homepages", len(_requests(server, _HOME)) == 2)
     result.require("old_refresh_recovery", [row.id for row in probe] == ["probe"])
+    result.require("resilience_client_closed", not client._lifecycle.is_open())
     _clean(result, server)
 
 
@@ -683,4 +693,143 @@ IMPLEMENTATIONS: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
 }
 
 
-__all__ = ["IMPLEMENTATIONS", "PLANS", "SCENARIOS"]
+_CLEAN_CHECKS = (
+    "resilience_client_closed",
+    "resilience_server_no_errors",
+    "resilience_handlers_settled",
+    "resilience_expected_remaining",
+)
+
+REQUIRED_CHECKS: dict[str, tuple[str, ...]] = {
+    "auth_refresh_cancelled_waiter": (
+        "refresh_cancelled_waiter_escapes",
+        "refresh_survivor_succeeds",
+        "refresh_cancel_one_homepage",
+        "refresh_cancel_rpc_count",
+        "refresh_cancel_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "auth_refresh_old_generation": (
+        "old_refresh_waiter_failed",
+        "new_generation_succeeded",
+        "old_refresh_did_not_publish",
+        "new_cookie_retained",
+        "old_refresh_two_homepages",
+        "old_refresh_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "connection_refusal_recovery": (
+        "refusal_network_error",
+        "refusal_no_server_dispatch",
+        "refusal_three_attempts",
+        "refusal_same_client_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "configured_queue_expiry_no_dispatch": (
+        "configured_queue_timeout",
+        "configured_queue_not_sent",
+        "configured_queue_zero_dispatch",
+        "configured_queue_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "create_disconnect_uncommitted": (
+        "uncommitted_create_network_error",
+        "uncommitted_create_unknown",
+        "uncommitted_create_unconfirmed",
+        "uncommitted_create_sent_once",
+        "uncommitted_create_no_service_commit",
+        "uncommitted_create_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "queue_cancel_no_dispatch": (
+        "queued_read_cancelled",
+        "queued_read_zero_dispatch",
+        "queued_read_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "queue_expiry_no_dispatch": (
+        "queued_create_operation_timeout",
+        "queued_create_not_sent",
+        "queued_create_zero_dispatch",
+        "queued_create_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "read_disconnect_recovery": (
+        "read_loss_replayed_once",
+        "read_loss_result",
+        "read_loss_recovery",
+        "read_loss_no_commit",
+        *_CLEAN_CHECKS,
+    ),
+    "rename_commit_loss_converges": (
+        "rename_replayed_once",
+        "rename_replayed_identical_set",
+        "rename_first_commit_recorded",
+        "rename_result_converged",
+        "rename_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "retry_auth_backoff_cancelled": (
+        "backoff_cancelled_publicly",
+        "backoff_cancelled_three_attempts",
+        "backoff_cancelled_one_refresh",
+        "backoff_cancelled_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "retry_auth_operation_deadline": (
+        "aggregate_deadline_timeout",
+        "aggregate_deadline_three_attempts",
+        "aggregate_deadline_one_refresh",
+        "aggregate_deadline_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "retry_auth_rate_exhaustion": (
+        "composed_rate_error",
+        "composed_rate_rpc_count",
+        "composed_rate_one_refresh",
+        "composed_rate_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "retry_auth_server_budget": (
+        "shared_server_budget_error",
+        "shared_server_budget_three_attempts",
+        "shared_server_budget_one_refresh",
+        "shared_server_budget_recovery",
+        *_CLEAN_CHECKS,
+    ),
+}
+
+_DEFAULT_BUDGET: dict[str, float | int | str] = {
+    "scenario_timeout_s": 12.0,
+    "rpc_timeout_s": 0.5,
+    "rate_limit_max_retries": 2,
+    "server_error_max_retries": 2,
+    "cleanup_timeout_s": _CLOSE_TIMEOUT,
+    "retry_clock": "record_only",
+}
+BUDGETS: dict[str, dict[str, float | int | str]] = {
+    name: dict(_DEFAULT_BUDGET) for name in SCENARIOS
+}
+BUDGETS["connection_refusal_recovery"].update(rpc_timeout_s=10.0)
+BUDGETS["auth_refresh_old_generation"].update(retry_clock="real")
+BUDGETS["configured_queue_expiry_no_dispatch"].update(operation_timeout_s=0.05)
+BUDGETS["queue_expiry_no_dispatch"].update(operation_timeout_s=0.05)
+BUDGETS["read_disconnect_recovery"].update(rpc_timeout_s=10.0, server_error_max_retries=1)
+BUDGETS["rename_commit_loss_converges"].update(rpc_timeout_s=10.0, server_error_max_retries=1)
+BUDGETS["retry_auth_backoff_cancelled"].update(
+    rpc_timeout_s=10.0,
+    rate_limit_max_retries=3,
+    server_error_max_retries=3,
+    retry_clock="gated_instance",
+)
+BUDGETS["retry_auth_operation_deadline"].update(
+    rpc_timeout_s=10.0,
+    operation_timeout_s=0.2,
+    rate_limit_max_retries=3,
+    server_error_max_retries=3,
+    retry_clock="gated_instance",
+)
+BUDGETS["retry_auth_rate_exhaustion"].update(rpc_timeout_s=10.0, rate_limit_max_retries=1)
+BUDGETS["retry_auth_server_budget"].update(rpc_timeout_s=10.0, server_error_max_retries=1)
+
+__all__ = ["BUDGETS", "IMPLEMENTATIONS", "PLANS", "REQUIRED_CHECKS", "SCENARIOS"]

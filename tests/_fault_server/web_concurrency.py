@@ -351,4 +351,88 @@ PLANS = {
     ),
 }
 
-__all__ = ["IMPLEMENTATIONS", "PLANS"]
+_CLEAN_CHECKS = (
+    "client_closed",
+    "server_required_gates_observed",
+    "server_plan_consumed",
+    "server_had_no_errors",
+    "server_handlers_drained",
+)
+
+REQUIRED_CHECKS: dict[str, tuple[str, ...]] = {
+    "close_mixed_load_and_reopen": (
+        "close_mixed_poll_registered",
+        "close_mixed_read_queued",
+        "close_mixed_poll_rpc_queued",
+        "close_mixed_tasks_terminated",
+        "close_mixed_no_queued_dispatch",
+        "close_mixed_no_poll_dispatch",
+        "close_mixed_reopened",
+        "close_mixed_poll_registry_empty",
+        "close_mixed_transfer_clients_empty",
+        *_CLEAN_CHECKS,
+    ),
+    "mixed_rpc_transfer_poll_progress": (
+        "mixed_queued_before_release",
+        "mixed_body_outside_rpc_permit",
+        "mixed_download_still_gated",
+        "mixed_download_integrity",
+        "mixed_poll_complete",
+        "mixed_two_descriptor_rpcs",
+        "mixed_recovery",
+        "mixed_poll_registry_empty",
+        "mixed_transfer_clients_empty",
+        *_CLEAN_CHECKS,
+    ),
+    "shared_poll_last_waiter_cancelled": (
+        "poll_survives_first_cancel",
+        "poll_survives_last_cancel",
+        "poll_both_callers_cancelled",
+        "poll_single_transport_request",
+        "poll_registry_settled",
+        "poll_recovery",
+        *_CLEAN_CHECKS,
+    ),
+    "shared_refresh_failure_then_recovery": (
+        "shared_refresh_failure_public_errors",
+        "shared_refresh_failure_one_flight",
+        "shared_refresh_failure_no_replay",
+        "shared_refresh_failure_retries_later",
+        "shared_refresh_failure_recovery",
+        *_CLEAN_CHECKS,
+    ),
+}
+
+BUDGETS: dict[str, dict[str, float | int | str]] = {
+    "close_mixed_load_and_reopen": {
+        "scenario_timeout_s": 8.0,
+        "rpc_timeout_s": 0.5,
+        "transfer_timeout_s": 2.0,
+        "poll_timeout_s": 2.0,
+        "cleanup_timeout_s": 2.0,
+        "retry_clock": "real",
+    },
+    "mixed_rpc_transfer_poll_progress": {
+        "scenario_timeout_s": 8.0,
+        "rpc_timeout_s": 0.5,
+        "transfer_timeout_s": 2.0,
+        "poll_timeout_s": 2.0,
+        "cleanup_timeout_s": 2.0,
+        "retry_clock": "real",
+    },
+    "shared_poll_last_waiter_cancelled": {
+        "scenario_timeout_s": 8.0,
+        "rpc_timeout_s": 0.5,
+        "poll_timeout_s": 2.0,
+        "cleanup_timeout_s": 2.0,
+        "retry_clock": "real",
+    },
+    "shared_refresh_failure_then_recovery": {
+        "scenario_timeout_s": 8.0,
+        "rpc_timeout_s": 0.5,
+        "cleanup_timeout_s": 2.0,
+        "retry_clock": "real",
+    },
+}
+
+__all__ = ["BUDGETS", "IMPLEMENTATIONS", "PLANS", "REQUIRED_CHECKS"]
