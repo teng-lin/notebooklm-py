@@ -1,9 +1,10 @@
 # Adapter resilience fault-coverage contract
 
-**Status:** F0 inventory for R14. This document records the adapter cases to
-add after the global construction-seam audit has selected the HTTP transfer
-mechanisms. It does not change retry policy, adapter wire contracts, or runtime
-ownership.
+**Status:** F0 inventory for R14. The six RPC mapping cases are implemented as
+`adapter_rest_*`, `adapter_mcp_*`, and `adapter_cli_*` Web-registry siblings;
+the transfer and caller-disconnect cases remain pending the global
+construction-seam audit. This work does not change retry policy, adapter wire
+contracts, or runtime ownership.
 
 **Baseline:** `65dbd21d70f5be8c892da40a3660987b4118cd1c` (2026-09-06).
 This is the R14 inventory from the resilience plan. The current portable
@@ -44,9 +45,9 @@ composition over sockets:
 
 | Surface | Existing mapping evidence | Existing socket evidence | R14 gap |
 | --- | --- | --- | --- |
-| REST | `tests/server/test_errors.py`, `test_notes.py`, and `test_integration_real_client.py` exercise envelopes through `TestClient` and VCR/fakes. | None through a REST route. `tests/_fault_server/web_scenarios.py` is client-only. | Inject a production Web client routed to `HttpFaultServer` into `create_app`, then call the route. |
-| MCP tools | `tests/unit/mcp/test_errors.py` and `test_notebooks.py`; `tests/integration/mcp_vcr/test_error_contract.py` uses an in-memory FastMCP client and VCR. | None through an MCP tool. | Bind the same loopback client factory to `create_server` and call the tool. |
-| CLI | `tests/unit/cli/test_error_handler.py` pins the `UNCONFIRMED_WRITE` override; `tests/integration/cli_vcr/test_error_contract.py` uses recorded failures. | None through a command. | Pass a loopback-client factory via `ctx.obj["client_factory"]` and invoke the public Click command. |
+| REST | `tests/server/test_errors.py`, `test_notes.py`, and `test_integration_real_client.py` exercise envelopes through `TestClient` and VCR/fakes. | `tests/_fault_server/adapter_scenarios.py` now drives the REST read/create routes over the loopback Web client. | The live downstream transfer disconnect remains pending. |
+| MCP tools | `tests/unit/mcp/test_errors.py` and `test_notebooks.py`; `tests/integration/mcp_vcr/test_error_contract.py` uses an in-memory FastMCP client and VCR. | `tests/_fault_server/adapter_scenarios.py` now drives `notebook_list` and `notebook_create` over the loopback Web client. | The live signed-download and detached-job disconnects remain pending. |
+| CLI | `tests/unit/cli/test_error_handler.py` pins the `UNCONFIRMED_WRITE` override; `tests/integration/cli_vcr/test_error_contract.py` uses recorded failures. | `tests/_fault_server/adapter_scenarios.py` now drives public Click commands over the loopback Web client. | The CLI's scope closes after each command; its failure factory runs a same-client recovery before close. |
 | REST artifact response | `tests/server/test_artifacts.py::test_cleanup_file_response_cleans_on_disconnect` calls the response ASGI object directly. | None; the test simulates `http.disconnect`. | Use a real loopback ASGI listener and close the downstream client after the first body chunk. |
 | MCP signed download | `tests/unit/mcp/test_fileroutes.py::test_slot_held_response_releases_on_stream_abort` directly raises from `FileResponse.__call__`. | None; `TestClient` consumes the response. | Use a real FastMCP HTTP listener and abort `GET /files/dl/{token}` after a body prefix. |
 | MCP detached chat | Unit tool/registry tests cover start, status, cancellation, TTL, and shutdown. | None for a caller disconnect. | Disconnect an actual MCP `chat_start` caller after the task has been accepted, then prove the server-owned task completes or is explicitly cancelled during teardown. |
@@ -57,9 +58,11 @@ application write committed before its response disappeared.
 
 ## Required R14 cases
 
-All new cases belong in a small adapter-specific F4 module, for example
-`tests/integration/faults/test_adapter_faults.py`, and should share the normal
-`ScenarioResult` reporting contract. `ASGITransport`, `TestClient`, and the
+The six implemented mapping cases live in
+`tests/_fault_server/adapter_scenarios.py` and
+`tests/integration/faults/test_adapter_faults.py`; each reports backend `web`
+plus a separate `plan.adapter` field. The disconnect cases extend that module.
+`ASGITransport`, `TestClient`, and the
 in-memory FastMCP client are sufficient for the first six mapping cases; they
 are explicitly insufficient for the three downstream-disconnect cases.
 
