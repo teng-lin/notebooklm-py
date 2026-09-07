@@ -113,7 +113,7 @@ def test_readonly_e2e_tests_never_request_mutating_managed_role_fixtures() -> No
 
 
 def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
-    """The required PR matrix covers every Python on Linux plus one 3.12 cell per secondary OS."""
+    """PRs use three full routine cells plus two conservative focused-OS cells."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
 
@@ -126,51 +126,69 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
 
     matrix = jobs["test"]["strategy"]["matrix"]
     # The full 3-OS by 5-Python product is nightly's job (see
-    # ``test_nightly_runs_full_sha_pinned_compatibility_matrix``); PRs run the
-    # reduced 7-cell matrix so the suite is not multiplied fifteen-fold per push.
+    # ``test_nightly_runs_full_sha_pinned_compatibility_matrix``). PRs retain
+    # oldest/canonical/newest full Linux runs and two audited OS smoke cells.
     assert set(matrix) == {"include"}
     assert matrix["include"] == [
-        *(
-            {
-                "os": "ubuntu-latest",
-                "python-version": python,
-                "canonical": python == "3.12",
-                "windows_playwright": False,
-            }
-            for python in SUPPORTED_PYTHONS
-        ),
+        {
+            "os": "ubuntu-latest",
+            "python-version": "3.10",
+            "canonical": False,
+            "windows_playwright": False,
+            "selection": "full",
+        },
+        {
+            "os": "ubuntu-latest",
+            "python-version": "3.12",
+            "canonical": True,
+            "windows_playwright": False,
+            "selection": "full",
+        },
+        {
+            "os": "ubuntu-latest",
+            "python-version": "3.14",
+            "canonical": False,
+            "windows_playwright": False,
+            "selection": "full",
+        },
         {
             "os": "macos-latest",
             "python-version": "3.12",
             "canonical": False,
             "windows_playwright": False,
+            "selection": "platform",
         },
         {
             "os": "windows-latest",
             "python-version": "3.12",
             "canonical": False,
             "windows_playwright": True,
+            "selection": "platform",
         },
     ]
     assert {cell["os"] for cell in matrix["include"]} == set(SUPPORTED_OSES)
 
 
 def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> None:
-    """Every cell runs the suite once; canonical alone owns browser contracts."""
+    """Every cell runs one resolved routine suite; canonical owns browser contracts."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     test_job = workflow["jobs"]["test"]
 
-    marker_filter = (
-        "not repo_lint and not refactor_qualification and not requires_playwright "
-        "and not requires_chromium"
-    )
     suite_step = _step(test_job, "Run tests without coverage")
     suite_command = str(suite_step["run"])
     assert "if" not in suite_step
-    assert marker_filter in suite_command
+    assert '-m "$TEST_SELECTION"' in suite_command
+    assert suite_step["env"]["TEST_SELECTION"] == "${{ steps.routine-selection.outputs.selection }}"
     assert "-n auto" in suite_command
     assert "--dist loadgroup" in suite_command
     assert "--no-cov" in suite_command
+
+    resolver = _step(test_job, "Resolve routine selection")
+    assert resolver["id"] == "routine-selection"
+    resolver_command = str(resolver["run"])
+    assert "compat_smoke" in resolver_command
+    assert "high-risk runtime" in resolver_command
+    assert "git diff --name-only" in resolver_command
 
     # The ordinary PR workflow stays coverage-free. The release/manual auth
     # delta runs in its own workflow.
@@ -271,8 +289,10 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
     pr = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     pr_test = pr["jobs"]["test"]
     ordinary_pr = str(_step(pr_test, "Run tests without coverage")["run"])
+    routine_selector = str(_step(pr_test, "Resolve routine selection")["run"])
     playwright_pr = str(_step(pr_test, "Run Playwright-dependent unit tests serially")["run"])
-    assert "not refactor_qualification" in ordinary_pr
+    assert '"$TEST_SELECTION"' in ordinary_pr
+    assert "not refactor_qualification" in routine_selector
     assert "not refactor_qualification" in playwright_pr
 
     manual = pr["jobs"]["repo-lint"]
@@ -305,20 +325,29 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
         _step(nightly["jobs"]["repo-lint"], "Run repository lint tests")["run"]
     )
 
+    qualification = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "offline-qualification.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    candidate = qualification["jobs"]["candidate-wheel"]
+    assert candidate["strategy"]["matrix"]["os"] == SUPPORTED_OSES
+    assert candidate["strategy"]["matrix"]["python-version"] == SUPPORTED_PYTHONS
+    install = str(_step(candidate, "Install exact candidate wheel and qualification dependencies")["run"])
+    assert "mcp" in install
+    assert "server" in install
+    routine = str(_step(candidate, "Run routine unit, integration, server, MCP, and REST qualification")["run"])
+    assert "tests/unit tests/integration tests/server" in routine
+    assert "not refactor_qualification" in routine
+    assert "-m refactor_qualification" in str(
+        _step(candidate, "Run active extended qualification once")["run"]
+    )
+
     for release_path in (PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW):
         release = yaml.safe_load(release_path.read_text(encoding="utf-8"))
-        release_job = release["jobs"]["build-and-test"]
-        install = str(
-            _step(release_job, "Install built wheel + release-smoke extras in a clean venv")["run"]
-        )
-        assert "mcp" in install
-        assert "server" in install
-        assert "not refactor_qualification" in str(
-            _step(release_job, "Run routine unit tests against wheel")["run"]
-        )
-        assert "-m refactor_qualification" in str(
-            _step(release_job, "Run refactor qualification against wheel")["run"]
-        )
+        release_qualification = release["jobs"]["offline-qualification"]
+        assert release_qualification["uses"] == "./.github/workflows/offline-qualification.yml"
+        assert release_qualification["needs"] == "build-and-test"
 
     verify = yaml.safe_load(VERIFY_PACKAGE_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["verify"]
     assert "not refactor_qualification" in str(_step(verify, "Run routine unit tests")["run"])
@@ -395,6 +424,7 @@ def test_auth_patch_coverage_delta_is_release_gated_and_manually_dispatchable() 
     release_gate = publish["jobs"]["auth-patch-audit"]
     assert release_gate["uses"] == "./.github/workflows/auth-patch-audit.yml"
     assert publish["jobs"]["build-and-test"]["needs"] == "auth-patch-audit"
+    assert set(publish["jobs"]["publish"]["needs"]) == {"build-and-test", "offline-qualification"}
 
 
 def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
@@ -412,6 +442,8 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
             "python-version": SUPPORTED_PYTHONS,
         },
     }
+
+
     assert "environment" not in job
     assert "secrets." not in str(job)
 
@@ -453,6 +485,24 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
         "and not requires_chromium"
     ) in suite_command
     assert "--no-cov" in suite_command
+
+
+def test_phase_six_keeps_daily_depth_until_observation_gate_is_proven() -> None:
+    """Do not silently trade the daily full product or stress floor for a weekly run."""
+    nightly = yaml.safe_load(NIGHTLY_CHECKS_WORKFLOW.read_text(encoding="utf-8"))
+    triggers = nightly.get("on", nightly.get(True))
+    assert {"cron": "0 6 * * *"} in triggers["schedule"]
+
+    compatibility = nightly["jobs"]["compatibility"]
+    assert compatibility["strategy"]["matrix"]["os"] == SUPPORTED_OSES
+    assert compatibility["strategy"]["matrix"]["python-version"] == SUPPORTED_PYTHONS
+
+    stress = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "fault-stress.yml").read_text(encoding="utf-8")
+    )
+    stress_triggers = stress.get("on", stress.get(True))
+    assert "pull_request" in stress_triggers
+    assert stress_triggers["schedule"], "Daily stress coverage must remain scheduled"
 
 
 def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> None:
@@ -665,14 +715,18 @@ def test_verify_package_live_checks_published_wheel_android_and_keeps_web_e2e() 
     assert 'pytest tests/e2e -m "not variants"' in str(web_e2e["run"])
 
 
-@pytest.mark.parametrize("workflow_path", [PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW])
-def test_release_publish_smokes_install_required_adapter_extras(workflow_path: Path) -> None:
-    """Published-wheel smoke must satisfy unconditional unit-test imports."""
+def test_release_qualification_uses_exact_candidate_wheel_on_full_platform_matrix() -> None:
+    """Publication is blocked on the reusable, installed-wheel qualification workflow."""
+    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "offline-qualification.yml"
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
-    job = workflow["jobs"]["build-and-test"]
-    install = str(_step(job, "Install built wheel + release-smoke extras in a clean venv")["run"])
-
-    assert '"${WHEEL}[browser,dev,markdown,impersonate,mcp,server]"' in install
+    job = workflow["jobs"]["candidate-wheel"]
+    assert job["strategy"]["matrix"]["os"] == SUPPORTED_OSES
+    assert job["strategy"]["matrix"]["python-version"] == SUPPORTED_PYTHONS
+    provenance = str(_step(job, "Prove runtime imports the candidate wheel")["run"])
+    assert "candidate-venv" in provenance
+    assert '"src" not in package_path.parts' in provenance
+    routine = str(_step(job, "Run routine unit, integration, server, MCP, and REST qualification")["run"])
+    assert "tests/unit tests/integration tests/server" in routine
 
 
 def test_pr_and_release_workflows_verify_clean_base_wheel() -> None:

@@ -1,0 +1,122 @@
+name: Offline Candidate Qualification
+
+on:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: Immutable commit that produced the candidate artifacts
+        required: true
+        type: string
+      artifact_name:
+        description: Name of the wheel and sdist artifact from this workflow run
+        required: true
+        type: string
+      tier:
+        description: Caller-owned qualification tier, retained in job summaries
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-wheel:
+    name: Candidate wheel (${{ inputs.tier }}/${{ matrix.os }}/Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ inputs.candidate_sha }}
+        fetch-depth: 1
+        persist-credentials: false
+    - name: Verify checked-out candidate
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = "${{ inputs.candidate_sha }}"
+        echo "Candidate SHA: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # @ v8.0.1
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: candidate-dist
+    - name: Verify candidate artifact identity
+      shell: bash
+      run: |
+        set -euo pipefail
+        python - <<'PY'
+        from hashlib import sha256
+        from pathlib import Path
+
+        artifacts = sorted(Path("candidate-dist").glob("notebooklm_py-*"))
+        wheels = [path for path in artifacts if path.suffix == ".whl"]
+        sdists = [path for path in artifacts if path.suffix == ".gz"]
+        assert len(wheels) == 1, f"expected one wheel, found: {wheels}"
+        assert len(sdists) == 1, f"expected one sdist, found: {sdists}"
+        for artifact in artifacts:
+            digest = sha256(artifact.read_bytes()).hexdigest()
+            print(f"{artifact.name} sha256={digest}")
+        PY
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Create clean candidate environment
+      id: environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m venv candidate-venv
+        if [ "$RUNNER_OS" = Windows ]; then
+          python_path=candidate-venv/Scripts/python.exe
+        else
+          python_path=candidate-venv/bin/python
+        fi
+        echo "python_path=$python_path" >> "$GITHUB_OUTPUT"
+    - name: Install exact candidate wheel and qualification dependencies
+      shell: bash
+      env:
+        PYTHON_PATH: ${{ steps.environment.outputs.python_path }}
+      run: |
+        set -euo pipefail
+        wheel=$(find candidate-dist -name 'notebooklm_py-*.whl' -print -quit)
+        test -n "$wheel"
+        "$PYTHON_PATH" -m pip install --disable-pip-version-check \
+          "${wheel}[browser,dev,markdown,impersonate,mcp,server,cookies]"
+    - name: Prove runtime imports the candidate wheel
+      shell: bash
+      env:
+        PYTHON_PATH: ${{ steps.environment.outputs.python_path }}
+      run: |
+        set -euo pipefail
+        "$PYTHON_PATH" - <<'PY'
+        from pathlib import Path
+        import notebooklm
+
+        package_path = Path(notebooklm.__file__).resolve()
+        assert "candidate-venv" in package_path.parts, package_path
+        assert "src" not in package_path.parts, package_path
+        print(package_path)
+        PY
+    - name: Run routine unit, integration, server, MCP, and REST qualification
+      shell: bash
+      env:
+        PYTHON_PATH: ${{ steps.environment.outputs.python_path }}
+        NOTEBOOKLM_VCR_RECORD: "0"
+        NOTEBOOKLM_ANDROID_GRPC_RECORD: "0"
+      run: >-
+        "$PYTHON_PATH" -m pytest tests/unit tests/integration tests/server -q --no-cov -x
+        -m "not repo_lint and not refactor_qualification and not requires_playwright and not requires_chromium and not reality"
+    - name: Run active extended qualification once
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+      shell: bash
+      env:
+        PYTHON_PATH: ${{ steps.environment.outputs.python_path }}
+        NOTEBOOKLM_VCR_RECORD: "0"
+        NOTEBOOKLM_ANDROID_GRPC_RECORD: "0"
+      run: >-
+        "$PYTHON_PATH" -m pytest -q --no-cov -x -m refactor_qualification
