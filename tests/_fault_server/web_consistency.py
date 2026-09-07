@@ -128,6 +128,7 @@ async def completed_without_media(result: ScenarioResult) -> None:
     task = None
     gate_wait = None
     statuses = []
+    primary: BaseException | None = None
     async with _cohort(result, server) as client:
         try:
             task = asyncio.create_task(
@@ -153,13 +154,38 @@ async def completed_without_media(result: ScenarioResult) -> None:
             result.require("media_poll_recovered", recovered.is_complete)
             result.require("media_polls_bounded", len(server.journal) == 3)
             result.record("poll_progress", transitions=statuses, polls=len(server.journal))
+        except BaseException as error:
+            primary = error
+            raise
         finally:
             server.release("media-ready")
             owned = [item for item in (task, gate_wait) if item is not None]
             for item in owned:
                 if not item.done():
                     item.cancel()
-            await asyncio.gather(*owned, return_exceptions=True)
+            cleanup_error: BaseException | None = None
+            try:
+                if owned:
+                    await asyncio.wait(owned, timeout=2)
+            except BaseException as error:
+                cleanup_error = error
+            pending = [item for item in owned if not item.done()]
+            settled_errors = [
+                type(item.exception()).__name__
+                for item in owned
+                if item.done() and not item.cancelled() and item.exception() is not None
+            ]
+            result.record(
+                "poll_cleanup",
+                pending_tasks=len(pending),
+                settled_error_types=settled_errors,
+                cleanup_error_type=None if cleanup_error is None else type(cleanup_error).__name__,
+                primary_error_type=None if primary is None else type(primary).__name__,
+            )
+            if primary is None:
+                if cleanup_error is not None:
+                    raise cleanup_error
+                result.require("poll_owned_tasks_settled", not pending)
 
 
 IMPLEMENTATIONS = {
@@ -187,6 +213,7 @@ REQUIRED_CHECKS = {
         "media_completion_after_release",
         "media_poll_recovered",
         "media_polls_bounded",
+        "poll_owned_tasks_settled",
     ),
 }
 for _name in REQUIRED_CHECKS:
