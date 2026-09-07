@@ -12,7 +12,7 @@ import httpx
 from notebooklm import NetworkError, RPCResponseTooLargeError
 
 from .common import ScenarioResult
-from .http import HttpFaultServer, Incremental, Reply
+from .http import HttpFaultServer, Incremental, Reply, Stall
 from .web import rpc_response
 from .web_streaming import CHAT, CONVERSATION, TURNS, _frame
 from .web_transfers import NOTEBOOK
@@ -86,16 +86,23 @@ async def run_scenario(
         headers["content-length"] = "-1"
     checks = CHECKS + (["fragment_progress"] if variant == "large_fragmented_frame" else [])
     if variant == "cap_stream_abort":
-        checks += ["first_crossing_aborts", "peer_settled_before_suffix"]
+        checks += ["first_crossing_aborts", "suffix_withheld", "peer_settled_after_release"]
     result.record(
         "plan",
         required_checks=checks,
         faults=[variant],
+        gates=["cap-suffix"] if variant == "cap_stream_abort" else [],
+        gate_order=(
+            ["prefix-sent", "cap-failure-and-response-closed", "release-cap-suffix", "recovery"]
+            if variant == "cap_stream_abort"
+            else []
+        ),
         transport="httpx",
         cohort_ids=[f"{operation_id}:0"],
         entry_point="chat.ask",
         budgets={
             "response_cap_bytes": limit,
+            **({"offered_prefix_bytes": 4096} if variant == "cap_stream_abort" else {}),
             "fixture_wire_bytes": len(wire),
             "watchdog_s": 8,
             "cleanup_timeout_s": 2,
@@ -111,7 +118,7 @@ async def run_scenario(
         else reply
     )
     if variant == "cap_stream_abort":
-        action = Incremental(reply, chunk_bytes=1024, interval=0.05)
+        action = Stall("body", "cap-suffix", reply, prefix=wire[:4096])
     server.enqueue(CHAT, action, Reply(body=healthy))
     server.enqueue(TURNS, *[Reply(body=rpc_response(TURNS.rpc_id or "", [])) for _ in range(2)])
     responses: list[httpx.Response] = []
@@ -184,31 +191,31 @@ async def run_scenario(
         )
         if variant == "cap_stream_abort":
             received = sum(map(len, chunks))
-            # Judge the actual received chunks, not TCP/write-slice boundaries.
-            # The first crossing chunk must abort before the long suffix.
+            # Judge actual receive chunks; the service withholds the long
+            # suffix until failure is observed, independent of scheduling.
             result.require(
                 "first_crossing_aborts",
-                len(chunks) >= 2
-                and limit < received <= limit + len(chunks[-1])
+                bool(chunks)
+                and limit < received <= 4096
                 and sum(map(len, chunks[:-1])) <= limit
                 and error.bytes_read == received
                 and b"".join(chunks) == wire[:received]
-                and received < len(wire) // 4,
+                and received < len(wire),
             )
-            await server.wait_for_event("handler_settled", count=2)
-            sent = [event for event in server.events if event["phase"] == "response_chunk"]
+            await server.wait_for_gate("cap-suffix")
             result.require(
-                "peer_settled_before_suffix",
-                server.active_handlers == 0
-                and bool(sent)
-                and sent[-1]["response_bytes"] < len(wire),
+                "suffix_withheld", not server.gate("cap-suffix").is_set() and responses[0].is_closed
             )
             result.record(
                 "abort_delivery",
-                sent_bytes=sent[-1]["response_bytes"],
+                offered_prefix_bytes=4096,
                 received_bytes=received,
                 complete_bytes=len(wire),
+                suffix_gate_released=False,
             )
+            server.release("cap-suffix")
+            await server.wait_for_event("handler_settled", count=2)
+            result.require("peer_settled_after_release", server.active_handlers == 0)
         # Size enforcement is post-chunk: one decoded chunk of overshoot is permitted.
         result.require(
             "bounded_consumption",
