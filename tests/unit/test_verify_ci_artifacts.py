@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "verify_ci_artifacts.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("verify_ci_artifacts", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 verify = importlib.util.module_from_spec(SPEC)
@@ -125,6 +126,35 @@ def write_journal(path: Path, rows: list[dict[str, object]]) -> None:
     path.write_text("".join(json.dumps(value) + "\n" for value in rows))
     if os.name != "nt":
         path.chmod(0o600)
+
+
+@pytest.mark.asyncio
+async def test_timeout_identifies_missing_download_url_and_producer_without_handles(
+    tmp_path, capsys
+) -> None:
+    journal = tmp_path / "journal.jsonl"
+    operation_id = str(uuid.uuid4())
+    events = [
+        row(operation_id, "started"),
+        row(operation_id, "accepted", resource_id="private-artifact-id"),
+    ]
+    for event in events:
+        event["node_id"] = "tests/e2e/test_generation.py::test_one[private-parameter]"
+    write_journal(journal, events)
+    clock = Clock()
+    with pytest.raises(verify.SettlementTimeoutError) as caught:
+        await verify.verify_journal(
+            Client([[Artifact("private-artifact-id", "audio", url=None)]]),
+            notebook_id="generation-role",
+            journal_path=journal,
+            timeout=240,
+            clock=clock,
+            sleep=clock.sleep,
+        )
+    output = capsys.readouterr().out + str(caught.value)
+    assert "audio/awaiting_download_url" in output
+    assert "tests/e2e/test_generation.py::test_one" in output
+    assert "private-" not in output
 
 
 @pytest.mark.asyncio

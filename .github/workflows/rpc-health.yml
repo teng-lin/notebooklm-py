@@ -214,6 +214,7 @@ jobs:
     environment: protected-readonly
     timeout-minutes: 180
     env:
+      PYTHONUNBUFFERED: "1"
       NOTEBOOKLM_PROFILE: ci-${{ needs.plan-live-lanes.outputs.web_account_slot }}-rpc-health-web
 
     steps:
@@ -235,7 +236,6 @@ jobs:
       run: |
         {
           echo "NOTEBOOKLM_HOME=$RUNNER_TEMP/notebooklm-home"
-          echo "CI_E2E_MANIFEST=$RUNNER_TEMP/notebooklm-e2e/manifest.json"
         } >> "$GITHUB_ENV"
 
     - name: Set up Python
@@ -292,79 +292,6 @@ jobs:
           attempt=$((attempt + 1))
         done
 
-    - name: Sweep stale RPC copies
-      id: sweep
-      if: steps.auth.outcome == 'success'
-      continue-on-error: true
-      env:
-        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: |
-        result=$(uv run python scripts/manage_ci_e2e_notebooks.py sweep \
-          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
-          --manifest "$CI_E2E_MANIFEST")
-        printf '%s\n' "$result"
-        printf '### RPC copy lifecycle\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Provision RPC fallback copy
-      id: provision
-      if: steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'
-      continue-on-error: true
-      env:
-        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-        SUMMARY_SLOT: ${{ needs.plan-live-lanes.outputs.web_account_slot }}
-      run: |
-        uv run python scripts/manage_ci_e2e_notebooks.py provision \
-          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
-          --contract tests/fixtures/e2e_template_contract.json \
-          --prepared-contract tests/fixtures/e2e_prepared_role_contract.json \
-          --mode rpc --lane rpc-health-web \
-          --account-slot "${{ needs.plan-live-lanes.outputs.web_account_slot }}" \
-          --manifest "$CI_E2E_MANIFEST" --github-env "$GITHUB_ENV"
-        python - <<'PY'
-        import json
-        import os
-        import re
-        from pathlib import Path
-
-        manifest = json.loads(Path(os.environ["CI_E2E_MANIFEST"]).read_text(encoding="utf-8"))
-        expected = {
-            "backend": "web",
-            "lane": "rpc-health-web",
-            "account_slot": os.environ["SUMMARY_SLOT"],
-            "mode": "rpc",
-        }
-        if any(manifest.get(key) != value for key, value in expected.items()):
-            raise RuntimeError("manifest summary metadata mismatch")
-        copies = manifest.get("copies")
-        if not isinstance(copies, list) or len(copies) != 1 or not isinstance(copies[0], dict):
-            raise RuntimeError("manifest summary role count mismatch")
-        row = copies[0]
-        if row.get("role") != "rpc" or row.get("status") not in {"confirmed", "reconciled"}:
-            raise RuntimeError("manifest summary copy outcome mismatch")
-        if row.get("prepared") is not True:
-            raise RuntimeError("manifest summary contains an unprepared role")
-        fingerprint = manifest.get("template_fingerprint")
-        if not isinstance(fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
-            raise RuntimeError("manifest summary fingerprint is malformed")
-        lines = [
-            "### Prepared RPC copy",
-            f"- Lane/backend/slot: rpc-health-web / web / {expected['account_slot']}",
-            f"- Template contract: version=1 fingerprint={fingerprint}",
-            f"- Copy outcomes: total=1 confirmed={int(row['status'] == 'confirmed')} reconciled={int(row['status'] == 'reconciled')}",
-            "- Clean-role residuals: rpc=0",
-        ]
-        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
-            stream.write("\n".join(lines) + "\n")
-        PY
-
-    - name: Validate RPC fallback bindings
-      id: preflight
-      if: steps.provision.outcome == 'success'
-      continue-on-error: true
-      run: |
-        test -n "${NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID:-}"
-        test "$NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID" = "$NOTEBOOKLM_GENERATION_NOTEBOOK_ID"
-
     # Rebrand-host lane state, carried between nightly runs so the lane can
     # report a *state change* rather than re-announcing the same observation
     # forever. Restore-only + a run-scoped save key, because cache entries are
@@ -376,7 +303,7 @@ jobs:
     # disappeared; a contrary live observation is still reported as new.
     - name: Restore rebrand-host lane state
       uses: actions/cache/restore@v6
-      if: steps.preflight.outcome == 'success'
+      if: steps.auth.outcome == 'success'
       continue-on-error: true
       with:
         path: rebrand-state.json
@@ -392,7 +319,7 @@ jobs:
     # failure writes no state at all) would leave yesterday's document in place
     # and the detect step would replay yesterday's transition (#2062).
     - name: Move restored rebrand state into the previous-run slot
-      if: steps.preflight.outcome == 'success'
+      if: steps.auth.outcome == 'success'
       shell: bash
       run: |
         if [ -f rebrand-state.json ]; then
@@ -401,7 +328,7 @@ jobs:
 
     - name: Run RPC Health Check
       id: health
-      if: steps.preflight.outcome == 'success'
+      if: steps.auth.outcome == 'success'
       # Auth comes from the profile materialized above (no inline env-var
       # credential is shipped at all) so the layer-4 re-mint can engage.
       #
@@ -422,6 +349,7 @@ jobs:
         TARGET_BRANCH: main
       run: |
         echo "Testing branch: $TARGET_BRANCH"
+        echo "Full RPC check creates and cleans up its own temporary resources."
         set +e
         uv run python scripts/check_rpc_health.py --full \
           --rebrand-state-file rebrand-state.json \
@@ -471,9 +399,15 @@ jobs:
     - name: Add Summary
       if: always()
       shell: bash
+      env:
+        AUTH_OUTCOME: ${{ steps.auth.outcome }}
       run: |
         echo "## RPC Health Check Results" >> "$GITHUB_STEP_SUMMARY"
-        grep -A 10 "^SUMMARY$" health-report.txt >> "$GITHUB_STEP_SUMMARY" || echo "No summary found" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$AUTH_OUTCOME" != success ]; then
+          echo "RPC probes did not run. See the authentication diagnostics and phase outcomes." >> "$GITHUB_STEP_SUMMARY"
+        elif ! grep -A 10 "^SUMMARY$" health-report.txt >> "$GITHUB_STEP_SUMMARY"; then
+          echo "RPC probes did not produce a summary. See the full RPC diagnostic report." >> "$GITHUB_STEP_SUMMARY"
+        fi
 
     # Bundle-drift monitor (capture_rpc_registry.py). NOT a PR gate — it depends
     # on Google's live external JS bundle, which can rotate at any time — so it
@@ -491,7 +425,7 @@ jobs:
       # carries no domain, so every cookie is sent to every host in the
       # redirect chain regardless of which auth source fed it — issue #2019.
       continue-on-error: true
-      if: steps.preflight.outcome == 'success'
+      if: steps.auth.outcome == 'success'
       shell: bash
       env:
         HEALTH_EXIT_CODE: ${{ steps.health.outputs.exit_code }}
@@ -965,6 +899,14 @@ jobs:
         path: health-report.txt
         retention-days: 30
 
+    - name: Link full RPC diagnostic report
+      if: always() && steps.report_upload.outputs.artifact-url != ''
+      shell: bash
+      env:
+        REPORT_URL: ${{ steps.report_upload.outputs.artifact-url }}
+      run: |
+        printf '\n[Download the full RPC diagnostic report](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+
     - name: Capture report and issue-handling outcomes
       id: report
       if: always() && (steps.health.outcome == 'success' || steps.health.outcome == 'failure')
@@ -981,20 +923,7 @@ jobs:
           exit 1
         fi
 
-    - name: Cleanup RPC fallback copy
-      id: cleanup
-      if: always()
-      continue-on-error: true
-      env:
-        NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
-      run: |
-        result=$(uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
-          --backend web --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
-          --manifest "$CI_E2E_MANIFEST")
-        printf '%s\n' "$result"
-        printf '### RPC copy cleanup\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Purge RPC health credentials and manifest
+    - name: Purge RPC health credentials
       id: purge
       if: always()
       continue-on-error: true
@@ -1006,7 +935,6 @@ jobs:
         home = Path(os.environ["NOTEBOOKLM_HOME"])
         if home.exists():
             shutil.rmtree(home)
-        Path(os.environ["CI_E2E_MANIFEST"]).unlink(missing_ok=True)
         PY
 
     - name: Aggregate Web RPC health outcomes
@@ -1016,12 +944,8 @@ jobs:
         python scripts/aggregate_ci_e2e_outcomes.py
         --lane rpc-health-web --mode rpc --producer required
         --phase auth=${{ steps.auth.outcome == 'success' && 'success' || 'failure' }}
-        --phase sweep=${{ steps.auth.outcome == 'success' && (steps.sweep.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase provision=${{ steps.sweep.outcome == 'success' && (steps.provision.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase preflight=${{ steps.provision.outcome == 'success' && (steps.preflight.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase health=${{ steps.preflight.outcome == 'success' && (steps.health.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
+        --phase health=${{ steps.auth.outcome == 'success' && (steps.health.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase report=${{ (steps.health.outcome == 'success' || steps.health.outcome == 'failure') && (steps.report.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
-        --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
         --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}
 
   # ------------------------------------------------------------------

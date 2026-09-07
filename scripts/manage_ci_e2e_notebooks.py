@@ -45,6 +45,7 @@ from _ci_e2e_notebooks import (
     parse_title,
     validate_manifest,
 )
+from _ci_progress import report
 
 from notebooklm import (
     AuthError,
@@ -431,6 +432,18 @@ class NotebookLifecycleManager:
         self.clock = clock
         self.sleep = sleep
         self.nonce = nonce
+        self._started = clock()
+        self._role = "template"
+        self._content_deficiencies: list[str] = []
+        self._last_progress = "not started"
+
+    def _progress(self, phase: str, detail: str, *, summary: bool = False) -> None:
+        self._last_progress = f"role={self._role} phase={phase}; {detail}"
+        report(
+            f"Provision {self._role}: {phase} ({self.clock() - self._started:.0f}s elapsed); "
+            f"{detail}",
+            summary=summary,
+        )
 
     async def _read(self, operation: Callable[[], Awaitable[T]]) -> T:
         return await retry_idempotent(
@@ -500,6 +513,7 @@ class NotebookLifecycleManager:
         *,
         tolerate_incomplete: bool,
         require_artifacts: bool,
+        require_completed_artifacts: bool = True,
     ) -> dict[str, int] | None:
         """Validate sources and artifacts without repeating notebook identity reads."""
 
@@ -515,16 +529,25 @@ class NotebookLifecycleManager:
                 if _kind_value(getattr(source, "kind", None)) not in non_text_kinds
             ]
             if len(text_ready) < source_contract["minimum_ready"]:
-                incomplete.append("template has too few text-addressable ready sources")
+                incomplete.append(
+                    "template has too few text-addressable ready sources "
+                    f"({len(text_ready)}/{source_contract['minimum_ready']})"
+                )
         distinct_titles = {
             str(getattr(source, "title", "")).strip().casefold()
             for source in ready_sources
             if str(getattr(source, "title", "")).strip()
         }
         if len(ready_sources) < source_contract["minimum_ready"]:
-            incomplete.append("template has too few ready sources")
+            incomplete.append(
+                "template has too few ready sources "
+                f"({len(ready_sources)}/{source_contract['minimum_ready']})"
+            )
         if len(distinct_titles) < source_contract["minimum_distinct_titles"]:
-            incomplete.append("template source topics are not sufficiently distinct")
+            incomplete.append(
+                "template source topics are not sufficiently distinct "
+                f"({len(distinct_titles)}/{source_contract['minimum_distinct_titles']})"
+            )
 
         completed: list[Any] = []
         families: set[str] = set()
@@ -535,20 +558,23 @@ class NotebookLifecycleManager:
             # variant cannot distinguish quiz, flashcards, or mind map. Skip
             # those known-unclassifiable rows before ``.kind`` warns; they
             # cannot satisfy any concrete required family.
+            eligible = completed if require_completed_artifacts else artifacts
             classified = [
                 artifact
-                for artifact in completed
+                for artifact in eligible
                 if not bool(getattr(artifact, "is_unclassified_type4", False))
             ]
             families = {_kind_value(getattr(artifact, "kind", None)) for artifact in classified}
             required = set(self.template_contract["artifacts"]["required_completed_families"])
             missing = sorted(required - families)
             if missing:
-                incomplete.append("template is missing completed families: " + ",".join(missing))
+                state = "completed" if require_completed_artifacts else "copied"
+                incomplete.append(f"template is missing {state} families: " + ",".join(missing))
             if self.template_contract["artifacts"]["require_interactive_mind_map"] and not any(
-                getattr(artifact, "is_interactive_mind_map", False) for artifact in completed
+                getattr(artifact, "is_interactive_mind_map", False) for artifact in eligible
             ):
                 incomplete.append("template is missing a completed interactive mind map")
+        self._content_deficiencies = incomplete
         if incomplete:
             if tolerate_incomplete:
                 return None
@@ -564,6 +590,7 @@ class NotebookLifecycleManager:
         notebook_id: str,
         *,
         require_artifacts: bool = True,
+        require_completed_artifacts: bool = True,
     ) -> dict[str, int]:
         original = self.template_id
         self.template_id = notebook_id
@@ -577,18 +604,31 @@ class NotebookLifecycleManager:
                     counts = await self._validate_template_content(
                         tolerate_incomplete=True,
                         require_artifacts=require_artifacts,
+                        require_completed_artifacts=require_completed_artifacts,
                     )
                 except RateLimitError:
                     now = self.clock()
                     if now >= deadline:
                         raise
+                    self._progress("copy settlement", "inventory rate limited; retrying in 60s")
                     await self.sleep(min(_COPY_SETTLE_QUOTA_BACKOFF_SECONDS, deadline - now))
                     continue
                 if counts is not None:
+                    self._progress(
+                        "copy ready",
+                        " ".join(f"{key}={value}" for key, value in counts.items()),
+                        summary=True,
+                    )
                     return counts
                 now = self.clock()
+                detail = "; ".join(self._content_deficiencies)
+                self._progress(
+                    "copy settlement", f"remaining={max(0, deadline - now):.0f}s; {detail}"
+                )
                 if now >= deadline:
-                    raise ContractError("copied template state did not settle within ten minutes")
+                    raise ContractError(
+                        "copied template state did not settle within ten minutes: " + detail
+                    )
                 await self.sleep(min(_COPY_SETTLE_POLL_SECONDS, deadline - now))
         finally:
             self.template_id = original
@@ -692,6 +732,13 @@ class NotebookLifecycleManager:
             else:
                 consecutive_empty += 1
             ready_count = sum(bool(getattr(source, "is_ready", False)) for source in sources)
+            self._progress(
+                "clean preparation",
+                f"artifacts={len(current.artifacts)} notes={len(current.notes)} "
+                f"mind_maps={len(current.mind_maps)} ready_sources={ready_count}; "
+                f"quiet={max(0, self.clock() - last_nonempty):.0f}/{policy.quiet_period:.0f}s; "
+                f"remaining={max(0, deadline - self.clock()):.0f}s",
+            )
             ready = ready_count >= clean["minimum_ready_sources"]
             quiet = now - last_nonempty >= policy.quiet_period
             if not current.ids and consecutive_empty >= 3 and quiet and ready:
@@ -730,6 +777,7 @@ class NotebookLifecycleManager:
         """Seed and validate deterministic disposable note/conversation state."""
 
         reference = self.prepared_contract["reference"]
+        self._progress("reference preparation", "creating the marker note")
         note = await self.client.notes.create(
             notebook_id,
             reference["note_title"],
@@ -738,8 +786,10 @@ class NotebookLifecycleManager:
         note_id = getattr(note, "id", None)
         if not is_valid_notebook_id(note_id):
             raise ContractError("prepared reference note returned a malformed ID")
+        self._progress("reference preparation", "seeding conversation history")
         await self.client.chat.ask(notebook_id, reference["question"])
         deadline = self.clock() + 90.0
+        last_report = float("-inf")
         while True:
             notes = await self._read(lambda: self.client.notes.list(notebook_id))
             markers = [
@@ -773,6 +823,14 @@ class NotebookLifecycleManager:
                 and getattr(readable, "content", None) == reference["note_body"]
             )
             now = self.clock()
+            if now - last_report >= 30 or now >= deadline:
+                self._progress(
+                    "reference preparation",
+                    f"note_readable={readable_valid} conversation={bool(conversation_id)} "
+                    f"history_pairs={history_pairs} turns_readable={_turn_has_content(turns)}; "
+                    f"remaining={max(0, deadline - now):.0f}s",
+                )
+                last_report = now
             if now > deadline:
                 raise ContractError("prepared reference state exceeded its deadline")
             if (
@@ -1077,6 +1135,9 @@ class NotebookLifecycleManager:
 
         if self.store.path.exists():
             raise PersistenceError("manifest already exists; refusing to overwrite lifecycle state")
+        self._progress(
+            "validation", "checking template sources and completed artifacts", summary=True
+        )
         await self.validate_template()
         manifest = new_manifest(
             run_id=run_id,
@@ -1090,26 +1151,43 @@ class NotebookLifecycleManager:
         self._persist_manifest(manifest)
         role_ids: dict[str, str] = {}
         for role in MODE_ROLES[mode]:
+            self._role = role
+            self._progress("copy", "dispatching one managed copy", summary=True)
             row = await self.copy_one(manifest, role)
             notebook_id = str(row["notebook_id"])
             role_ids[role] = notebook_id
             if mask is not None:
                 mask(notebook_id)
+            self._progress("copy confirmed", f"outcome={row['status']}", summary=True)
 
         # CopyProject returns before its asynchronous source/artifact propagation
         # completes. Dispatch every exactly-once copy first so that propagation
         # overlaps while the roles remain durably tracked and immediately masked.
         for role, notebook_id in role_ids.items():
-            await self._validate_copy_shape(
-                notebook_id,
-                require_artifacts=True,
-            )
-            if role == "reference":
-                await self.prepare_reference(notebook_id)
-            else:
-                await self.prepare_clean_role(notebook_id, role)
-            await self.validate_prepared_role(notebook_id, role)
+            self._role = role
+            self._progress("copy settlement", "waiting for required copied content", summary=True)
+            try:
+                await self._validate_copy_shape(
+                    notebook_id,
+                    # Wait for clean roles' inherited families to arrive before
+                    # deleting them, without waiting for unfinished work to complete.
+                    # Reference completion is asserted by a dedicated E2E test.
+                    require_artifacts=role != "reference",
+                    require_completed_artifacts=False,
+                )
+                self._progress("preparation", "preparing role state", summary=True)
+                if role == "reference":
+                    await self.prepare_reference(notebook_id)
+                else:
+                    await self.prepare_clean_role(notebook_id, role)
+                await self.validate_prepared_role(notebook_id, role)
+            except BaseException as exc:
+                report(f"Provision failed; last observation: {self._last_progress}", error=True)
+                if isinstance(exc, ContractError):
+                    exc.category = "PROVISIONING"
+                raise
             self._update_row(manifest, role, prepared=True)
+            self._progress("ready", "prepared role validated", summary=True)
 
         validate_manifest(manifest, template_id=self.template_id)
         role_ids = [str(row["notebook_id"]) for row in manifest["copies"]]
@@ -1431,7 +1509,7 @@ async def _run(args: argparse.Namespace) -> int:
     if args.command == "cleanup" and not args.manifest.exists():
         if args.template_id_env != TEMPLATE_ID_ENV:
             raise ManifestError("template ID environment name is not allowlisted")
-        print("nothing to clean; manifest is absent")
+        report("nothing to clean; manifest is absent", summary=True)
         return 0
     template_id = _template_id_from_env(args.template_id_env)
     template_contract: dict[str, Any] = {}
@@ -1474,19 +1552,21 @@ async def _run(args: argparse.Namespace) -> int:
                 github_env=args.github_env,
                 mask=_mask_for_github,
             )
-            print(
+            report(
                 f"provisioned {len(manifest['copies'])} prepared role(s); "
-                f"mode={args.mode} backend={args.backend} slot={args.account_slot}"
+                f"mode={args.mode} backend={args.backend} slot={args.account_slot}",
+                summary=True,
             )
             return 0
         if args.command == "validate":
             if args.role is None:
                 counts = await manager.validate_template()
-                print(
+                report(
                     "template contract valid; "
                     f"ready_sources={counts['ready_sources']} "
                     f"completed_artifacts={counts['completed_artifacts']} "
-                    f"fingerprint={fingerprint}"
+                    f"fingerprint={fingerprint}",
+                    summary=True,
                 )
                 return 0
             if args.manifest is None:
@@ -1499,13 +1579,14 @@ async def _run(args: argparse.Namespace) -> int:
             if row is None or row["notebook_id"] is None or row["prepared"] is not True:
                 raise ManifestError("prepared role is absent from the manifest")
             counts = await manager.validate_prepared_role(str(row["notebook_id"]), args.role)
-            print(f"prepared role valid; role={args.role} checks={len(counts)}")
+            report(f"prepared role valid; role={args.role} checks={len(counts)}", summary=True)
             return 0
         if args.command == "cleanup":
             counts = await manager.cleanup(expected_backend=args.backend)
-            print(
+            report(
                 f"cleanup complete; deleted={counts['deleted']} "
-                f"already_missing={counts['already_missing']} failed={counts['failed']}"
+                f"already_missing={counts['already_missing']} failed={counts['failed']}",
+                summary=True,
             )
             return 0
         if args.command == "sweep":
@@ -1526,9 +1607,10 @@ async def _run(args: argparse.Namespace) -> int:
                 max_age=timedelta(hours=args.max_age_hours),
                 deletion_cap=args.deletion_cap,
             )
-            print(
+            report(
                 f"sweep complete; eligible={result.eligible} deleted={result.deleted} "
-                f"skipped={result.skipped} failed={result.failed}"
+                f"skipped={result.skipped} failed={result.failed}",
+                summary=True,
             )
             return 0
     raise AssertionError("unreachable command")
@@ -1543,9 +1625,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             category = "REGRESSION"
         else:
             category = _category_for(exc)
-        print(
-            f"ERROR[{category}]: lifecycle command failed ({_safe_exception_name(exc)})",
-            file=sys.stderr,
+        # LifecycleError messages are owned by this script and summary-safe.
+        # Never publish arbitrary SDK/HTTP exception text or chained causes.
+        detail = str(exc) if isinstance(exc, LifecycleError) else _safe_exception_name(exc)
+        report(
+            f"ERROR[{category}]: lifecycle {args.command} failed: {detail}",
+            error=True,
         )
         return 1
 

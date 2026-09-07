@@ -547,7 +547,9 @@ def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
     assert '"selection": "readonly and not variants"' in planner_run
     assert 'selected_lane in {"all", "web"}' in planner_run
     assert 'selected_lane in {"all", "android"}' in planner_run
-    assert 'selected_lane in {"all", "readonly"} and not test_filter' in planner_run
+    assert (
+        'selected_lane == "readonly" or (selected_lane == "all" and not test_filter)' in planner_run
+    )
 
     triggers = workflow.get("on", workflow.get(True))
     inputs = triggers["workflow_dispatch"]["inputs"]
@@ -595,7 +597,7 @@ def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
     primary_command = str(primary["run"])
     assert '-m "${{ matrix.selection }}"' in primary_command
     filtered_branch = primary_command.split("else", 1)[0]
-    assert "${{ matrix.selection }}" not in filtered_branch
+    assert '-m "${{ matrix.selection }}"' in filtered_branch
 
     curl_smoke = _step(job, "curl_cffi transport smoke")
     assert "matrix.lane == 'nightly-web-ubuntu'" in str(curl_smoke["if"])

@@ -44,7 +44,6 @@ def test_job_level_env_never_uses_step_only_runner_context() -> None:
 def test_manifest_paths_use_a_store_owned_private_child_directory() -> None:
     jobs = (
         _load("nightly.yml")["jobs"]["e2e"],
-        _load("rpc-health.yml")["jobs"]["health-check"],
         _load("verify-package.yml")["jobs"]["verify"],
     )
     for job in jobs:
@@ -403,6 +402,11 @@ def test_nightly_full_copy_journal_and_cleanup_dag_is_explicit() -> None:
     assert _step(job, "journal_policy")["if"] == "steps.preflight.outcome == 'success'"
     assert _step(job, "primary")["if"] == "steps.journal_policy.outcome == 'success'"
     assert _step(job, "cleanup")["if"] == "always()"
+
+    # A filtered read-only dispatch and its retry must still enforce the lane's
+    # marker selection, even if the requested node names a mutating test.
+    for phase in ("primary", "retry"):
+        assert '-m "${{ matrix.selection }}"' in str(_step(job, phase)["run"])
     assert _step(job, "purge")["if"] == "always()"
 
     provision = str(_step(job, "provision")["run"])
@@ -443,9 +447,13 @@ def test_rpc_and_package_lanes_have_their_designated_lifecycles() -> None:
         step = next(item for item in _steps(web) if item.get("name") == step_name)
         assert step["env"]["CHECKED_SHA"] == "${{ needs.resolve-target.outputs.sha }}"
         assert "${CHECKED_SHA}" in str(step["run"])
-    assert "--mode rpc" in str(_step(web, "provision")["run"])
-    assert _step(web, "health")["if"] == "steps.preflight.outcome == 'success'"
-    assert _step(web, "cleanup")["if"] == "always()"
+    assert not {"sweep", "provision", "preflight", "cleanup"} & {
+        step.get("id") for step in _steps(web)
+    }
+    assert "CI_E2E_MANIFEST" not in str(web)
+    assert "NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID" not in str(web)
+    assert "scripts/check_rpc_health.py --full" in str(_step(web, "health")["run"])
+    assert _step(web, "health")["if"] == "steps.auth.outcome == 'success'"
     assert _step(web, "purge")["if"] == "always()"
     report_if = str(_step(web, "report")["if"])
     assert "steps.health.outcome == 'success'" in report_if
@@ -512,12 +520,6 @@ def test_safe_summaries_cover_selection_and_lifecycle_counts() -> None:
     assert "Clean workspace residuals: generation/multi-source=0" in nightly_provision
     assert 'row["notebook_id"]' not in nightly_provision
     assert "Coverage floor:" in str(_step(nightly, "coverage")["run"])
-
-    rpc = _load("rpc-health.yml")["jobs"]["health-check"]
-    rpc_provision = str(_step(rpc, "provision")["run"])
-    assert "Copy outcomes: total=1" in rpc_provision
-    assert "Clean-role residuals: rpc=0" in rpc_provision
-    assert 'row["notebook_id"]' not in rpc_provision
 
     package = _load("verify-package.yml")["jobs"]["verify"]
     package_provision = str(_step(package, "provision")["run"])

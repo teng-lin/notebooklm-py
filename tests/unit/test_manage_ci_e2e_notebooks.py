@@ -1598,7 +1598,7 @@ async def test_clean_copy_shape_requires_sources_but_not_inherited_artifact_comp
 
 
 @pytest.mark.asyncio
-async def test_provision_waits_for_artifacts_before_preparing_every_workspace(
+async def test_provision_leaves_artifact_completion_to_e2e_assertions(
     tmp_path: Path,
     contracts: tuple[dict[str, Any], dict[str, Any]],
 ) -> None:
@@ -1607,16 +1607,90 @@ async def test_provision_waits_for_artifacts_before_preparing_every_workspace(
     validate_copy_shape = manager._validate_copy_shape
 
     async def recording_validate_copy_shape(
-        notebook_id: str, *, require_artifacts: bool = True
+        notebook_id: str,
+        *,
+        require_artifacts: bool = True,
+        require_completed_artifacts: bool = True,
     ) -> dict[str, int]:
         observed_require_artifacts.append(require_artifacts)
-        return await validate_copy_shape(notebook_id, require_artifacts=require_artifacts)
+        return await validate_copy_shape(
+            notebook_id,
+            require_artifacts=require_artifacts,
+            require_completed_artifacts=require_completed_artifacts,
+        )
 
     manager._validate_copy_shape = recording_validate_copy_shape  # type: ignore[method-assign]
 
     await _provision(manager, tmp_path, mode="full")
 
-    assert observed_require_artifacts == [True, True]
+    assert observed_require_artifacts == [False, True]
+
+
+@pytest.mark.parametrize("mode", ["full", "readonly", "rpc"])
+@pytest.mark.asyncio
+async def test_provision_succeeds_with_ready_sources_and_unfinished_copied_artifacts(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+    mode: str,
+) -> None:
+    manager, client, _store, clock = _manager(tmp_path, contracts)
+    copy = client.notebooks.copy
+
+    async def copy_with_pending_artifacts(template_id, title):
+        notebook = await copy(template_id, title)
+        for artifact in client.artifacts.by_notebook[notebook.id]:
+            artifact.is_completed = False
+        return notebook
+
+    client.notebooks.copy = copy_with_pending_artifacts
+    manifest = await _provision(manager, tmp_path, mode=mode)
+
+    assert all(row["prepared"] for row in manifest["copies"])
+    assert clock.value < 600
+    for row in manifest["copies"]:
+        if row["role"] != "reference":
+            assert client.artifacts.by_notebook[row["notebook_id"]] == []
+    assert all(artifact.is_completed for artifact in client.artifacts.by_notebook[TEMPLATE_ID])
+
+
+@pytest.mark.asyncio
+async def test_clean_copy_waits_for_late_inherited_inventory_before_quiet_window(
+    tmp_path: Path,
+    contracts: tuple[dict[str, Any], dict[str, Any]],
+) -> None:
+    manager, client, _store, clock = _manager(tmp_path, contracts)
+    copy = client.notebooks.copy
+
+    async def copy_with_late_inventory(template_id, title):
+        notebook = await copy(template_id, title)
+        client.artifacts.list_script.append([])
+        return notebook
+
+    client.notebooks.copy = copy_with_late_inventory
+    manifest = await _provision(manager, tmp_path, mode="rpc")
+
+    assert clock.value == 120  # 30s propagation, then 90s clean inventory observation
+    assert client.artifacts.by_notebook[manifest["copies"][0]["notebook_id"]] == []
+
+
+def test_cli_reports_owned_contract_reason_without_upstream_cause(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+
+    async def fail(_args):
+        try:
+            raise RuntimeError("SID=private-cookie private-notebook-id private-title")
+        except RuntimeError as exc:
+            raise ContractError("prepared reference state did not become readable") from exc
+
+    monkeypatch.setattr(lifecycle, "_run", fail)
+    assert lifecycle.main(["validate", "--backend", "web"]) == 1
+    output = capsys.readouterr()
+    assert "prepared reference state did not become readable" in output.err
+    assert "prepared reference state did not become readable" in summary.read_text()
+    assert "private-" not in output.out + output.err + summary.read_text()
 
 
 @pytest.mark.asyncio
@@ -1635,10 +1709,17 @@ async def test_provision_dispatches_all_copies_before_settling_any_role(
         return row
 
     async def recording_validate_copy_shape(
-        notebook_id: str, *, require_artifacts: bool = True
+        notebook_id: str,
+        *,
+        require_artifacts: bool = True,
+        require_completed_artifacts: bool = True,
     ) -> dict[str, int]:
         events.append(f"settling:{notebook_id}")
-        return await validate_copy_shape(notebook_id, require_artifacts=require_artifacts)
+        return await validate_copy_shape(
+            notebook_id,
+            require_artifacts=require_artifacts,
+            require_completed_artifacts=require_completed_artifacts,
+        )
 
     manager.copy_one = recording_copy_one  # type: ignore[method-assign]
     manager._validate_copy_shape = recording_validate_copy_shape  # type: ignore[method-assign]

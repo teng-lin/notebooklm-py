@@ -630,6 +630,10 @@ def pytest_configure(config):
     profile = config.getoption("--profile")
     if profile:
         _apply_profile(profile)
+    if os.environ.get("CI_E2E_PROGRESS") == "1":
+        from tests.e2e._progress import E2EProgress
+
+        config.pluginmanager.register(E2EProgress(), "ci-e2e-progress")
     try:
         _managed_bindings()
         # Validate journal policy before collection. A per-test helper reopens

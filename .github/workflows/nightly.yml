@@ -212,9 +212,6 @@ jobs:
         test_filter = os.environ["TEST_FILTER"]
         if selected_lane not in {"all", "web", "android", "readonly"}:
             raise SystemExit(f"unsupported e2e_lane: {selected_lane}")
-        if selected_lane == "readonly" and test_filter:
-            raise SystemExit("e2e_lane=readonly cannot be combined with test_filter")
-
         include = []
         if selected_lane in {"all", "web"}:
             include.append(
@@ -230,7 +227,7 @@ jobs:
                  "selection": "not variants", "account_slot": android["account_slot"],
                  "master_token_secret_name": android["master_token_secret_name"]}
             )
-        if selected_lane in {"all", "readonly"} and not test_filter:
+        if selected_lane == "readonly" or (selected_lane == "all" and not test_filter):
             include.append(
                 {"os": "windows-latest", "backend": "web",
                  "lane": "nightly-readonly-windows", "mode": "readonly",
@@ -421,6 +418,8 @@ jobs:
         # Lifecycle and retry scripts use Bash syntax on every runner.
         shell: bash
     env:
+      PYTHONUNBUFFERED: "1"
+      CI_E2E_PROGRESS: "1"
       NOTEBOOKLM_BACKEND: ${{ matrix.backend }}
       NOTEBOOKLM_PROFILE: ci-${{ matrix.account_slot }}-${{ matrix.lane }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -504,12 +503,10 @@ jobs:
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
       run: |
-        result=$(uv run python scripts/manage_ci_e2e_notebooks.py sweep \
+        uv run python scripts/manage_ci_e2e_notebooks.py sweep \
           --backend "${{ matrix.backend }}" \
           --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
-          --manifest "$CI_E2E_MANIFEST")
-        printf '%s\n' "$result"
-        printf '### %s lifecycle\n%s\n' "${{ matrix.lane }}" "$result" >> "$GITHUB_STEP_SUMMARY"
+          --manifest "$CI_E2E_MANIFEST"
     - name: Provision managed role copies
       id: provision
       if: steps.auth.outcome == 'success' && steps.sweep.outcome == 'success'
@@ -626,7 +623,7 @@ jobs:
         python -c 'from pathlib import Path; import os; Path(os.environ["E2E_COVERAGE_FLOOR_SENTINEL"]).unlink(missing_ok=True)'
         if [ -n "$TEST_FILTER" ]; then
           unset E2E_ENFORCE_COVERAGE_FLOOR
-          uv run pytest -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
+          uv run pytest -m "${{ matrix.selection }}" -s -v --tb=short --reruns 1 --reruns-delay 30 -- "$TEST_FILTER"
         else
           uv run pytest tests/e2e -m "${{ matrix.selection }}" -s -v --tb=short \
             --reruns 1 --reruns-delay 30
@@ -654,9 +651,12 @@ jobs:
         E2E_ENFORCE_COVERAGE_FLOOR: "1"
         TEST_FILTER: ${{ inputs.test_filter }}
       run: |
-        sleep 600
+        for minute in {1..10}; do
+          echo "E2E retry cool-down: minute $minute/10"
+          sleep 60
+        done
         if [ -n "$TEST_FILTER" ]; then unset E2E_ENFORCE_COVERAGE_FLOOR; fi
-        uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -s -v --tb=short
+        uv run pytest tests/e2e --last-failed --last-failed-no-failures=none -m "${{ matrix.selection }}" -s -v --tb=short
     - name: curl_cffi transport smoke
       id: smoke
       if: steps.preflight.outcome == 'success' && matrix.lane == 'nightly-web-ubuntu'
@@ -724,13 +724,11 @@ jobs:
         steps.verifier_budget.outcome == 'success'
       continue-on-error: true
       run: |
-        result=$(uv run python scripts/verify_ci_artifacts.py \
+        uv run python scripts/verify_ci_artifacts.py \
           --mode journal --backend web \
           --manifest "$CI_E2E_MANIFEST" --role generation \
           --journal "$CI_E2E_JOURNAL" \
-          --timeout "${{ steps.verifier_budget.outputs.timeout }}")
-        printf '%s\n' "$result"
-        printf '### Generation verification\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+          --timeout "${{ steps.verifier_budget.outputs.timeout }}"
     - name: Cleanup managed role copies
       id: cleanup
       if: always()
@@ -738,12 +736,10 @@ jobs:
       env:
         NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID: ${{ secrets.NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID }}
       run: |
-        result=$(uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
+        uv run python scripts/manage_ci_e2e_notebooks.py cleanup \
           --backend "${{ matrix.backend }}" \
           --template-id-env NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID \
-          --manifest "$CI_E2E_MANIFEST")
-        printf '%s\n' "$result"
-        printf '### Managed-copy cleanup\n%s\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+          --manifest "$CI_E2E_MANIFEST"
     - name: Purge local credentials and handles
       id: purge
       if: always()

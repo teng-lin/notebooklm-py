@@ -28,8 +28,11 @@ import os
 import sys
 import warnings
 from collections import Counter
+from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -423,6 +426,67 @@ def test_is_transient_error_classifies_readtimeout_as_transient() -> None:
     assert is_transient_error("ConnectTimeout") is False
     assert is_transient_error("WriteTimeout") is False
     assert is_transient_error("PoolTimeout") is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("created_id", ["probe-owned-notebook", None])
+async def test_full_health_runs_without_a_provisioned_fallback(monkeypatch, created_id):
+    monkeypatch.delenv("NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_GENERATION_NOTEBOOK_ID", raising=False)
+    auth = SimpleNamespace(csrf_token="fake", account_route="0")
+    client = object()
+
+    @asynccontextmanager
+    async def probe_client(_auth):
+        yield client
+
+    temp = check_rpc_health.TempResources(notebook_id=created_id)
+
+    async def setup(_client, _auth, results):
+        results.append(
+            _result(
+                "CREATE_NOTEBOOK",
+                CheckStatus.OK if created_id else CheckStatus.ERROR,
+                error=None if created_id else "creation failed",
+            )
+        )
+        return temp
+
+    probe = AsyncMock(return_value=_result("READ", CheckStatus.OK))
+    cleanup = AsyncMock()
+    monkeypatch.setattr(check_rpc_health, "load_auth", AsyncMock(return_value=auth))
+    monkeypatch.setattr(check_rpc_health, "describe_cookie_scopes", lambda _auth: "fixture")
+    monkeypatch.setattr(check_rpc_health, "build_probe_client", probe_client)
+    monkeypatch.setattr(check_rpc_health, "setup_temp_resources", setup)
+    monkeypatch.setattr(check_rpc_health, "cleanup_temp_resources", cleanup)
+    monkeypatch.setattr(check_rpc_health, "check_method", probe)
+    monkeypatch.setattr(
+        check_rpc_health,
+        "check_chat_query",
+        AsyncMock(return_value=_result("CHAT", CheckStatus.OK)),
+    )
+    monkeypatch.setattr(
+        check_rpc_health,
+        "check_customization_table",
+        AsyncMock(return_value=(check_rpc_health.CustomizationStatus.UNKNOWN, "fixture")),
+    )
+    monkeypatch.setattr(
+        check_rpc_health,
+        "check_build_label",
+        AsyncMock(return_value=check_rpc_health.classify_build_label(None, "fixture")),
+    )
+    monkeypatch.setattr(check_rpc_health, "probe_rebrand_host", AsyncMock(return_value=[]))
+    monkeypatch.setattr(check_rpc_health, "CALL_DELAY", 0)
+
+    results, customization, state, build = await check_rpc_health.run_health_check(full_mode=True)
+
+    assert probe.await_count == len(list(check_rpc_health.RPCMethod))
+    assert all(call.args[3] == created_id for call in probe.await_args_list)
+    if created_id:
+        cleanup.assert_awaited_once_with(client, auth, temp, results)
+    else:
+        cleanup.assert_not_awaited()
+        assert check_rpc_health.print_summary(results, customization, state, build) == 3
 
 
 @pytest.mark.asyncio

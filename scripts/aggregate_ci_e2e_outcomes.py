@@ -7,6 +7,8 @@ import argparse
 import sys
 from dataclasses import dataclass
 
+from _ci_progress import write_summary
+
 STATES = {"success", "failure", "not_applicable"}
 
 
@@ -108,21 +110,9 @@ POLICIES = {
     ),
     "rpc-health-web": LanePolicy(
         mode="rpc",
-        applicable=frozenset(
-            {
-                "auth",
-                "sweep",
-                "provision",
-                "preflight",
-                "health",
-                "report",
-                "cleanup",
-                "purge",
-            }
-        ),
+        applicable=frozenset({"auth", "health", "report", "purge"}),
         dependencies={
-            **_BASE_COPY_DEPENDENCIES,
-            "health": ("preflight",),
+            "health": ("auth",),
             "report": ("health",),
         },
     ),
@@ -303,6 +293,13 @@ def main(argv: list[str] | None = None) -> int:
     except OutcomeError as exc:
         print(f"CONFIGURATION: {exc}", file=sys.stderr)
         return 2
+    write_summary(f"\n### CI phases: {args.lane}\n\n| Phase | Outcome |\n| --- | --- |")
+    for phase, state in states.items():
+        if phase in POLICIES[args.lane].applicable and state in STATES:
+            write_summary(f"| {phase} | {state.replace('not_applicable', 'not run')} |")
+    execution_phase = "primary" if "primary" in POLICIES[args.lane].applicable else "health"
+    if states.get(execution_phase) == "not_applicable":
+        write_summary("\nTests/probes did not run. See the failed prerequisite above.")
     if errors:
         print("CI E2E outcome failed: " + ", ".join(errors), file=sys.stderr)
         return 1

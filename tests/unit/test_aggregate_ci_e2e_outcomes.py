@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "aggregate_ci_e2e_outcomes.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("aggregate_ci_e2e_outcomes", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 aggregate_module = importlib.util.module_from_spec(SPEC)
@@ -68,11 +69,13 @@ def test_failed_setup_requires_consumers_to_be_not_applicable() -> None:
 
 
 def test_dependency_violation_and_simultaneous_cleanup_purge_failures() -> None:
-    states = successful("rpc-health-web")
+    states = successful("nightly-readonly-windows")
     states["auth"] = "failure"
     states["cleanup"] = "failure"
     states["purge"] = "failure"
-    failures = aggregate_module.aggregate(lane="rpc-health-web", mode="rpc", states=states)
+    failures = aggregate_module.aggregate(
+        lane="nightly-readonly-windows", mode="readonly", states=states
+    )
     assert "dependency_violation:sweep" in failures
     assert "phase_failed:auth" in failures
     assert "phase_failed:cleanup" in failures
@@ -145,3 +148,26 @@ def test_cli_diagnostics_never_contain_resource_values(capsys) -> None:
     rendered = capsys.readouterr().err
     assert "phase_failed:health" in rendered
     assert "notebook_id" not in rendered
+
+
+def test_failed_prerequisite_summary_distinguishes_unrun_tests(monkeypatch, tmp_path):
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    states = successful("nightly-readonly-windows")
+    states.update(
+        provision="failure",
+        preflight="not_applicable",
+        journal_policy="not_applicable",
+        primary="not_applicable",
+        lastfailed="not_applicable",
+        retry="not_applicable",
+        coverage="not_applicable",
+    )
+    args = ["--lane", "nightly-readonly-windows", "--mode", "readonly"]
+    for phase, state in states.items():
+        args.extend(["--phase", f"{phase}={state}"])
+    assert aggregate_module.main(args) == 1
+    text = summary.read_text()
+    assert "| provision | failure |" in text
+    assert "| primary | not run |" in text
+    assert "Tests/probes did not run" in text

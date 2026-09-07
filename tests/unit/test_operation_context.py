@@ -212,15 +212,23 @@ async def test_swallowed_deadline_with_same_tick_external_cancel_stays_cancelled
     assert task.uncancel() == 0
 
 
-async def test_retired_generation_wins_when_deadline_cancellation_is_swallowed() -> None:
+async def test_retired_generation_wins_when_deadline_cancellation_is_swallowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     supervisor = _supervisor()
-
-    with pytest.raises(asyncio.CancelledError):
-        async with supervisor.operation_scope("forced-close", timeout=0.01):
-            try:
-                await asyncio.sleep(10)
-            except asyncio.CancelledError:
-                supervisor._current = None
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+    # Let the real operation timer fire, but advance its clock only after
+    # admission. A busy runner must not exhaust the deadline before this body.
+    with monkeypatch.context() as patch:
+        patch.setattr(loop, "time", lambda: now)
+        with pytest.raises(asyncio.CancelledError):
+            async with supervisor.operation_scope("forced-close", timeout=0.01):
+                try:
+                    now += 1
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    supervisor._current = None
 
     cancelling = getattr(asyncio.current_task(), "cancelling", None)
     if callable(cancelling):

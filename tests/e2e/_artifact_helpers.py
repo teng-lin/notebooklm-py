@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from collections.abc import Awaitable, Callable
+
+from scripts._ci_progress import report
+
 from notebooklm import Artifact
+from notebooklm.client import NotebookLMClient
 
 URL_BACKED_ARTIFACT_FAMILIES = frozenset({"audio", "video", "infographic", "slide_deck"})
 URL_BACKED_STUDIO_TYPES = frozenset(
@@ -46,3 +53,38 @@ def completed_interactive_mind_maps(artifacts: list[Artifact]) -> list[Artifact]
         for artifact in artifacts
         if artifact.is_interactive_mind_map and artifact.is_completed
     ]
+
+
+async def assert_copied_reference_artifacts(
+    client: NotebookLMClient,
+    notebook_id: str,
+    *,
+    required_families: set[str],
+    require_interactive_mind_map: bool,
+    timeout: float = 600,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> None:
+    """Keep copied-content failures visible without preventing other E2E tests."""
+    deadline = clock() + timeout
+    while True:
+        artifacts = await client.artifacts.list(notebook_id)
+        completed = [artifact for artifact in artifacts if artifact.is_completed]
+        families = {
+            artifact.kind.value for artifact in completed if not artifact.is_unclassified_type4
+        }
+        missing = sorted(required_families - families)
+        if require_interactive_mind_map and not any(
+            artifact.is_interactive_mind_map for artifact in completed
+        ):
+            missing.append("interactive_mind_map")
+        remaining = max(0.0, deadline - clock())
+        detail = "missing completed families: " + ", ".join(missing) if missing else "ready"
+        report(
+            f"Copied reference artifacts: {detail}; remaining={remaining:.0f}s",
+            summary=not missing or remaining == 0,
+        )
+        if not missing:
+            return
+        assert remaining > 0, "Copied reference " + detail
+        await sleep(min(30, remaining))

@@ -9,13 +9,14 @@ import json
 import math
 import os
 import stat
-import sys
 import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from _ci_progress import report, safe_test_name
 
 from notebooklm import NotebookLMClient
 from notebooklm._logging import scrub_secrets
@@ -180,6 +181,10 @@ class JournalOperation:
     @property
     def family(self) -> str:
         return self.immutable[1]
+
+    @property
+    def node_id(self) -> str:
+        return self.immutable[5]
 
     @property
     def id_kind(self) -> str:
@@ -456,6 +461,10 @@ async def _discover_quiet_inventory(
         else:
             stable = 0
         previous = signature
+        report(
+            f"Artifact discovery: observed={len(latest)} quiet_polls={stable}/{quiet_polls}; "
+            f"elapsed={clock() - started:.0f}s remaining={max(0, deadline - clock()):.0f}s"
+        )
         if stable >= quiet_polls:
             return latest
         if clock() + poll_interval > deadline:
@@ -480,6 +489,7 @@ async def verify_journal(
         raise InsufficientTimeError("effective verifier budget is below 240 seconds")
     operations = parse_journal(journal_path, notebook_id=notebook_id)
     deadline = clock() + timeout
+    report(f"Generation verification started; budget={timeout:.0f}s", summary=True)
     inventory = await _discover_quiet_inventory(
         client,
         notebook_id,
@@ -632,6 +642,7 @@ async def verify_journal(
                 raise JournalError("journaled artifact family does not match inventory")
 
         statuses.clear()
+        pending_details: Counter[str] = Counter()
         for resource_id in monitored_ids:
             artifact = current_by_id.get(resource_id)
             if artifact is None:
@@ -643,6 +654,16 @@ async def verify_journal(
                 missing_counts[resource_id] = 0
                 status = _snapshot_status(artifact)
             statuses[resource_id] = status
+            if status not in {"removed", "failed", "completed"}:
+                operation = tracked[resource_id]
+                observed = (
+                    status if status in {"pending", "in_progress", "not_found"} else "unknown"
+                )
+                if artifact is not None and artifact.status_str == "completed":
+                    observed = "awaiting_download_url"
+                pending_details[
+                    f"{operation.family}/{observed} ({safe_test_name(operation.node_id)})"
+                ] += 1
 
         removed = sum(status == "removed" for status in statuses.values())
         failed = sum(status == "failed" for status in statuses.values())
@@ -686,8 +707,18 @@ async def verify_journal(
             failed += selected_failed
             completed += terminal - selected_failed
             pending += required - terminal
+            if required > terminal:
+                pending_details[f"{target.family}/reconciling_interrupted_producer"] += (
+                    required - terminal
+                )
 
         ever_visible_ids.update(current_ids)
+        detail = "; ".join(f"{label}={count}" for label, count in sorted(pending_details.items()))
+        report(
+            f"Artifact settlement: completed={completed} failed={failed} pending={pending}; "
+            f"remaining={max(0, deadline - clock()):.0f}s" + (f"; {detail}" if detail else ""),
+            summary=pending == 0,
+        )
         if pending == 0:
             never_visible = (set(tracked) - authorized_deleted) - ever_visible_ids
             if never_visible:
@@ -723,7 +754,7 @@ async def verify_journal(
         if clock() + poll_interval > deadline:
             raise SettlementTimeoutError(
                 f"artifact settlement timed out (completed={completed} failed={failed} "
-                f"pending={pending})"
+                f"pending={pending}); {detail}"
             )
         await sleep(poll_interval)
 
@@ -817,12 +848,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         asyncio.run(_run_client(args))
     except VerificationError as exc:
-        print(f"{exc.category}: {scrub_secrets(exc)}", file=sys.stderr)
+        report(f"{exc.category}: {scrub_secrets(exc)}", error=True)
         return exc.exit_code
     except Exception:
         # Arbitrary upstream exception text can carry resource IDs even after
         # credential scrubbing. The category is actionable without echoing it.
-        print("read_or_auth: artifact inventory request failed", file=sys.stderr)
+        report("read_or_auth: artifact inventory request failed", error=True)
         return EXIT_READ_AUTH
     return 0
 
