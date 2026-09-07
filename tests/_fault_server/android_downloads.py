@@ -98,11 +98,14 @@ async def run_scenario(
         transport="httpx",
         public_entry="assembled asset service batch" if batch else "artifacts.download_infographic",
         fixture="android_artifacts._artifact and generated valid 1x1 PNG",
-        operation_timeout=0.4 if variant == "body_stall" else 2.0,
+        operation_timeout=2.0,
         budgets={
             "baseline_timeout_s": 2.0,
             "rpc_timeout_s": 2.0,
-            "fault_operation_timeout_s": 0.4 if variant == "body_stall" else 2.0,
+            "http_timeout_s": 5.0,
+            "fault_operation_timeout_s": 2.0,
+            "fault_gate_timeout_s": 3.0,
+            "fault_watchdog_s": 4.0,
             "cleanup_timeout_s": 2.0,
         },
         required_checks=[
@@ -116,7 +119,8 @@ async def run_scenario(
             "scripts_consumed",
             "capability_hops_credential_free",
             "initial_bearer_scoped",
-        ],
+        ]
+        + (["fault_response_prefix_observed"] if variant == "body_stall" else []),
         invariants=["I2", "I3", "I4", "I6", "I7", "I8"],
     )
     server = HttpFaultServer(hosts=[_HOST, _TARGET.host])
@@ -166,12 +170,21 @@ async def run_scenario(
     server.enqueue(_ASSET, good)
     harness = None
     owned: list[asyncio.Task[Any]] = []
+
+    def transfer_client(**kwargs: Any) -> Any:
+        # Keep the transport budget beyond the operation deadline so the
+        # stalled body exercises aggregate cancellation, not a read timeout.
+        kwargs["timeout"] = 5.0
+        return server.client_factory(**kwargs)
+
     try:
         async with android_cohort(
             result,
             rpc,
             server,
-            lambda: build_android_client(rpc, http_server=server, timeout=2),
+            lambda: build_android_client(
+                rpc, http_server=server, timeout=2, http_client_factory=transfer_client
+            ),
             release=lambda: server.release("held"),
             tasks=owned,
         ) as harness:
@@ -180,9 +193,10 @@ async def run_scenario(
                 path = Path(directory) / "image.png"
                 assets = client._android_runtime.asset_downloads
 
-                async def download(*, fault: bool = False) -> Any:
-                    timeout = 0.4 if fault and variant == "body_stall" else 2.0
-                    async with client.operation(timeout=timeout):
+                async def download() -> Any:
+                    # Cold HTTP client construction on Windows can exceed
+                    # 400ms. Leave dispatch time before the real body stall.
+                    async with client.operation(timeout=2.0):
                         if batch:
                             return await assets.download_urls_batch([(_URL, str(path))])
                         return await client.artifacts.download_infographic(
@@ -196,8 +210,20 @@ async def run_scenario(
                     and (not batch or baseline.succeeded == [str(path)]),
                 )
                 path.write_bytes(b"old destination")
-                task = asyncio.create_task(download(fault=True))
+                task = asyncio.create_task(download())
                 owned.append(task)
+                if variant == "body_stall":
+                    await server.wait_for_gate("held", timeout=3.0)
+                    result.require(
+                        "fault_response_prefix_observed",
+                        len(server.journal) == 2
+                        and server.journal[1].route == _ASSET
+                        and any(
+                            event["phase"] == "response_prefix"
+                            and event["request"] == server.journal[1].sequence
+                            for event in server.events
+                        ),
+                    )
                 if variant in {"cancel", "close_reopen"}:
                     await server.wait_for_event("response_prefix")
                     if variant == "cancel":
