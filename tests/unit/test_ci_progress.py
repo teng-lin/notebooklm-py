@@ -51,7 +51,9 @@ def test_progress_plugin_runs_with_real_pytest(pytester, monkeypatch, tmp_path):
     result = pytester.runpytest("-s", "-q")
     result.assert_outcomes(passed=1, failed=1, skipped=1)
     result.stdout.fnmatch_lines(["*E2E finished: exit=1 failed=1 passed=1 skipped=1*"])
+    result.stderr.fnmatch_lines(["*E2E FAILED*call: AssertionError; see pytest traceback below*"])
     assert "failed=1 passed=1 skipped=1" in summary.read_text()
+    assert "| call | AssertionError |" in summary.read_text()
 
 
 def test_error_is_visible_in_log_annotation_and_summary(monkeypatch, tmp_path, capsys):
@@ -183,3 +185,32 @@ def test_workflow_streams_output_and_preserves_failure(workflow, job, step, work
     )
     assert completed.returncode == 6
     assert "visible progress before failure" in completed.stdout
+
+
+@pytest.mark.parametrize(
+    ("job", "report_file"),
+    [("health-check", "health-report.txt"), ("android-grpc-health", "android-canary-report.txt")],
+)
+def test_rpc_workflow_keeps_live_progress_separate_and_preserves_exit(
+    job, report_file, workflow_bash, tmp_path
+):
+    root = Path(__file__).resolve().parents[2]
+    data = yaml.safe_load((root / ".github/workflows/rpc-health.yml").read_text())
+    command = next(row["run"] for row in data["jobs"][job]["steps"] if row.get("id") == "health")
+    command = (
+        "uv() { printf 'START RPC-ID visible\\n' >&3; printf 'private response\\n'; return 3; }\n"
+        + command
+    )
+    completed = subprocess.run(
+        [workflow_bash, "-e", "-o", "pipefail", "-c", command],
+        cwd=tmp_path,
+        env={**os.environ, "GITHUB_OUTPUT": (tmp_path / "output").as_posix()},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert completed.returncode == 3
+    assert "START RPC-ID visible" in completed.stdout
+    assert "private response" not in completed.stdout + completed.stderr
+    assert (tmp_path / report_file).read_text() == "private response\n"

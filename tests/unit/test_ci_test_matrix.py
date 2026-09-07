@@ -14,6 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "test.yml"
 AUTH_PATCH_AUDIT_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "auth-patch-audit.yml"
 NIGHTLY_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "nightly.yml"
+NIGHTLY_CHECKS_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "nightly-checks.yml"
 VERIFY_PACKAGE_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "verify-package.yml"
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 REFACTOR_QUALIFICATION_FILES = {
@@ -249,7 +250,7 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
     assert "-m refactor_qualification" in manual_command
     assert "--no-cov" in manual_command
 
-    nightly = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
+    nightly = yaml.safe_load(NIGHTLY_CHECKS_WORKFLOW.read_text(encoding="utf-8"))
     compatibility = nightly["jobs"]["compatibility"]
     ordinary_nightly = str(_step(compatibility, "Run compatibility tests without coverage")["run"])
     assert "not refactor_qualification" in ordinary_nightly
@@ -363,14 +364,11 @@ def test_auth_patch_coverage_delta_is_release_gated_and_manually_dispatchable() 
 
 def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     """Nightly owns the full 3-OS by 5-Python ordinary test matrix (PRs run a reduced one)."""
-    workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(NIGHTLY_CHECKS_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["compatibility"]
 
     assert job["needs"] == "resolve-target"
-    assert job["if"] == (
-        "needs.resolve-target.outputs.is_standard == 'true' && "
-        "(github.event_name == 'schedule' || inputs.run_compatibility)"
-    )
+    assert "if" not in job
     assert job["runs-on"] == "${{ matrix.os }}"
     assert job["strategy"] == {
         "fail-fast": False,
@@ -382,15 +380,13 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     assert "environment" not in job
     assert "secrets." not in str(job)
 
-    workflow_text = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
-    # PyYAML parses a bare ``on`` key as boolean ``True``.
     triggers = workflow.get("on", workflow.get(True))
-    dispatch_inputs = triggers["workflow_dispatch"]["inputs"]
-    assert dispatch_inputs["run_compatibility"]["type"] == "boolean"
-    # Manual dispatches (release branches) default to the full matrix because the
-    # PR gate only runs the reduced 7-cell one.
-    assert dispatch_inputs["run_compatibility"]["default"] is True
-    assert "run_compatibility:" in workflow_text
+    assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert set(triggers["workflow_dispatch"]["inputs"]) == {"custom_branch"}
+    e2e = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
+    assert set(e2e["jobs"]) == {"resolve-target", "plan-live-lanes", "e2e"}
+    e2e_triggers = e2e.get("on", e2e.get(True))
+    assert "run_compatibility" not in e2e_triggers["workflow_dispatch"]["inputs"]
 
     checkout = next(
         step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")
@@ -426,7 +422,7 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
 
 def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> None:
     """Scheduled/manual nightly owns global and per-file coverage enforcement."""
-    workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(NIGHTLY_CHECKS_WORKFLOW.read_text(encoding="utf-8"))
     triggers = workflow.get("on", workflow.get(True))
     assert set(triggers) == {"schedule", "workflow_dispatch"}
 
@@ -437,14 +433,14 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
         if str(step.get("uses", "")).startswith("actions/checkout@")
     )
     assert resolve_checkout["with"] == {
-        "ref": "${{ steps.resolve.outputs.checkout_ref }}",
+        "ref": "${{ inputs.custom_branch || github.sha }}",
         "fetch-depth": 1,
         "persist-credentials": False,
     }
 
     job = workflow["jobs"]["coverage"]
     assert job["needs"] == "resolve-target"
-    assert job["if"] == "needs.resolve-target.outputs.is_standard == 'true'"
+    assert "if" not in job
     assert job["runs-on"] == "ubuntu-latest"
     assert "environment" not in job
     assert "secrets." not in str(job)
@@ -458,13 +454,6 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
         "fetch-depth": 1,
         "persist-credentials": False,
     }
-
-    e2e_checkout = next(
-        step
-        for step in workflow["jobs"]["e2e"]["steps"]
-        if str(step.get("uses", "")).startswith("actions/checkout@")
-    )
-    assert e2e_checkout["with"] == checkout["with"]
 
     setup_python = _step(job, "Set up Python")
     assert setup_python["uses"] == "actions/setup-python@v7"
@@ -703,11 +692,11 @@ def test_repository_lint_is_a_bounded_manual_only_job() -> None:
 
 def test_repository_lint_is_scheduled_once_in_nightly() -> None:
     """AST-heavy audits run automatically once against the resolved nightly SHA."""
-    workflow = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(NIGHTLY_CHECKS_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["repo-lint"]
 
     assert job["needs"] == "resolve-target"
-    assert job["if"] == "needs.resolve-target.outputs.is_standard == 'true'"
+    assert "if" not in job
     assert job["runs-on"] == "ubuntu-latest"
     assert "environment" not in job
     assert "secrets." not in str(job)

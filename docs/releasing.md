@@ -257,11 +257,11 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] Go to **Actions** → **Nightly E2E Tests**
 - [ ] After the release PR is merged, dispatch the workflow on `main`; choose
       `account_rotation_base=auto` unless reproducing a slot-specific failure
-- [ ] Leave **run_compatibility** enabled (the default): the PR gate only ran
-      the reduced 7-cell matrix, so this dispatch is what proves the release
-      commit on the full 15-cell Ubuntu/macOS/Windows × Python 3.10-3.14 matrix.
-- [ ] Wait for the compatibility matrix, coverage, repository-lint, and both
-      full Windows E2E jobs (Web and Android) to pass
+- [ ] Separately dispatch **Nightly Code Checks** (`nightly-checks.yml`) on the
+      same release commit. It runs the full 15-cell compatibility matrix, coverage,
+      and repository lint. These checks are independent of the live E2E workflow.
+- [ ] Wait for code checks and the full Web/Ubuntu, full Android/macOS, and
+      read-only Web/Windows E2E jobs to pass
 - [ ] If E2E tests fail:
   1. Fix issues in a new release-fix PR against `main`
   2. Merge that PR

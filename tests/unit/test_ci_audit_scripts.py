@@ -160,7 +160,7 @@ def test_verify_package_e2e_retry_is_scoped_to_last_failed_e2e_tests():
 
 
 def test_coverage_thresholds_passes_on_real_state():
-    """Current pyproject.toml + nightly.yml agree on the coverage threshold."""
+    """Current pyproject.toml + nightly-checks.yml agree on the coverage threshold."""
     result = _run([str(SCRIPTS / "check_coverage_thresholds.py")])
     assert result.returncode == 0, f"stderr: {result.stderr}\nstdout: {result.stdout}"
 

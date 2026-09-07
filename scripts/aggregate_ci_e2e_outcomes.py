@@ -296,7 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     write_summary(f"\n### CI phases: {args.lane}\n\n| Phase | Outcome |\n| --- | --- |")
     for phase, state in states.items():
         if phase in POLICIES[args.lane].applicable and state in STATES:
-            write_summary(f"| {phase} | {state.replace('not_applicable', 'not run')} |")
+            label = "E2E execution floor" if phase == "coverage" else phase
+            write_summary(f"| {label} | {state.replace('not_applicable', 'not run')} |")
     execution_phase = "primary" if "primary" in POLICIES[args.lane].applicable else "health"
     if states.get(execution_phase) == "not_applicable":
         write_summary("\nTests/probes did not run. See the failed prerequisite above.")

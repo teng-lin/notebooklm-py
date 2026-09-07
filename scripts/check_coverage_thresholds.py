@@ -208,7 +208,7 @@ def _check_per_file_floors(pyproject_path: str, coverage_json_path: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pyproject", default="pyproject.toml")
-    ap.add_argument("--workflow", default=".github/workflows/nightly.yml")
+    ap.add_argument("--workflow", default=".github/workflows/nightly-checks.yml")
     ap.add_argument(
         "--coverage-json",
         default=None,

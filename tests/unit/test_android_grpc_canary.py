@@ -235,6 +235,7 @@ async def _run(
     bearer: _Bearer | None = None,
     *,
     baseline_path: Path | None = None,
+    progress: canary.Emit | None = None,
 ) -> tuple[int, list[str]]:
     lines: list[str] = []
     code = await canary.run_canary(
@@ -242,6 +243,7 @@ async def _run(
         NOTEBOOK_ID,
         baseline_path=baseline_path,
         out=lines.append,
+        progress=progress,
     )
     return code, lines
 
@@ -281,7 +283,8 @@ def _write_baseline(tmp_path: Path, document: dict[str, Any]) -> Path:
 async def test_all_steps_pass_exits_zero() -> None:
     service = _Service()
     bearer = _Bearer()
-    code, lines = await _run(service, bearer)
+    progress: list[str] = []
+    code, lines = await _run(service, bearer, progress=progress.append)
 
     assert code == 0
     assert _line(lines, "OK open") == "OK open backends=android"
@@ -302,6 +305,15 @@ async def test_all_steps_pass_exits_zero() -> None:
     assert service.list_sessions_calls == 2
     assert bearer.invalidated == [1]
     assert bearer.generation == 2
+    live = "\n".join(progress)
+    assert f"START get_project {canary.GET_PROJECT_METHOD}" in live
+    assert f"START list_chat_sessions {canary.LIST_CHAT_SESSIONS_METHOD}" in live
+    assert "OK get_project id round-trip; elapsed=" in live
+    assert "SHAPE GetProject " in live
+    assert "UNKNOWN GetProject 0" in live
+    assert NOTEBOOK_ID not in live
+    assert "conversation-1" not in live
+    assert "fake-server-token" not in live
 
 
 @pytest.mark.asyncio
@@ -1001,6 +1013,7 @@ def test_main_prefers_the_flag_over_env_and_forwards_the_baseline(
         baseline_path: Any,
         missing_baseline_grace_until: Any = None,
         out: Any,
+        progress: Any = None,
     ) -> int:
         captured.append((notebook_id, baseline_path))
         return await original(
@@ -1009,6 +1022,7 @@ def test_main_prefers_the_flag_over_env_and_forwards_the_baseline(
             baseline_path=baseline_path,
             missing_baseline_grace_until=missing_baseline_grace_until,
             out=out,
+            progress=progress,
         )
 
     monkeypatch.setattr(canary, "run_canary", spy)

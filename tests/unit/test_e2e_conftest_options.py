@@ -339,7 +339,7 @@ class TestRateLimitSkipSummary:
 
         assert session.exitstatus == pytest.ExitCode.TESTS_FAILED
         assert any(
-            call[0] == "sep" and call[1][1] == "live chat coverage floor failed"
+            call[0] == "sep" and call[1][1] == "live chat execution floor failed"
             for call in tr._writes
         )
         assert capsys.readouterr().out == ""
@@ -358,7 +358,7 @@ class TestRateLimitSkipSummary:
 
         assert session.exitstatus == pytest.ExitCode.OK
         assert not any(
-            call[0] == "sep" and call[1][1] == "live chat coverage floor failed"
+            call[0] == "sep" and call[1][1] == "live chat execution floor failed"
             for call in tr._writes
         )
 
@@ -420,7 +420,7 @@ class TestRateLimitSkipSummary:
 
         assert session.exitstatus == pytest.ExitCode.USAGE_ERROR
         assert not any(
-            call[0] == "sep" and call[1][1] == "live chat coverage floor failed"
+            call[0] == "sep" and call[1][1] == "live chat execution floor failed"
             for call in tr._writes
         )
 
@@ -587,7 +587,7 @@ class TestRateLimitSkipSummary:
 
             def pytest_terminal_summary(terminalreporter, exitstatus, config):
                 if exitstatus == pytest.ExitCode.OK and terminalreporter.stats.get("skipped"):
-                    terminalreporter.write_sep("=", "live chat coverage floor failed")
+                    terminalreporter.write_sep("=", "live chat execution floor failed")
             """
         )
         pytester.makepyfile(
@@ -603,7 +603,7 @@ class TestRateLimitSkipSummary:
         result = pytester.runpytest_subprocess("-q")
 
         assert result.ret == pytest.ExitCode.TESTS_FAILED
-        result.stdout.fnmatch_lines(["*live chat coverage floor failed*"])
+        result.stdout.fnmatch_lines(["*live chat execution floor failed*"])
 
 
 class TestAndroidArtifactOptionReadBack:

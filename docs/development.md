@@ -582,7 +582,7 @@ lock sibling and the two invocations never contend.
    green run that never exercised the adapter surface. Add both extras
    (CI installs `--extra mcp --extra server --extra impersonate`) to run them.
 
-   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a reduced 7-cell compatibility matrix on every PR: Python 3.10–3.14 on Ubuntu, plus one Python 3.12 cell each on macOS and Windows. The full 15-cell matrix (all three OSes crossed with Python 3.10–3.14) runs nightly against one resolved commit before dedicated coverage and three live-E2E jobs: full Web on Ubuntu, full Android on macOS, and read-only Web on Windows. Manual nightly dispatches also run the full compatibility matrix by default; untick `run_compatibility` for a quick E2E-only rerun.
+   CI runs the same lint gate with `uv run pre-commit run --all-files`, so local hook results should match the `quality` job. The ordinary suite then runs in a reduced 7-cell compatibility matrix on every PR: Python 3.10–3.14 on Ubuntu, plus one Python 3.12 cell each on macOS and Windows. The separate **Nightly Code Checks** workflow (`nightly-checks.yml`) runs the full 15-cell matrix, coverage, and repository lint against one resolved commit. **Nightly E2E Tests** (`nightly.yml`) runs only authenticated live lanes: full Web on Ubuntu, full Android on macOS, and read-only Web on Windows. Each workflow has its own daily schedule and manual dispatch; an E2E rerun never starts ordinary tests.
 
 2. **Authenticate:**
    ```bash
@@ -861,17 +861,27 @@ that contract. Provisioning creates and validates those on the disposable `refer
 Nightly logs show each preparation stage, per-test start/result lines, and a heartbeat every
 30 seconds while a test is running. Artifact verification reports pending families, producer
 tests, and missing download URLs during polling. The job summary retains preparation failures,
-E2E result counts and failed test names, and a table of phase outcomes even after cleanup.
+E2E result counts, failed test names, failure phases and exception types, and a table of phase
+outcomes even after cleanup. Pytest logs retain tracebacks and skip/xfail reasons (`-ra`);
+live tests explicitly disable code coverage (`--no-cov`). Execution floors only detect when
+an entire required live-test family was skipped; they are separate from code coverage.
 These reports omit notebook handles, titles, parametrized resource values, and upstream response
 bodies. To enable the same test progress locally, set `CI_E2E_PROGRESS=1` when running pytest.
 For a short workflow smoke test, dispatch nightly with `e2e_lane=readonly`, a read-only pytest
-node in `test_filter`, and `run_compatibility=false`. The filter and retries still enforce the
+node in `test_filter`. The filter and retries still enforce the
 read-only marker selection.
 
 Web RPC health does not provision an E2E copy. After authentication, `check_rpc_health.py --full`
 creates its own temporary notebook and resources, probes the RPCs, then exercises deletion RPCs
 in its cleanup block. A failed notebook-creation probe remains a reported RPC failure; account
-checks that do not need a notebook still run. The job summary links the full diagnostic report.
+checks that do not need a notebook still run. Both RPC lanes stream timestamped probe starts
+and outcomes while the complete report is captured. Web diagnostics identify the phase, method
+name and RPC ID, duration, and reason for an error or skip; the summary keeps a per-probe table
+and links the full report. An RPC-ID `OK` proves that the expected ID was observed, including
+when an operation was rejected; it does not prove feature behavior. Chat framing, customization
+enums, build-label age, and rebrand probes state their separate checks. Android diagnostics show
+the gRPC method path, ID round-trip/session checks, schema hashes, unknown-field counts, and
+baseline drift. No additional RPC requests are made just to produce progress output.
 The configured template is the public notebook titled
 `Make Your Writing More Powerful and Persuasive`. Its title cannot be changed; replacing the
 template requires updating the title contract and template-ID secret together.
@@ -1534,7 +1544,8 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 |----------|---------|---------|
 | `test.yml` | Push/PR | Reduced 7-cell compatibility matrix (Ubuntu × Python 3.10–3.14, plus macOS/Windows on 3.12), linting, type checking |
 | `fault-stress.yml` | PR, daily 5:45 AM UTC, manual dispatch | Local HTTP/gRPC fault workloads with synthetic credentials and diagnostic report artifacts |
-| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch on `main` | Full compatibility/coverage plus managed-copy full Web/Ubuntu, full Android/macOS, and read-only Web/Windows E2E; an owner may qualify an open same-repository PR at its pinned head SHA |
+| `nightly-checks.yml` | Daily 6 AM UTC (`main`), manual dispatch with optional `custom_branch` | Full compatibility matrix, ordinary-test coverage, and repository lint; no live account credentials |
+| `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch on `main` | Managed-copy full Web/Ubuntu, full Android/macOS, and read-only Web/Windows E2E only; an owner may qualify an open same-repository PR at its pinned head SHA |
 | `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch on `main` | RPC monitoring on its own temporary notebook plus the template-read-only [Android gRPC canary](#android-grpc-canary); an owner may qualify an open same-repository PR at its pinned head SHA |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
 | `verify-package.yml` | Manual dispatch on `main` | Verify TestPyPI or PyPI install plus managed-copy E2E; artifact inventory is advisory |
@@ -1694,7 +1705,7 @@ gh workflow run rpc-health.yml --ref main \
 # If RPC passes, run only the full Web E2E lane against the same PR.
 gh workflow run nightly.yml --ref main \
   -f qualification_pr=2353 -f e2e_lane=web \
-  -f account_rotation_base=auto -f run_compatibility=false
+  -f account_rotation_base=auto
 ```
 
 Before merging, compare the run summary's resolved SHA with
