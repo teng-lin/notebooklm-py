@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 
@@ -50,6 +51,25 @@ async def test_real_probe_streams_before_response_and_keeps_payload_private(monk
     assert "private-notebook" not in output
     assert "elapsed=" in output
     assert "| method inventory |" in summary.read_text()
+
+
+@pytest.mark.asyncio
+async def test_successful_string_payload_is_not_treated_as_an_error(monkeypatch, tmp_path):
+    method = health.RPCMethod.CREATE_NOTE
+
+    async def rpc_request(*args, **kwargs):
+        return json.dumps([["wrb.fr", method.value, json.dumps("private payload")]]), None
+
+    monkeypatch.setattr(health, "make_rpc_request", rpc_request)
+    live = tmp_path / "live.log"
+    with live.open("w") as stream, live_progress(stream.fileno()):
+        result, data = await health.test_rpc_method_with_data(None, None, method, [])
+    assert result.status is health.CheckStatus.OK
+    assert data == "private payload"
+    output = live.read_text()
+    assert "expected RPC ID observed" in output
+    assert "rejected" not in output
+    assert "private payload" not in output
 
 
 @pytest.mark.parametrize(
@@ -133,7 +153,10 @@ async def test_cancelled_probe_keeps_failure_and_partial_summary(monkeypatch, tm
     assert "| ERROR |" in summary.read_text()
 
 
-def test_broken_pipe_preserves_cli_failure_and_summary(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("invalid_descriptor", [False, True])
+def test_unusable_progress_preserves_cli_failure_and_summary(
+    monkeypatch, tmp_path, capsys, invalid_descriptor
+):
     async def failed_call(*args, **kwargs):
         return [], "HTTP 503"
 
@@ -146,13 +169,22 @@ def test_broken_pipe_preserves_cli_failure_and_summary(monkeypatch, tmp_path, ca
     monkeypatch.setattr(health, "run_health_check", run)
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
-    reader, writer = os.pipe()
-    os.close(reader)
+    if invalid_descriptor:
+        writer = -1
+    else:
+        reader, writer = os.pipe()
+        os.close(reader)
     try:
         monkeypatch.setattr(sys, "argv", ["check_rpc_health.py", "--progress-fd", str(writer)])
         assert health.main() == 3
     finally:
-        os.close(writer)
+        if writer >= 0:
+            os.close(writer)
     assert "| ERROR |" in summary.read_text()
     assert "HTTP 503; see report" in summary.read_text()
-    assert capsys.readouterr().err.count("could not write live RPC progress") == 1
+    warning = (
+        "could not open CI progress stream"
+        if invalid_descriptor
+        else "could not write live RPC progress"
+    )
+    assert capsys.readouterr().err.count(warning) == 1

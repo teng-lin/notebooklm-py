@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
-from scripts._ci_progress import report, safe_test_name
+from scripts._ci_progress import open_progress_stream, report, safe_test_name
 
 from tests.e2e._progress import E2EProgress
 
@@ -71,6 +71,25 @@ def test_summary_write_failure_preserves_error_diagnostics(monkeypatch, tmp_path
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path))
     report("original verification failure", error=True)
     assert "original verification failure" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("error_type", [OSError, ValueError])
+def test_progress_wrapper_setup_failure_closes_only_duplicate(monkeypatch, tmp_path, error_type):
+    duplicate = None
+
+    def cannot_wrap(fd, *args, **kwargs):
+        nonlocal duplicate
+        duplicate = fd
+        raise error_type("cannot wrap progress descriptor")
+
+    with (tmp_path / "progress.log").open("w") as original:
+        monkeypatch.setattr(os, "fdopen", cannot_wrap)
+        with open_progress_stream(original.fileno()) as progress:
+            assert progress is None
+        original.write("caller descriptor still works\n")
+        assert duplicate is not None
+        with pytest.raises(OSError):
+            os.fstat(duplicate)
 
 
 @pytest.mark.parametrize(

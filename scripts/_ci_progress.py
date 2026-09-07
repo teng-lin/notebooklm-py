@@ -17,9 +17,25 @@ from typing import TextIO
 
 
 @contextmanager
-def open_progress_stream(fd: int) -> Iterator[TextIO]:
-    """Own a duplicate descriptor without letting a final flush replace the verdict."""
-    stream = os.fdopen(os.dup(fd), "w", encoding="utf-8")
+def open_progress_stream(fd: int) -> Iterator[TextIO | None]:
+    """Best-effort duplicate; setup and final flush must not replace the verdict."""
+    duplicate: int | None = None
+    try:
+        duplicate = os.dup(fd)
+        stream = os.fdopen(duplicate, "w", encoding="utf-8")
+    except (OSError, ValueError):
+        if duplicate is not None:
+            try:
+                os.close(duplicate)
+            except OSError:
+                pass
+        print(
+            "WARNING: could not open CI progress stream; see normal report",
+            file=sys.stderr,
+            flush=True,
+        )
+        yield None
+        return
     try:
         yield stream
     finally:

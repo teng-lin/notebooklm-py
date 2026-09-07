@@ -353,6 +353,20 @@ async def test_progress_pipe_failure_does_not_change_canary_result(fail_on, caps
     assert capsys.readouterr().err.count("could not write live Android progress") == 1
 
 
+def test_invalid_progress_descriptor_still_runs_android_canary(capsys):
+    service = _Service()
+    code = canary.main(
+        ["--notebook-id", NOTEBOOK_ID, "--progress-fd", "-1"],
+        client_factory=_factory(service, _Bearer()),
+    )
+    assert code == 0
+    assert service.get_project_calls == 2
+    assert service.list_sessions_calls == 2
+    output = capsys.readouterr()
+    assert "OK get_project id round-trip" in output.out
+    assert "could not open CI progress stream" in output.err
+
+
 @pytest.mark.asyncio
 async def test_absent_conversation_is_still_a_pass() -> None:
     code, lines = await _run(_Service(with_session=False))

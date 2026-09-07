@@ -693,7 +693,8 @@ def main(
         progress = None
         if args.progress_fd is not None:
             stream = stack.enter_context(open_progress_stream(args.progress_fd))
-            progress = functools.partial(print, file=stream, flush=True)
+            if stream is not None:
+                progress = functools.partial(print, file=stream, flush=True)
         return asyncio.run(
             run_canary(
                 factory,

@@ -86,20 +86,19 @@ def safe_reason(result: Any, proof: str, detail: str = "") -> str:
 
 
 class RPCProgress:
-    def __init__(self, stream: TextIO) -> None:
+    def __init__(self, stream: TextIO | None) -> None:
         self.stream = stream
         self.phase = "initialization"
         self.rows: list[tuple[str, str, str, float, str]] = []
-        self.stream_failed = False
 
     def emit(self, message: str) -> None:
-        if self.stream_failed:
+        if self.stream is None:
             return
         stamp = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
         try:
             print(f"[{stamp}] {message}", file=self.stream, flush=True)
         except OSError:
-            self.stream_failed = True
+            self.stream = None
             print("WARNING: could not write live RPC progress", file=sys.stderr, flush=True)
 
     def finish(self, label: str, status: str, started: float, reason: str) -> None:
@@ -176,7 +175,15 @@ def trace_probe(
                 raise
             result = value[0] if isinstance(value, tuple) else value
             status = result.value if isinstance(result, Enum) else result.status.value
-            detail = value[1] if isinstance(value, tuple) and isinstance(value[1], str) else ""
+            # Only enum probes return (status, diagnostic). RPC probes return
+            # (CheckResult, payload), whose text is neither an error nor public.
+            detail = (
+                value[1]
+                if isinstance(value, tuple)
+                and isinstance(result, Enum)
+                and isinstance(value[1], str)
+                else ""
+            )
             progress.finish(name, status, started, safe_reason(result, proof, detail))
             return value
 
