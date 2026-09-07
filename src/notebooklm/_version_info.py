@@ -43,6 +43,8 @@ def _live_commit() -> str | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(_REPO_ROOT), "rev-parse", "--short=8", "HEAD"],
+            # Metadata probes must not inherit an active MCP stdin pipe.
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=2,

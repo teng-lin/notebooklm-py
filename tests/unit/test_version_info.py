@@ -102,13 +102,12 @@ def _checkout(tmp_path: Path) -> Path:
 
 def test_live_commit_returns_the_short_hash(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(vi, "_REPO_ROOT", _checkout(tmp_path))
-    monkeypatch.setattr(
-        vi.subprocess,
-        "run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            [], 0, stdout="5d748a26\n", stderr=""
-        ),
-    )
+
+    def run_without_transport_stdin(*_args, **kwargs):
+        assert kwargs["stdin"] == subprocess.DEVNULL
+        return subprocess.CompletedProcess([], 0, stdout="5d748a26\n", stderr="")
+
+    monkeypatch.setattr(vi.subprocess, "run", run_without_transport_stdin)
 
     assert vi._live_commit() == "5d748a26"
 

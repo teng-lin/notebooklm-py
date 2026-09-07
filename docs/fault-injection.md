@@ -698,6 +698,11 @@ its required checks, gate order, exact request/commit limits, and operation/clea
 budgets before allocation. A 45-second operation watchdog bounds the cohort;
 captured JSON preserves sanitized partial checks and cleanup observations on failure.
 
+The Git version probe uses `DEVNULL` for stdin so a source-checkout diagnostic
+does not inherit the active MCP transport pipe. The stdio fixture retains a
+receiver through shutdown, preventing late protocol messages from masking an
+earlier call failure. Native EOF-gated regressions cover that fixture ownership.
+
 Successful token acquisition persists rotation; failed or cancelled homepage
 acquisition retains the previous credential file. Retrying uses the same credential
 directory. Restoring eager lifespan opening fails discovery, and removing the shared
