@@ -539,6 +539,32 @@ wrapper. Each child process returns partial evidence on failure. Shutdown closes
 the chat registry before its provider and leaves no unhandled task exception.
 I1–I6 and I8 apply according to each row.
 
+### MCP stdio startup regression (#2330 / #2370)
+
+`tests/integration/faults/test_mcp_startup.py` adds two pytest-only cases using a
+real stdio subprocess and the HTTP fault server. They are not part of the stress
+scenario registry or its scenario counts. Run them with:
+
+```bash
+uv run pytest tests/integration/faults/test_mcp_startup.py -q
+```
+
+The worker's injected client factory issues a loopback-routed HTTP request before
+opening the production Web client. A named gate holds that response indefinitely;
+the parent first observes the request, then requires `initialize`, `tools/list`,
+and default `server_info` to complete within five seconds each while the gate is
+still closed. This catches authentication work being moved back into the awaited
+MCP lifespan without waiting for a host's full 30-second deadline.
+
+The recovery case releases the gate and checks a decoded `notebook_list` response
+on the same MCP session, with exactly one client open and one upstream list. The
+shutdown case closes stdio while the response remains stalled and checks that the
+child cancels opening and closes its HTTP client. Both check child finalization
+and fault-server cleanup. Credentials and the authentication hop are synthetic;
+these tests cover adapter scheduling and transport ownership, not Google's actual
+authentication flow, package installation, or a remote connector's proxy/TLS setup.
+They do not establish the cause of the reporter's timeout.
+
 ## Add or investigate a scenario
 
 1. Choose a representative public API or first-party workflow and reuse a real
