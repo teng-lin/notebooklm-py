@@ -14,12 +14,12 @@ import pytest
 pytest.importorskip("fastmcp")
 
 from mcp import ClientSession, StdioServerParameters, types
-from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 from tests._fault_server.common import ScenarioResult
 from tests._fault_server.http import HttpFaultServer, Reply, Route, Stall
 from tests._fault_server.mcp_startup_cleanup import settle_calls_and_upstream, settle_http_worker
+from tests._fault_server.mcp_stdio_session import stdio_session
 from tests._fault_server.web import NEW_CSRF, NEW_SESSION, homepage_response, list_response
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -68,10 +68,7 @@ async def _mcp_connection(directory: Path, port: int, transport: str):
     with (directory / "stderr.log").open("w", encoding="utf-8") as errors:
         if transport == "stdio":
             params = StdioServerParameters(command=sys.executable, args=args, env=env)
-            async with (
-                stdio_client(params, errlog=errors) as (reader, writer),
-                ClientSession(reader, writer) as session,
-            ):
+            async with stdio_session(params, directory, errors) as session:
                 yield session
         else:
             process = await asyncio.create_subprocess_exec(
