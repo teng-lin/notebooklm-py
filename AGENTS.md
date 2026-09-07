@@ -15,7 +15,8 @@
 Canonical contributor install (full guide: [docs/installation.md](docs/installation.md)):
 
 ```bash
-uv sync --frozen --extra browser --extra dev --extra markdown
+uv sync --frozen --extra browser --extra dev --extra markdown \
+        --extra mcp --extra server --extra impersonate
 source .venv/bin/activate
 uv run playwright install chromium
 
@@ -25,8 +26,6 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy src/notebooklm
 ```
-
-For full adapter coverage, append `--extra mcp --extra server --extra impersonate`.
 
 ## Conventions & Testing
 

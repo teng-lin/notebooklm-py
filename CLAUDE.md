@@ -48,7 +48,7 @@ uv run pytest
 
 ## Architecture
 
-`cli/` (Click) → `_app/` (transport-neutral business logic) → `client.py` + `_*.py` (runtime) → `rpc/` (protocol encoding/decoding).
+Adapters (`cli/`, `mcp/`, `server/`) → `_app/` (business logic) → `client.py` + `_runtime/` → selected backend (`_web/` or `_android/`) → `raw.py` (`rpc/` is Web compatibility facade).
 
 See [docs/architecture.md](docs/architecture.md) for layered design, call flows, cross-cutting policies (loop affinity, idempotency, schema validation), and the full file map.
 
