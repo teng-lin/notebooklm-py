@@ -106,6 +106,42 @@ def test_e2e_progress_handles_reruns_setup_and_teardown_failures(monkeypatch, tm
 
 
 @pytest.mark.parametrize(
+    ("lane", "test_filter", "suite"),
+    [
+        ("readonly", "tests/e2e/test_artifacts.py", "readonly"),
+        ("all", "tests/e2e/test_artifacts.py", "omitted"),
+        ("all", "", "readonly"),
+    ],
+)
+def test_account_plan_summary_matches_filtered_readonly_selection(
+    lane, test_filter, suite, tmp_path
+):
+    root = Path(__file__).resolve().parents[2]
+    workflow = yaml.safe_load((root / ".github/workflows/nightly.yml").read_text())
+    command = next(
+        step["run"]
+        for step in workflow["jobs"]["plan-live-lanes"]["steps"]
+        if step.get("name") == "Summarize safe lane selection"
+    )
+    summary = tmp_path / "summary.md"
+    subprocess.run(
+        ["bash", "-e", "-o", "pipefail", "-c", command],
+        env={
+            **os.environ,
+            "GITHUB_STEP_SUMMARY": str(summary),
+            "E2E_LANE": lane,
+            "TEST_FILTER": test_filter,
+            "ENABLED_SLOTS": "A,B",
+            "READONLY_SLOT": "B",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert f"| nightly-readonly-windows | Windows | web | {suite} | B |" in summary.read_text()
+
+
+@pytest.mark.parametrize(
     ("workflow", "job", "step"),
     [
         ("nightly.yml", "e2e", "verifier"),

@@ -270,7 +270,7 @@ jobs:
             echo "| nightly-android-macos | macOS | android | full | $ANDROID_SLOT | $SELECTION_MODE |"
           fi
           if [ "$E2E_LANE" = all ] || [ "$E2E_LANE" = readonly ]; then
-            if [ -n "$TEST_FILTER" ]; then
+            if [ "$E2E_LANE" = all ] && [ -n "$TEST_FILTER" ]; then
               echo "| nightly-readonly-windows | Windows | web | omitted | $READONLY_SLOT | filtered dispatch |"
             else
               echo "| nightly-readonly-windows | Windows | web | readonly | $READONLY_SLOT | $SELECTION_MODE |"

@@ -74,17 +74,29 @@ async def assert_copied_reference_artifacts(
             artifact.kind.value for artifact in completed if not artifact.is_unclassified_type4
         }
         missing = sorted(required_families - families)
+        missing_payloads = sorted(
+            family
+            for family in required_families & families & URL_BACKED_ARTIFACT_FAMILIES
+            if not completed_download_candidates(
+                completed, family, backend=client.backends["artifacts"]
+            )
+        )
         if require_interactive_mind_map and not any(
             artifact.is_interactive_mind_map for artifact in completed
         ):
             missing.append("interactive_mind_map")
+        issues = []
+        if missing:
+            issues.append("missing completed families: " + ", ".join(missing))
+        if missing_payloads:
+            issues.append("missing download payload families: " + ", ".join(missing_payloads))
         remaining = max(0.0, deadline - clock())
-        detail = "missing completed families: " + ", ".join(missing) if missing else "ready"
+        detail = "; ".join(issues) if issues else "ready"
         report(
             f"Copied reference artifacts: {detail}; remaining={remaining:.0f}s",
-            summary=not missing or remaining == 0,
+            summary=not issues or remaining == 0,
         )
-        if not missing:
+        if not issues:
             return
         assert remaining > 0, "Copied reference " + detail
         await sleep(min(30, remaining))
