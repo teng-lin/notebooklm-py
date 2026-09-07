@@ -8,7 +8,7 @@
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/teng-lin/notebooklm-py",
-      "revision": "acb7fa96de00be9b07d81abf433f96beb607a560"
+      "revision": "02303a4de3030dbf58a930440b7215e51110b780"
     },
     "viewBox": [1380, 820]
   },
@@ -30,7 +30,7 @@
       "id": "web_registry",
       "type": "backend",
       "label": "Web registry",
-      "sublabel": "105 portable scenarios • HTTP + batchexecute",
+      "sublabel": "128 portable scenarios • HTTP + batchexecute",
       "tag": "WEB",
       "sources": [
         { "path": "tests/_fault_server/web_scenarios.py", "label": "dispatcher" }
@@ -42,7 +42,7 @@
       "id": "android_registry",
       "type": "backend",
       "label": "Android registry",
-      "sublabel": "69 portable scenarios • local gRPC + HTTP",
+      "sublabel": "74 portable scenarios • local gRPC + HTTP",
       "tag": "ANDROID",
       "sources": [
         { "path": "tests/_fault_server/android_scenarios.py", "label": "dispatcher" }
@@ -239,14 +239,14 @@
       "dot": "emerald",
       "title": "Registry coverage",
       "items": [
-        "Portable deck: 174 unique scenarios = 105 Web + 69 Android.",
+        "Portable deck: 202 unique scenarios = 128 Web + 74 Android.",
         "Native curl: 10 additional Web scenarios selected in a separate job.",
         "CI uses --require-all-scenarios so selected, executed, and skipped remain explicit."
       ]
     },
     {
       "dot": "cyan",
-      "title": "Evidence and claim boundary • revision acb7fa96d",
+      "title": "Evidence and claim boundary • revision 02303a4de",
       "items": [
         "Production clients cross local sockets; every scenario records required checks, plan, fault, commit, and cleanup evidence.",
         "R6 chat is Web; R12 Drive is Android; other transfer checks span both. Adapter projections are Web only.",
