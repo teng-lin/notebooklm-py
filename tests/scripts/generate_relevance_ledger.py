@@ -534,6 +534,42 @@ def build_ledger() -> dict[str, object]:
             )
         )
     )
+    entries.append(
+        asdict(
+            LedgerEntry(
+                nodeid="tests/integration/faults/test_web_workflows.py::test_web_workflow_scenarios_registered_in_aggregate_registry",
+                file="tests/integration/faults/test_web_workflows.py",
+                subsystem="fault_injection",
+                failure_detected="Workflow scenarios missing from aggregate fault runner",
+                oracle="Registry subset verification",
+                overlapping_tests=["tests/integration/faults/test_web_faults.py"],
+                runtime_cost="fast_static",
+                decision="pr_routine",
+                owner="transport_resilience",
+                rationale="Fast static check ensuring all workflow scenarios remain present in the aggregate test_web_faults runner",
+                replacement=None,
+                review_condition="permanent_scenario_registry",
+            )
+        )
+    )
+    entries.append(
+        asdict(
+            LedgerEntry(
+                nodeid="tests/integration/faults/test_web_workflows.py::test_web_workflow_dispatcher_routing",
+                file="tests/integration/faults/test_web_workflows.py",
+                subsystem="fault_injection",
+                failure_detected="Dispatcher routing failure for workflow scenario cohort",
+                oracle="Scenario runner plan and checks execution",
+                overlapping_tests=["tests/integration/faults/test_web_faults.py"],
+                runtime_cost="loopback_socket",
+                decision="pr_routine",
+                owner="transport_resilience",
+                rationale="Focused routing test verifying scenario dispatcher dispatches workflow scenarios",
+                replacement=None,
+                review_condition="permanent_scenario_registry",
+            )
+        )
+    )
 
     # Sort deterministically
     entries.sort(key=lambda e: e["nodeid"])

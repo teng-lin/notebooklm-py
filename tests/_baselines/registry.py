@@ -172,6 +172,7 @@ def _derive_auth_facade_patch_sites() -> dict[str, object]:
     )
 
 
+@lru_cache(maxsize=1)
 def _derive_auth_family_patch_scorecard() -> dict[str, object]:
     from scripts.audit_auth_patch_sites import build_family_scorecard
 
@@ -217,6 +218,7 @@ def _auth_shared_mutation_growth(previous: object, current: object) -> list[str]
     return projection_growth(previous, current)
 
 
+@lru_cache(maxsize=1)
 def _derive_auth_import_graph() -> dict[str, object]:
     """Static direct-module import graph for ``notebooklm._auth``."""
     from scripts.audit_auth_import_graph import build_projection
@@ -224,6 +226,7 @@ def _derive_auth_import_graph() -> dict[str, object]:
     return build_projection()
 
 
+@lru_cache(maxsize=1)
 def _derive_browser_import_graph() -> dict[str, object]:
     """Package-aware import projection for ``notebooklm._browser``."""
     from scripts.audit_auth_import_graph import build_projection
@@ -263,6 +266,7 @@ def _backend_static_coupling_growth(previous: object, current: object) -> list[s
     return static_projection_growth(previous, current)
 
 
+@lru_cache(maxsize=1)
 def _derive_module_size() -> dict[str, object]:
     """Current module-size budget, allowlist ceilings, and shrink locks."""
     from tests._baselines.module_size import derive_module_size
@@ -276,6 +280,7 @@ def _module_size_growth(previous: object, current: object) -> list[str]:
     return module_size_growth(previous, current)
 
 
+@lru_cache(maxsize=1)
 def _derive_storage_transaction_policy() -> dict[str, list[str]]:
     """Direct callers of each profile-transaction lock-failure policy."""
     from tests._baselines.storage_transaction_policy import derive_storage_transaction_policy
@@ -289,6 +294,7 @@ def _storage_transaction_policy_growth(previous: object, current: object) -> lis
     return storage_transaction_policy_growth(previous, current)
 
 
+@lru_cache(maxsize=1)
 def _derive_guardrail_inline_literals() -> dict[str, dict[str, int]]:
     """Large inline container literals still grandfathered in guardrail tests."""
     from tests._baselines.guardrail_literals import inventory_large_inline_literals
@@ -296,6 +302,7 @@ def _derive_guardrail_inline_literals() -> dict[str, dict[str, int]]:
     return inventory_large_inline_literals()
 
 
+@lru_cache(maxsize=1)
 def _derive_backend_boundary() -> dict[str, list[dict[str, str]]]:
     """Exact lazy public-type-to-Web compatibility-shim allowlist."""
     from tests._baselines.backend_boundary import derive_backend_boundary

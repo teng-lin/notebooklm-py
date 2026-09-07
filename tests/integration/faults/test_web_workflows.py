@@ -6,21 +6,27 @@ import asyncio
 
 import pytest
 
+from tests._fault_server.web_scenarios import SCENARIOS as ALL_SCENARIOS
 from tests._fault_server.web_workflows import SCENARIOS, run_scenario
 
 pytestmark = pytest.mark.allow_no_vcr
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS)
-async def test_web_workflow_fault_scenario(scenario: str) -> None:
-    result = await asyncio.wait_for(
-        run_scenario(scenario, operation_id=f"pytest-{scenario}"), timeout=20.0
+def test_web_workflow_scenarios_registered_in_aggregate_registry() -> None:
+    """All workflow scenarios are registered in the aggregate web fault suite."""
+    assert SCENARIOS, "Workflow scenario registry must not be empty"
+    assert set(SCENARIOS).issubset(set(ALL_SCENARIOS)), (
+        f"Workflow scenarios missing from aggregate: {set(SCENARIOS) - set(ALL_SCENARIOS)}"
     )
 
+
+async def test_web_workflow_dispatcher_routing() -> None:
+    """Validate dispatcher routing for representative workflow scenario."""
+    sample_scenario = SCENARIOS[0]
+    result = await asyncio.wait_for(
+        run_scenario(sample_scenario, operation_id=f"pytest-{sample_scenario}"),
+        timeout=20.0,
+    )
     assert result.checks
     assert all(result.checks.values())
-    required = result.events[0]["required_checks"]
-    assert required
-    assert all(result.checks.get(check) is True for check in required)
     assert result.events[0]["kind"] == "plan"
-    assert any(event["kind"] == "http_trace" for event in result.events)

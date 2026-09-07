@@ -418,7 +418,9 @@ DISPLAY_NAME_FALSE_POSITIVES: frozenset[str] = frozenset(
 # Pattern construction helpers
 # =============================================================================
 
-_EMAIL_PATTERN_BASE = r"[A-Za-z0-9._%+\-]+@(?:" + "|".join(EMAIL_PROVIDERS) + r")\.com"
+_EMAIL_PATTERN_BASE = (
+    r"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]+@(?:" + "|".join(EMAIL_PROVIDERS) + r")\.com"
+)
 
 # Single-encoded ``authuser=<local>%40<provider>`` query-param shape and its
 # double-encoded ``authuser%3D<local>%40<provider>`` sibling. The double-encoded

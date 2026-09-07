@@ -20,8 +20,10 @@ async def test_web_fault_scenario(scenario: str) -> None:
 
     assert result.checks
     assert all(result.checks.values())
-    assert result.events[0]["required_checks"]
-    assert set(result.events[0]["required_checks"]) <= result.checks.keys()
+    required = result.events[0]["required_checks"]
+    assert required
+    assert set(required) <= result.checks.keys()
+    assert all(result.checks.get(check) is True for check in required)
     assert result.events[0]["kind"] == "plan"
     assert result.events[0]["faults"]
     assert all(

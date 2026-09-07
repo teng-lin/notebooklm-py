@@ -15,11 +15,11 @@
     "review_condition": "Lifecycle or milestone when this decision expires or is reviewed"
   },
   "summary": {
-    "total_entries": 942,
+    "total_entries": 944,
     "by_decision": {
       "extended_qualification": 425,
       "pr_contract": 442,
-      "pr_routine": 17,
+      "pr_routine": 19,
       "historical_manual": 57,
       "consolidate": 1
     }
@@ -12416,6 +12416,22 @@
       "review_condition": "active_wire_contract"
     },
     {
+      "nodeid": "tests/integration/faults/test_web_workflows.py::test_web_workflow_dispatcher_routing",
+      "file": "tests/integration/faults/test_web_workflows.py",
+      "subsystem": "fault_injection",
+      "failure_detected": "Dispatcher routing failure for workflow scenario cohort",
+      "oracle": "Scenario runner plan and checks execution",
+      "overlapping_tests": [
+        "tests/integration/faults/test_web_faults.py"
+      ],
+      "runtime_cost": "loopback_socket",
+      "decision": "pr_routine",
+      "owner": "transport_resilience",
+      "rationale": "Focused routing test verifying scenario dispatcher dispatches workflow scenarios",
+      "replacement": null,
+      "review_condition": "permanent_scenario_registry"
+    },
+    {
       "nodeid": "tests/integration/faults/test_web_workflows.py::test_web_workflow_fault_scenario",
       "file": "tests/integration/faults/test_web_workflows.py",
       "subsystem": "fault_resilience",
@@ -12430,6 +12446,22 @@
       "rationale": "All workflow scenarios are registered in web_scenarios.SCENARIOS and run in test_web_faults.py; consolidate into dispatcher routing check",
       "replacement": "tests/integration/faults/test_web_faults.py",
       "review_condition": "consolidated_in_phase_4"
+    },
+    {
+      "nodeid": "tests/integration/faults/test_web_workflows.py::test_web_workflow_scenarios_registered_in_aggregate_registry",
+      "file": "tests/integration/faults/test_web_workflows.py",
+      "subsystem": "fault_injection",
+      "failure_detected": "Workflow scenarios missing from aggregate fault runner",
+      "oracle": "Registry subset verification",
+      "overlapping_tests": [
+        "tests/integration/faults/test_web_faults.py"
+      ],
+      "runtime_cost": "fast_static",
+      "decision": "pr_routine",
+      "owner": "transport_resilience",
+      "rationale": "Fast static check ensuring all workflow scenarios remain present in the aggregate test_web_faults runner",
+      "replacement": null,
+      "review_condition": "permanent_scenario_registry"
     },
     {
       "nodeid": "tests/qualification/historical/test_client_operation_contract_inventory.py::test_cleanup_inventory_separates_target_from_preserved_families",
