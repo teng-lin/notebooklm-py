@@ -573,7 +573,8 @@ class NotebookLifecycleManager:
             if self.template_contract["artifacts"]["require_interactive_mind_map"] and not any(
                 getattr(artifact, "is_interactive_mind_map", False) for artifact in eligible
             ):
-                incomplete.append("template is missing a completed interactive mind map")
+                state = "completed" if require_completed_artifacts else "copied"
+                incomplete.append(f"template is missing a {state} interactive mind map")
         self._content_deficiencies = incomplete
         if incomplete:
             if tolerate_incomplete:
