@@ -7,7 +7,7 @@
 
 `src/notebooklm/` contains the async client (`client.py`) and typed exports (`__init__.py`).
 - **Internal:** `_*.py` and `_*/` (`_app/`, `_auth/`, `_runtime/`, `_sources.py`, `_artifacts.py`).
-- **Adapters & Wire:** `cli/` (Click), `mcp/` (FastMCP), `server/` (FastAPI), `rpc/` (batchexecute/gRPC).
+- **Adapters & Wire:** `cli/` (Click), `mcp/` (FastMCP), `server/` (FastAPI), `rpc/` (batchexecute RPC facade), `_android/` (gRPC session & codecs).
 - **Tests & Data:** `tests/unit/`, `tests/integration/` (VCR), `tests/server/`, `tests/e2e/`, `tests/_guardrails/`, `tests/_fault_server/`, `tests/cassettes/` (`web/`, `android/`). Examples in `examples/`, tools in `scripts/`.
 
 ## Development Commands

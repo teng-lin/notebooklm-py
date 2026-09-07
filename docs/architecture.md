@@ -1608,7 +1608,7 @@ migrate. See [ADR-0007](./adr/0007-test-monkeypatch-policy.md).
 
 ### Test suite taxonomy
 
-- **Unit tests** (`tests/unit/`): No network, decode/encode only. Includes
+- **Unit tests** (`tests/unit/`): No network; offline unit logic and mocks. Includes
   `_app/` transport-neutral core tests, CLI command tests, MCP unit tests,
   Android unit tests, and payload drift canaries.
 - **REST server tests** (`tests/server/`): FastAPI route and adapter suite.
@@ -2688,7 +2688,7 @@ src/notebooklm/
 - [ADR-0034](./adr/0034-auth-storage-object-model.md) — Current auth storage object model and owner extraction (Accepted; Phase 12C complete).
 - [ADR-0035](./adr/0035-mobile-resilience-transport.md) — Explicit Android backend as a resilience transport (Accepted; all eleven namespaces now close their former Web compatibility seams).
 - [ADR-0036](./adr/0036-browser-acquisition-package.md) — Browser acquisition package and neutral login orchestration (Accepted; browser implementation isolated behind lazy auth capabilities).
-- [ADR-0037](./adr/0037-live-usage-and-quota-api.md) — Live usage and quota API (`client.get_user_usage()`, `_usage.py`, `docs/quota-limits.md`).
+- [ADR-0037](./adr/0037-live-usage-and-quota-api.md) — Live usage and quota API (`client.settings.get_usage()`, `docs/quota-limits.md`).
 - [ADR-0038](./adr/0038-local-fault-injection-harness.md) — Local fault-injection services and concurrent resilience scenarios (`tests/_fault_server/`, `docs/fault-injection.md`, `tests/integration/faults/`).
 - [ADR-0039](./adr/0039-backend-specific-credential-surfaces.md) — Backend-specific credential surfaces (`WebCredentials`, `AndroidCredentials`, `_client_contracts.py`).
 

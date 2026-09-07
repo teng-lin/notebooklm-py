@@ -148,9 +148,9 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_auth/storage_lock.py` | `StorageLockManager` | Cross-process file locks (`flock`/`msvcrt`) guarding credential writes, rotation, and refresh. |
 | `_auth/recovery.py` | `ColdRecoveryCoordinator` | Single-flight auth recovery ladder managing refresh commands, headless bootstrap, and L4 re-minting. |
 | `_deadline.py` | `RuntimeDeadline` | Aggregate operation deadline tracking and timeout budget enforcement across nested steps. |
-| `_idempotency.py` | `JournalWriter` | Mutating-operation journal, semantic-send attempts, replay gating, and idempotency recovery evidence. |
+| `_idempotency.py` | `OperationJournal` | Mutating-operation journal, semantic-send attempts, replay gating, and idempotency recovery evidence. |
 | `_loop_bound.py` | `LoopBoundPrimitive`, `EpochFenced` | Event-loop binding guards and resource epoch fences for runtime lifecycle components. |
-| `_curl_cffi_transport.py` | `CurlCffiTransport` | Opt-in browser-impersonation HTTP transport (`NOTEBOOKLM_TRANSPORT=curl_cffi`). |
+| `_curl_cffi_transport.py` | `CurlCffiAsyncClient` | Opt-in browser-impersonation HTTP transport (`NOTEBOOKLM_TRANSPORT=curl_cffi`). |
 | `_web/transport/reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
 | `_runtime/contracts.py` | Neutral runtime Protocol | `LoopGuard`, used by transport-neutral orchestration. |
@@ -300,12 +300,12 @@ from those catalogues rather than introducing parallel patterns.
    If a capability has only one consumer, define the Protocol locally beside that consumer. Pass
    each collaborator by keyword-only argument. **Do NOT depend on a broad runtime facade for type
    annotations** (the broad `Session` Protocol was deleted; see ADR-0013).
-3. Declare the namespace contract in `_client_contracts.py` (add to `NamespaceProtocols` and
-   `BackendNamespaces`).
-4. Wire concrete instances in `_web/assembly.py::_build_web_assembly(...)` and
-   `_android/assembly.py::_build_android_assembly(...)`.
+3. Declare the namespace contract in `_client_contracts.py` (add to `_NAMESPACE_NAMES`
+   and the `FeatureNamespaces` dataclass).
+4. Wire concrete instances in `_web/assembly.py::assemble_web_backend(...)` and
+   `_android/assembly.py::assemble_android_backend(...)`.
 5. Install the namespace attribute on `NotebookLMClient` in
-   `_client_assembly.py::_install_client(...)`.
+   `_client_assembly.py::_install_client(...)` and declare it on `NotebookLMClient` in `client.py`.
 6. Export public types from `src/notebooklm/types.py` and public exports from
    `src/notebooklm/__init__.py`.
 7. **Tests** should inject the narrow collaborator the feature actually needs (e.g.
