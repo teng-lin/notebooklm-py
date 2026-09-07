@@ -356,13 +356,13 @@ async def run_scenario(
                     else:
                         if variant == "repeated_cancel":
                             await asyncio.wait_for(progress_entered.wait(), 1)
-                        task.cancel()
+                        first_cancel = task.cancel()
                         if variant == "repeated_cancel":
                             await asyncio.wait_for(progress_cleanup.wait(), 1)
-                            task.cancel()
+                            second_cancel = task.cancel()
                             result.require(
                                 "repeated_cancel_during_writer_settlement",
-                                task.cancelling() == 2 and progress_cleanup.is_set(),
+                                first_cancel and second_cancel and progress_cleanup.is_set(),
                             )
                             cleanup_release.set()
                 error: BaseException | None = None
