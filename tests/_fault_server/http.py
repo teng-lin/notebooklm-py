@@ -329,10 +329,14 @@ class HttpFaultServer:
     def remaining(self) -> int:
         return sum(len(actions) for actions in self._scripts.values())
 
+    @property
+    def unobserved_required_gates(self) -> int:
+        return sum((self._required_gates - self._observed_gates).values())
+
     def assert_drained(self) -> None:
         if self.errors:
             raise AssertionError("HTTP fault server errors: " + "; ".join(self.errors))
-        if self._required_gates - self._observed_gates:
+        if self.unobserved_required_gates:
             raise AssertionError("unobserved required HTTP gates")
         remaining = sum(len(actions) for actions in self._scripts.values())
         if remaining:

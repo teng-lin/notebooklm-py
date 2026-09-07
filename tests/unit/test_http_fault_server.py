@@ -10,7 +10,27 @@ import pytest
 
 import tests._fault_server.web_scenarios as web_scenarios
 from tests._fault_server.common import ScenarioFailure, ScenarioResult
-from tests._fault_server.http import HttpFaultServer, LogicalHostTransport, Reply
+from tests._fault_server.http import HttpFaultServer, LogicalHostTransport, Reply, Route, Stall
+
+
+def test_cleanup_records_every_failed_server_invariant(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = HttpFaultServer()
+    server.enqueue(Route.rpc("unused"), Stall(phase="headers", gate="unobserved", reply=Reply()))
+    server.errors.append("private-error-sentinel")
+    monkeypatch.setattr(HttpFaultServer, "active_handlers", property(lambda self: 1))
+    result = ScenarioResult("web", "cleanup", "all-failures")
+
+    with pytest.raises(ScenarioFailure) as raised:
+        web_scenarios._require_clean(result, server)
+
+    assert raised.value.result is result
+    assert result.checks == {
+        "server_required_gates_observed": False,
+        "server_plan_consumed": False,
+        "server_had_no_errors": False,
+        "server_handlers_drained": False,
+    }
+    assert "private-error-sentinel" not in json.dumps(result.events)
 
 
 class _FakeLifecycle:
@@ -152,7 +172,7 @@ async def test_web_checks_reject_consumed_action_with_unobserved_required_gate()
     async with server, server.client_factory() as client:
         await client.post("https://notebook.google.com/prefix", content=b"short")
     assert server.remaining() == 0
-    with pytest.raises(AssertionError, match="unobserved required"):
+    with pytest.raises(ScenarioFailure, match="server_required_gates_observed"):
         web_scenarios._require_clean(ScenarioResult("web", "gate", "missing"), server)
 
 

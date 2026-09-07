@@ -22,7 +22,7 @@ from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 
 from .adapter_registry import SCENARIOS as _ADAPTER_SCENARIOS
-from .common import ScenarioResult
+from .common import ScenarioFailure, ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route, Stall, Truncate
 from .web import (
     COOKIE_NAME,
@@ -260,11 +260,19 @@ def _record_http_trace(result: ScenarioResult, server: HttpFaultServer) -> None:
 
 
 def _require_clean(result: ScenarioResult, server: HttpFaultServer) -> None:
-    server.assert_drained()
-    result.require("server_required_gates_observed", True)
-    result.require("server_plan_consumed", server.remaining() == 0)
-    result.require("server_had_no_errors", not server.errors)
-    result.require("server_handlers_drained", server.active_handlers == 0)
+    failed = False
+    for name, passed in (
+        ("server_required_gates_observed", server.unobserved_required_gates == 0),
+        ("server_plan_consumed", server.remaining() == 0),
+        ("server_had_no_errors", not server.errors),
+        ("server_handlers_drained", server.active_handlers == 0),
+    ):
+        try:
+            result.require(name, passed)
+        except ScenarioFailure:
+            failed = True
+    if failed:
+        raise ScenarioFailure(result)
 
 
 async def _valid_read_create(result: ScenarioResult) -> None:
