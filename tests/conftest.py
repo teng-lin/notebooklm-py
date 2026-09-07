@@ -418,6 +418,27 @@ def _load_platform_manifest(rootpath: str) -> frozenset[str]:
         return frozenset()
 
 
+@functools.lru_cache(maxsize=1)
+def _load_pr_contract_nodes(rootpath: str) -> frozenset[str]:
+    """Return ledger nodes that must enter the canonical PR contract lane.
+
+    The relevance ledger is the reviewed source of routing decisions.  Tests
+    may retain broad ``repo_lint`` module marks, so applying the effective
+    marker here prevents a ledger-only PR contract from disappearing from both
+    the routine selector and the explicit contract selector.
+    """
+    ledger_path = Path(rootpath) / "tests" / "fixtures" / "test_relevance_ledger.json"
+    try:
+        data = json.loads(ledger_path.read_text(encoding="utf-8"))
+        return frozenset(
+            entry["nodeid"]
+            for entry in data["entries"]
+            if entry.get("decision") == "pr_contract" and isinstance(entry.get("nodeid"), str)
+        )
+    except (OSError, ValueError, KeyError, TypeError):
+        return frozenset()
+
+
 def pytest_collection_modifyitems(config, items):
     """Auto-skip ``@pytest.mark.requires_playwright`` items when playwright is missing.
 
@@ -438,7 +459,11 @@ def pytest_collection_modifyitems(config, items):
             config.hook.pytest_deselected(items=deselected)
             items[:] = remaining
 
+    pr_contract_nodes = _load_pr_contract_nodes(str(config.rootpath))
     for item in items:
+        nodeid = item.nodeid.split("[", 1)[0]
+        if nodeid in pr_contract_nodes and not item.get_closest_marker("pr_contract"):
+            item.add_marker(pytest.mark.pr_contract)
         if item.get_closest_marker("pr_contract") and not item.get_closest_marker("repo_lint"):
             item.add_marker(pytest.mark.repo_lint)
 

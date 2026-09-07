@@ -36,8 +36,6 @@ import pytest
 
 import notebooklm.cli as _cli_pkg
 
-pytestmark = pytest.mark.historical
-
 _CLI_DIR = Path(_cli_pkg.__file__).resolve().parent
 
 

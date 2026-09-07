@@ -24,7 +24,6 @@ GUARDRAILS_DIR = REPO_ROOT / "tests" / "_guardrails"
 def test_historical_directory_contains_expected_files() -> None:
     expected_files = {
         "test_client_operation_contract_inventory.py",
-        "test_no_cli_client_patch_surface.py",
         "test_no_session_cmd_patch_surface.py",
         "test_no_session_compat_bridges.py",
         "test_v080_deprecation_coverage.py",
@@ -80,6 +79,12 @@ def test_active_v100_gates_remain_in_guardrails() -> None:
         assert p.is_file(), f"Active v1.0 gate missing from guardrails: {p}"
         source = p.read_text(encoding="utf-8")
         assert "pytest.mark.historical" not in source, f"{p.name} must not be marked historical"
+
+
+def test_cli_client_patch_surface_recurrence_gate_remains_active() -> None:
+    gate = GUARDRAILS_DIR / "test_no_cli_client_patch_surface.py"
+    assert gate.is_file(), "The dynamic CLI recurrence gate must run in routine collection"
+    assert "pytest.mark.historical" not in gate.read_text(encoding="utf-8")
 
 
 def test_v080_history_helper_is_extracted_and_used() -> None:

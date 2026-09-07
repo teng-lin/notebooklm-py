@@ -101,6 +101,36 @@ def test_pr_contract_implies_repo_lint() -> None:
     assert "repo_lint" not in item3.markers
 
 
+def test_ledger_pr_contract_nodes_receive_effective_contract_marker() -> None:
+    """Ledger decisions, including module-level repo_lint tests, drive PR routing."""
+
+    class FakeItem:
+        def __init__(self, nodeid: str):
+            self.nodeid = nodeid
+            self.markers: set[str] = {"repo_lint"}
+            self.keywords: dict[str, object] = {}
+
+        def get_closest_marker(self, name: str):
+            if name in self.markers:
+                return getattr(pytest.mark, name)
+            return None
+
+        def add_marker(self, marker):
+            self.markers.add(marker.name)
+
+    ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
+    nodeid = next(entry["nodeid"] for entry in ledger["entries"] if entry["decision"] == "pr_contract")
+    item = FakeItem(f"{nodeid}[parameter]")
+    config_mock = MagicMock()
+    config_mock.getoption.return_value = False
+    config_mock.rootpath = REPO_ROOT
+
+    pytest_collection_modifyitems(config_mock, [item])
+
+    assert "pr_contract" in item.markers
+    assert "repo_lint" in item.markers
+
+
 def test_unconfirmed_contract_is_in_routine_behavioral_lane() -> None:
     path = REPO_ROOT / "tests" / "_guardrails" / "test_unconfirmed_contract.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
