@@ -386,6 +386,8 @@ class HttpFaultServer:
         transfer: Transfer | None = None
         try:
             while True:
+                transfer = None
+                expected_disconnect = False
                 try:
                     head = await read_head(reader)
                 except asyncio.IncompleteReadError as exc:

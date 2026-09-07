@@ -419,6 +419,37 @@ async def test_keep_alive_proves_reuse_then_peer_close_recovery() -> None:
     assert connections[2] != connections[1]
 
 
+@pytest.mark.parametrize("allowed", [False, True])
+async def test_keep_alive_transfer_does_not_allow_next_request_partial_headers(
+    allowed: bool,
+) -> None:
+    from tests._fault_server.http import Transfer
+
+    server = HttpFaultServer(keep_alive=True)
+    server.enqueue(
+        Route("PUT", "notebook.google.com", "/upload"),
+        Transfer(allow_abandoned_body=allowed, response=Reply(body=b"ok")),
+    )
+    async with server:
+        reader, writer = await asyncio.open_connection(*server.address)
+        writer.write(
+            b"PUT /upload HTTP/1.1\r\nHost: notebook.google.com\r\nContent-Length: 0\r\n\r\n"
+        )
+        await writer.drain()
+        await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 1)
+        assert await asyncio.wait_for(reader.readexactly(2), 1) == b"ok"
+        writer.write(b"GET / HTTP/1.1\r\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        await server.wait_for_event("handler_settled")
+
+    assert server.errors == ["IncompleteReadError"]
+    assert len(server.journal) == 1
+    assert server.journal[0].body_complete
+    assert not any(event["phase"] == "body_abandoned" for event in server.events)
+
+
 async def test_unused_required_prefix_gate_cannot_pass() -> None:
     from tests._fault_server.http import Route, Transfer
 
