@@ -28,12 +28,18 @@ jobs:
     # action. See issue #820 for the threat model.
     permissions:
       contents: read
+    outputs:
+      candidate_sha: ${{ steps.candidate.outputs.sha }}
 
     steps:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
         persist-credentials: false
+
+    - name: Resolve candidate commit
+      id: candidate
+      run: echo "sha=$(git rev-parse "${GITHUB_SHA}^{commit}")" >> "$GITHUB_OUTPUT"
 
     - name: Set up Python 3.12
       uses: actions/setup-python@v7
@@ -121,7 +127,7 @@ jobs:
     needs: build-and-test
     uses: ./.github/workflows/offline-qualification.yml
     with:
-      candidate_sha: ${{ github.sha }}
+      candidate_sha: ${{ needs.build-and-test.outputs.candidate_sha }}
       artifact_name: notebooklm-py-dist
       tier: release
 

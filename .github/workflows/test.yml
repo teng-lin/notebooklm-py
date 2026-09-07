@@ -403,6 +403,41 @@ jobs:
         uv run pytest -n auto --dist loadgroup --timeout=180 --no-cov
         -m "pr_contract and not requires_playwright and not requires_chromium and not reality"
 
+    - name: Validate focused-platform manifest
+      id: platform-manifest
+      shell: bash
+      run: |
+        set -euo pipefail
+        python - <<'PY' > "$RUNNER_TEMP/platform-manifest-status"
+        import json
+        from pathlib import Path
+
+        root = Path.cwd()
+        manifest = root / "tests/fixtures/ci-platform-selection.json"
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            paths = data["paths"]
+            if not isinstance(paths, list) or not paths:
+                raise ValueError("paths must be a non-empty list")
+            for path in paths:
+                if not isinstance(path, str) or not path or Path(path).is_absolute() or ".." in Path(path).parts:
+                    raise ValueError(f"invalid relative POSIX path: {path!r}")
+                if not (root / path).exists():
+                    raise ValueError(f"missing manifest path: {path}")
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+            print(f"invalid:{error}")
+        else:
+            print("valid")
+        PY
+        status=$(cat "$RUNNER_TEMP/platform-manifest-status")
+        if [ "$status" = valid ]; then
+          echo 'valid=true' >> "$GITHUB_OUTPUT"
+        else
+          echo 'valid=false' >> "$GITHUB_OUTPUT"
+          echo "::warning::Focused platform manifest unavailable: ${status#invalid:}"
+        fi
+        echo "status=$status" >> "$GITHUB_OUTPUT"
+
     - name: Resolve routine selection
       id: routine-selection
       shell: bash
@@ -410,6 +445,8 @@ jobs:
         REQUESTED_SELECTION: ${{ matrix.selection }}
         EVENT_NAME: ${{ github.event_name }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PLATFORM_MANIFEST_VALID: ${{ steps.platform-manifest.outputs.valid }}
+        PLATFORM_ROLLOUT_READY: ${{ vars.CI_PLATFORM_SELECTION_READY }}
       run: |
         set -euo pipefail
         full='not repo_lint and not refactor_qualification and not requires_playwright and not requires_chromium'
@@ -422,7 +459,11 @@ jobs:
         # secondary-OS routine run. Non-PR events and malformed/empty diffs
         # also fail closed to the full selector.
         if [ "$REQUESTED_SELECTION" = platform ]; then
-          if [ "$EVENT_NAME" != pull_request ] || [ -z "$PR_BASE_SHA" ] || ! git cat-file -e "$PR_BASE_SHA^{commit}"; then
+          if [ "$PLATFORM_ROLLOUT_READY" != true ]; then
+            reason='focused-OS rollout evidence has not been approved'
+          elif [ "$PLATFORM_MANIFEST_VALID" != true ]; then
+            reason='invalid or unavailable focused-platform manifest'
+          elif [ "$EVENT_NAME" != pull_request ] || [ -z "$PR_BASE_SHA" ] || ! git cat-file -e "$PR_BASE_SHA^{commit}"; then
             reason='non-PR or unavailable merge base'
           else
             changed=$(git diff --name-only "$PR_BASE_SHA" HEAD) || {
@@ -431,7 +472,7 @@ jobs:
             }
             if [ -z "$changed" ]; then
               reason='empty or unreadable diff'
-            elif printf '%s\n' "$changed" | grep -Eq '^(src/notebooklm/(_runtime|_auth|_app|mcp|server|rpc)/|pyproject\.toml$|uv\.lock$|tests/(conftest\.py|fixtures/ci-platform-selection\.json|_helpers/|_fault_server/)|\.github/workflows/)'; then
+            elif printf '%s\n' "$changed" | grep -Eq '^(src/notebooklm/|pyproject\.toml$|uv\.lock$|tests/(conftest\.py|fixtures/ci-platform-selection\.json|_helpers/|_fault_server/)|\.github/workflows/)'; then
               reason='high-risk runtime, dependency, fixture, or CI change'
             else
               selection="$platform"

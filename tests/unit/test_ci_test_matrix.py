@@ -189,6 +189,15 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "compat_smoke" in resolver_command
     assert "high-risk runtime" in resolver_command
     assert "git diff --name-only" in resolver_command
+    assert resolver["env"]["PLATFORM_ROLLOUT_READY"] == "${{ vars.CI_PLATFORM_SELECTION_READY }}"
+    assert "src/notebooklm/" in resolver_command
+
+    manifest = _step(test_job, "Validate focused-platform manifest")
+    assert manifest["id"] == "platform-manifest"
+    manifest_command = str(manifest["run"])
+    assert "ci-platform-selection.json" in manifest_command
+    assert "paths must be a non-empty list" in manifest_command
+    assert "missing manifest path" in manifest_command
 
     # The ordinary PR workflow stays coverage-free. The release/manual auth
     # delta runs in its own workflow.
@@ -345,9 +354,16 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
 
     for release_path in (PUBLISH_WORKFLOW, TESTPYPI_PUBLISH_WORKFLOW):
         release = yaml.safe_load(release_path.read_text(encoding="utf-8"))
+        build = release["jobs"]["build-and-test"]
+        assert build["outputs"]["candidate_sha"] == "${{ steps.candidate.outputs.sha }}"
+        resolved = str(_step(build, "Resolve candidate commit")["run"])
+        assert "${GITHUB_SHA}^{commit}" in resolved
         release_qualification = release["jobs"]["offline-qualification"]
         assert release_qualification["uses"] == "./.github/workflows/offline-qualification.yml"
         assert release_qualification["needs"] == "build-and-test"
+        assert release_qualification["with"]["candidate_sha"] == (
+            "${{ needs.build-and-test.outputs.candidate_sha }}"
+        )
 
     verify = yaml.safe_load(VERIFY_PACKAGE_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["verify"]
     assert "not refactor_qualification" in str(_step(verify, "Run routine unit tests")["run"])
@@ -727,6 +743,11 @@ def test_release_qualification_uses_exact_candidate_wheel_on_full_platform_matri
     assert '"src" not in package_path.parts' in provenance
     routine = str(_step(job, "Run routine unit, integration, server, MCP, and REST qualification")["run"])
     assert "tests/unit tests/integration tests/server" in routine
+    assert "requires_playwright" in routine
+    browser = str(_step(job, "Run browser-dependent candidate-wheel qualification")["run"])
+    assert "requires_playwright" in browser
+    assert "-n 0" in browser
+    assert _step(job, "Install Playwright browser for candidate qualification")
 
 
 def test_pr_and_release_workflows_verify_clean_base_wheel() -> None:

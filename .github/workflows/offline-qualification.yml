@@ -111,6 +111,24 @@ jobs:
       run: >-
         "$PYTHON_PATH" -m pytest tests/unit tests/integration tests/server -q --no-cov -x
         -m "not repo_lint and not refactor_qualification and not requires_playwright and not requires_chromium and not reality"
+    - name: Install Playwright browser for candidate qualification
+      shell: bash
+      env:
+        PYTHON_PATH: ${{ steps.environment.outputs.python_path }}
+      run: '"$PYTHON_PATH" -m playwright install chromium'
+    - name: Install Playwright system dependencies (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        PYTHON_PATH: ${{ steps.environment.outputs.python_path }}
+      run: '"$PYTHON_PATH" -m playwright install-deps chromium'
+    - name: Run browser-dependent candidate-wheel qualification
+      shell: bash
+      env:
+        PYTHON_PATH: ${{ steps.environment.outputs.python_path }}
+      run: >-
+        "$PYTHON_PATH" -m pytest tests/unit -q --no-cov -x -n 0
+        -m "(requires_playwright or requires_chromium) and not reality and not refactor_qualification"
     - name: Run active extended qualification once
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       shell: bash
