@@ -82,3 +82,34 @@ jobs:
         path: curl-fault-stress-report.json
         if-no-files-found: warn
         retention-days: 14
+
+  process-death:
+    name: Process death (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.12'
+    - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # @ v7.0.0
+    - name: Install offline test dependencies
+      run: uv sync --frozen --extra dev
+    - name: Verify abrupt termination and restart separately from socket timing stress
+      run: >-
+        uv run pytest tests/integration/faults/test_process_death.py -q
+        --timeout=40 --junitxml=process-death-results.xml
+    - name: Preserve process-death results and captured partial evidence
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: process-death-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: process-death-results.xml
+        if-no-files-found: warn
+        retention-days: 14

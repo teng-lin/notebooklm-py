@@ -16,10 +16,14 @@ from notebooklm.raw import GrpcUnaryStreamMethod
 
 from .android import SyntheticOAuthMinter, build_android_client
 from .android_cleanup import settle_actions
+from .android_consistency import BUDGETS as CONSISTENCY_BUDGETS
+from .android_consistency import IMPLEMENTATIONS as CONSISTENCY_IMPLEMENTATIONS
+from .android_consistency import REQUIRED_CHECKS as CONSISTENCY_REQUIRED_CHECKS
 from .android_downloads import SCENARIOS as DOWNLOAD_SCENARIOS
 from .android_downloads import run_scenario as run_download_scenario
 from .android_drive import SCENARIOS as DRIVE_SCENARIOS
 from .android_drive import run_scenario as run_drive_scenario
+from .android_protocol import SCENARIOS as PROTOCOL_SCENARIOS
 from .android_resilience_scenarios import (
     IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
 )
@@ -60,7 +64,18 @@ SCENARIOS = (
     *RESILIENCE_SCENARIOS,
 )
 
-SCENARIOS = tuple(sorted((*SCENARIOS, *TRANSFER_SCENARIOS, *DOWNLOAD_SCENARIOS, *DRIVE_SCENARIOS)))
+SCENARIOS = tuple(
+    sorted(
+        (
+            *SCENARIOS,
+            *TRANSFER_SCENARIOS,
+            *DOWNLOAD_SCENARIOS,
+            *DRIVE_SCENARIOS,
+            *PROTOCOL_SCENARIOS,
+            *CONSISTENCY_IMPLEMENTATIONS,
+        )
+    )
+)
 
 _FAULTS = {
     "auth": ("GetProject:UNAUTHENTICATED->reply", "GetProject:UNAUTHENTICATED->UNAUTHENTICATED"),
@@ -88,6 +103,23 @@ _FAULTS = {
     "unavailable": ("GetProject:UNAVAILABLE->reply", "GetProject:UNAVAILABLE exhaustion"),
 }
 _FAULTS.update(RESILIENCE_PLANS)
+_FAULTS.update(
+    {
+        "consistency_stale_collection_readback": (
+            "get:old",
+            "rename:commit",
+            "get:stale",
+            "get:reconciled",
+        ),
+        "consistency_repeated_chat_token": (
+            "ownership:confirmed",
+            "page:token",
+            "page:same-token",
+            "ownership:confirmed",
+            "page:healthy-empty",
+        ),
+    }
+)
 
 
 _REQUIRED_CHECKS: dict[str, list[str]] = {
@@ -191,6 +223,7 @@ _REQUIRED_CHECKS: dict[str, list[str]] = {
     ],
 }
 _REQUIRED_CHECKS.update(RESILIENCE_REQUIRED_CHECKS)
+_REQUIRED_CHECKS.update(CONSISTENCY_REQUIRED_CHECKS)
 
 
 def _result(name: str, operation_id: str, supplied: ScenarioResult | None) -> ScenarioResult:
@@ -205,15 +238,18 @@ def _result(name: str, operation_id: str, supplied: ScenarioResult | None) -> Sc
         cohort_ids=[operation_id],
         phases=["assemble", "open", "call", "cleanup"],
         required_checks=_REQUIRED_CHECKS[name],
-        budgets={
-            "rpc_timeout_s": 5.0
-            if name in {"unavailable", "rate_limit"}
-            else 0.5
-            if name == "deadline_and_cancellation"
-            else 2.0,
-            "stream_deadline_s": 0.2 if name == "deadline_and_cancellation" else None,
-            "cleanup_timeout_s": 2.0,
-        },
+        budgets=CONSISTENCY_BUDGETS.get(
+            name,
+            {
+                "rpc_timeout_s": 5.0
+                if name in {"unavailable", "rate_limit"}
+                else 0.5
+                if name == "deadline_and_cancellation"
+                else 2.0,
+                "stream_deadline_s": 0.2 if name == "deadline_and_cancellation" else None,
+                "cleanup_timeout_s": 2.0,
+            },
+        ),
     )
     return result
 
@@ -686,6 +722,10 @@ async def run_scenario(
 ) -> ScenarioResult:
     """Run one fresh Android fault cohort and preserve its evidence trace."""
 
+    if name in PROTOCOL_SCENARIOS:
+        from .android_protocol import run_scenario as run_protocol
+
+        return await run_protocol(name, operation_id=operation_id, result=result)
     if name in DRIVE_SCENARIOS:
         return await run_drive_scenario(name, operation_id=operation_id, result=result)
     if name in DOWNLOAD_SCENARIOS:
@@ -705,6 +745,7 @@ async def run_scenario(
         "deadline_and_cancellation": _deadline_and_cancellation,
     }
     handlers.update(RESILIENCE_IMPLEMENTATIONS)
+    handlers.update(CONSISTENCY_IMPLEMENTATIONS)
     try:
         await handlers[name](evidence)
     finally:

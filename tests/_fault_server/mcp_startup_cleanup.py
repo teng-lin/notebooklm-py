@@ -94,11 +94,15 @@ async def settle_calls_and_upstream(
                         task.exception()
         except BaseException as error:
             failures.append(("caller_settlement", error))
+    # A cancelled wait may never assign its return tuple; observe live tasks now.
+    for task in calls:
+        if task.done() and not task.cancelled():
+            task.exception()
     _finish(
         directory,
         "upstream",
         failures,
         primary,
-        pending_callers=len(pending),
+        pending_callers=sum(not task.done() for task in calls),
         active_handlers=upstream.active_handlers,
     )

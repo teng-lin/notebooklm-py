@@ -44,9 +44,14 @@ from .web_concurrency import PLANS as CONCURRENCY_PLANS
 from .web_concurrency import REQUIRED_CHECKS as CONCURRENCY_REQUIRED_CHECKS
 from .web_connections import IMPLEMENTATIONS as CONNECTION_IMPLEMENTATIONS
 from .web_connections import PLANS as CONNECTION_PLANS
+from .web_consistency import BUDGETS as CONSISTENCY_BUDGETS
+from .web_consistency import IMPLEMENTATIONS as CONSISTENCY_IMPLEMENTATIONS
+from .web_consistency import PLANS as CONSISTENCY_PLANS
+from .web_consistency import REQUIRED_CHECKS as CONSISTENCY_REQUIRED_CHECKS
 from .web_persistence import IMPLEMENTATIONS as PERSISTENCE_IMPLEMENTATIONS
 from .web_persistence import PLANS as PERSISTENCE_PLANS
 from .web_persistence import REQUIRED_CHECKS as PERSISTENCE_REQUIRED_CHECKS
+from .web_protocol import SCENARIOS as PROTOCOL_SCENARIOS
 from .web_resilience_scenarios import BUDGETS as RESILIENCE_BUDGETS
 from .web_resilience_scenarios import (
     IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
@@ -58,6 +63,7 @@ from .web_resilience_scenarios import REQUIRED_CHECKS as RESILIENCE_REQUIRED_CHE
 from .web_resilience_scenarios import (
     SCENARIOS as RESILIENCE_SCENARIOS,
 )
+from .web_saturation import SCENARIOS as SATURATION_SCENARIOS
 from .web_slow_responses import SCENARIOS as SLOW_SCENARIOS
 from .web_streaming import IMPLEMENTATIONS as CHAT_IMPLEMENTATIONS
 from .web_streaming import PLANS as CHAT_PLANS
@@ -651,12 +657,23 @@ _IMPLEMENTATIONS.update(CONNECTION_IMPLEMENTATIONS)
 _PLANS.update(CONNECTION_PLANS)
 _IMPLEMENTATIONS.update(CHAT_IMPLEMENTATIONS)
 _PLANS.update(CHAT_PLANS)
+_IMPLEMENTATIONS.update(CONSISTENCY_IMPLEMENTATIONS)
+_PLANS.update(CONSISTENCY_PLANS)
 _IMPLEMENTATIONS.update(PERSISTENCE_IMPLEMENTATIONS)
 _PLANS.update(PERSISTENCE_PLANS)
 _IMPLEMENTATIONS.update(TRANSFER_IMPLEMENTATIONS)
 _PLANS.update(TRANSFER_PLANS)
 SCENARIOS = tuple(
-    sorted((*_IMPLEMENTATIONS, *_ADAPTER_SCENARIOS, *WORKFLOW_SCENARIOS, *SLOW_SCENARIOS))
+    sorted(
+        (
+            *_IMPLEMENTATIONS,
+            *_ADAPTER_SCENARIOS,
+            *WORKFLOW_SCENARIOS,
+            *SLOW_SCENARIOS,
+            *PROTOCOL_SCENARIOS,
+            *SATURATION_SCENARIOS,
+        )
+    )
 )
 
 
@@ -737,6 +754,14 @@ async def run_scenario(
     result: ScenarioResult | None = None,
 ) -> ScenarioResult:
     """Run one bounded Web cohort and retain evidence on every failure path."""
+    if name in PROTOCOL_SCENARIOS:
+        from .web_protocol import run_scenario as run_protocol
+
+        return await run_protocol(name, operation_id=operation_id, result=result)
+    if name in SATURATION_SCENARIOS:
+        from .web_saturation import run_scenario as run_saturation
+
+        return await run_saturation(name, operation_id=operation_id, result=result)
     if name in SLOW_SCENARIOS:
         from .web_slow_responses import run_scenario as run_slow
 
@@ -760,13 +785,14 @@ async def run_scenario(
         faults=list(faults),
         cohort_ids=[f"{operation_id}:{index}" for index in range(cohort_count)],
         transport="httpx",
-        budgets={**RESILIENCE_BUDGETS, **CONCURRENCY_BUDGETS}.get(
+        budgets={**RESILIENCE_BUDGETS, **CONCURRENCY_BUDGETS, **CONSISTENCY_BUDGETS}.get(
             name, {"scenario_timeout_s": 15.0, "cleanup_timeout_s": 2.0}
         ),
         required_checks={
             **RESILIENCE_REQUIRED_CHECKS,
             **CONCURRENCY_REQUIRED_CHECKS,
             **PERSISTENCE_REQUIRED_CHECKS,
+            **CONSISTENCY_REQUIRED_CHECKS,
         }.get(name, _required_checks(name)),
     )
     await implementation(result)

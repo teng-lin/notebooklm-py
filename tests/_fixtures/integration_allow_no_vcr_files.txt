@@ -21,10 +21,14 @@ tests/integration/concurrency/test_upload_timeout_config.py # existing mock-only
 tests/integration/concurrency/test_wait_for_sources_leak.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup
 tests/integration/faults/test_adapter_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
-tests/integration/faults/test_auth_persistence.py # isolated real socket and atomic storage failures; pytest-only child lane
+tests/integration/faults/test_auth_persistence.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_consistency_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_curl_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
-tests/integration/faults/test_local_persistence.py # real socket and owner-local filesystem faults
-tests/integration/faults/test_mcp_auth_startup.py # real stored-auth MCP transports with local synthetic issuance; pytest-only
+tests/integration/faults/test_local_persistence.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_auth_startup.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_process_death.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_protocol_limits.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_saturation.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_workflows.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/test_artifact_generation_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

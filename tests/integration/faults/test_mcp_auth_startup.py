@@ -47,7 +47,7 @@ async def _observe(path: Path, predicate, *, timeout: float = 10):
 
 
 @asynccontextmanager
-async def _session(directory: Path, port: int, transport: str):
+async def _mcp_connection(directory: Path, port: int, transport: str):
     args = [
         "-m",
         "tests._fault_server.mcp_auth_startup_worker",
@@ -149,7 +149,7 @@ async def test_stored_auth_mcp_startup(tmp_path: Path, transport: str, fault: st
     primary = None
     await upstream.__aenter__()
     try:
-        async with _session(tmp_path, upstream.address[1], transport) as session:
+        async with _mcp_connection(tmp_path, upstream.address[1], transport) as session:
             await upstream.wait_for_gate("opening", timeout=10)
             await asyncio.wait_for(session.initialize(), 3)
             listed = await asyncio.wait_for(session.list_tools(), 3)

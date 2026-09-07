@@ -290,10 +290,13 @@ async def _commit(result, directory, processes, server):
     )
 
 
-async def run_scenario(name: str) -> ScenarioResult:
+async def run_scenario(name: str, *, result: ScenarioResult | None = None) -> ScenarioResult:
     if name not in SCENARIOS:
         raise ValueError("unknown process-death scenario")
-    result = ScenarioResult("web", name, f"pytest-process-{name}")
+    if result is None:
+        result = ScenarioResult("web", name, f"pytest-process-{name}")
+    elif result.backend != "web" or result.scenario != name:
+        raise ValueError("process-death scenario identity mismatch")
     result.record(
         "plan",
         required_checks=REQUIRED_CHECKS[name],

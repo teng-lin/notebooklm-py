@@ -141,10 +141,48 @@ async def test_http_session_retains_body_error_when_worker_wait_fails(tmp_path, 
     (tmp_path / "ready").write_text("http://127.0.0.1:1/mcp")
     primary = ValueError("original MCP assertion")
     with pytest.raises(ValueError) as caught:
-        async with startup._session(tmp_path, 1, "http"):
+        async with startup._mcp_connection(tmp_path, 1, "http"):
             raise primary
     assert caught.value is primary
     assert process.events == ["wait", "kill", "wait"]
     report = json.loads((tmp_path / "worker-cleanup.json").read_text())
     assert report["primary_error"] == "ValueError"
     assert report["failures"] == [{"step": "graceful_wait", "error_type": "TimeoutError"}]
+
+
+async def test_interrupted_caller_wait_reports_actual_pending_tasks(tmp_path, monkeypatch):
+    released = asyncio.Event()
+    entered = asyncio.Event()
+
+    async def caller():
+        entered.set()
+        try:
+            await released.wait()
+        except asyncio.CancelledError:
+            await released.wait()
+
+    class Upstream:
+        active_handlers = 0
+
+        def release(self, name):
+            pass
+
+        async def aclose(self):
+            pass
+
+    async def interrupted_wait(*args, **kwargs):
+        await asyncio.sleep(0)
+        raise asyncio.CancelledError
+
+    task = asyncio.create_task(caller())
+    await entered.wait()
+    monkeypatch.setattr(cleanup.asyncio, "wait", interrupted_wait)
+    try:
+        await cleanup.settle_calls_and_upstream([task], Upstream(), tmp_path, ValueError("primary"))
+        report = json.loads((tmp_path / "upstream-cleanup.json").read_text())
+        assert report["pending_callers"] == 1
+        assert not task.done()
+        assert report["failures"] == [{"step": "caller_settlement", "error_type": "CancelledError"}]
+    finally:
+        released.set()
+        await asyncio.gather(task, return_exceptions=True)

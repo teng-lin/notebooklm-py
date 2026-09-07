@@ -14,7 +14,8 @@ local results. The architectural decision remains in
 Visual guides: [test infrastructure](diagrams/22-testing-and-guardrails.html),
 [fault coverage](diagrams/39-fault-coverage.html), and
 [scenario lifecycle](diagrams/40-fault-scenario-lifecycle.html). These standalone
-viewers support search, light/dark themes, and export; open them from a local
+viewers capture the predecessor PR #2403 deck and support search, light/dark themes,
+and export. The expansion families below describe current additions. Open them from a local
 checkout or use the hosted links in the [diagram catalog](diagrams/README.md#testing-and-fault-coverage).
 
 Quick links: [commands](#run-the-harness),
@@ -43,7 +44,9 @@ uv run pytest tests/integration/faults -q
 ```
 
 The tests carry `allow_no_vcr` because they use local sockets. They require no
-cassette recording and no login.
+cassette recording and no login. The slower process-death family has its own CI
+lane and can be run separately with
+`uv run pytest tests/integration/faults/test_process_death.py -q`.
 
 List scenarios or run the complete portable deck:
 
@@ -78,7 +81,19 @@ that does not execute every selected case at least once.
 
 ## Current measured results
 
-At candidate `d821ecf5a` on macOS 26.6.2 arm64 with Python 3.12.12:
+Current registration is **202 portable cases: 128 Web and 74 Android**, plus
+**10 separate real-curl cases**. The pytest-only lanes add three auth-persistence
+cases, three process-death cases, and eight stored-auth MCP transport cases.
+They are not counted in the portable stress deck.
+
+Expansion validation on macOS arm64 / Python 3.12.12 completed 400/400 portable
+cohorts in 15.75 seconds (seed 42, concurrency 4), selecting and executing all 202
+cases with zero skips. The separate real-curl run completed 40/40 cohorts in 2.38
+seconds, covering all 10 cases with zero skips. Coverage with the browser selection
+was 95.20%, above the global 90% floor and all five per-file floors. These local
+measurements do not substitute for the CI platform matrix.
+
+The following measurements belong to the predecessor implementation. At candidate `d821ecf5a` on macOS 26.6.2 arm64 with Python 3.12.12:
 
 | Selection | Result | Duration |
 | --- | --- | --- |
@@ -96,7 +111,7 @@ The completed local qualification at the integration tip also produced:
 | `make gates` | 2,341 passed, 1 skipped, 1 existing xfail |
 | Static checks | Ruff and pre-commit passed; mypy passed 479 modules |
 
-The portable registry contains **105 Web and 69 Android cases**. The separate
+At that predecessor candidate, the portable registry contained **105 Web and 69 Android cases**. The separate
 curl registry contains **10 Web cases**. These are local measurements. Remote CI
 and the full compatibility matrix were still pending when this result was
 recorded, so this document does not claim they are green.
@@ -168,7 +183,7 @@ channels, native curl handles, and temporary publication paths. A secondary
 cleanup error is recorded by type and must not replace an original exception,
 cancellation, `KeyboardInterrupt`, or `SystemExit`.
 
-The portable CI lane must select at least one full 174-case deck. The curl job
+The portable CI lane determines the registry size and selects at least one full deck. The curl job
 installs `impersonate` and selects all 10 curl cases. Ordinary Python/OS jobs run
 the portable integration coverage. Local macOS results do not replace Ubuntu or
 compatibility results.
@@ -191,7 +206,7 @@ it does not render routes or upload IDs.
 
 All substitutions are private and default-preserving. They are captured during
 synchronous construction and remain instance-owned across awaits, close, and
-reopen. No scenario patches a process-global production binding or environment
+reopen. No concurrent in-process scenario patches a process-global production binding or environment
 variable across an await.
 
 | Path | Production owner and captured seam |
@@ -260,8 +275,16 @@ tests and the stress runner use those same functions.
 | R12 | `android_drive.py` | Real multipart stage body and generated AddSources/GetProject replies. |
 | R13 | `web_connections.py`, `curl_scenarios.py`, `curl_routing.py` | Keepalive/restart/slow consumers and the separate native curl registry. |
 | R14 | `adapter_scenarios.py`, `adapter_lifecycle.py`, `adapter_listener.py` | REST/MCP/CLI mapping and live downstream-disconnect ownership. |
+| Local persistence | `web_persistence.py`, `auth_persistence_worker.py` | Owner-local audio/report failures; isolated atomic auth failure and cancellation/reopen sequence. |
+| Continuous progress | `web_slow_responses.py` | Real elapsed operation deadlines despite continuous HTTPX response progress. |
+| Process death, pytest-only | `process_death.py`, `process_death_worker.py` | Parent-owned kill/restart, filesystem/lock state, commit journal and read-only reconciliation. |
+| Contradictory success | `web_consistency.py`, `android_consistency.py` | Missing IDs, incomplete empty lookup, media readiness, stale verified readback and actual pagination. |
+| Resource saturation | `web_saturation.py` | Actual small transport pool and library permit, repeated baseline restoration. |
+| Protocol bounds | `web_protocol.py`, `android_protocol.py` | Decoded/cumulative caps, first-crossing abort, gzip, lengths and large fragmented frame. |
+| Stored-auth startup, pytest-only | `mcp_auth_startup_worker.py`, `mcp_startup_cleanup.py` | Real stored credentials, local issuance, stdio/HTTP discovery and shared opening ownership. |
 
-Portable registration totals 105 Web and 69 Android cases. The Web registry
+Portable registration includes the expansion families below; use `--list-scenarios`
+for the exact current deck. The Web registry
 includes 14 upload, 30 download, 7 chat, 4 connection, 4 concurrency, 8 workflow,
 9 adapter, and the baseline/resilience cases. Android includes 15 direct upload,
 30 download, 13 Drive, 2 added resilience, and 9 predecessor cases.
@@ -570,6 +593,93 @@ Sensitivity checks restored unsafe unlink handling (both cleanup cases failed at
 `primary_io_error`), delayed the operation timer (both slow-response cases failed at
 `aggregate_deadline`), and logged a cookie-write exception's text (both auth cases
 failed at `logs_exclude_secrets`). Production code was restored after each probe.
+
+### Process termination, pytest-only
+
+`test_process_death.py` runs three parent-owned child processes at observed
+boundaries: complete credential staging before atomic replacement, complete public
+audio staging before publication, and a source-upload commit before acknowledgment.
+The service and commit journal remain in the parent. SIGKILL on POSIX and
+TerminateProcess on Windows do not execute cooperative finalizers.
+
+The storage case observes the actual lock contended before termination and available
+afterward. Old credential/destination bytes remain intact; a fresh child succeeds
+while the orphan staging file still exists. Orphans are explicit and removed by the
+parent fixture afterward. Upload restart only lists reconciliation candidates:
+it records the prior caller outcome as unobserved, with no durable receipt or
+automatic replay promise. Exact dispatches and one parent-observed commit exclude
+a duplicate mutation.
+
+These reuse atomic/storage units and the R3/R5 upload/audio fixtures. Each child
+boundary/restart has an 8-second watchdog; kill and component cleanup have 3-second
+budgets, under a 25-second scenario watchdog. The separate `process-death` CI lane
+runs all three cases on Linux, macOS, and Windows. This is process-death evidence,
+not power-loss durability or an orphan-sweeping guarantee. Deliberately truncating
+the destination before replacement makes the preservation checks fail.
+
+### Inconsistent successful application responses
+
+| Registered probe | Existing contract and new evidence |
+| --- | --- |
+| `consistency_missing_generation_id` | Empty-ID kickoff raises `DecodingError` with UNKNOWN commitment, never invents a poll prerequisite, and a later generation completes. Reuses R10 generation workflow/decoder fixtures. |
+| `consistency_empty_incomplete_lookup` | Empty studio plus failed notes remains UNKNOWN; strict lookup rejects authoritative absence; complete empty reads recover to MISSING. Extends the nonempty partial-lookup case in R11. |
+| `consistency_completed_without_media` | Known upstream ordering: completed status before media is still in-progress. The next poll reaches `media-ready` before completion, then release completes; polls and owned tasks settle. Reuses artifact polling units. |
+| `consistency_stale_collection_readback` | Android rename commits once but reads stale data; verification raises `DecodingError`, and a fresh read reconciles the committed name. Web does not promise this verification. Android's exception metadata remains UNKNOWN; the independent service journal establishes commitment. |
+| `consistency_repeated_chat_token` | Real Android ListChatTurns stops after two repeated-token pages and recovers on a subsequent read. Uses generated protobuf schemas and the existing pagination guard, not invented Web pagination. |
+
+Missing identity, stale data, and token cycles are adversarial contract probes;
+completed-before-media is the documented upstream ordering. Sensitivity mutations
+that accepted an empty ID, promoted an incomplete miss, skipped media readiness,
+skipped write verification, or removed the token-cycle guard each failed their
+named invariant. No retry or public compatibility policy was changed.
+
+### Resource saturation and recovery
+
+`saturation_transport_pool` uses a real HTTPX pool of one connection; the distinct
+`saturation_library_permit` uses one library RPC permit with a larger pool. Each
+runs three cycles on the same client: hold active work, observe a queued mutation,
+cancel it before dispatch, expire another queued operation, cancel the active
+caller, and observe a surviving caller and healthy probe succeed. The 0.4-second
+pool timeout is distinct from the explicit 0.8-second operation deadline for the
+library queue; raw Web admission does not promise its own total queue timeout.
+
+Every cycle returns transport connections/requests, server writers, admission
+counts, task depths, settlement tasks, and permits to the observed baseline.
+Nine reads and zero mutations are permitted. Existing R7/R8 concurrency and R13
+connection cases remain in the deck; this adds actual pool contention and repeated
+resource recovery. No system-wide descriptor exhaustion is attempted. A duplicate
+permit-release mutation fails the first cycle's resource-baseline check.
+
+### Protocol limits and framing
+
+Web chat probes exercise decoded response bytes immediately below, at, and above
+the supported instance cap; Android probes exercise cumulative serialized protobuf
+bytes, with each individual message smaller than its cap. A separate Web suffix-gate
+case requires rejection on the first crossing receive chunk while a substantial
+response suffix remains held. Guarding only after the full body would fail this
+case. Caps are checked after a receive chunk/message: they are not a strict
+pre-decompression allocation limit.
+
+Real HTTPX gzip decoding covers valid content, CRC corruption, and decoded-size
+limit enforcement. Invalid Content-Length projects a network error, and a large
+valid multibyte application frame reassembles over finite incremental delivery.
+Existing R5 truncation and R6 fragmented UTF-8 cases remain the framing-loss
+coverage. Exact dispatch counts exclude replay, response contexts/channels settle,
+and the same public chat API recovers on the same client. Generated/adversarial
+fixtures do not claim that every anomaly has been observed upstream. Disabling each
+cap guard or restoring compressed headers after rebuffering fails the corresponding
+regressions.
+
+### Deterministic persistence sequence, pytest-only
+
+A bounded sequence composes failed persistence with an authenticated request
+cancelled at `cancel-read`, close while saving still fails, same-client reopen,
+and fault removal. Failed saves cannot advance the canonical baseline/order; the
+old transport closes before the new generation opens. A later successful refresh
+advances persistence and a fresh reader observes the new cookie. Four requests,
+zero remote commits, and synthetic-secret checks cover the whole sequence.
+Advancing the baseline on failed merge makes this regression fail. This is one
+deterministic composition, not an exhaustive state-space exploration.
 
 ### Stored-auth MCP startup, pytest-only
 

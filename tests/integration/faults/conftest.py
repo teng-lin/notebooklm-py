@@ -10,6 +10,9 @@ from tests._fault_server.environment import isolated_environment
 
 _SUBPROCESS_SCENARIOS = frozenset(
     {
+        "storage_before_replace",
+        "download_before_publish",
+        "commit_before_ack",
         "adapter_cli_ambiguous_create",
         "adapter_cli_transient_read",
         "adapter_mcp_chat_start_disconnect",

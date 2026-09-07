@@ -244,3 +244,24 @@ BUDGETS = {
         "max_commits": 0,
     },
 }
+
+
+PLANS = {
+    "consistency_missing_generation_id": (
+        ("kickoff:200+empty-id", "decode-error:no-poll", "kickoff:valid", "poll:completed"),
+        1,
+    ),
+    "consistency_empty_incomplete_lookup": (
+        ("studio:empty+notes:503", "strict-lookup:empty+503", "lookup:empty+empty"),
+        1,
+    ),
+    "consistency_completed_without_media": (
+        (
+            "poll:completed-without-media",
+            "poll:media-ready@gate",
+            "release:completed",
+            "poll:recovery",
+        ),
+        1,
+    ),
+}

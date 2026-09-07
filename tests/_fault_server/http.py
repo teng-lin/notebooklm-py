@@ -162,14 +162,18 @@ class RequestRecord:
 class LogicalHostTransport(httpx.AsyncBaseTransport):
     """Keep logical URL semantics while connecting only to a local server."""
 
-    def __init__(self, routes: Mapping[str, tuple[str, int]]) -> None:
+    def __init__(
+        self, routes: Mapping[str, tuple[str, int]], *, limits: httpx.Limits | None = None
+    ) -> None:
         self._routes = dict(routes)
         for logical_host, (physical_host, physical_port) in self._routes.items():
             if not logical_host or not ipaddress.ip_address(physical_host).is_loopback:
                 raise ValueError("fault transport routes must target numeric loopback addresses")
             if not 1 <= physical_port <= 65535:
                 raise ValueError("fault transport route port is invalid")
-        self._inner = httpx.AsyncHTTPTransport(proxy=None, trust_env=False)
+        self._inner = httpx.AsyncHTTPTransport(
+            proxy=None, trust_env=False, limits=limits or httpx.Limits()
+        )
 
     def retarget(self, logical_host: str, target: tuple[str, int]) -> None:
         """Redirect one logical host between attempts on this transport instance."""
@@ -301,7 +305,9 @@ class HttpFaultServer:
         """Factory compatible with the production kernel construction seam."""
         if "transport" in kwargs:
             raise TypeError("fault client factory owns the transport")
-        kwargs["transport"] = LogicalHostTransport(dict.fromkeys(self._hosts, self.address))
+        kwargs["transport"] = LogicalHostTransport(
+            dict.fromkeys(self._hosts, self.address), limits=kwargs.get("limits")
+        )
         kwargs["trust_env"] = False
         return httpx.AsyncClient(**kwargs)
 

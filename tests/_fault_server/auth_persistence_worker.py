@@ -75,9 +75,32 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
     result.record(
         "plan",
         required_checks=list(required),
-        faults=[variant],
+        faults=(
+            [
+                "refresh:successful-cookie+failed-save",
+                "read:cancel-read@gate",
+                "cancel:read",
+                "close:save-still-fails",
+                "reopen:same-client",
+                "remove:save-fault",
+                "refresh:persist",
+                "fresh-reader+healthy-read",
+            ]
+            if sequence
+            else [
+                "refresh:successful-cookie",
+                f"atomic-storage:{variant}-fails",
+                "remove:save-fault",
+                "refresh:persist",
+                "fresh-reader+healthy-read",
+            ]
+        ),
+        gates=["cancel-read"] if sequence else [],
+        request_limit=4 if sequence else 3,
+        commit_limit=0,
         operation_timeout=8,
-        cleanup_timeout=3,
+        cleanup_step_timeout=3,
+        child_watchdog=35,
         pytest_only=True,
     )
     storage = directory / "storage_state.json"
@@ -151,12 +174,13 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
         with patch.object(web, "synthetic_auth", return_value=auth):
             client = web.build_fault_client(server, timeout=3, server_error_max_retries=0)
         await client.__aenter__()
-        persistence = client._web_runtime.cookie_persistence
-        key = ProfileStore(storage).ordering_key
-        initial_state = persistence._states[key]
-        baseline_before = initial_state.baseline
-        sequence_before = initial_state.last_applied_sequence
-        old_transport = client._web_runtime.kernel.http_client
+        if sequence:
+            persistence = client._web_runtime.cookie_persistence
+            key = ProfileStore(storage).ordering_key
+            initial_state = persistence._states[key]
+            baseline_before = initial_state.baseline
+            sequence_before = initial_state.last_applied_sequence
+            old_transport = client._web_runtime.kernel.http_client
         target, name, replacement = (
             (json, "dump", failed_dump)
             if variant == "write"
