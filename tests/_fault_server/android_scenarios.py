@@ -15,7 +15,24 @@ from notebooklm.outcomes import CommitState
 from notebooklm.raw import GrpcUnaryStreamMethod
 
 from .android import SyntheticOAuthMinter, build_android_client
-from .common import ScenarioResult
+from .android_cleanup import settle_actions
+from .android_downloads import SCENARIOS as DOWNLOAD_SCENARIOS
+from .android_downloads import run_scenario as run_download_scenario
+from .android_drive import SCENARIOS as DRIVE_SCENARIOS
+from .android_drive import run_scenario as run_drive_scenario
+from .android_resilience_scenarios import (
+    IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
+)
+from .android_resilience_scenarios import (
+    PLANS as RESILIENCE_PLANS,
+)
+from .android_resilience_scenarios import REQUIRED_CHECKS as RESILIENCE_REQUIRED_CHECKS
+from .android_resilience_scenarios import (
+    SCENARIOS as RESILIENCE_SCENARIOS,
+)
+from .android_transfers import SCENARIOS as TRANSFER_SCENARIOS
+from .android_transfers import run_scenario as run_transfer_scenario
+from .common import ScenarioFailure, ScenarioResult
 from .grpc import (
     CREATE_PROJECT,
     GENERATE_STREAMED,
@@ -40,7 +57,10 @@ SCENARIOS = (
     "rate_limit",
     "stream_auth",
     "unavailable",
+    *RESILIENCE_SCENARIOS,
 )
+
+SCENARIOS = tuple(sorted((*SCENARIOS, *TRANSFER_SCENARIOS, *DOWNLOAD_SCENARIOS, *DRIVE_SCENARIOS)))
 
 _FAULTS = {
     "auth": ("GetProject:UNAUTHENTICATED->reply", "GetProject:UNAUTHENTICATED->UNAUTHENTICATED"),
@@ -67,6 +87,110 @@ _FAULTS = {
     ),
     "unavailable": ("GetProject:UNAVAILABLE->reply", "GetProject:UNAVAILABLE exhaustion"),
 }
+_FAULTS.update(RESILIENCE_PLANS)
+
+
+_REQUIRED_CHECKS: dict[str, list[str]] = {
+    "auth": [
+        "auth_replays_once",
+        "repeated_auth_bounded",
+        "repeated_auth_raises",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+        "three_mints",
+    ],
+    "auth_concurrent": [
+        "concurrent_initial_token",
+        "concurrent_replay_token",
+        "refresh_mint_coalesced",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+    ],
+    "commit_lost_response": [
+        "lost_response_raises",
+        "mutation_commit_unknown",
+        "mutation_never_replayed",
+        "one_committed_create",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+    ],
+    "deadline_and_cancellation": [
+        "aclose_cancels_exact_stream",
+        "all_channels_closed",
+        "caller_cancels_exact_unary",
+        "cancellation_propagates",
+        "close_cancels_active_call",
+        "close_cancels_exact_unary",
+        "deadline_and_cancel_are_one_attempt",
+        "deadline_cancels_exact_stream",
+        "deadline_cancels_exact_unary",
+        "deadline_raises",
+        "final_close_settles_admission",
+        "forced_close_settles_admission",
+        "forced_close_shuts_channel",
+        "fresh_channel_after_reopen",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+        "stream_deadline_and_cancel_release",
+        "stream_deadline_raises",
+    ],
+    "minter_failure": [
+        "mint_failure_bounded",
+        "mint_failure_never_reaches_server",
+        "mint_failure_raises",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+    ],
+    "public_flows": [
+        "chat_decodes",
+        "create_decodes",
+        "get_decodes",
+        "initial_bearer",
+        "production_target",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+    ],
+    "rate_limit": [
+        "scripts_consumed_exhaustion",
+        "server_handlers_released_exhaustion",
+        "server_shutdown_clean_exhaustion",
+        "rate_limit_exhaustion_raises",
+        "rate_limit_exhausts_budget",
+        "rate_limit_retries_once",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+    ],
+    "stream_auth": [
+        "feature_and_raw_stream_never_replay",
+        "next_unary_gets_fresh_bearer",
+        "raw_stream_auth_raises_after_partial",
+        "raw_stream_delivers_partial",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+        "stream_auth_raises",
+        "two_single_attempt_streams",
+    ],
+    "unavailable": [
+        "scripts_consumed_exhaustion",
+        "server_handlers_released_exhaustion",
+        "server_shutdown_clean_exhaustion",
+        "scripts_consumed_primary",
+        "server_handlers_released_primary",
+        "server_shutdown_clean_primary",
+        "unavailable_exhaustion_raises",
+        "unavailable_exhausts_budget",
+        "unavailable_retries_once",
+    ],
+}
+_REQUIRED_CHECKS.update(RESILIENCE_REQUIRED_CHECKS)
 
 
 def _result(name: str, operation_id: str, supplied: ScenarioResult | None) -> ScenarioResult:
@@ -80,6 +204,16 @@ def _result(name: str, operation_id: str, supplied: ScenarioResult | None) -> Sc
         faults=_FAULTS[name],
         cohort_ids=[operation_id],
         phases=["assemble", "open", "call", "cleanup"],
+        required_checks=_REQUIRED_CHECKS[name],
+        budgets={
+            "rpc_timeout_s": 5.0
+            if name in {"unavailable", "rate_limit"}
+            else 0.5
+            if name == "deadline_and_cancellation"
+            else 2.0,
+            "stream_deadline_s": 0.2 if name == "deadline_and_cancellation" else None,
+            "cleanup_timeout_s": 2.0,
+        },
     )
     return result
 
@@ -95,14 +229,22 @@ def _authorizations(server: GrpcFaultServer, method: str) -> list[str]:
 async def _run_server(
     result: ScenarioResult,
     setup: Callable[[GrpcFaultServer], Awaitable[None]],
+    *,
+    phase: str = "primary",
 ) -> ScenarioResult:
     server = GrpcFaultServer()
+    primary: BaseException | None = None
     try:
-        async with server:
-            await setup(server)
-            await server.wait_for_idle()
-            server.assert_consumed()
+        await server.__aenter__()
+        await setup(server)
+        await server.wait_for_idle()
+        server.assert_consumed()
+        result.require(f"scripts_consumed_{phase}", True)
+    except BaseException as exc:
+        primary = exc
+        raise
     finally:
+        errors = await settle_actions([lambda: server.__aexit__(None, None, None)])
         result.record(
             "grpc_journal",
             methods=[request.method.rpartition("/")[2] for request in server.requests],
@@ -113,11 +255,31 @@ async def _run_server(
         )
         result.record(
             "cleanup",
+            phase=phase,
             requests=len(server.requests),
             cancellations=[request.method.rpartition("/")[2] for request in server.cancellations],
             handler_errors=server.handler_errors,
+            primary_error=None if primary is None else type(primary).__name__,
+            cleanup_error_types=[type(error).__name__ for error in errors],
         )
-        result.require(f"server_handlers_released_{len(result.events)}", not server._active)
+        # Phase-specific names keep both retry and exhaustion cleanup mandatory.
+        check_error: ScenarioFailure | None = None
+        for label, passed in (
+            (f"server_handlers_released_{phase}", not server._active),
+            (f"server_shutdown_clean_{phase}", not errors),
+        ):
+            try:
+                result.require(label, passed)
+            except ScenarioFailure as exc:
+                check_error = exc
+        for error in errors:
+            if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                raise error
+        if primary is None:
+            if errors:
+                raise errors[0]
+            if check_error is not None:
+                raise check_error
     return result
 
 
@@ -164,13 +326,14 @@ async def _unavailable(result: ScenarioResult) -> None:
                 await client.notebooks.get("notebook-1")
             except ServerError:
                 pass
+                result.require("unavailable_exhaustion_raises", True)
             else:
                 result.require("unavailable_exhaustion_raises", False)
         result.require(
             "unavailable_exhausts_budget", len(_authorizations(server, GET_PROJECT)) == 2
         )
 
-    await _run_server(result, exhaustion)
+    await _run_server(result, exhaustion, phase="exhaustion")
 
 
 async def _rate_limit(result: ScenarioResult) -> None:
@@ -195,11 +358,12 @@ async def _rate_limit(result: ScenarioResult) -> None:
                 await client.notebooks.get("notebook-1")
             except RateLimitError:
                 pass
+                result.require("rate_limit_exhaustion_raises", True)
             else:
                 result.require("rate_limit_exhaustion_raises", False)
         result.require("rate_limit_exhausts_budget", len(_authorizations(server, GET_PROJECT)) == 2)
 
-    await _run_server(result, exhaustion)
+    await _run_server(result, exhaustion, phase="exhaustion")
 
 
 async def _auth(result: ScenarioResult) -> None:
@@ -218,6 +382,7 @@ async def _auth(result: ScenarioResult) -> None:
                 await client.notebooks.get("notebook-1")
             except AuthError:
                 pass
+                result.require("repeated_auth_raises", True)
             else:
                 result.require("repeated_auth_raises", False)
         auth = _authorizations(server, GET_PROJECT)
@@ -267,6 +432,7 @@ async def _minter_failure(result: ScenarioResult) -> None:
                 await client.notebooks.get("notebook-1")
             except AuthError:
                 pass
+                result.require("mint_failure_raises", True)
             else:
                 result.require("mint_failure_raises", False)
         result.require("mint_failure_never_reaches_server", not server.requests)
@@ -297,6 +463,7 @@ async def _stream_auth(result: ScenarioResult) -> None:
                 await client.chat.ask("notebook-1", "Question?")
             except AuthError:
                 pass
+                result.require("stream_auth_raises", True)
             else:
                 result.require("stream_auth_raises", False)
             raw_stream: AsyncIterator[chat_pb2.GenerateFreeFormStreamedResponse] = (
@@ -312,6 +479,7 @@ async def _stream_auth(result: ScenarioResult) -> None:
                 await anext(raw_stream)
             except AuthError:
                 pass
+                result.require("raw_stream_auth_raises_after_partial", True)
             else:
                 result.require("raw_stream_auth_raises_after_partial", False)
             await client.notebooks.get("notebook-1")
@@ -343,6 +511,7 @@ async def _commit_lost_response(result: ScenarioResult) -> None:
                 await client.notebooks.create("commit once")
             except ServerError as caught:
                 error = caught
+                result.require("lost_response_raises", True)
             else:
                 result.require("lost_response_raises", False)
         result.require("one_committed_create", server.state[CREATE_PROJECT] == ["commit once"])
@@ -385,6 +554,7 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
                 await client.notebooks.get("notebook-1")
             except RPCTimeoutError:
                 pass
+                result.require("deadline_raises", True)
             else:
                 result.require("deadline_raises", False)
             deadline_request = server.requests[-1]
@@ -398,6 +568,7 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
                 await blocked
             except asyncio.CancelledError:
                 pass
+                result.require("cancellation_propagates", True)
             else:
                 result.require("cancellation_propagates", False)
             await server.wait_for_cancellation(cancelled_request)
@@ -411,6 +582,7 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
                 await anext(timed_stream)
             except RPCTimeoutError:
                 pass
+                result.require("stream_deadline_raises", True)
             else:
                 result.require("stream_deadline_raises", False)
             stream_deadline_request = server.requests[-1]
@@ -434,6 +606,7 @@ async def _deadline_and_cancellation(result: ScenarioResult) -> None:
                 await closing
             except asyncio.CancelledError:
                 pass
+                result.require("close_cancels_active_call", True)
             else:
                 result.require("close_cancels_active_call", False)
             await server.wait_for_cancellation(close_request)
@@ -513,6 +686,12 @@ async def run_scenario(
 ) -> ScenarioResult:
     """Run one fresh Android fault cohort and preserve its evidence trace."""
 
+    if name in DRIVE_SCENARIOS:
+        return await run_drive_scenario(name, operation_id=operation_id, result=result)
+    if name in DOWNLOAD_SCENARIOS:
+        return await run_download_scenario(name, operation_id=operation_id, result=result)
+    if name in TRANSFER_SCENARIOS:
+        return await run_transfer_scenario(name, operation_id=operation_id, result=result)
     evidence = _result(name, operation_id, result)
     handlers: dict[str, Callable[[ScenarioResult], Awaitable[None]]] = {
         "public_flows": _public_flows,
@@ -525,6 +704,7 @@ async def run_scenario(
         "commit_lost_response": _commit_lost_response,
         "deadline_and_cancellation": _deadline_and_cancellation,
     }
+    handlers.update(RESILIENCE_IMPLEMENTATIONS)
     try:
         await handlers[name](evidence)
     finally:

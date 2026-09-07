@@ -97,6 +97,7 @@ class _Owner:
         rpc_method: str | None = None,
         refresh_budget: Any = None,
         retry_deadline: Any = None,
+        retry_budget: Any = None,
         read_timeout: float | None = None,
         expected_epoch: int | None = None,
         epoch_observer: Callable[[int], None] | None = None,
@@ -113,6 +114,7 @@ class _Owner:
             "headers": headers,
             "refresh_budget": refresh_budget,
             "retry_deadline": retry_deadline,
+            "retry_budget": retry_budget,
             "read_timeout": read_timeout,
             "expected_epoch": expected_epoch,
         }
@@ -279,6 +281,7 @@ async def test_constructor_injected_decode_response_drives_executor(monkeypatch)
         rpc_method: str | None = None,
         refresh_budget: Any = None,
         retry_deadline: Any = None,
+        retry_budget: Any = None,
         read_timeout: float | None = None,
         expected_epoch: int | None = None,
         epoch_observer: Callable[[int], None] | None = None,
@@ -766,6 +769,39 @@ async def test_decode_time_auth_retry_threads_retry_deadline_to_transport() -> N
 
 
 @pytest.mark.asyncio
+async def test_decode_time_auth_retry_threads_retry_counters_to_transport() -> None:
+    """A decoded-auth recursion keeps the 429/5xx counters for the logical call."""
+    from notebooklm._runtime.retry_budget import RetryBudget
+
+    async def refresh_callback() -> object:
+        return object()
+
+    owner = _Owner(refresh_callback=refresh_callback)
+    decode_calls = 0
+
+    def decode(
+        _: str, __: str, *, allow_null: bool = False, raise_on_null_status: bool = False
+    ) -> Any:
+        nonlocal decode_calls
+        decode_calls += 1
+        if decode_calls == 1:
+            raise RPCError("authentication expired")
+        return {"ok": True}
+
+    result = await _executor(
+        owner,
+        decode_response=decode,
+        is_auth_error=lambda exc: True,
+    )._execute_once(RPCMethod.LIST_NOTEBOOKS, [], "/", False, False)
+
+    assert result == {"ok": True}
+    budgets = [call["retry_budget"] for call in owner.perform_calls]
+    assert len(budgets) == 2
+    assert all(isinstance(budget, RetryBudget) for budget in budgets)
+    assert budgets[0] is budgets[1]
+
+
+@pytest.mark.asyncio
 async def test_decode_time_auth_retry_skips_when_shared_budget_already_spent() -> None:
     """Issue #1205: a budget already consumed (e.g. by the HTTP-status layer)
     suppresses the decode-time refresh.
@@ -898,6 +934,7 @@ async def test_constructor_injected_sleep_drives_executor(monkeypatch) -> None:
         raise_on_null_status: bool = False,
         _refresh_budget: Any = None,
         _retry_deadline: Any = None,
+        _retry_budget: Any = None,
         _resource_epoch: int | None = None,
     ) -> dict[str, bool]:
         assert method is RPCMethod.LIST_NOTEBOOKS

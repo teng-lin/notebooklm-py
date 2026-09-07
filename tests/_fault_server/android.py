@@ -11,16 +11,19 @@ from typing import Any
 from unittest.mock import patch
 
 import grpc
+import httpx
 
 from notebooklm._android import assembly as android_assembly
 from notebooklm._android.auth import NOTEBOOKLM_OAUTH_SPEC
 from notebooklm._android.session import ANDROID_GRPC_TARGET, AndroidSession
 from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._auth.mint_service import MintedOAuthToken
+from notebooklm._http_client_factory import HttpClientFactories
 from notebooklm.auth import AuthTokens
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 from .grpc import GrpcFaultServer
+from .http import HttpFaultServer
 
 
 @dataclass
@@ -48,11 +51,11 @@ class SyntheticOAuthMinter:
         assert token.email == "fault@example.test"
         assert spec == NOTEBOOKLM_OAUTH_SPEC
         self.calls += 1
-        if self.error is not None:
-            raise self.error
         if self.block_after is not None and self.calls >= self.block_after:
             assert self.release is not None
             await self.release.wait()
+        if self.error is not None:
+            raise self.error
         value = self.tokens[min(self.calls - 1, len(self.tokens) - 1)]
         return MintedOAuthToken(value, int(time.time()) + 3600)
 
@@ -73,10 +76,13 @@ async def no_sleep(_seconds: float) -> None:
 def build_android_client(
     server: GrpcFaultServer,
     *,
-    timeout: float = 0.5,
+    timeout: float = 2.0,
     rate_limit_max_retries: int = 1,
     server_error_max_retries: int = 1,
     minter: SyntheticOAuthMinter | None = None,
+    http_server: HttpFaultServer | None = None,
+    upload_timeout: float | None = None,
+    http_client_factory: Callable[..., Any] | None = None,
     sleep: Callable[[float], Awaitable[Any]] = no_sleep,
 ) -> AndroidHarness:
     """Synchronously assemble a public client with its real bearer provider.
@@ -142,6 +148,12 @@ def build_android_client(
             sleep=sleep,
             master_token_reader=SyntheticMasterTokenReader(),
             oauth_minter=selected_minter,
+            upload_timeout=(httpx.Timeout(upload_timeout) if upload_timeout is not None else None),
+            http_client_factories=(
+                HttpClientFactories(httpx=http_client_factory or http_server.client_factory)
+                if http_server is not None
+                else None
+            ),
         )
     assert client._android_runtime is not None
     return AndroidHarness(

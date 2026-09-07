@@ -17,6 +17,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, cast
@@ -1218,6 +1219,76 @@ async def test_a_notebook_id_that_could_escape_the_upload_path_is_refused(
             rename_uploaded=cast(Any, None),
             finalize_uploaded=SourcesAPI._finalize_uploaded_file,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["success", "error", "cancel"])
+async def test_upload_operation_scope_keeps_its_task_and_receives_body_failure(
+    tmp_path: Path, outcome: str
+) -> None:
+    session, _bearer, pipeline = await _pipeline()
+    binding: ContextVar[str] = ContextVar("upload_test_scope", default="outside")
+    caller = asyncio.current_task()
+    exits: list[type[BaseException] | None] = []
+    failure = RuntimeError("upload failed") if outcome == "error" else asyncio.CancelledError()
+
+    @asynccontextmanager
+    async def operation_scope(label: str) -> AsyncIterator[_Lease]:
+        assert asyncio.current_task() is caller
+        token = binding.set(label)
+        try:
+            try:
+                yield _Lease(session.epoch)
+            except BaseException as error:
+                exits.append(type(error))
+                raise
+            else:
+                exits.append(None)
+        finally:
+            assert asyncio.current_task() is caller
+            binding.reset(token)
+
+    async def control_plane(*args: Any) -> tuple[str, str]:
+        assert binding.get() == "Android source upload"
+        if outcome != "success":
+            raise failure
+        return SOURCE_ID, "document.pdf"
+
+    async def finalize(*args: Any, **kwargs: Any) -> Any:
+        assert asyncio.current_task() is caller
+        assert binding.get() == "Android source upload"
+        return await SourcesAPI._finalize_uploaded_file(*args, **kwargs)
+
+    session.operation_scope = operation_scope  # type: ignore[method-assign]
+    pipeline._control_plane = control_plane  # type: ignore[method-assign]
+    try:
+        upload = pipeline.upload_file(
+            NOTEBOOK_ID,
+            _write_pdf(tmp_path),
+            None,
+            wait=False,
+            wait_timeout=1.0,
+            title=None,
+            on_progress=None,
+            register_tentative=_registers,
+            wait_until_registered=cast(Any, None),
+            wait_until_ready=cast(Any, None),
+            rename_uploaded=cast(Any, None),
+            finalize_uploaded=finalize,
+        )
+        if outcome == "success":
+            source = await upload
+            assert source.id == SOURCE_ID
+            assert exits == [None]
+        else:
+            with pytest.raises(type(failure)) as caught:
+                await upload
+            if outcome == "error":
+                assert caught.value is failure
+            assert exits == [type(failure)]
+        assert binding.get() == "outside"
+    finally:
+        await pipeline.close_resources()
 
 
 @pytest.mark.asyncio

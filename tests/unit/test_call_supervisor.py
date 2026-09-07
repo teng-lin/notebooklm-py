@@ -153,6 +153,49 @@ async def test_run_is_lazy_and_deadline_bounds_semaphore_queue() -> None:
 
 
 @pytest.mark.asyncio
+async def test_force_close_fences_an_already_queued_rpc_before_invoke() -> None:
+    supervisor = _supervisor()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    queued_invoked = False
+
+    async def hold(_lease: object) -> None:
+        first_entered.set()
+        await release_first.wait()
+
+    async def queued_body(_lease: object) -> None:
+        nonlocal queued_invoked
+        queued_invoked = True
+
+    first = asyncio.create_task(supervisor.run("first", "FIRST", None, hold))
+    await first_entered.wait()
+    queued = asyncio.create_task(supervisor.run("queued", "QUEUED", None, queued_body))
+
+    async def wait_until_queued() -> None:
+        while _active_generation(supervisor).in_flight < 2:
+            await asyncio.sleep(0)
+
+    try:
+        await asyncio.wait_for(wait_until_queued(), timeout=2.0)
+    except BaseException:
+        first.cancel()
+        queued.cancel()
+        await asyncio.gather(first, queued, return_exceptions=True)
+        raise
+
+    await supervisor.begin_closing(1)
+    release_first.set()
+    await first
+    with pytest.raises(RuntimeError, match="closing resource generation"):
+        await queued
+
+    assert queued_invoked is False
+    assert _active_generation(supervisor).in_flight == 0
+    assert supervisor._rpc_semaphore is not None
+    assert supervisor._rpc_semaphore._value == 1
+
+
+@pytest.mark.asyncio
 async def test_web_queue_is_unbounded_while_transport_deadline_bounds_queue() -> None:
     supervisor = _supervisor()
     first_entered = asyncio.Event()

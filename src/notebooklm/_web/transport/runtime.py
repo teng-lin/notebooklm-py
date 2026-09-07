@@ -71,6 +71,7 @@ from .middleware.context import (
     RPC_CONTEXT_READ_TIMEOUT,
     RPC_CONTEXT_REFRESH_BUDGET,
     RPC_CONTEXT_RESOURCE_EPOCH,
+    RPC_CONTEXT_RETRY_BUDGET,
     RPC_CONTEXT_RETRY_DEADLINE,
     RPC_CONTEXT_RPC_METHOD,
 )
@@ -87,6 +88,7 @@ if TYPE_CHECKING:
     from ..._idempotency import JournalEntry
     from ..._runtime.auth_refresh_retry import RefreshBudget
     from ..._runtime.call_supervisor import CallLease, CallSupervisor
+    from ..._runtime.retry_budget import RetryBudget
     from .kernel import Kernel
 
 
@@ -287,6 +289,7 @@ class RuntimeTransport(RequestPolicyOwner):
         rpc_method: str | None = None,
         refresh_budget: RefreshBudget | None = None,
         retry_deadline: RuntimeDeadline | None = None,
+        retry_budget: RetryBudget | None = None,
         read_timeout: float | None = None,
         max_response_bytes: int | None = None,
         disable_read_timeout_retries: bool = False,
@@ -301,6 +304,7 @@ class RuntimeTransport(RequestPolicyOwner):
             rpc_method=rpc_method,
             refresh_budget=refresh_budget,
             retry_deadline=retry_deadline,
+            retry_budget=retry_budget,
             read_timeout=read_timeout,
             max_response_bytes=max_response_bytes,
             disable_read_timeout_retries=disable_read_timeout_retries,
@@ -317,6 +321,7 @@ class RuntimeTransport(RequestPolicyOwner):
         rpc_method: str | None = None,
         refresh_budget: RefreshBudget | None = None,
         retry_deadline: RuntimeDeadline | None = None,
+        retry_budget: RetryBudget | None = None,
         read_timeout: float | None = None,
         max_response_bytes: int | None = None,
         disable_read_timeout_retries: bool = False,
@@ -400,6 +405,8 @@ class RuntimeTransport(RequestPolicyOwner):
         # ``_start_retry_deadline()`` (issue #1873).
         if retry_deadline is not None:
             context[RPC_CONTEXT_RETRY_DEADLINE] = retry_deadline
+        if retry_budget is not None:
+            context[RPC_CONTEXT_RETRY_BUDGET] = retry_budget
 
         # Snapshot/materialization historically ran before the outer Metrics
         # and Semaphore policies.  It must stay there for public accounting,

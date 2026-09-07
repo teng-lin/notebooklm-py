@@ -956,9 +956,11 @@ class AndroidUploadPipeline(EpochFenced):
         _validate_project_id(notebook_id)
         deadline = RuntimeDeadline.start(self._upload_timeout, monotonic=self._monotonic)
         state = _UploadState()
-        scope = self._transport.operation_scope("Android source upload")
-        lease = await await_with_deadline(scope.__aenter__(), deadline, on_timeout=TimeoutError)
-        try:
+        # Enter and exit task-local operation bindings in the same task. In
+        # Python 3.10/3.11, wait_for runs __aenter__ in a separate task, whose
+        # ContextVar tokens cannot be reset here. Admission performs no I/O;
+        # its elapsed time still consumes the control-plane deadline below.
+        async with self._transport.operation_scope("Android source upload") as lease:
             try:
                 source_id, filename = await await_with_deadline(
                     self._control_plane(
@@ -1026,8 +1028,6 @@ class AndroidUploadPipeline(EpochFenced):
                 wait_until_registered=_wait_until_registered,
                 rename_uploaded=_rename_uploaded,
             )
-        finally:
-            await scope.__aexit__(None, None, None)
 
     async def _control_plane(
         self,

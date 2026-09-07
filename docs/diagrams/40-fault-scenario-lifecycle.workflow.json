@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "One Fault Cohort: Execution, Evidence, and Cleanup",
+    "locale": "en",
+    "output": "docs/diagrams/40-fault-scenario-lifecycle.html",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "legend": { "mode": "hidden" },
+    "viewBox": [760, 360]
+  },
+  "lanes": [
+    { "id": "cohort", "label": "Cohort · Evidence · Bounded Cleanup" },
+    { "id": "interruption", "label": "Timeout / Cancellation", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "Predeclare", "fromCol": 0, "toCol": 1 },
+    { "id": "execute", "label": "Exercise the boundary", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "assess", "label": "Assess + preserve", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": [
+    "plan",
+    "dispatch",
+    "fault_gate",
+    "public_result",
+    "evidence_gate",
+    "report"
+  ],
+  "nodes": [
+    {
+      "id": "plan",
+      "lane": "cohort",
+      "col": 0,
+      "type": "database",
+      "label": "Seed + Plan",
+      "sublabel": "IDs + checks",
+      "width": 70
+    },
+    {
+      "id": "dispatch",
+      "lane": "cohort",
+      "col": 1,
+      "type": "messagebus",
+      "label": "Workers",
+      "sublabel": "bounded",
+      "width": 60
+    },
+    {
+      "id": "fault_gate",
+      "lane": "cohort",
+      "col": 2,
+      "type": "backend",
+      "label": "Fault Gate",
+      "sublabel": "real socket",
+      "width": 64
+    },
+    {
+      "id": "public_result",
+      "lane": "cohort",
+      "col": 3,
+      "type": "frontend",
+      "label": "Outcome",
+      "sublabel": "public API",
+      "width": 60
+    },
+    {
+      "id": "evidence_gate",
+      "lane": "cohort",
+      "col": 4,
+      "type": "security",
+      "label": "Evidence",
+      "sublabel": "two-sided",
+      "width": 60
+    },
+    {
+      "id": "report",
+      "lane": "cohort",
+      "col": 5,
+      "type": "external",
+      "label": "Report",
+      "sublabel": "after close",
+      "tag": "all checks",
+      "width": 64
+    },
+    {
+      "id": "partial_report",
+      "lane": "interruption",
+      "col": 4,
+      "type": "external",
+      "label": "Partial Report",
+      "sublabel": "bounded cleanup",
+      "tag": "incomplete ≠ pass",
+      "width": 100
+    }
+  ],
+  "edges": [
+    { "from": "plan", "to": "dispatch", "role": "main" },
+    { "from": "dispatch", "to": "fault_gate", "role": "main", "route": "up-channel", "fromSide": "top", "toSide": "top" },
+    { "from": "fault_gate", "to": "public_result", "label": "inject", "role": "main", "variant": "emphasis" },
+    { "from": "public_result", "to": "evidence_gate", "role": "main", "route": "up-channel", "fromSide": "top", "toSide": "top" },
+    { "from": "fault_gate", "to": "evidence_gate", "label": "dispatch + commit", "role": "branch", "route": "bottom-channel", "fromSide": "bottom", "toSide": "bottom" },
+    { "from": "evidence_gate", "to": "report", "label": "checks", "role": "main" },
+    { "from": "fault_gate", "to": "partial_report", "label": "timeout / cancel", "role": "error", "variant": "security" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Verified Contract and Sources · acb7fa96d",
+      "items": [
+        "Seeded assignments and bounded workers: scripts/stress_fault_server.py",
+        "Evidence contract: tests/_fault_server/common.py · docs/fault-injection.md",
+        "Real socket gates and independent dispatch/commit evidence: tests/_fault_server/web_scenarios.py · tests/_fault_server/http.py",
+        "Cleanup is bounded and secondary errors preserve the primary failure; recovery is checked only where defined; incomplete evidence cannot pass"
+      ]
+    }
+  ]
+}

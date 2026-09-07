@@ -20,6 +20,7 @@ def isolated_environment() -> Iterator[None]:
                 NOTEBOOKLM_HOME=directory,
                 NOTEBOOKLM_PROFILE="agent-fault-stress",
                 NOTEBOOKLM_DISABLE_KEEPALIVE_POKE="1",
+                NOTEBOOKLM_SERVER_TOKEN="adapter-fault-token",
             )
             yield
         finally:

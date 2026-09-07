@@ -25,6 +25,7 @@ from notebooklm.types import RpcTelemetryEvent
 
 if TYPE_CHECKING:
     from notebooklm._android.auth import MasterTokenReader, OAuthMinter
+    from notebooklm._http_client_factory import HttpClientFactories
     from notebooklm.types import ConnectionLimits
 
 
@@ -42,6 +43,7 @@ def build_client_shell_for_tests(
     limits: ConnectionLimits | None = None,
     max_concurrent_uploads: int | None = DEFAULT_MAX_CONCURRENT_UPLOADS,
     max_concurrent_rpcs: int | None = DEFAULT_MAX_CONCURRENT_RPCS,
+    upload_timeout: httpx.Timeout | None = None,
     on_rpc_event: Callable[[RpcTelemetryEvent], object] | None = None,
     cookie_saver: CookieSaver | None = None,
     cookie_rotator: CookieRotator | None = None,
@@ -52,6 +54,7 @@ def build_client_shell_for_tests(
     sleep: Callable[[float], Awaitable[Any]] | None = None,
     is_auth_error: Callable[[Exception], bool] | None = None,
     async_client_factory: Callable[..., httpx.AsyncClient] | None = None,
+    http_client_factories: HttpClientFactories | None = None,
     master_token_reader: MasterTokenReader | None = None,
     oauth_minter: OAuthMinter | None = None,
 ) -> NotebookLMClient:
@@ -103,6 +106,7 @@ def build_client_shell_for_tests(
         limits=limits,
         max_concurrent_uploads=max_concurrent_uploads,
         max_concurrent_rpcs=max_concurrent_rpcs,
+        upload_timeout=upload_timeout,
         on_rpc_event=on_rpc_event,
         cookie_saver=cookie_saver,
         cookie_rotator=cookie_rotator,
@@ -126,6 +130,7 @@ def build_client_shell_for_tests(
         sleep=sleep,
         is_auth_error=is_auth_error,
         async_client_factory=async_client_factory,
+        http_client_factories=http_client_factories,
         **extra_android_credentials,
     )
     return client

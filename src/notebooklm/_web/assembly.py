@@ -129,6 +129,7 @@ def _assemble_web_backend(
         cookie_rotator=hooks.cookie_rotator if hooks is not None else None,
         seams=seams,
         composed=deps.composed,
+        http_client_factories=deps.http_client_factories,
     )
     sources = WebSourcesAPI(
         web.executor,
@@ -149,6 +150,7 @@ def _assemble_web_backend(
     assets = WebAssetDownloadService(
         supervisor=shared.call_supervisor,
         cookies=lambda epoch: web.kernel.get_cookies(expected_epoch=epoch),
+        http_client_factories=deps.http_client_factories,
     )
     artifacts = WebArtifactsAPI(
         rpc=web.executor,

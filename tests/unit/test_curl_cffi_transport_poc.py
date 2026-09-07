@@ -810,3 +810,36 @@ async def test_stream_upload_sends_the_session_cookie_jar_for_that_url(server, t
         assert "SESSION=value" in response.headers["X-Echo-Cookie"]
     finally:
         await client.aclose()
+
+
+async def test_private_factories_capture_session_and_standalone_upload(server, tmp_path):
+    """Both real curl resource paths retain their construction collaborators."""
+    from curl_cffi import Curl
+    from curl_cffi.requests import AsyncSession
+
+    sessions = []
+    handles = []
+
+    def session_factory(**kwargs):
+        session = AsyncSession(**kwargs)
+        sessions.append(session)
+        return session
+
+    def curl_factory():
+        handle = Curl()
+        handles.append(handle)
+        return handle
+
+    source = tmp_path / "factory.txt"
+    source.write_bytes(b"factory-body")
+    async with CurlCffiAsyncClient(
+        session_factory=session_factory, curl_factory=curl_factory
+    ) as client:
+        assert (await client.get(server)).status_code == 200
+        response = await client.stream_upload(
+            f"{server}/upload", source, total_bytes=12, headers={}
+        )
+        assert response.status_code == 200
+    assert len(sessions) == 1
+    assert len(handles) == 1
+    assert handles[0]._curl is None

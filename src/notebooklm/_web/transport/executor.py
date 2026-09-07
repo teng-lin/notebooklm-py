@@ -29,6 +29,7 @@ from ..._logging import get_request_id, reset_request_id, set_request_id
 from ..._request_policy import RequestPolicyOwner, request_scoped
 from ..._runtime.auth_refresh_retry import RefreshBudget, refresh_and_count
 from ..._runtime.operation_context import adopt_operation_journal_entry
+from ..._runtime.retry_budget import RetryBudget
 from ...exceptions import DecodingError, NotebookLMError
 from ...outcomes import CommitState, RecoveryAction
 from ...rpc import (
@@ -149,6 +150,7 @@ class RpcExecutor(RequestPolicyOwner):
         raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
+        _retry_budget: RetryBudget | None = None,
         _resource_epoch: int | None = None,
     ) -> Any:
         """Bind an active workflow's conservative entry around one logical RPC."""
@@ -180,6 +182,7 @@ class RpcExecutor(RequestPolicyOwner):
                     raise_on_null_status=raise_on_null_status,
                     _refresh_budget=_refresh_budget,
                     _retry_deadline=_retry_deadline,
+                    _retry_budget=_retry_budget,
                     _resource_epoch=_resource_epoch,
                 )
         return await self._rpc_call_bound(
@@ -194,6 +197,7 @@ class RpcExecutor(RequestPolicyOwner):
             raise_on_null_status=raise_on_null_status,
             _refresh_budget=_refresh_budget,
             _retry_deadline=_retry_deadline,
+            _retry_budget=_retry_budget,
             _resource_epoch=_resource_epoch,
         )
 
@@ -211,6 +215,7 @@ class RpcExecutor(RequestPolicyOwner):
         raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
+        _retry_budget: RetryBudget | None = None,
         _resource_epoch: int | None = None,
     ) -> Any:
         """Run an RPC wrapped with telemetry and request-id bookkeeping.
@@ -283,6 +288,7 @@ class RpcExecutor(RequestPolicyOwner):
                     raise_on_null_status=raise_on_null_status,
                     _refresh_budget=_refresh_budget,
                     _retry_deadline=_retry_deadline,
+                    _retry_budget=_retry_budget,
                     _resource_epoch=_resource_epoch,
                 )
             except NotebookLMError as exc:
@@ -310,6 +316,7 @@ class RpcExecutor(RequestPolicyOwner):
                 raise_on_null_status=raise_on_null_status,
                 _refresh_budget=_refresh_budget,
                 _retry_deadline=_retry_deadline,
+                _retry_budget=_retry_budget,
                 _resource_epoch=_resource_epoch,
             )
         except NotebookLMError as exc:
@@ -333,6 +340,7 @@ class RpcExecutor(RequestPolicyOwner):
         raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget | None = None,
         _retry_deadline: RuntimeDeadline | None = None,
+        _retry_budget: RetryBudget | None = None,
         _resource_epoch: int | None = None,
     ) -> Any:
         start = time.perf_counter()
@@ -356,6 +364,8 @@ class RpcExecutor(RequestPolicyOwner):
             _refresh_budget = RefreshBudget()
         if _retry_deadline is None:
             _retry_deadline = self._start_retry_deadline()
+        if _retry_budget is None:
+            _retry_budget = RetryBudget()
 
         # Consult the idempotency registry. The registry is the single
         # source of truth for "how should this RPC behave under retry?";
@@ -407,6 +417,7 @@ class RpcExecutor(RequestPolicyOwner):
                 rpc_method=method.name,
                 refresh_budget=_refresh_budget,
                 retry_deadline=_retry_deadline,
+                retry_budget=_retry_budget,
                 read_timeout=read_timeout,
                 expected_epoch=resource_epoch,
                 epoch_observer=_bind_resource_epoch,
@@ -537,6 +548,7 @@ class RpcExecutor(RequestPolicyOwner):
                     raise_on_null_status=raise_on_null_status,
                     _refresh_budget=_refresh_budget,
                     _retry_deadline=_retry_deadline,
+                    _retry_budget=_retry_budget,
                     _resource_epoch=resource_epoch,
                 )
                 return refreshed
@@ -720,6 +732,7 @@ class RpcExecutor(RequestPolicyOwner):
         raise_on_null_status: bool = False,
         _refresh_budget: RefreshBudget,
         _retry_deadline: RuntimeDeadline | None = None,
+        _retry_budget: RetryBudget | None = None,
         _resource_epoch: int | None = None,
     ) -> Any | None:
         """Refresh auth after a decode-time auth error and retry once.
@@ -764,6 +777,8 @@ class RpcExecutor(RequestPolicyOwner):
         """
         if _resource_epoch is None:
             raise RuntimeError("Decoded auth retry is missing its resource generation.")
+        if _retry_budget is None:
+            _retry_budget = RetryBudget()
 
         async def refresh() -> None:
             await self._auth_refresh.await_refresh(_resource_epoch)
@@ -802,6 +817,7 @@ class RpcExecutor(RequestPolicyOwner):
             raise_on_null_status=raise_on_null_status,
             _refresh_budget=_refresh_budget,
             _retry_deadline=_retry_deadline,
+            _retry_budget=_retry_budget,
             _resource_epoch=_resource_epoch,
         )
 

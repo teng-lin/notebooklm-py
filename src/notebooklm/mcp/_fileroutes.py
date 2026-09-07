@@ -355,7 +355,11 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         success = False
         try:
             try:
-                temp_dir = tempfile.mkdtemp(prefix="nblm-mcp-dl-")
+                temp_dir = (
+                    config._download_temp_factory()
+                    if config._download_temp_factory is not None
+                    else tempfile.mkdtemp(prefix="nblm-mcp-dl-")
+                )
             except OSError:
                 # Temp-dir creation failed (e.g. ENOSPC) — the exact temp-disk
                 # exhaustion this cap defends against. Scoped to mkdtemp ONLY (not the

@@ -54,6 +54,7 @@ import httpx
 from ..._artifact._download_client import _is_trusted_download_host
 from ..._artifact._redirect_guard import redirect_revalidation_hooks
 from ..._artifact.downloads import _await_writer_exit
+from ..._http_client_factory import HttpClientFactories
 from ..._runtime.helpers import map_google_http_status
 from ..._source.drive import DriveRef, parse_drive_ref
 from ..._types.sources import _HTML_FILE_EXTENSIONS, _UPLOAD_FILE_EXTENSIONS
@@ -162,7 +163,12 @@ class AddFile(Protocol):
 StreamingClientFactory = Callable[[httpx.Cookies, httpx.Timeout], httpx.AsyncClient]
 
 
-def _default_streaming_client(cookies: httpx.Cookies, timeout: httpx.Timeout) -> httpx.AsyncClient:
+def _default_streaming_client(
+    cookies: httpx.Cookies,
+    timeout: httpx.Timeout,
+    *,
+    http_client_factories: HttpClientFactories | None = None,
+) -> httpx.AsyncClient:
     """Build the httpx streaming download client (reuses the download wiring).
 
     Mirrors the httpx branch of ``_artifact/_download_client.py::_make_download_client``
@@ -170,7 +176,10 @@ def _default_streaming_client(cookies: httpx.Cookies, timeout: httpx.Timeout) ->
     ``.google.com`` trusted-host guard) but is consumed via ``client.stream(...)``
     rather than the buffering GET, so an over-cap body is never buffered.
     """
-    return httpx.AsyncClient(
+    factory = (
+        httpx.AsyncClient if http_client_factories is None else http_client_factories.create_httpx
+    )
+    return factory(
         cookies=cookies,
         follow_redirects=True,
         timeout=timeout,
@@ -326,6 +335,7 @@ class DriveFetcher:
         *,
         cookies_provider: Callable[[], httpx.Cookies],
         client_factory: StreamingClientFactory = _default_streaming_client,
+        http_client_factories: HttpClientFactories | None = None,
         max_bytes: int = _MAX_DRIVE_DOWNLOAD_BYTES,
         authuser: str | None = None,
         temp_dir: Path | None = None,
@@ -333,6 +343,12 @@ class DriveFetcher:
     ) -> None:
         self._cookies_provider = cookies_provider
         self._client_factory = client_factory
+        if http_client_factories is not None and client_factory is _default_streaming_client:
+            from functools import partial
+
+            self._client_factory = partial(
+                _default_streaming_client, http_client_factories=http_client_factories
+            )
         self._max_bytes = max_bytes
         # Routes a multi-login cookie jar to the SELECTED account (else authuser=0).
         self._authuser = authuser

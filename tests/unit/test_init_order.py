@@ -261,7 +261,7 @@ def test_client_constructs_sources_before_notebooks_and_injects_sources_api() ->
     factory). It wires local values and returns them as a complete graph.
     """
     assembly_tree = ast.parse((SRC_ROOT / "_web" / "assembly.py").read_text(encoding="utf-8"))
-    assembly_body = _module_function_body(assembly_tree, "assemble_web_backend")
+    assembly_body = _module_function_body(assembly_tree, "_assemble_web_backend")
 
     def local_assignment(name: str) -> tuple[int, ast.Assign]:
         for index, statement in enumerate(assembly_body):

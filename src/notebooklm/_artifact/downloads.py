@@ -20,6 +20,7 @@ import httpx
 from .._auth.cookies import load_httpx_cookies
 from .._curl_cffi_transport import resolve_transport_factory
 from .._hop_credentials import CredentialPolicy, HopCredentials
+from .._http_client_factory import HttpClientFactories
 from ..exceptions import ArtifactDownloadError, AuthError
 from ._download_client import (
     _download_display_host,
@@ -162,7 +163,9 @@ class AssetDownloadService(AssetPublication):
         trusted_host: Callable[[str | None], bool] = _is_trusted_download_host,
         chain: bool = True,
         on_auth_error: Callable[[str, AuthError], Awaitable[None]] | None = None,
+        http_client_factories: HttpClientFactories | None = None,
     ) -> None:
+        self._http_client_factories = http_client_factories
         self._storage_path = storage_path
         self._cookie_loader = cookie_loader
         self._credential_policy_factory = credential_policy_factory
@@ -198,6 +201,7 @@ class AssetDownloadService(AssetPublication):
             timeout=60.0,
             credential_for=selected_credential_for,
             trusted_host=self._trusted_host,
+            http_client_factories=self._http_client_factories,
         )
         first_auth_error: AuthError | None = None
         async with self._client_scope(client):
@@ -370,7 +374,10 @@ class AssetDownloadService(AssetPublication):
                 # disk via the producer/consumer writer queue; _make_download_client
                 # returns a buffering GET suited to download_urls_batch.
                 factory = resolve_transport_factory()
-                if factory is not httpx.AsyncClient:
+                uses_httpx = factory is httpx.AsyncClient
+                if self._http_client_factories is not None:
+                    factory = self._http_client_factories.select(factory)
+                if not uses_httpx:
                     # curl_cffi opt-in: libcurl's internal redirect loop can't host
                     # the #1521 per-hop event hook, so use the manual guarded GET
                     # (same trusted-host allowlist, re-checked per hop). It buffers
@@ -401,7 +408,7 @@ class AssetDownloadService(AssetPublication):
                     )
                     return output_path
                 async with self._client_scope(  # noqa: SIM117
-                    httpx.AsyncClient(
+                    factory(
                         cookies=cookies,
                         follow_redirects=True,
                         max_redirects=MAX_DOWNLOAD_REDIRECTS,

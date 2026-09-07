@@ -539,6 +539,7 @@ def _build_rpc_executor() -> Any:
         rpc_method: str | None = None,
         refresh_budget: Any = None,
         retry_deadline: Any = None,
+        retry_budget: Any = None,
         read_timeout: float | None = None,
         expected_epoch: int | None = None,
         epoch_observer: Any = None,

@@ -24,7 +24,6 @@ system overview at the [Pages site root](https://teng-lin.github.io/notebooklm-p
 | 03 | Client runtime and transport | How do SharedRuntime and the selected backend bundle own dispatch, transport, and compatibility? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/03-client-runtime-and-transport.html) · [Source](./03-client-runtime-and-transport.architecture.json) |
 | 05 | Feature services | Which stateful services sit behind sources, artifacts, and chat? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/05-feature-services.html) · [Source](./05-feature-services.architecture.json) |
 | 06 | Web and Android backends | Which mechanisms are neutral, and where do WebRuntime and AndroidRuntime split? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/06-backends-web-and-android.html) · [Source](./06-backends-web-and-android.architecture.json) |
-| 22 | Tests and guardrails | Which suites and parity, boundary, and scope-hook gates protect each layer? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/22-testing-and-guardrails.html) · [Source](./22-testing-and-guardrails.architecture.json) |
 | 23 | Runtime class model | How do SharedRuntime, WebRuntime, AndroidRuntime, and the lazy sidecar relate? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/23-runtime-class-model.html) · [Source](./23-runtime-class-model.architecture.json) |
 | 27 | Capability contracts | Which implementations satisfy the RPC, loop, and single-consumer contracts? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/27-capability-contracts.html) · [Source](./27-capability-contracts.architecture.json) |
 | 28 | Profile, auth, and backend selection | Which auth, runtime, raw adapter, and compatibility resources does each backend construct? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/28-profile-auth-backend-selection.workflow.html) · [Source](./28-profile-auth-backend-selection.workflow.json) |
@@ -73,6 +72,17 @@ system overview at the [Pages site root](https://teng-lin.github.io/notebooklm-p
 | 25 | Sources class model | How do source contracts, upload/add services, and public source values relate? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/25-sources-class-model.html) · [Source](./25-sources-class-model.architecture.json) |
 | 26 | Chat, notes, and mind maps | How do the conversation and note-backed/interactive surfaces compose? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/26-chat-notes-class-model.html) · [Source](./26-chat-notes-class-model.architecture.json) |
 
+## Testing and fault coverage
+
+These views accompany the [fault-injection guide](../fault-injection.md). Scenario
+counts describe the declared fault deck, not exhaustive failure-space or code coverage.
+
+| # | Diagram | What it answers | Files |
+| --- | --- | --- | --- |
+| 22 | Test infrastructure | How do unit tests, guardrails, replay, real-loopback faults, and live tests fit into CI? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/22-testing-and-guardrails.html) · [Source](./22-testing-and-guardrails.architecture.json) |
+| 39 | Fault coverage | Which fault families and backend boundaries does the portable and optional curl deck exercise? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/39-fault-coverage.html) · [Source](./39-fault-coverage.architecture.json) |
+| 40 | Fault scenario lifecycle | How do a declared fault, public outcome, independent evidence, and cleanup become a checked report? | [Explore](https://teng-lin.github.io/notebooklm-py/diagrams/40-fault-scenario-lifecycle.html) · [Source](./40-fault-scenario-lifecycle.workflow.json) |
+
 ## Coverage policy
 
 The catalog covers the runtime layers, both backend graphs, all eleven public namespaces, the
@@ -88,6 +98,8 @@ Diagrams 34–38 document the client ownership model, construction-to-lifecycle 
 whole-operation deadline and cancellation contract, mutation journal and recovery evidence, and
 the adapter prepare/confirm/execute boundary introduced by the September 2026 ownership refactor;
 Diagram 19 exclusively covers runtime open, drain, close, rollback, and reopen transitions.
+The resilience work refreshes diagram 22 and adds diagrams 39–40 to explain local
+socket coverage and the evidence required before a fault scenario can pass.
 
 Some views are deliberately not generated:
 

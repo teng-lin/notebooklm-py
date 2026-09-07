@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ipaddress
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -13,9 +13,9 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-_MAX_HEADERS = 64 * 1024
+from .http_framing import BodyDigest, iter_body, read_head
+
 _MAX_BODY = 2 * 1024 * 1024
-_READ_TIMEOUT = 2.0
 _CLOSE_TIMEOUT = 2.0
 
 
@@ -27,6 +27,7 @@ class Route:
     host: str
     path: str
     rpc_id: str | None = None
+    upload_id: str | None = None
 
     @classmethod
     def rpc(cls, rpc_id: str) -> Route:
@@ -79,10 +80,39 @@ class Stall:
     prefix: bytes = b""
 
 
-Action = Reply | Disconnect | Truncate | Stall
-
-
 @dataclass(frozen=True)
+class Transfer:
+    """Select a fault at headers, before consuming a transfer body.
+
+    Commit evidence requires an independently supplied expected size and digest.
+    Gate names correspond to headers, body_prefix, full_body, and commit events.
+    """
+
+    response: Reply | Disconnect | Truncate | Stall = field(default_factory=Reply)
+    prefix_bytes: int = 65536
+    gates: Mapping[str, str] = field(default_factory=dict)
+    disconnect_at: Literal["headers", "body_prefix", "full_body"] | None = None
+    expected_size: int | None = None
+    expected_digest: str | None = None
+    commit_id: str | None = None
+    allow_abandoned_body: bool = False
+    require_session: bool = False
+
+    def __post_init__(self) -> None:
+        if self.prefix_bytes < 1:
+            raise ValueError("transfer prefix must be positive")
+        if set(self.gates) - {"headers", "body_prefix", "full_body", "commit"}:
+            raise ValueError("unknown transfer gate phase")
+        if self.commit_id is not None and (
+            self.expected_size is None or self.expected_digest is None
+        ):
+            raise ValueError("transfer commit requires independent body expectations")
+
+
+Action = Reply | Disconnect | Truncate | Stall | Transfer
+
+
+@dataclass
 class RequestRecord:
     sequence: int
     route: Route
@@ -91,6 +121,12 @@ class RequestRecord:
     cookie_names: tuple[str, ...]
     cookie_values: Mapping[str, str]
     action: str
+    connection_id: int = 0
+    body_bytes: int = 0
+    body_digest: str = ""
+    body_complete: bool = False
+    response_status: int | None = None
+    headers: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def csrf(self) -> str | None:
@@ -115,10 +151,21 @@ class LogicalHostTransport(httpx.AsyncBaseTransport):
                 raise ValueError("fault transport route port is invalid")
         self._inner = httpx.AsyncHTTPTransport(proxy=None, trust_env=False)
 
+    def retarget(self, logical_host: str, target: tuple[str, int]) -> None:
+        """Redirect one logical host between attempts on this transport instance."""
+        physical_host, physical_port = target
+        if logical_host not in self._routes:
+            raise ValueError(f"unknown logical host: {logical_host}")
+        if not ipaddress.ip_address(physical_host).is_loopback:
+            raise ValueError("fault transport target must be numeric loopback")
+        if not 1 <= physical_port <= 65535:
+            raise ValueError("fault transport target port is invalid")
+        self._routes[logical_host] = (physical_host, physical_port)
+
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if request.url.scheme != "https" or request.url.port not in (None, 443):
             raise httpx.ConnectError(
-                f"fault transport refuses non-HTTPS logical URL {request.url!s}",
+                "fault transport refuses non-HTTPS logical URL",
                 request=request,
             )
         target = self._routes.get(request.url.host)
@@ -161,16 +208,30 @@ class LogicalHostTransport(httpx.AsyncBaseTransport):
 class HttpFaultServer:
     """One-use scripted server with explicit journals, gates, and cleanup."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, hosts: Iterable[str] = (), keep_alive: bool = False, max_body: int = _MAX_BODY
+    ) -> None:
+        if not 1 <= max_body <= 16 * 1024 * 1024:
+            raise ValueError("fault body limit must be between 1 and 16 MiB")
+        self._hosts = {"notebook.google.com", "accounts.google.com", *hosts}
+        self.keep_alive = keep_alive
+        self.max_body = max_body
+        self.events: list[dict[str, Any]] = []
+        self._connection_sequence = 0
         self._server: asyncio.Server | None = None
         self._scripts: dict[Route, deque[Action]] = defaultdict(deque)
         self._gates: dict[str, asyncio.Event] = {}
+        self._required_gates: Counter[str] = Counter()
+        self._observed_gates: Counter[str] = Counter()
         self._writers: set[asyncio.StreamWriter] = set()
         self._handlers: set[asyncio.Task[None]] = set()
         self._changed = asyncio.Condition()
         self.journal: list[RequestRecord] = []
         self.committed: list[str] = []
         self.errors: list[str] = []
+        self._upload_sessions: dict[
+            tuple[str, str, str], Literal["issued", "committed", "cancelled"]
+        ] = {}
 
     @property
     def address(self) -> tuple[str, int]:
@@ -185,11 +246,24 @@ class HttpFaultServer:
         if not actions:
             raise ValueError("at least one action is required")
         self._scripts[route].extend(actions)
+        for action in actions:
+            if isinstance(action, Transfer):
+                self._required_gates.update(action.gates.values())
+                if isinstance(action.response, Stall):
+                    self._required_gates[action.response.gate] += 1
+            elif isinstance(action, Stall):
+                self._required_gates[action.gate] += 1
 
     def gate(self, name: str) -> asyncio.Event:
         if not name:
             raise ValueError("gate name must be nonempty")
         return self._gates.setdefault(name, asyncio.Event())
+
+    async def _wait_gate(self, name: str) -> None:
+        self._observed_gates[name] += 1
+        async with self._changed:
+            self._changed.notify_all()
+        await self.gate(name).wait()
 
     def release(self, name: str) -> None:
         self.gate(name).set()
@@ -207,12 +281,7 @@ class HttpFaultServer:
         """Factory compatible with the production kernel construction seam."""
         if "transport" in kwargs:
             raise TypeError("fault client factory owns the transport")
-        kwargs["transport"] = LogicalHostTransport(
-            {
-                "notebook.google.com": self.address,
-                "accounts.google.com": self.address,
-            }
-        )
+        kwargs["transport"] = LogicalHostTransport(dict.fromkeys(self._hosts, self.address))
         kwargs["trust_env"] = False
         return httpx.AsyncClient(**kwargs)
 
@@ -230,7 +299,8 @@ class HttpFaultServer:
         self._server = None
         if server is not None:
             server.close()
-            await asyncio.wait_for(server.wait_closed(), _CLOSE_TIMEOUT)
+        # Python 3.12+ wait_closed also waits for accepted connections. Close
+        # their writers and cancel held handlers before awaiting the listener.
         for writer in tuple(self._writers):
             writer.close()
         for task in tuple(self._handlers):
@@ -249,6 +319,9 @@ class HttpFaultServer:
                 _CLOSE_TIMEOUT,
             )
 
+        if server is not None:
+            await asyncio.wait_for(server.wait_closed(), _CLOSE_TIMEOUT)
+
     @property
     def active_handlers(self) -> int:
         return sum(not task.done() for task in self._handlers)
@@ -256,116 +329,286 @@ class HttpFaultServer:
     def remaining(self) -> int:
         return sum(len(actions) for actions in self._scripts.values())
 
+    @property
+    def unobserved_required_gates(self) -> int:
+        return sum((self._required_gates - self._observed_gates).values())
+
     def assert_drained(self) -> None:
         if self.errors:
             raise AssertionError("HTTP fault server errors: " + "; ".join(self.errors))
-        remaining = {route: len(actions) for route, actions in self._scripts.items() if actions}
+        if self.unobserved_required_gates:
+            raise AssertionError("unobserved required HTTP gates")
+        remaining = sum(len(actions) for actions in self._scripts.values())
         if remaining:
-            raise AssertionError(f"unconsumed HTTP actions: {remaining!r}")
+            raise AssertionError(f"unconsumed HTTP actions: {remaining}")
+
+    async def wait_for_gate(self, name: str, *, count: int = 1, timeout: float = 2.0) -> None:
+        async def wait() -> None:
+            async with self._changed:
+                await self._changed.wait_for(lambda: self._observed_gates[name] >= count)
+
+        await asyncio.wait_for(wait(), timeout)
+
+    async def wait_for_event(self, phase: str, *, count: int = 1, timeout: float = 2.0) -> None:
+        async def wait() -> None:
+            async with self._changed:
+                await self._changed.wait_for(
+                    lambda: sum(event["phase"] == phase for event in self.events) >= count
+                )
+
+        await asyncio.wait_for(wait(), timeout)
+
+    async def _event(self, phase: str, record: RequestRecord) -> None:
+        self.events.append(
+            {
+                "phase": phase,
+                "request": record.sequence,
+                "connection_id": record.connection_id,
+                "body_bytes": record.body_bytes,
+                "body_digest": record.body_digest,
+            }
+        )
+        async with self._changed:
+            self._changed.notify_all()
 
     def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        task = asyncio.create_task(self._handle(reader, writer))
+        self._connection_sequence += 1
+        task = asyncio.create_task(self._handle(reader, writer, self._connection_sequence))
         self._handlers.add(task)
         self._writers.add(writer)
         task.add_done_callback(self._handlers.discard)
 
-    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    async def _handle(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, connection_id: int
+    ) -> None:
+        record: RequestRecord | None = None
         expected_disconnect = False
+        transfer: Transfer | None = None
         try:
-            route, query, form, cookie_values = await self._read_request(reader)
-            actions = self._scripts.get(route)
-            if not actions:
-                raise AssertionError(f"unexpected request: {route!r}")
-            action = actions.popleft()
-            record = RequestRecord(
-                sequence=len(self.journal) + 1,
-                route=route,
-                query=query,
-                form=form,
-                cookie_names=tuple(sorted(cookie_values)),
-                cookie_values=cookie_values,
-                action=type(action).__name__,
-            )
-            self.journal.append(record)
-            async with self._changed:
-                self._changed.notify_all()
-            expected_disconnect = isinstance(action, (Disconnect, Truncate, Stall))
-            await self._run_action(action, writer)
+            while True:
+                transfer = None
+                expected_disconnect = False
+                try:
+                    head = await read_head(reader)
+                except asyncio.IncompleteReadError as exc:
+                    # A canceled connect may close before sending any request;
+                    # idle keep-alive connections can also end at this boundary.
+                    # Partial headers still indicate a malformed/truncated request.
+                    if not exc.partial:
+                        break
+                    raise
+                target = urlsplit(head.target)
+                query = {
+                    k: tuple(v) for k, v in parse_qs(target.query, keep_blank_values=True).items()
+                }
+                rpc_values = query.get("rpcids", ())
+                route = Route(
+                    head.method,
+                    head.headers["host"],
+                    target.path,
+                    rpc_values[0] if rpc_values else None,
+                    query.get("upload_id", (None,))[0],
+                )
+                actions = self._scripts.get(route)
+                if not actions:
+                    raise AssertionError("unexpected request")
+                action = actions.popleft()
+                transfer = action if isinstance(action, Transfer) else None
+                cookies = {}
+                for part in head.headers.get("cookie", "").split(";"):
+                    name, separator, value = part.strip().partition("=")
+                    if separator and name:
+                        cookies[name] = value
+                record = RequestRecord(
+                    sequence=len(self.journal) + 1,
+                    route=route,
+                    query=query,
+                    form={},
+                    cookie_names=tuple(sorted(cookies)),
+                    cookie_values=cookies,
+                    action=type(action).__name__,
+                    connection_id=connection_id,
+                    headers=head.headers,
+                )
+                self.journal.append(record)
+                expected_disconnect = isinstance(action, (Disconnect, Truncate, Stall, Transfer))
+
+                session_key: tuple[str, str, str] | None = None
+                if transfer is not None and transfer.require_session:
+                    session_key = self._require_active_upload_session(route)
+
+                async def phase(
+                    name: str, record: RequestRecord = record, transfer: Transfer | None = transfer
+                ) -> bool:
+                    assert record is not None
+                    await self._event(name, record)
+                    if transfer is not None:
+                        if gate := transfer.gates.get(name):
+                            await self._wait_gate(gate)
+                        if transfer.disconnect_at == name:
+                            await self._event("disconnect", record)
+                            return True
+                    return False
+
+                if await phase("headers"):
+                    break
+                digest = BodyDigest()
+                form_body = bytearray()
+                prefix_observed = False
+                interrupted = False
+                async for chunk in iter_body(
+                    reader,
+                    head.headers,
+                    limit=self.max_body,
+                    block_size=min(65536, transfer.prefix_bytes) if transfer else 65536,
+                ):
+                    digest.update(chunk)
+                    record.body_bytes = digest.size
+                    record.body_digest = digest.hexdigest
+                    if route.rpc_id is not None:
+                        form_body.extend(chunk)
+                    if transfer and not prefix_observed and digest.size >= transfer.prefix_bytes:
+                        prefix_observed = True
+                        if await phase("body_prefix"):
+                            interrupted = True
+                            break
+                if interrupted:
+                    break
+                record.body_digest = digest.hexdigest
+                record.body_complete = True
+                if form_body:
+                    record.form = {
+                        k: tuple(v)
+                        for k, v in parse_qs(
+                            form_body.decode("utf-8"), keep_blank_values=True
+                        ).items()
+                    }
+                if await phase("full_body"):
+                    break
+                if transfer:
+                    if transfer.expected_size is not None and digest.size != transfer.expected_size:
+                        raise AssertionError("transfer byte count mismatch")
+                    if (
+                        transfer.expected_digest is not None
+                        and digest.hexdigest != transfer.expected_digest
+                    ):
+                        raise AssertionError("transfer digest mismatch")
+                    if transfer.commit_id is not None:
+                        if transfer.commit_id in self.committed:
+                            raise AssertionError("duplicate transfer commit")
+                        self.committed.append(transfer.commit_id)
+                        if session_key is not None:
+                            self._upload_sessions[session_key] = "committed"
+                        await phase("commit")
+                    response = transfer.response
+                else:
+                    response = action
+                await self._run_action(response, writer, record)
+                if isinstance(response, Reply) and 200 <= response.status < 300:
+                    self._record_upload_session(response)
+                    self._record_upload_cancellation(record)
+                await self._event("response_sent", record)
+                if not self.keep_alive or not isinstance(response, Reply):
+                    break
+                if head.headers.get("connection", "").lower() == "close":
+                    break
+                if any(
+                    k.lower() == "connection" and v.lower() == "close"
+                    for k, v in response.headers.items()
+                ):
+                    break
         except asyncio.CancelledError:
             raise
+        except asyncio.IncompleteReadError:
+            if transfer is None or not transfer.allow_abandoned_body:
+                self.errors.append("IncompleteReadError")
+            elif record is not None:
+                await self._event("body_abandoned", record)
         except (BrokenPipeError, ConnectionResetError) as exc:
             if not expected_disconnect:
-                self.errors.append(f"{type(exc).__name__}: {exc}")
+                self.errors.append(type(exc).__name__)
         except Exception as exc:
-            self.errors.append(f"{type(exc).__name__}: {exc}")
+            # Exception text can contain a capability URL or malformed body bytes.
+            label = (
+                "unexpected request"
+                if isinstance(exc, AssertionError) and str(exc) == "unexpected request"
+                else type(exc).__name__
+            )
+            self.errors.append(label)
             with contextlib.suppress(Exception):
-                await self._write_reply(writer, Reply(500, str(exc).encode()))
+                await self._write_reply(writer, Reply(500, b"fault service request failed"))
         finally:
-            self._writers.discard(writer)
             writer.close()
             with contextlib.suppress(Exception):
-                await writer.wait_closed()
+                await asyncio.wait_for(writer.wait_closed(), _CLOSE_TIMEOUT)
+            self._writers.discard(writer)
+            if record is not None:
+                await self._event("handler_settled", record)
 
-    async def _read_request(
-        self, reader: asyncio.StreamReader
-    ) -> tuple[
-        Route,
-        Mapping[str, tuple[str, ...]],
-        Mapping[str, tuple[str, ...]],
-        Mapping[str, str],
-    ]:
-        raw_headers = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), _READ_TIMEOUT)
-        if len(raw_headers) > _MAX_HEADERS:
-            raise ValueError("request headers exceed limit")
-        lines = raw_headers[:-4].split(b"\r\n")
-        method_raw, target_raw, version = lines[0].split(b" ", 2)
-        if version != b"HTTP/1.1":
-            raise ValueError("only HTTP/1.1 is supported")
-        headers: dict[str, str] = {}
-        for line in lines[1:]:
-            name, separator, value = line.partition(b":")
-            if not separator:
-                raise ValueError("malformed request header")
-            headers[name.decode("ascii").lower()] = value.decode("latin-1").strip()
-        if "transfer-encoding" in headers:
-            raise ValueError("chunked requests are unsupported")
-        length = int(headers.get("content-length", "0"))
-        if length < 0 or length > _MAX_BODY:
-            raise ValueError("request body exceeds limit")
-        body = await asyncio.wait_for(reader.readexactly(length), _READ_TIMEOUT) if length else b""
-        target = urlsplit(target_raw.decode("ascii"))
-        query_raw = parse_qs(target.query, keep_blank_values=True)
-        form_raw = parse_qs(body.decode("utf-8"), keep_blank_values=True) if body else {}
-        query = {key: tuple(values) for key, values in query_raw.items()}
-        form = {key: tuple(values) for key, values in form_raw.items()}
-        cookie_values: dict[str, str] = {}
-        for part in headers.get("cookie", "").split(";"):
-            name, separator, value = part.strip().partition("=")
-            if separator and name:
-                cookie_values[name] = value
-        rpc_values = query.get("rpcids", ())
-        route = Route(
-            method_raw.decode("ascii"),
-            headers.get("host", ""),
-            target.path,
-            rpc_values[0] if rpc_values else None,
+    def _require_active_upload_session(self, route: Route) -> tuple[str, str, str]:
+        if route.upload_id is None:
+            raise AssertionError("upload session required")
+        key = (route.host, route.path, route.upload_id)
+        if self._upload_sessions.get(key) != "issued":
+            raise AssertionError("upload session is not active")
+        return key
+
+    def _record_upload_session(self, reply: Reply) -> None:
+        upload_url = next(
+            (value for name, value in reply.headers.items() if name.lower() == "x-goog-upload-url"),
+            None,
         )
-        return route, query, form, cookie_values
+        if upload_url is None:
+            return
+        target = urlsplit(upload_url)
+        upload_ids = parse_qs(target.query, keep_blank_values=True).get("upload_id", [])
+        if target.scheme != "https" or target.hostname is None or len(upload_ids) != 1:
+            raise AssertionError("invalid upload session URL")
+        upload_id = upload_ids[0]
+        if not target.path or not upload_id:
+            raise AssertionError("invalid upload session URL")
+        self._upload_sessions[(target.hostname, target.path, upload_id)] = "issued"
 
-    async def _run_action(self, action: Action, writer: asyncio.StreamWriter) -> None:
+    def _record_upload_cancellation(self, record: RequestRecord) -> None:
+        commands = {
+            command.strip().lower()
+            for command in record.headers.get("x-goog-upload-command", "").split(",")
+        }
+        if "cancel" not in commands or record.route.upload_id is None:
+            return
+        key = (record.route.host, record.route.path, record.route.upload_id)
+        if key in self._upload_sessions:
+            self._upload_sessions[key] = "cancelled"
+
+    async def _run_action(
+        self,
+        action: Reply | Disconnect | Truncate | Stall,
+        writer: asyncio.StreamWriter,
+        record: RequestRecord,
+    ) -> None:
+        record.response_status = (
+            action.status
+            if isinstance(action, (Reply, Truncate))
+            else action.reply.status
+            if isinstance(action, Stall)
+            else None
+        )
         if isinstance(action, Reply):
             await self._write_reply(writer, action)
         elif isinstance(action, Disconnect):
             if action.commit_id is not None:
                 self.committed.append(action.commit_id)
+                await self._event("commit", record)
+            await self._event("disconnect", record)
         elif isinstance(action, Truncate):
             headers = {"Content-Length": str(action.declared_length), "Connection": "close"}
             await self._write_head(writer, action.status, headers)
             writer.write(action.body)
             await writer.drain()
+            await self._event("response_prefix", record)
         else:
             if action.phase == "headers":
-                await self.gate(action.gate).wait()
+                await self._wait_gate(action.gate)
                 await self._write_reply(writer, action.reply)
             else:
                 declared = len(action.reply.body)
@@ -375,7 +618,8 @@ class HttpFaultServer:
                 await self._write_head(writer, action.reply.status, headers)
                 writer.write(action.prefix)
                 await writer.drain()
-                await self.gate(action.gate).wait()
+                await self._event("response_prefix", record)
+                await self._wait_gate(action.gate)
                 writer.write(action.reply.body[len(action.prefix) :])
                 await writer.drain()
 
@@ -383,7 +627,7 @@ class HttpFaultServer:
         headers = dict(reply.headers)
         headers.setdefault("Content-Length", str(len(reply.body)))
         headers.setdefault("Content-Type", "text/plain; charset=utf-8")
-        headers.setdefault("Connection", "close")
+        headers.setdefault("Connection", "keep-alive" if self.keep_alive else "close")
         await self._write_head(writer, reply.status, headers)
         writer.write(reply.body)
         await writer.drain()
@@ -428,4 +672,5 @@ __all__ = [
     "Route",
     "Stall",
     "Truncate",
+    "Transfer",
 ]

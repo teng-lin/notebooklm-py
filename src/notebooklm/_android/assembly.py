@@ -107,9 +107,16 @@ def assemble_android_backend(
         metrics=shared.metrics,
         sleep=deps.sleep,
     )
+    asset_overrides: dict[str, Any] = {}
+    if deps.http_client_factories is not None:
+        factories = deps.http_client_factories
+        asset_overrides["client_factory"] = lambda: factories.create(
+            cookies=None, follow_redirects=False, timeout=60.0
+        )
     asset_downloads = AndroidAssetDownloadService(
         bearer_provider=bearer_provider,
         supervisor=shared.call_supervisor,
+        **asset_overrides,
     )
     upload_pipeline = AndroidUploadPipeline(
         session=session,
@@ -119,6 +126,9 @@ def assemble_android_backend(
         drive_timeout=_http_timeout(transfers.drive_timeout),
         max_concurrent_uploads=transfers.max_concurrent_uploads,
         record_upload_queue_wait=shared.metrics.record_upload_queue_wait,
+        async_client_factory=(
+            deps.http_client_factories.create if deps.http_client_factories is not None else None
+        ),
     )
     phenotype = PhenotypeTokenProvider()
     android = AndroidRuntime(

@@ -17,9 +17,11 @@ from typing import Any
 import grpc
 
 from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import (
+    artifacts_pb2,
     chat_pb2,
     notebooks_pb2,
     read_pb2,
+    sources_pb2,
 )
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
     notebooks_pb2 as wire_notebooks_pb2,
@@ -28,9 +30,15 @@ from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
 SERVICE = "google.internal.labs.tailwind.orchestration.v1.LabsTailwindOrchestrationService"
 GET_PROJECT = f"/{SERVICE}/GetProject"
 CREATE_PROJECT = f"/{SERVICE}/CreateProject"
+ADD_TENTATIVE_SOURCES = f"/{SERVICE}/AddTentativeSources"
+ADD_SOURCES = f"/{SERVICE}/AddSources"
+LIST_ARTIFACTS = f"/{SERVICE}/ListArtifacts"
 LIST_CHAT_SESSIONS = f"/{SERVICE}/ListChatSessions"
 GENERATE_STREAMED = f"/{SERVICE}/GenerateFreeFormStreamed"
 _METHOD_KINDS = {
+    ADD_TENTATIVE_SOURCES: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
+    ADD_SOURCES: frozenset({"reply", "abort", "wait_reply", "wait_abort", "commit_abort"}),
+    LIST_ARTIFACTS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     GET_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     CREATE_PROJECT: frozenset({"reply", "abort", "wait_reply", "wait_abort", "commit_abort"}),
     LIST_CHAT_SESSIONS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
@@ -103,6 +111,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
     _server: grpc.aio.Server | None = None
     _port: int | None = None
     _active: set[asyncio.Task[Any]] = field(default_factory=set)
+    _changed: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
     def target(self) -> str:
@@ -153,6 +162,14 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         if self._active:
             raise AssertionError(f"active gRPC handlers leaked: {len(self._active)}")
 
+    async def wait_for_requests(self, method: str, count: int, *, timeout: float = 2.0) -> None:
+        async def wait() -> None:
+            while sum(record.method == method for record in self.requests) < count:
+                self._changed.clear()
+                await self._changed.wait()
+
+        await asyncio.wait_for(wait(), timeout)
+
     async def wait_for_idle(self, *, timeout: float = 1.0) -> None:
         async def wait() -> None:
             while self._active:
@@ -186,7 +203,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             # task still completes the bounded cleanup before its own deadline.
             await asyncio.gather(cleanup, return_exceptions=True)
         except BaseException as error:
-            self.handler_errors.append(f"enter cleanup failed: {type(error).__name__}: {error}")
+            self.handler_errors.append(f"enter cleanup failed: {type(error).__name__}")
 
     async def _shutdown(self) -> None:
         server = self._server
@@ -225,6 +242,21 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                     self._create_project,
                     request_deserializer=notebooks_pb2.CreateProjectRequest.FromString,
                     response_serializer=read_pb2.Project.SerializeToString,
+                ),
+                "AddTentativeSources": grpc.unary_unary_rpc_method_handler(
+                    self._add_tentative_sources,
+                    request_deserializer=sources_pb2.AddTentativeSourcesRequest.FromString,
+                    response_serializer=sources_pb2.AddTentativeSourcesResponse.SerializeToString,
+                ),
+                "AddSources": grpc.unary_unary_rpc_method_handler(
+                    self._add_sources,
+                    request_deserializer=sources_pb2.AddSourcesRequest.FromString,
+                    response_serializer=sources_pb2.AddSourcesResponse.SerializeToString,
+                ),
+                "ListArtifacts": grpc.unary_unary_rpc_method_handler(
+                    self._list_artifacts,
+                    request_deserializer=artifacts_pb2.ListArtifactsRequest.FromString,
+                    response_serializer=artifacts_pb2.ListArtifactsResponse.SerializeToString,
                 ),
                 "ListChatSessions": grpc.unary_unary_rpc_method_handler(
                     self._list_chat_sessions,
@@ -271,6 +303,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             tuple((str(k), str(v)) for k, v in context.invocation_metadata()),
         )
         self.requests.append(recorded)
+        self._changed.set()
         return recorded
 
     async def wait_for_cancellation(self, request: GrpcRequest, *, timeout: float = 1.0) -> None:
@@ -286,7 +319,8 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         self.cancellations.append(recorded)
 
     def _record_handler_error(self, method: str, error: BaseException) -> None:
-        self.handler_errors.append(f"{method}: {type(error).__name__}: {error}")
+        del method
+        self.handler_errors.append(type(error).__name__)
 
     @staticmethod
     def _project(project_id: str = "notebook-1", title: str = "Fault notebook") -> Any:
@@ -317,7 +351,8 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                 assert action.status is not None
                 await context.abort(action.status, "synthetic fault")
             if action.response is not None:
-                return action.response
+                # Stateful fixtures may echo production-generated correlation IDs.
+                return action.response(request) if callable(action.response) else action.response
             if method == GET_PROJECT:
                 return wire_notebooks_pb2.WireGetProjectResponse(
                     project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
@@ -326,6 +361,12 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
                 )
             if method == CREATE_PROJECT:
                 return self._project("created-1", request.name)
+            if method == ADD_TENTATIVE_SOURCES:
+                return sources_pb2.AddTentativeSourcesResponse()
+            if method == ADD_SOURCES:
+                return sources_pb2.AddSourcesResponse()
+            if method == LIST_ARTIFACTS:
+                return artifacts_pb2.ListArtifactsResponse()
             return chat_pb2.ListChatSessionsResponse()
         except asyncio.CancelledError:
             if recorded is not None:
@@ -345,6 +386,15 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
     async def _create_project(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(CREATE_PROJECT, request, context)
+
+    async def _add_tentative_sources(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+        return await self._apply_unary(ADD_TENTATIVE_SOURCES, request, context)
+
+    async def _add_sources(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+        return await self._apply_unary(ADD_SOURCES, request, context)
+
+    async def _list_artifacts(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+        return await self._apply_unary(LIST_ARTIFACTS, request, context)
 
     async def _list_chat_sessions(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(LIST_CHAT_SESSIONS, request, context)
@@ -380,9 +430,12 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
 
 __all__ = [
+    "ADD_TENTATIVE_SOURCES",
+    "ADD_SOURCES",
     "CREATE_PROJECT",
     "GENERATE_STREAMED",
     "GET_PROJECT",
+    "LIST_ARTIFACTS",
     "LIST_CHAT_SESSIONS",
     "GrpcAction",
     "GrpcFaultServer",
