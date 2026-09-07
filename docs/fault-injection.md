@@ -465,6 +465,11 @@ trusted/untrusted redirect cases for both single and batch paths.
 | Expired/HTML/signature | No publication, old destination preserved, bounded sanitized error. Web has no general signature contract and gains none here. |
 | Bearer bounce | Android drops bearer after capability hop and does not restore it within that chain; next independent download reacquires normally. |
 
+The Web HTTPX redirect-loop cases require the underlying `TooManyRedirects`
+error and exact hop count. They use a 3-second inactivity timeout and an 8-second
+operation deadline so a short read timeout cannot substitute for the redirect
+ceiling; body-stall cases retain their short fault deadlines.
+
 Upload 401/403 cases remain separate for start and finalize under R3. No case
 silently mints a new URL or replays an already dispatched upload. I1–I3, I6–I8.
 
