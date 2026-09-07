@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +16,21 @@ from scripts._ci_progress import report, safe_test_name
 from tests.e2e._progress import E2EProgress
 
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture
+def workflow_bash():
+    if sys.platform == "win32":
+        # PATH's bash.exe may be the WSL stub with no installed distribution.
+        # Actions uses the Bash bundled alongside Git for Windows.
+        git = shutil.which("git")
+        executable = Path(git).resolve().parents[1] / "bin" / "bash.exe" if git else None
+    else:
+        found = shutil.which("bash")
+        executable = Path(found) if found else None
+    if executable is None or not executable.is_file():
+        pytest.skip("workflow shell checks require Bash (Git Bash on Windows)")
+    return str(executable)
 
 
 def test_progress_plugin_runs_with_real_pytest(pytester, monkeypatch, tmp_path):
@@ -114,7 +131,7 @@ def test_e2e_progress_handles_reruns_setup_and_teardown_failures(monkeypatch, tm
     ],
 )
 def test_account_plan_summary_matches_filtered_readonly_selection(
-    lane, test_filter, suite, tmp_path
+    lane, test_filter, suite, tmp_path, workflow_bash
 ):
     root = Path(__file__).resolve().parents[2]
     workflow = yaml.safe_load((root / ".github/workflows/nightly.yml").read_text())
@@ -125,10 +142,10 @@ def test_account_plan_summary_matches_filtered_readonly_selection(
     )
     summary = tmp_path / "summary.md"
     subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", command],
+        [workflow_bash, "-e", "-o", "pipefail", "-c", command],
         env={
             **os.environ,
-            "GITHUB_STEP_SUMMARY": str(summary),
+            "GITHUB_STEP_SUMMARY": summary.as_posix(),
             "E2E_LANE": lane,
             "TEST_FILTER": test_filter,
             "ENABLED_SLOTS": "A,B",
@@ -137,6 +154,7 @@ def test_account_plan_summary_matches_filtered_readonly_selection(
         capture_output=True,
         text=True,
         check=True,
+        timeout=10,
     )
     assert f"| nightly-readonly-windows | Windows | web | {suite} | B |" in summary.read_text()
 
@@ -149,21 +167,19 @@ def test_account_plan_summary_matches_filtered_readonly_selection(
         ("nightly.yml", "e2e", "cleanup"),
     ],
 )
-def test_workflow_streams_output_and_preserves_failure(workflow, job, step, tmp_path):
+def test_workflow_streams_output_and_preserves_failure(workflow, job, step, workflow_bash):
     root = Path(__file__).resolve().parents[2]
     data = yaml.safe_load((root / ".github" / "workflows" / workflow).read_text())
     command = next(row["run"] for row in data["jobs"][job]["steps"] if row.get("id") == step)
     command = command.replace("${{ steps.verifier_budget.outputs.timeout }}", "240")
     command = command.replace("${{ matrix.backend }}", "web")
-    fake_uv = tmp_path / "uv"
-    fake_uv.write_text("#!/bin/sh\nprintf 'visible progress before failure\\n'\nexit 6\n")
-    fake_uv.chmod(0o755)
+    command = "uv() { printf 'visible progress before failure\\n'; return 6; }\n" + command
     completed = subprocess.run(
-        ["bash", "-e", "-o", "pipefail", "-c", command],
-        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+        [workflow_bash, "-e", "-o", "pipefail", "-c", command],
         capture_output=True,
         text=True,
         check=False,
+        timeout=10,
     )
     assert completed.returncode == 6
     assert "visible progress before failure" in completed.stdout
