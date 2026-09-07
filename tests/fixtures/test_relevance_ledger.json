@@ -19,8 +19,8 @@
     "by_decision": {
       "extended_qualification": 425,
       "pr_contract": 442,
-      "pr_routine": 19,
-      "historical_manual": 57,
+      "pr_routine": 26,
+      "historical_manual": 50,
       "consolidate": 1
     }
   },
@@ -8153,11 +8153,11 @@
       "oracle": "AST import scan across codebase",
       "overlapping_tests": [],
       "runtime_cost": "ast_scan",
-      "decision": "historical_manual",
+      "decision": "pr_routine",
       "owner": "architecture_guards",
       "rationale": "Core removal completed; active neutral and backend import boundary rules cover forbidden edges",
       "replacement": null,
-      "review_condition": "historical_reference_only"
+      "review_condition": "active_architecture_guard"
     },
     {
       "nodeid": "tests/_guardrails/test_no_cross_test_imports.py::test_allowlist_is_shrink_only",
@@ -8993,11 +8993,11 @@
       "oracle": "AST inspection of RPC caller attributes",
       "overlapping_tests": [],
       "runtime_cost": "ast_scan",
-      "decision": "historical_manual",
+      "decision": "pr_routine",
       "owner": "protocol_wire",
       "rationale": "RPC callable consolidation complete; live upload callback and RPC dispatch tests verify active contract",
       "replacement": null,
-      "review_condition": "historical_reference_only"
+      "review_condition": "active_architecture_guard"
     },
     {
       "nodeid": "tests/_guardrails/test_no_legacy_rpc_callable_aliases.py::test_rpc_callable_guard_helpers_cover_unpacked_assignments_and_import_aliases",
@@ -9007,11 +9007,11 @@
       "oracle": "AST inspection of RPC caller attributes",
       "overlapping_tests": [],
       "runtime_cost": "ast_scan",
-      "decision": "historical_manual",
+      "decision": "pr_routine",
       "owner": "protocol_wire",
       "rationale": "RPC callable consolidation complete; live upload callback and RPC dispatch tests verify active contract",
       "replacement": null,
-      "review_condition": "historical_reference_only"
+      "review_condition": "active_architecture_guard"
     },
     {
       "nodeid": "tests/_guardrails/test_no_legacy_rpc_callable_aliases.py::test_rpc_callback_stays_upload_only",
@@ -9021,11 +9021,11 @@
       "oracle": "AST inspection of RPC caller attributes",
       "overlapping_tests": [],
       "runtime_cost": "ast_scan",
-      "decision": "historical_manual",
+      "decision": "pr_routine",
       "owner": "protocol_wire",
       "rationale": "RPC callable consolidation complete; live upload callback and RPC dispatch tests verify active contract",
       "replacement": null,
-      "review_condition": "historical_reference_only"
+      "review_condition": "active_architecture_guard"
     },
     {
       "nodeid": "tests/_guardrails/test_no_module_shadowing.py::test_click_group_public_alias_preserved",
@@ -9371,11 +9371,11 @@
       "oracle": "String/AST scan for deleted Session class references",
       "overlapping_tests": [],
       "runtime_cost": "ast_scan",
-      "decision": "historical_manual",
+      "decision": "pr_routine",
       "owner": "client_architecture",
       "rationale": "Session removal complete; live construction, admission, and lifecycle tests protect client",
       "replacement": null,
-      "review_condition": "historical_reference_only"
+      "review_condition": "active_architecture_guard"
     },
     {
       "nodeid": "tests/_guardrails/test_no_session.py::test_scan_source_allows_surviving_sibling_modules",
@@ -9385,11 +9385,11 @@
       "oracle": "String/AST scan for deleted Session class references",
       "overlapping_tests": [],
       "runtime_cost": "ast_scan",
-      "decision": "historical_manual",
+      "decision": "pr_routine",
       "owner": "client_architecture",
       "rationale": "Session removal complete; live construction, admission, and lifecycle tests protect client",
       "replacement": null,
-      "review_condition": "historical_reference_only"
+      "review_condition": "active_architecture_guard"
     },
     {
       "nodeid": "tests/_guardrails/test_no_session.py::test_scan_source_catches_static_and_dynamic_deleted_surface",
@@ -9399,11 +9399,11 @@
       "oracle": "String/AST scan for deleted Session class references",
       "overlapping_tests": [],
       "runtime_cost": "ast_scan",
-      "decision": "historical_manual",
+      "decision": "pr_routine",
       "owner": "client_architecture",
       "rationale": "Session removal complete; live construction, admission, and lifecycle tests protect client",
       "replacement": null,
-      "review_condition": "historical_reference_only"
+      "review_condition": "active_architecture_guard"
     },
     {
       "nodeid": "tests/_guardrails/test_no_storage_cookie_saver_patches.py::test_guard_allows_nonmutation_compatibility_uses",

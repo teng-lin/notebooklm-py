@@ -246,12 +246,18 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
         assert "pytest.mark.refactor_qualification" in path.read_text(encoding="utf-8")
     for path, contract_names in PR_LIFECYCLE_CONTRACTS.items():
         source = path.read_text(encoding="utf-8")
-        assert "pytestmark = pytest.mark.refactor_qualification" not in source
-        assert "pytestmark = pytest.mark.repo_lint" not in source
         tree = ast.parse(source)
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name) and target.id == "pytestmark":
+                        assigned_repr = ast.unparse(stmt.value)
+                        assert "refactor_qualification" not in assigned_repr
+                        assert "repo_lint" not in assigned_repr
+
         functions = {
             node.name: node
-            for node in ast.walk(tree)
+            for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
         for contract_name in contract_names:

@@ -558,9 +558,9 @@ them to normal users. Follow the normal checklist above, with these differences:
    between pre-releases.
 3. **A pre-release *is* the final version's real surface.** A `X.Y.ZaN` tag must
    already contain every breaking flip for that version with deprecation shims
-   removed. The `tests/_guardrails/test_v080_release_gate.py` version parser
-   truncates the pre-release suffix, so the v0.8.0 breaking-flip release-gate
-   fires at `0.8.0a1`. A "soft" alpha that still carries shims is not supported.
+   removed. The `tests/_guardrails/test_v100_release_gate.py` version parser
+   truncates the pre-release suffix, so the breaking-flip release-gate
+   fires at `1.0.0a1` (historically `tests/qualification/historical/test_v080_release_gate.py` at `0.8.0a1`). A "soft" alpha that still carries shims is not supported.
 4. **Re-lock after the bump.** After editing `pyproject.toml`'s version, run
    `uv sync` so `uv.lock`'s workspace-package version matches, else CI `--frozen`
    installs fail as out-of-date.

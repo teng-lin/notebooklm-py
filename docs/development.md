@@ -1021,7 +1021,7 @@ A representative slice (run `ls tests/_guardrails/` for the full set):
 | `test_no_inline_deprecation_warnings.py` | No inline `warnings.warn(..., DeprecationWarning)` outside `_deprecation.py` (ADR-0018) |
 | `test_cli_rpc_envelope.py` | Every *RPC-touching* Click leaf command (call graph reaches `NotebookLMClient`) routes its errors into the JSON envelope |
 | `test_module_size_ratchet.py` | No module grows past the size budget (ADR-0008) — a burn-down ratchet |
-| `test_v080_release_gate.py` | The v0.8.0 breaking-change set flips in lockstep at the version bump |
+| `test_v100_release_gate.py` | The v1.0.0 breaking-change set flips in lockstep at the version bump |
 | `test_adr_reference_format.py` | ADR references are 4-digit and resolve to a real `docs/adr/NNNN-*.md` |
 | `test_cli_boundary.py` | CLI modules import only public `notebooklm` surface plus the single `_app` core exception — no direct `_browser`, other `notebooklm._*`, `notebooklm.rpc.*`, or `_private` reach-in |
 | `test_no_facade_reach_in.py` | Feature APIs and service modules don't reach into Session internals or runtime-import facade APIs |

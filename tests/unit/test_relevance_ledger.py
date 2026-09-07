@@ -89,6 +89,7 @@ def test_every_entry_has_complete_metadata(ledger_data: dict[str, object]) -> No
         assert entry["runtime_cost"] and isinstance(entry["runtime_cost"], str)
         assert entry["owner"] and isinstance(entry["owner"], str)
         assert entry["review_condition"] and isinstance(entry["review_condition"], str)
+        assert entry["rationale"] and isinstance(entry["rationale"], str)
 
         decision = entry["decision"]
         assert decision in VALID_DECISIONS, f"Invalid decision {decision!r} on {nodeid}"

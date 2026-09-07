@@ -1195,3 +1195,20 @@ def test_display_name_false_positives_mirror_shape_lint() -> None:
         "update BOTH tests/cassette_patterns.py and "
         "tests/_guardrails/_cassette_shape_lint.py"
     )
+
+
+def test_detect_email_is_linear_on_long_pathological_input() -> None:
+    """_DETECT_EMAIL anchored lookbehind prevents polynomial backtracking."""
+    import time
+
+    from tests.cassette_patterns import _DETECT_EMAIL, is_clean
+
+    long_path = "a" * 100_000
+    t0 = time.perf_counter()
+    matches = list(_DETECT_EMAIL.finditer(long_path))
+    dur = time.perf_counter() - t0
+    assert not matches
+    assert dur < 0.2, f"_DETECT_EMAIL took {dur:.2f}s, expected <0.2s"
+
+    ok, leaks = is_clean(f"https://example.com/{long_path}")
+    assert ok

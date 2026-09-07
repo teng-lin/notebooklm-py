@@ -47,13 +47,16 @@ def test_custom_markers_are_registered(pytestconfig: pytest.Config) -> None:
 
 def test_promoted_lifecycle_invariants_are_unmarked_by_refactor_qualification() -> None:
     path = REPO_ROOT / "tests" / "unit" / "test_client_lifecycle_waves.py"
-    source = path.read_text(encoding="utf-8")
-    assert "pytestmark = pytest.mark.refactor_qualification" not in source
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name) and target.id == "pytestmark":
+                    assert "refactor_qualification" not in ast.unparse(stmt.value)
 
-    tree = ast.parse(source)
     functions = {
         node.name: node
-        for node in ast.walk(tree)
+        for node in tree.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     for name in PROMOTED_LIFECYCLE_NAMES:
@@ -100,10 +103,28 @@ def test_pr_contract_implies_repo_lint() -> None:
 
 def test_unconfirmed_contract_is_in_routine_behavioral_lane() -> None:
     path = REPO_ROOT / "tests" / "_guardrails" / "test_unconfirmed_contract.py"
-    source = path.read_text(encoding="utf-8")
-    assert "pytestmark = pytest.mark.repo_lint" not in source, (
-        "test_unconfirmed_contract.py must not be marked repo_lint; it is a live behavioral contract"
-    )
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name) and target.id == "pytestmark":
+                    val = ast.unparse(stmt.value)
+                    assert "repo_lint" not in val, (
+                        "test_unconfirmed_contract.py must not be marked repo_lint"
+                    )
+                    assert "pr_contract" not in val, (
+                        "test_unconfirmed_contract.py must not be marked pr_contract"
+                    )
+
+    ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
+    unconfirmed_entries = [
+        e for e in ledger["entries"] if "test_unconfirmed_contract.py" in e.get("file", "")
+    ]
+    assert unconfirmed_entries, "Missing ledger entries for test_unconfirmed_contract.py"
+    for entry in unconfirmed_entries:
+        assert entry["decision"] == "pr_routine", (
+            f"Expected pr_routine decision for {entry['nodeid']}, got {entry['decision']}"
+        )
 
 
 def test_platform_selection_manifest_is_valid() -> None:

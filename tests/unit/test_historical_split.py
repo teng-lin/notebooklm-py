@@ -10,6 +10,7 @@ Guards that:
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -37,9 +38,15 @@ def test_historical_directory_contains_expected_files() -> None:
 
 def test_every_historical_file_has_historical_pytestmark() -> None:
     for test_file in sorted(HISTORICAL_DIR.glob("test_*.py")):
-        source = test_file.read_text(encoding="utf-8")
-        assert "pytest.mark.historical" in source, (
-            f"{test_file.name} missing `pytestmark = pytest.mark.historical`"
+        tree = ast.parse(test_file.read_text(encoding="utf-8"))
+        marks: list[str] = []
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name) and target.id == "pytestmark":
+                        marks.append(ast.unparse(stmt.value))
+        assert any("pytest.mark.historical" in m for m in marks), (
+            f"{test_file.name} missing module-level `pytestmark = pytest.mark.historical`"
         )
 
 
