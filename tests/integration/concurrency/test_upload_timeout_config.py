@@ -31,7 +31,13 @@ from notebooklm import NotebookLMClient
 
 # Mock-only tests (no real HTTP, no cassette) — opt out of the
 # integration-tree enforcement hook in ``tests/integration/conftest.py``.
-pytestmark = pytest.mark.allow_no_vcr
+pytestmark = [
+    pytest.mark.allow_no_vcr,
+    pytest.mark.filterwarnings(
+        "ignore:Non-default legacy NotebookLMClient.*"
+        "tuning arguments are deprecated:DeprecationWarning"
+    ),
+]
 
 
 @pytest.fixture

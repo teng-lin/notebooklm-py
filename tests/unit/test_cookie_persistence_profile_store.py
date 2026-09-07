@@ -580,6 +580,9 @@ async def test_file_loaded_client_registers_pair_inline_does_not_and_subclass_sk
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
 async def test_file_loaded_handoff_belongs_to_outer_when_nested_forwards_all_kwargs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

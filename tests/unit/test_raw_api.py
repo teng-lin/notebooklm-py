@@ -16,6 +16,7 @@ import pytest
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import DecodingError, RPCResponseTooLargeError
+from notebooklm.options import AndroidBackendConfig, ClientConfig, WebBackendConfig
 from notebooklm.raw import (
     AndroidRawAPI,
     GrpcUnaryMethod,
@@ -145,8 +146,11 @@ async def test_web_raw_call_is_a_thin_executor_delegate() -> None:
 
 
 def test_client_installs_raw_namespace_for_each_backend() -> None:
-    web = NotebookLMClient(_auth(), backend="web")
-    android = NotebookLMClient(_auth(), backend="android")
+    web = NotebookLMClient(_auth(), config=ClientConfig(backend=WebBackendConfig()))
+    android = NotebookLMClient(
+        _auth(),
+        config=ClientConfig(backend=AndroidBackendConfig()),
+    )
 
     assert type(web.raw) is WebRawAPI
     assert web.raw._rpc is web._web_runtime.executor
@@ -411,11 +415,12 @@ import json
 import sys
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.options import AndroidBackendConfig, ClientConfig
 
 before = set(sys.modules)
 NotebookLMClient(
     AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session"),
-    backend="android",
+    config=ClientConfig(backend=AndroidBackendConfig()),
 )
 new = set(sys.modules) - before
 print(json.dumps(sorted(

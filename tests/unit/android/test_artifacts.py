@@ -1613,6 +1613,9 @@ async def test_download_report_decodes_live_apk_report_doc_and_writes_atomically
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 async def test_exact_download_rejects_foreign_prefetched_artifact_before_global_read(
     tmp_path,
 ) -> None:
@@ -1770,6 +1773,9 @@ async def test_download_flashcards_formats_exact_templatized_app_data(tmp_path) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 async def test_media_download_accepts_owned_android_protobuf_prefetch() -> None:
     raw = _artifact("audio", type_code=_PROTO.ARTIFACT_TYPE_AUDIO_OVERVIEW)
     raw.audio_overview.media_urls.add(
@@ -1878,6 +1884,9 @@ async def test_download_interactive_mind_map_writes_validated_json(tmp_path) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 async def test_download_note_backed_mind_map_uses_typed_prefetch_without_rpc(tmp_path) -> None:
     session, _, _, _, api = _graph()
     output = tmp_path / "note-map.json"
@@ -1924,6 +1933,9 @@ async def test_download_note_backed_mind_map_self_fetches_without_prefetch(tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 async def test_download_note_backed_mind_map_holds_outer_scope_through_publication(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2157,6 +2169,9 @@ async def test_generate_note_backed_mind_map_note_failure_does_not_repeat_genera
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 async def test_infographic_prefetch_requires_notebook_ownership_proof() -> None:
     raw = _artifact("image", url="https://lh3.googleusercontent.com/image?cap=1")
     session, _, _, assets, api = _graph([raw])
@@ -2174,6 +2189,9 @@ async def test_infographic_prefetch_requires_notebook_ownership_proof() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 @pytest.mark.parametrize(
     ("method_name", "type_code"),
     [

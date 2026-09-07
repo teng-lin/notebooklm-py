@@ -31,6 +31,7 @@ import pytest
 import notebooklm._runtime.helpers as _runtime_helpers
 from notebooklm import NotebookLMClient, ServerError
 from notebooklm._web.policy import IDEMPOTENCY_REGISTRY, IdempotencyPolicy
+from notebooklm.options import ClientConfig, RetryOptions
 from notebooklm.outcomes import CommitState
 from notebooklm.rpc import RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
@@ -72,7 +73,7 @@ async def _make_client_with_transport(
     """Open a real lifecycle generation, then install the mock transport."""
     client = NotebookLMClient(
         auth_tokens,
-        server_error_max_retries=server_error_max_retries,
+        config=ClientConfig(retry=RetryOptions(server_error_max_retries=server_error_max_retries)),
     )
     await client.__aenter__()
     kernel = client._web_runtime.kernel

@@ -153,6 +153,7 @@ def test_the_service_builds_its_own_registry_when_none_is_injected() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore:ArtifactsAPI\\.wait_for_completion follower:DeprecationWarning")
 async def test_a_follower_receives_the_shared_result_through_its_own_status_callback() -> None:
     """A late waiter attaches to the leader's poll and still gets its callback.
 
@@ -196,6 +197,7 @@ async def test_a_follower_receives_the_shared_result_through_its_own_status_call
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore:ArtifactsAPI\\.wait_for_completion follower:DeprecationWarning")
 async def test_an_async_status_callback_is_awaited_on_the_follower_path() -> None:
     """``maybe_await_callback`` must await a coroutine callback, not drop it."""
     service, supervisor, _clock = _make_service()

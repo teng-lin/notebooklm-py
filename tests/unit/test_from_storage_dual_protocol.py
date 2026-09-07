@@ -94,6 +94,10 @@ class TestCanonicalAsyncWith:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.filterwarnings(
+        "ignore:Non-default legacy NotebookLMClient.from_storage "
+        "tuning arguments are deprecated:DeprecationWarning"
+    )
     async def test_async_with_forwards_chat_response_cap_override(
         self, tmp_path: Path, httpx_mock: HTTPXMock
     ) -> None:

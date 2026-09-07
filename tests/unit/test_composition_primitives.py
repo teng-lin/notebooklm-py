@@ -46,6 +46,7 @@ from notebooklm._web.transport.init import (
 from notebooklm._web.transport.seams import ClientSeams
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.options import ClientConfig, RuntimeOptions
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 
@@ -179,7 +180,10 @@ def test_shell_helpers_carry_client_holders() -> None:
 
 def test_notebooklm_client_initializes_client_holders() -> None:
     """Production clients own the same holder shape returned by composition."""
-    client = NotebookLMClient(_make_auth(), max_concurrent_rpcs=2)
+    client = NotebookLMClient(
+        _make_auth(),
+        config=ClientConfig(runtime=RuntimeOptions(max_concurrent_rpcs=2)),
+    )
 
     assert isinstance(client._seams, ClientSeams)
     assert isinstance(client._web_runtime.composed, ClientComposed)
@@ -189,6 +193,9 @@ def test_notebooklm_client_initializes_client_holders() -> None:
     assert not {"_composed", "_rpc_executor", "_source_uploader"} & vars(client).keys()
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
 def test_invalid_max_concurrent_rpcs_rejected_before_zero_cap_semaphore() -> None:
     """Production and test construction reject invalid caps before composition use."""
     auth = _make_auth()
@@ -200,6 +207,9 @@ def test_invalid_max_concurrent_rpcs_rejected_before_zero_cap_semaphore() -> Non
         build_client_shell_for_tests(auth, max_concurrent_rpcs=0)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
 @pytest.mark.parametrize(
     "other_invalid",
     [

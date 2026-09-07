@@ -28,6 +28,7 @@ from notebooklm.exceptions import (
     UnknownRPCMethodError,
     ValidationError,
 )
+from notebooklm.options import ClientConfig, RetryOptions
 from notebooklm.rpc import (
     AudioFormat,
     AudioLength,
@@ -1356,7 +1357,9 @@ class TestArtifactErrorPaths:
         """
         httpx_mock.add_response(status_code=500)
 
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             with pytest.raises(RPCError, match="Server error 500"):
                 await client.artifacts.list("nb_123")
 

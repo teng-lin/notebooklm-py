@@ -19,6 +19,10 @@ from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
 from notebooklm.options import ClientConfig, WebBackendConfig
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
+
 URL = "https://notebooklm.google.com/test/audio.mp4"
 PAYLOAD = b"audio-content" * 8192
 

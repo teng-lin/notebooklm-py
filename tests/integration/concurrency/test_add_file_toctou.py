@@ -322,6 +322,9 @@ async def test_add_file_bounds_concurrent_open_fds(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
 async def test_max_concurrent_uploads_rejects_non_positive(auth_tokens) -> None:
     """``max_concurrent_uploads`` must be positive when supplied.
 

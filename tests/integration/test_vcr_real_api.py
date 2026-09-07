@@ -16,6 +16,7 @@ import os
 import pytest
 
 from notebooklm import NotebookLMClient
+from notebooklm.options import ClientConfig, WebBackendConfig
 from notebooklm.rpc import RPCMethod
 from tests.integration.conftest import get_vcr_auth, skip_no_cassettes
 from tests.vcr_config import notebooklm_vcr
@@ -51,7 +52,9 @@ class TestRealAPIWithVCR:
         """The new namespace keeps the old raw executor wire contract unchanged."""
         auth = await get_vcr_auth()
 
-        async with NotebookLMClient(auth, backend="web") as client:
+        async with NotebookLMClient(
+            auth, config=ClientConfig(backend=WebBackendConfig())
+        ) as client:
             result = await client.raw.call(
                 RPCMethod.LIST_NOTEBOOKS,
                 [None, 1, None, [2]],

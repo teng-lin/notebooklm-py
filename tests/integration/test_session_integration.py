@@ -7,6 +7,7 @@ import pytest
 
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._runtime.helpers import is_auth_error
+from notebooklm.options import ClientConfig, RetryOptions
 from notebooklm.rpc import (
     AuthError,
     ClientError,
@@ -167,7 +168,9 @@ class TestRPCCallHTTPErrors:
         # path. The rate-limit fix raised the default to 3 — the post-retries raise is
         # covered by ``tests/integration/concurrency/test_rate_limit_default.py``;
         # this test documents the explicit-disable contract.
-        async with NotebookLMClient(auth_tokens, rate_limit_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(rate_limit_max_retries=0))
+        ) as client:
             core = client
             mock_response = MagicMock()
             mock_response.status_code = 429
@@ -184,7 +187,9 @@ class TestRPCCallHTTPErrors:
     async def test_rate_limit_429_without_retry_after_header(self, auth_tokens):
         # See ``test_rate_limit_429_with_retry_after_header`` for why this
         # pins ``rate_limit_max_retries=0``.
-        async with NotebookLMClient(auth_tokens, rate_limit_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(rate_limit_max_retries=0))
+        ) as client:
             core = client
             mock_response = MagicMock()
             mock_response.status_code = 429
@@ -201,7 +206,9 @@ class TestRPCCallHTTPErrors:
     async def test_rate_limit_429_with_invalid_retry_after_header(self, auth_tokens):
         # See ``test_rate_limit_429_with_retry_after_header`` for why this
         # pins ``rate_limit_max_retries=0``.
-        async with NotebookLMClient(auth_tokens, rate_limit_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(rate_limit_max_retries=0))
+        ) as client:
             core = client
             mock_response = MagicMock()
             mock_response.status_code = 429
@@ -238,7 +245,9 @@ class TestRPCCallHTTPErrors:
     async def test_server_error_500(self, auth_tokens):
         # Pin ``server_error_max_retries=0`` to exercise the raise-immediately
         # mapping path. Retry/backoff behavior is covered in core transport tests.
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             core = client
             mock_response = MagicMock()
             mock_response.status_code = 500
@@ -253,7 +262,9 @@ class TestRPCCallHTTPErrors:
     async def test_connect_timeout_raises_network_error(self, auth_tokens):
         # Network errors flow through the same retry loop as 5xx responses;
         # pin to 0 so these mapping tests don't pay backoff sleeps.
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             core = client
             _install_error_post(core, httpx.ConnectTimeout("connect timeout"))
             with pytest.raises(NetworkError):
@@ -261,7 +272,9 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_read_timeout_raises_rpc_timeout_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             core = client
             _install_error_post(core, httpx.ReadTimeout("read timeout"))
             with pytest.raises(RPCTimeoutError):
@@ -269,7 +282,9 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_connect_error_raises_network_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             core = client
             _install_error_post(core, httpx.ConnectError("connection refused"))
             with pytest.raises(NetworkError):
@@ -277,7 +292,9 @@ class TestRPCCallHTTPErrors:
 
     @pytest.mark.asyncio
     async def test_generic_request_error_raises_network_error(self, auth_tokens):
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             core = client
             _install_error_post(core, httpx.RequestError("something went wrong"))
             with pytest.raises(NetworkError):

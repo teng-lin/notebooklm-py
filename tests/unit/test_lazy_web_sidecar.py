@@ -19,6 +19,7 @@ from notebooklm._auth.master_token_types import MasterToken
 from notebooklm._web.transport.sidecar import LazyWebSidecar
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.options import AndroidBackendConfig, ClientConfig
 from notebooklm.rpc import RPCMethod
 from tests._helpers.client_factory import build_client_shell_for_tests
 
@@ -251,7 +252,7 @@ async def test_sidecar_recancellation_detaches_but_root_close_joins_retirement(
     monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
     client = NotebookLMClient(
         AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session"),
-        backend="android",
+        config=ClientConfig(backend=AndroidBackendConfig()),
     )
     assert client._android_runtime is not None
     client._android_runtime.bearer_provider._master_token_reader.read_master_token = MagicMock(
@@ -459,7 +460,7 @@ async def test_android_deprecated_rpc_call_builds_once_warns_once_and_refuses_dr
     monkeypatch.setattr(android_auth, "_require_gpsoauth", lambda: object())
     client = NotebookLMClient(
         AuthTokens(cookies={"SID": "sid"}, csrf_token="csrf", session_id="session"),
-        backend="android",
+        config=ClientConfig(backend=AndroidBackendConfig()),
     )
     assert client._android_runtime is not None
     client._android_runtime.bearer_provider._master_token_reader.read_master_token = MagicMock(

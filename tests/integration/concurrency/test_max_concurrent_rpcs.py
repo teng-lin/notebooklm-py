@@ -304,6 +304,9 @@ async def test_slot_held_across_retry_middleware_retries(
     )
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
 def test_cap_above_pool_max_connections_raises_at_construction(
     auth_tokens: AuthTokens,
 ) -> None:
@@ -326,6 +329,9 @@ def test_cap_above_pool_max_connections_raises_at_construction(
         )
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
 def test_cap_equal_to_pool_max_connections_is_allowed(
     auth_tokens: AuthTokens,
 ) -> None:

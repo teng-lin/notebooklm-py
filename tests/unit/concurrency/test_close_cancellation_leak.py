@@ -48,6 +48,12 @@ from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
 from notebooklm.auth import AuthTokens
+from notebooklm.options import (
+    ClientConfig,
+    WebBackendConfig,
+    WebSessionHooks,
+    WebSessionOptions,
+)
 
 ROTATE_URL_RE = re.compile(r"^https://accounts\.google\.com/RotateCookies$")
 
@@ -145,9 +151,15 @@ async def test_close_during_keepalive_cancel_does_not_leak_transport(
     # keepalive actually fires within the test window.
     client = NotebookLMClient(
         keepalive_auth,
-        keepalive=0.05,
-        keepalive_min_interval=0.01,
-        cookie_rotator=_hanging_rotate,
+        config=ClientConfig(
+            backend=WebBackendConfig(
+                session=WebSessionOptions(
+                    keepalive_interval=0.05,
+                    keepalive_min_interval=0.01,
+                ),
+                hooks=WebSessionHooks(cookie_rotator=_hanging_rotate),
+            ),
+        ),
     )
 
     # Open the client and let the keepalive loop enter ``_rotate_cookies``

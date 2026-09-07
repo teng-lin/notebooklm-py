@@ -1172,6 +1172,7 @@ class TestBaselineNotAdvancedOnSaveFailure:
     @pytest.mark.asyncio
     async def test_baseline_unchanged_when_save_returns_false(self, tmp_path):
         from notebooklm.client import NotebookLMClient
+        from notebooklm.options import ClientConfig, WebBackendConfig, WebSessionHooks
 
         storage = tmp_path / "storage_state.json"
         _write_storage(
@@ -1200,7 +1201,14 @@ class TestBaselineNotAdvancedOnSaveFailure:
         def silent_fail(jar, path, **kwargs):
             return False
 
-        client = NotebookLMClient(auth, cookie_saver=silent_fail)
+        client = NotebookLMClient(
+            auth,
+            config=ClientConfig(
+                backend=WebBackendConfig(
+                    hooks=WebSessionHooks(cookie_saver=silent_fail),
+                ),
+            ),
+        )
 
         async with client:
             baseline_before = client._web_runtime.cookie_persistence.loaded_cookie_snapshot

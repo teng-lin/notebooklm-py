@@ -46,6 +46,10 @@ from notebooklm.raw import AndroidRawAPI, WebRawAPI
 from notebooklm.types import ConnectionLimits
 from tests._helpers.client_factory import build_client_shell_for_tests
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
+
 _SRC_ROOT = Path(__file__).resolve().parents[2] / "src"
 
 

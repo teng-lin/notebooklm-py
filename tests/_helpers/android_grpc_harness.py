@@ -32,6 +32,7 @@ import pytest
 from notebooklm import AuthTokens, NotebookLMClient
 from notebooklm._android import phenotype as android_phenotype
 from notebooklm._android import session as android_session
+from notebooklm.options import AndroidBackendConfig, ClientConfig
 
 from .android_grpc_cassette import (
     ProtoRedactor,
@@ -162,7 +163,7 @@ def _inject_correlation_names(monkeypatch: pytest.MonkeyPatch, names: tuple[str,
 def _live_client() -> Any:
     """The canonical profile-backed client (honours ``NOTEBOOKLM_PROFILE``)."""
 
-    return NotebookLMClient.from_storage(backend="android")
+    return NotebookLMClient.from_storage(config=ClientConfig(backend=AndroidBackendConfig()))
 
 
 async def create_scratch_notebook() -> ScratchNotebook:
@@ -369,7 +370,9 @@ async def android_cassette_client(
         csrf_token="synthetic-csrf",
         session_id="synthetic-session",
     )
-    async with NotebookLMClient(auth, backend="android") as client:
+    async with NotebookLMClient(
+        auth, config=ClientConfig(backend=AndroidBackendConfig())
+    ) as client:
         assert set(client.backends.values()) == {"android"}
         yield client, values
     if phenotype_http_post is not None:

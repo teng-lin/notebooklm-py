@@ -29,6 +29,10 @@ from notebooklm.types import (
     ArtifactParseError,
 )
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
+
 
 def test_asset_download_service_android_extensions_keep_web_safe_defaults() -> None:
     parameters = inspect.signature(AssetDownloadService).parameters

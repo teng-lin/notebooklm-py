@@ -16,6 +16,7 @@ from notebooklm._web.transport import session_auth as session_auth_module
 from notebooklm._web.transport.cookie_persistence import ReadyBaseline
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.options import AndroidBackendConfig, ClientConfig
 from notebooklm.rpc import AuthError, RPCError, RPCMethod
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 from tests._helpers.client_factory import build_client_shell_for_tests
@@ -546,7 +547,10 @@ class TestRefreshAuth:
     async def test_android_refresh_remints_bearer_before_best_effort_web_refresh(
         self, mock_auth, monkeypatch
     ):
-        client = NotebookLMClient(mock_auth, backend="android")
+        client = NotebookLMClient(
+            mock_auth,
+            config=ClientConfig(backend=AndroidBackendConfig()),
+        )
         calls: list[str] = []
         assert client._android_runtime is not None
         provider = client._android_runtime.bearer_provider
@@ -574,7 +578,10 @@ class TestRefreshAuth:
     async def test_android_refresh_keeps_successful_bearer_when_web_refresh_fails(
         self, mock_auth, monkeypatch, caplog
     ):
-        client = NotebookLMClient(mock_auth, backend="android")
+        client = NotebookLMClient(
+            mock_auth,
+            config=ClientConfig(backend=AndroidBackendConfig()),
+        )
         assert client._android_runtime is not None
         provider = client._android_runtime.bearer_provider
         assert provider is not None
@@ -602,7 +609,10 @@ class TestRefreshAuth:
     async def test_android_allow_headless_refresh_mints_exactly_one_bearer(
         self, mock_auth, monkeypatch
     ):
-        client = NotebookLMClient(mock_auth, backend="android")
+        client = NotebookLMClient(
+            mock_auth,
+            config=ClientConfig(backend=AndroidBackendConfig()),
+        )
         assert client._android_runtime is not None
         provider = client._android_runtime.bearer_provider
         assert provider is not None
@@ -639,7 +649,10 @@ class TestRefreshAuth:
     async def test_android_refresh_without_materialized_sidecar_only_remints_bearer(
         self, mock_auth, monkeypatch
     ):
-        client = NotebookLMClient(mock_auth, backend="android")
+        client = NotebookLMClient(
+            mock_auth,
+            config=ClientConfig(backend=AndroidBackendConfig()),
+        )
         assert client._android_runtime is not None
         assert client._web_sidecar is not None
         bearer_refresh = AsyncMock()
@@ -840,7 +853,10 @@ class TestSessionRefreshCallback:
             session_id="sid",
         )
 
-        client = NotebookLMClient(auth, backend="android")
+        client = NotebookLMClient(
+            auth,
+            config=ClientConfig(backend=AndroidBackendConfig()),
+        )
         assert client._web_sidecar is not None
         web = client._web_sidecar._build()
         assert web is not None

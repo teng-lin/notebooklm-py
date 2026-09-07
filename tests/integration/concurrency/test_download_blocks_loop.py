@@ -134,6 +134,9 @@ def mock_artifacts_api(tmp_path: Path) -> tuple[ArtifactsAPI, FakeSession]:
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 async def test_download_report_runs_write_off_loop_thread(
     mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,
@@ -276,6 +279,9 @@ async def test_download_mind_map_runs_write_off_loop_thread(
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings(
+    "ignore:Raw artifact download prefetch parameters are deprecated:DeprecationWarning"
+)
 async def test_concurrent_downloads_both_offload_writes(
     mock_artifacts_api: tuple[ArtifactsAPI, FakeSession],
     tmp_path: Path,

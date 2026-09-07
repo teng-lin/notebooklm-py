@@ -49,6 +49,7 @@ from notebooklm._web.sharing import WebSharingAPI
 from notebooklm._web.sources import WebSourcesAPI
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.options import AndroidBackendConfig, ClientConfig
 from notebooklm.raw import WebRawAPI
 from tests._helpers.client_factory import build_client_shell_for_tests
 
@@ -121,7 +122,10 @@ def test_factory_shell_matches_production_constructor_surface() -> None:
 def test_android_factory_shell_matches_production_constructor_surface() -> None:
     """The parity seam covers the conditional Android assembly branch too."""
 
-    production = NotebookLMClient(_make_auth(), backend="android")
+    production = NotebookLMClient(
+        _make_auth(),
+        config=ClientConfig(backend=AndroidBackendConfig()),
+    )
     shell = build_client_shell_for_tests(auth=_make_auth(), backend="android")
 
     problems = _attribute_surface_divergence(

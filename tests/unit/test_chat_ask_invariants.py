@@ -73,6 +73,9 @@ def _extract_query_param(url: str, key: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
 class TestChatTimeoutRouting:
     def test_client_uses_chat_specific_timeout_by_default(self):
         auth = AuthTokens(cookies={"SID": "x"}, csrf_token="csrf", session_id="sid")

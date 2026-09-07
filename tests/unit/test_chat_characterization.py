@@ -20,6 +20,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from notebooklm import NotebookLMClient
+from notebooklm.options import ClientConfig, RetryOptions
 from notebooklm.rpc import ChatGoal, ChatResponseLength, RPCMethod
 from notebooklm.types import ChatMode, ChatSettings
 
@@ -695,7 +696,9 @@ class TestChatAskErrorHandling:
         )
         # ``server_error_max_retries=0`` pins the original immediate-raise
         # contract; the default retries 5xx + RequestError 3x.
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             with pytest.raises(NetworkError, match="timed out"):
                 await client.chat.ask(
                     "nb_123",
@@ -731,7 +734,9 @@ class TestChatAskErrorHandling:
             status_code=500,
             method="POST",
         )
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             with pytest.raises(ChatError, match="500"):
                 await client.chat.ask(
                     "nb_123",
@@ -760,7 +765,9 @@ class TestChatAskErrorHandling:
             httpx.ConnectError("connection refused"),
             url=re.compile(r".*GenerateFreeFormStreamed.*"),
         )
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             with pytest.raises(NetworkError, match="connection refused"):
                 await client.chat.ask(
                     "nb_123",
@@ -1332,7 +1339,9 @@ class TestAskServerAssignedConversationId:
             method="POST",
         )
 
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             with pytest.raises(ServerError, match="500"):
                 await client.chat.ask("nb_123", "Continue?", source_ids=["src_001"])
 
@@ -1357,7 +1366,9 @@ class TestAskServerAssignedConversationId:
             method="POST",
         )
 
-        async with NotebookLMClient(auth_tokens, server_error_max_retries=0) as client:
+        async with NotebookLMClient(
+            auth_tokens, config=ClientConfig(retry=RetryOptions(server_error_max_retries=0))
+        ) as client:
             with pytest.raises(ServerError, match="500"):
                 await client.chat.ask(
                     "nb_123",

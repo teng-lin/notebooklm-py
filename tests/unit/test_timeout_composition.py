@@ -50,6 +50,10 @@ from notebooklm._web.policy import (
 )
 from notebooklm.rpc import RPCMethod
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:Non-default legacy NotebookLMClient.*tuning arguments are deprecated:DeprecationWarning"
+)
+
 #: batchexecute puts the RPC id in the query string (``?rpcids=…``), so it
 #: identifies the IMPORT_RESEARCH POST among everything else a client sends.
 #: Derived from the enum rather than hardcoded so an id rotation (the #1
