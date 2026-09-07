@@ -22,6 +22,15 @@ REFACTOR_QUALIFICATION_FILES = {
     PROJECT_ROOT / "tests" / "_guardrails" / "test_backend_coupling_observability.py",
 }
 PR_LIFECYCLE_CONTRACTS = {
+    PROJECT_ROOT / "tests" / "unit" / "test_client_lifecycle_waves.py": (
+        "test_open_is_transactional_and_concurrent_callers_coalesce",
+        "test_open_failure_rolls_back_every_transport_and_preserves_original",
+        "test_cancelling_non_owner_open_does_not_abort_owner",
+        "test_cancelled_close_aborts_hung_graceful_wait_but_finishes_teardown",
+        "test_close_reopen_allocates_a_new_resource_epoch",
+        "test_registered_child_self_close_fails_fast_without_leaking_admission",
+        "test_poll_callback_self_close_fails_fast_and_poll_settles_once",
+    ),
     PROJECT_ROOT / "tests" / "unit" / "test_runtime_lifecycle.py": (
         "test_root_open_is_idempotent_and_preserves_transport_generation",
         "test_root_close_runs_hooks_before_transport_resource_teardown",
@@ -231,10 +240,14 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
         assert "pytest.mark.refactor_qualification" in path.read_text(encoding="utf-8")
     for path, contract_names in PR_LIFECYCLE_CONTRACTS.items():
         source = path.read_text(encoding="utf-8")
-        assert "pytest.mark.refactor_qualification" not in source
+        assert "pytestmark = pytest.mark.refactor_qualification" not in source
         assert "pytestmark = pytest.mark.repo_lint" not in source
         for contract_name in contract_names:
             assert f"def {contract_name}(" in source
+            fn_idx = source.find(f"def {contract_name}(")
+            lines_before = source[:fn_idx].strip().splitlines()
+            if lines_before:
+                assert "@pytest.mark.refactor_qualification" not in lines_before[-1]
 
     pr = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     pr_test = pr["jobs"]["test"]

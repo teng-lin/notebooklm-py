@@ -9,7 +9,7 @@ import pytest
 
 from ._v100_breaks import V100_BREAKING_CHANGES, BreakingChange, DocsRunway, Runway
 
-pytestmark = pytest.mark.repo_lint
+pytestmark = [pytest.mark.repo_lint, pytest.mark.pr_contract]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"

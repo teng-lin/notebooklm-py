@@ -28,7 +28,7 @@ import pytest
 import notebooklm._types.enums as domain_enums
 import notebooklm.rpc.types as rpc_types
 
-pytestmark = pytest.mark.repo_lint
+pytestmark = [pytest.mark.repo_lint, pytest.mark.pr_contract]
 
 # ---------------------------------------------------------------------------
 # Frozen wire-value snapshot.

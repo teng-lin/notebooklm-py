@@ -1,9 +1,9 @@
-"""Shared test fixtures."""
-
+import functools
 import importlib.util
 import json
 import os
 import re
+from pathlib import Path
 from urllib.parse import parse_qs
 
 import pytest
@@ -406,6 +406,18 @@ def pytest_ignore_collect(collection_path, config) -> bool | None:
     return None
 
 
+@functools.lru_cache(maxsize=1)
+def _load_platform_manifest(rootpath: str) -> frozenset[str]:
+    manifest_path = Path(rootpath) / "tests" / "fixtures" / "ci-platform-selection.json"
+    if not manifest_path.is_file():
+        return frozenset()
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return frozenset(data.get("paths", []))
+    except Exception:
+        return frozenset()
+
+
 def pytest_collection_modifyitems(config, items):
     """Auto-skip ``@pytest.mark.requires_playwright`` items when playwright is missing.
 
@@ -429,6 +441,13 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if item.get_closest_marker("pr_contract") and not item.get_closest_marker("repo_lint"):
             item.add_marker(pytest.mark.repo_lint)
+
+    platform_paths = _load_platform_manifest(str(config.rootpath))
+    if platform_paths:
+        for item in items:
+            node_rel = item.nodeid.split("::")[0].replace("\\", "/")
+            if any(node_rel == p or node_rel.startswith(f"{p}/") for p in platform_paths):
+                item.add_marker(pytest.mark.compat_smoke)
 
     if _PLAYWRIGHT_INSTALLED:
         chromium_available = None

@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "description": "Secondary-OS and platform compatibility smoke tests (compat_smoke)",
+  "paths": [
+    "tests/integration/faults",
+    "tests/unit/cli/test_encoding.py",
+    "tests/unit/test_atomic_io.py",
+    "tests/unit/test_atomic_update_json.py",
+    "tests/unit/test_auth_storage_lock.py",
+    "tests/unit/test_curl_cffi_transport_poc.py",
+    "tests/unit/test_paths.py",
+    "tests/unit/test_profile_atomic_write.py",
+    "tests/unit/test_windows_lock.py"
+  ]
+}

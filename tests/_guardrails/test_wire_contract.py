@@ -54,7 +54,7 @@ from tests._guardrails._wire_contract import (
 )
 from tests._guardrails._wire_schema import PROTO_PATH, load_enums, load_proto_schema
 
-pytestmark = pytest.mark.repo_lint
+pytestmark = [pytest.mark.repo_lint, pytest.mark.pr_contract]
 
 #: Bindings whose client side is an ``int``-Enum in ``notebooklm.rpc.types``,
 #: so the table can be checked against the live members. Decode-map bindings

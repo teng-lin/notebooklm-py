@@ -48,8 +48,6 @@ from notebooklm.types import SharePermission
 from tests._fixtures.fake_core import make_fake_core
 from tests._helpers.android_supervisor import SupervisedAndroidTransport
 
-pytestmark = pytest.mark.repo_lint
-
 _NOTEBOOK_ID = "00000000-0000-4000-8000-000000000001"
 _TARGET_NOTEBOOK_ID = "00000000-0000-4000-8000-000000000002"
 _SOURCE_ID = "00000000-0000-4000-8000-000000000003"

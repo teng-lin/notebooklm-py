@@ -14,8 +14,6 @@ from notebooklm._runtime.call_supervisor import AdmissionState, CallSupervisor
 from notebooklm._runtime.lifecycle import ClientLifecycle, _ResourceState
 from notebooklm.types import GenerationState, GenerationStatus
 
-pytestmark = pytest.mark.refactor_qualification
-
 
 def _assert_republished_cancel_message(error: asyncio.CancelledError, expected: str) -> None:
     """Assert first-cancel precedence across supported asyncio versions.
@@ -238,6 +236,7 @@ async def test_open_failure_rolls_back_every_transport_and_preserves_original() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_open_commit_failure_rolls_back_releases_joiners_and_allows_reopen() -> None:
     events: list[str] = []
     gate = asyncio.Event()
@@ -285,6 +284,7 @@ async def test_open_commit_failure_rolls_back_releases_joiners_and_allows_reopen
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_first_cancel_during_failed_open_waits_for_rollback_and_wins() -> None:
     events: list[str] = []
     rollback_gate = asyncio.Event()
@@ -317,6 +317,7 @@ async def test_first_cancel_during_failed_open_waits_for_rollback_and_wins() -> 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("recancel", [False, True])
+@pytest.mark.refactor_qualification
 async def test_process_exit_from_failed_open_beats_cancellation_during_rollback(
     recancel: bool,
 ) -> None:
@@ -357,6 +358,7 @@ async def test_process_exit_from_failed_open_beats_cancellation_during_rollback(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_recancel_during_failed_open_detaches_rollback_with_first_cancel() -> None:
     events: list[str] = []
     rollback_gate = asyncio.Event()
@@ -391,6 +393,7 @@ async def test_recancel_during_failed_open_detaches_rollback_with_first_cancel()
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_cancel_immediately_after_prepare_before_commit_rolls_back() -> None:
     events: list[str] = []
     rollback_gate = asyncio.Event()
@@ -422,6 +425,7 @@ async def test_cancel_immediately_after_prepare_before_commit_rolls_back() -> No
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("waiter_action", ["close", "drain"])
+@pytest.mark.refactor_qualification
 async def test_failed_open_is_re_raised_to_close_and_drain_waiters(waiter_action: str) -> None:
     events: list[str] = []
     gate = asyncio.Event()
@@ -469,6 +473,7 @@ async def test_cancelling_non_owner_open_does_not_abort_owner() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_open_joiner_retries_after_owner_cancellation_rollback() -> None:
     events: list[str] = []
     gate = asyncio.Event()
@@ -499,6 +504,7 @@ async def test_open_joiner_retries_after_owner_cancellation_rollback() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_open_owner_recancellation_leaves_retained_rollback_running() -> None:
     events: list[str] = []
     open_gate = asyncio.Event()
@@ -533,6 +539,7 @@ async def test_open_owner_recancellation_leaves_retained_rollback_running() -> N
 @pytest.mark.parametrize(
     "closing_error", [RuntimeError("closing failed"), asyncio.CancelledError()]
 )
+@pytest.mark.refactor_qualification
 async def test_begin_closing_failure_restores_non_stranded_resource_state(
     closing_error: BaseException,
 ) -> None:
@@ -553,6 +560,7 @@ async def test_begin_closing_failure_restores_non_stranded_resource_state(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_graceful_prephase_cancellation_releases_joiners_and_allows_retry() -> None:
     events: list[str] = []
     gate = asyncio.Event()
@@ -591,6 +599,7 @@ async def test_graceful_prephase_cancellation_releases_joiners_and_allows_retry(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_rollback_process_exit_beats_original_open_failure() -> None:
     from notebooklm._runtime.lifecycle import _capture, _OpenOutcome, _OpenWave
 
@@ -613,6 +622,7 @@ async def test_rollback_process_exit_beats_original_open_failure() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_manual_drain_keeps_resources_open_and_close_waves_coalesce() -> None:
     events: list[str] = []
     supervisor = _Supervisor(events=events)
@@ -635,6 +645,7 @@ async def test_manual_drain_keeps_resources_open_and_close_waves_coalesce() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_drain_racing_opening_waits_for_commit_then_drains_generation() -> None:
     events: list[str] = []
     open_gate = asyncio.Event()
@@ -665,6 +676,7 @@ async def test_drain_racing_opening_waits_for_commit_then_drains_generation() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_drain_racing_manual_drain_waits_on_same_open_generation() -> None:
     events: list[str] = []
     idle_gate = asyncio.Event()
@@ -692,6 +704,7 @@ async def test_drain_racing_manual_drain_waits_on_same_open_generation() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_drain_racing_closing_joins_close_wave_without_redraining() -> None:
     events: list[str] = []
     prepare_gate = asyncio.Event()
@@ -724,6 +737,7 @@ async def test_drain_racing_closing_joins_close_wave_without_redraining() -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("close_finishes_before_drain_resumes", [False, True])
+@pytest.mark.refactor_qualification
 async def test_drain_that_snapshotted_open_joins_or_observes_racing_close(
     close_finishes_before_drain_resumes: bool,
 ) -> None:
@@ -773,6 +787,7 @@ async def test_drain_that_snapshotted_open_joins_or_observes_racing_close(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_resource_state_and_is_open_transitions_cover_every_phase() -> None:
     events: list[str] = []
     open_gate = asyncio.Event()
@@ -811,6 +826,7 @@ async def test_resource_state_and_is_open_transitions_cover_every_phase() -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_second_close_waiter_cancellation_aborts_hung_first_graceful_prephase() -> None:
     events: list[str] = []
     idle_gate = asyncio.Event()
@@ -838,6 +854,7 @@ async def test_second_close_waiter_cancellation_aborts_hung_first_graceful_preph
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_invalid_graceful_timeout_precedes_hooks_and_forced_close_ignores_it() -> None:
     events: list[str] = []
     lifecycle = _lifecycle(_Supervisor(events=events), _Transport("web", events))
@@ -862,6 +879,7 @@ async def test_invalid_graceful_timeout_precedes_hooks_and_forced_close_ignores_
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_drain_timeout_precedes_ordered_transport_failures() -> None:
     events: list[str] = []
     timeout = TimeoutError("idle timed out")
@@ -884,6 +902,7 @@ async def test_drain_timeout_precedes_ordered_transport_failures() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_process_exit_precedes_graceful_timeout_and_teardown_failures() -> None:
     events: list[str] = []
     timeout = TimeoutError("idle timed out")
@@ -911,6 +930,7 @@ async def test_process_exit_precedes_graceful_timeout_and_teardown_failures() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_close_phase_process_exit_waits_for_siblings_and_marks_closed() -> None:
     events: list[str] = []
     process_exit = KeyboardInterrupt("shutdown")
@@ -935,6 +955,7 @@ async def test_close_phase_process_exit_waits_for_siblings_and_marks_closed() ->
 @pytest.mark.asyncio
 @pytest.mark.parametrize("phase", ["stop_accepting", "pre_drain_hook", "wait_for_idle"])
 @pytest.mark.parametrize("exit_type", [KeyboardInterrupt, SystemExit])
+@pytest.mark.refactor_qualification
 async def test_graceful_prephase_process_exit_finishes_every_close_phase(
     phase: str,
     exit_type: type[BaseException],
@@ -972,6 +993,7 @@ async def test_graceful_prephase_process_exit_finishes_every_close_phase(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_observed_retained_process_exit_is_not_forwarded_to_loop_handler() -> None:
     events: list[str] = []
     process_exit = SystemExit("observed exit")
@@ -996,6 +1018,7 @@ async def test_observed_retained_process_exit_is_not_forwarded_to_loop_handler()
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_detached_retained_process_exit_is_forwarded_to_loop_handler_once() -> None:
     events: list[str] = []
     prepare_gate = asyncio.Event()
@@ -1039,6 +1062,7 @@ async def test_detached_retained_process_exit_is_forwarded_to_loop_handler_once(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_observer_suppresses_handler_after_another_waiter_detaches() -> None:
     events: list[str] = []
     prepare_gate = asyncio.Event()
@@ -1079,6 +1103,7 @@ async def test_observer_suppresses_handler_after_another_waiter_detaches() -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_eager_task_factory_never_runs_wave_code_under_state_lock() -> None:
     events: list[str] = []
     supervisor = _Supervisor(events=events)
@@ -1133,6 +1158,7 @@ async def test_cancelled_close_aborts_hung_graceful_wait_but_finishes_teardown()
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_close_recancellation_leaves_retained_teardown_running() -> None:
     events: list[str] = []
     prepare_gate = asyncio.Event()
@@ -1180,6 +1206,7 @@ async def test_close_reopen_allocates_a_new_resource_epoch() -> None:
 
 @pytest.mark.parametrize("resource_state", ["open", "opening", "closing"])
 @pytest.mark.parametrize("action", ["open", "drain", "close"])
+@pytest.mark.refactor_qualification
 def test_foreign_loop_public_lifecycle_calls_are_rejected(
     resource_state: str,
     action: str,
@@ -1233,6 +1260,7 @@ def test_foreign_loop_public_lifecycle_calls_are_rejected(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_closed_noops_and_timeout_validation_are_resource_independent() -> None:
     lifecycle = _lifecycle(_Supervisor(), _Transport("web", []))
 
@@ -1246,6 +1274,7 @@ async def test_closed_noops_and_timeout_validation_are_resource_independent() ->
 
 
 @pytest.mark.parametrize("waiter_action", ["close", "drain"])
+@pytest.mark.refactor_qualification
 def test_same_new_loop_waiter_can_join_cross_loop_reopen(waiter_action: str) -> None:
     events: list[str] = []
     lifecycle = _lifecycle(_Supervisor(events=events), _Transport("web", events))
@@ -1277,6 +1306,7 @@ def test_same_new_loop_waiter_can_join_cross_loop_reopen(waiter_action: str) -> 
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_draining_a_closed_lifecycle_is_a_no_op() -> None:
     events: list[str] = []
     supervisor = _Supervisor(events=events)
@@ -1288,6 +1318,7 @@ async def test_draining_a_closed_lifecycle_is_a_no_op() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_drain_rejects_a_negative_timeout() -> None:
     events: list[str] = []
     lifecycle = _lifecycle(_Supervisor(events=events), _Transport("t", events))
@@ -1299,6 +1330,7 @@ async def test_drain_rejects_a_negative_timeout() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_drain_stops_admission_and_waits_for_idle() -> None:
     events: list[str] = []
     supervisor = _Supervisor(events=events)
@@ -1315,6 +1347,7 @@ async def test_drain_stops_admission_and_waits_for_idle() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_a_drain_racing_a_close_joins_that_close_instead_of_failing() -> None:
     """``stop_accepting`` raises once ``close()`` has claimed the epoch."""
     events: list[str] = []
@@ -1338,6 +1371,7 @@ async def test_a_drain_racing_a_close_joins_that_close_instead_of_failing() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_an_unrelated_supervisor_failure_during_drain_propagates() -> None:
     """Only the close race is suppressed — a real fault must stay loud."""
     events: list[str] = []
@@ -1353,6 +1387,7 @@ async def test_an_unrelated_supervisor_failure_during_drain_propagates() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_a_drain_that_times_out_waiting_for_idle_propagates() -> None:
     events: list[str] = []
     supervisor = _Supervisor(events=events)
@@ -1373,6 +1408,7 @@ async def test_a_drain_that_times_out_waiting_for_idle_propagates() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_reopening_an_open_lifecycle_is_a_no_op() -> None:
     events: list[str] = []
     lifecycle = _lifecycle(_Supervisor(events=events), _Transport("t", events))
@@ -1386,6 +1422,7 @@ async def test_reopening_an_open_lifecycle_is_a_no_op() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_opening_while_closing_is_refused() -> None:
     events: list[str] = []
     close_gate = asyncio.Event()
@@ -1404,6 +1441,7 @@ async def test_opening_while_closing_is_refused() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_an_admission_rollback_failure_does_not_mask_the_open_failure() -> None:
     """A failed open rolls back; a rollback fault must not replace the cause."""
     events: list[str] = []
@@ -1426,6 +1464,7 @@ async def test_an_admission_rollback_failure_does_not_mask_the_open_failure() ->
 @pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["drain", "graceful-close", "forced-close"])
 @pytest.mark.parametrize("active_wave", ["none", "graceful", "forced"])
+@pytest.mark.refactor_qualification
 async def test_admitted_shutdown_fails_before_state_or_close_wave_changes(
     action: str,
     active_wave: str,
@@ -1505,6 +1544,7 @@ async def test_registered_child_self_close_fails_fast_without_leaking_admission(
 
 
 @pytest.mark.asyncio
+@pytest.mark.refactor_qualification
 async def test_retired_generation_owner_cannot_close_reopened_generation() -> None:
     lifecycle, supervisor = _real_lifecycle()
     await lifecycle.open()

@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from ._v100_breaks import V100_BREAKING_CHANGES
+
+pytestmark = [pytest.mark.repo_lint, pytest.mark.pr_contract]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
