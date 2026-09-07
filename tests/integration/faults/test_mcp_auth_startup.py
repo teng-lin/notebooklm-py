@@ -18,6 +18,7 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
 from tests._fault_server.http import HttpFaultServer, Reply, Route, Stall
+from tests._fault_server.mcp_startup_cleanup import settle_calls_and_upstream, settle_http_worker
 from tests._fault_server.web import NEW_CSRF, NEW_SESSION, homepage_response, list_response
 
 pytestmark = pytest.mark.allow_no_vcr
@@ -75,6 +76,7 @@ async def _session(directory: Path, port: int, transport: str):
             process = await asyncio.create_subprocess_exec(
                 sys.executable, *args, env=env, stdout=asyncio.subprocess.DEVNULL, stderr=errors
             )
+            primary = None
             try:
 
                 async def ready():
@@ -89,14 +91,11 @@ async def _session(directory: Path, port: int, transport: str):
                     ClientSession(reader, writer) as session,
                 ):
                     yield session
+            except BaseException as error:
+                primary = error
+                raise
             finally:
-                (directory / "stop").touch()
-                try:
-                    await asyncio.wait_for(process.wait(), 5)
-                finally:
-                    if process.returncode is None:
-                        process.kill()
-                        await asyncio.wait_for(process.wait(), 2)
+                await settle_http_worker(process, directory, primary)
             assert process.returncode == 0
 
 
@@ -147,85 +146,95 @@ async def test_stored_auth_mcp_startup(tmp_path: Path, transport: str, fault: st
         )
     report = tmp_path / "report.json"
     calls: list[asyncio.Task] = []
-    async with upstream:
-        try:
-            async with _session(tmp_path, upstream.address[1], transport) as session:
-                await upstream.wait_for_gate("opening", timeout=10)
-                await asyncio.wait_for(session.initialize(), 3)
-                listed = await asyncio.wait_for(session.list_tools(), 3)
-                assert {"server_info", "notebook_list"} <= {tool.name for tool in listed.tools}
-                info = await asyncio.wait_for(session.call_tool("server_info", {}), 3)
-                assert not info.isError
-                assert not upstream.gate("opening").is_set()
-                assert [row.route for row in upstream.journal] == [_ROTATE, Route.homepage()]
-                assert upstream.journal[0].cookie_names == ("SID", "__Secure-1PSIDTS")
-                assert upstream.journal[1].cookie_values["__Secure-1PSIDTS"] == "synthetic-rotated"
-                if fault != "shutdown":
-                    request_id = session._request_id
-                    first_call = asyncio.create_task(session.call_tool("notebook_list", {}))
-                    calls.append(first_call)
-                    await _observe(report, lambda state: state["waiters"] >= 1)
-                    if fault == "cancel-waiter":
-                        survivor = asyncio.create_task(session.call_tool("notebook_list", {}))
-                        calls.append(survivor)
-                        await _observe(report, lambda state: state["waiters"] >= 2)
-                        # Native task cancellation does not send MCP cancellation.
-                        await session.send_notification(
-                            types.ClientNotification(
-                                types.CancelledNotification(
-                                    params=types.CancelledNotificationParams(
-                                        requestId=request_id, reason="fault waiter departed"
-                                    )
+    primary = None
+    await upstream.__aenter__()
+    try:
+        async with _session(tmp_path, upstream.address[1], transport) as session:
+            await upstream.wait_for_gate("opening", timeout=10)
+            await asyncio.wait_for(session.initialize(), 3)
+            listed = await asyncio.wait_for(session.list_tools(), 3)
+            assert {"server_info", "notebook_list"} <= {tool.name for tool in listed.tools}
+            info = await asyncio.wait_for(session.call_tool("server_info", {}), 3)
+            assert not info.isError
+            assert not upstream.gate("opening").is_set()
+            assert [row.route for row in upstream.journal] == [_ROTATE, Route.homepage()]
+            assert upstream.journal[0].cookie_names == ("SID", "__Secure-1PSIDTS")
+            assert upstream.journal[1].cookie_values["__Secure-1PSIDTS"] == "synthetic-rotated"
+            if fault != "shutdown":
+                request_id = session._request_id
+                first_call = asyncio.create_task(session.call_tool("notebook_list", {}))
+                calls.append(first_call)
+                await _observe(report, lambda state: state["waiters"] >= 1)
+                if fault == "cancel-waiter":
+                    survivor = asyncio.create_task(session.call_tool("notebook_list", {}))
+                    calls.append(survivor)
+                    await _observe(report, lambda state: state["waiters"] >= 2)
+                    # Native task cancellation does not send MCP cancellation.
+                    await session.send_notification(
+                        types.ClientNotification(
+                            types.CancelledNotification(
+                                params=types.CancelledNotificationParams(
+                                    requestId=request_id, reason="fault waiter departed"
                                 )
                             )
                         )
-                        first_call.cancel()
-                        with pytest.raises(asyncio.CancelledError):
-                            await first_call
-                        cancelled = await _observe(
-                            report, lambda state: state["cancelled_waiters"] >= 1
-                        )
-                        assert cancelled["cancelled_waiters"] == 1
-                        assert cancelled["opens"] == 1
-                        assert not survivor.done()
-                        first_call = survivor
-                    upstream.release("opening")
-                    response = await asyncio.wait_for(first_call, 5)
-                    if fault == "failure":
-                        assert response.isError
-                        response = await asyncio.wait_for(session.call_tool("notebook_list", {}), 5)
-                    assert not response.isError
-                    assert response.structuredContent["notebooks"][0]["id"] == "nb-recovered"
-            state = await _observe(report, lambda state: state.get("settled"))
-            assert state["http_closed"] and state["client_closed"]
-            assert state["opens"] == (2 if fault == "failure" else 1)
-            assert len(state["errors"]) == int(fault == "failure")
-            assert state["cancelled_waiters"] == int(fault == "cancel-waiter")
-            reads = [row for row in upstream.journal if row.route == _READ]
-            assert len(reads) == int(fault != "shutdown")
-            for row in reads:
-                assert row.csrf == NEW_CSRF and row.session_id == NEW_SESSION
-                assert row.cookie_values["__Secure-1PSIDTS"] == (
-                    "synthetic-__Secure-1PSIDTS" if fault == "failure" else "synthetic-rotated"
-                )
-            assert upstream.remaining() == 0
-            assert len(upstream.journal) == 2 + int(fault != "shutdown") + int(fault == "failure")
-            logs = (tmp_path / "stderr.log").read_text(encoding="utf-8")
-            assert "synthetic-rotated" not in logs and "synthetic-SID" not in logs
-            assert any(
-                cookie["value"]
-                == (
-                    "synthetic-__Secure-1PSIDTS"
-                    if fault in {"failure", "shutdown"}
-                    else "synthetic-rotated"
-                )
-                for cookie in json.loads(storage.read_text(encoding="utf-8"))["cookies"]
+                    )
+                    first_call.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await first_call
+                    cancelled = await _observe(
+                        report, lambda state: state["cancelled_waiters"] >= 1
+                    )
+                    assert cancelled["cancelled_waiters"] == 1
+                    assert cancelled["opens"] == 1
+                    assert not survivor.done()
+                    first_call = survivor
+                upstream.release("opening")
+                response = await asyncio.wait_for(first_call, 5)
+                if fault == "failure":
+                    assert response.isError
+                    response = await asyncio.wait_for(session.call_tool("notebook_list", {}), 5)
+                assert not response.isError
+                assert response.structuredContent["notebooks"][0]["id"] == "nb-recovered"
+        state = await _observe(report, lambda state: state.get("settled"))
+        assert state["http_closed"] and state["client_closed"]
+        assert not state["report_errors"]
+        assert state["opens"] == (2 if fault == "failure" else 1)
+        assert len(state["errors"]) == int(fault == "failure")
+        assert state["cancelled_waiters"] == int(fault == "cancel-waiter")
+        reads = [row for row in upstream.journal if row.route == _READ]
+        assert len(reads) == int(fault != "shutdown")
+        for row in reads:
+            assert row.csrf == NEW_CSRF and row.session_id == NEW_SESSION
+            assert row.cookie_values["__Secure-1PSIDTS"] == (
+                "synthetic-__Secure-1PSIDTS" if fault == "failure" else "synthetic-rotated"
             )
-        finally:
-            for call in calls:
-                if not call.done():
-                    call.cancel()
-            await asyncio.wait_for(asyncio.gather(*calls, return_exceptions=True), 2)
-            upstream.release("opening")
+        assert upstream.remaining() == 0
+        assert len(upstream.journal) == 2 + int(fault != "shutdown") + int(fault == "failure")
+        logs = (tmp_path / "stderr.log").read_text(encoding="utf-8")
+        assert all(
+            secret not in logs
+            for secret in (
+                "synthetic-rotated",
+                "synthetic-SID",
+                "synthetic-__Secure-1PSIDTS",
+                NEW_CSRF,
+                NEW_SESSION,
+            )
+        )
+        assert any(
+            cookie["value"]
+            == (
+                "synthetic-__Secure-1PSIDTS"
+                if fault in {"failure", "shutdown"}
+                else "synthetic-rotated"
+            )
+            for cookie in json.loads(storage.read_text(encoding="utf-8"))["cookies"]
+        )
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        await settle_calls_and_upstream(calls, upstream, tmp_path, primary)
     assert upstream.active_handlers == 0
     assert not upstream.errors

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
 
+from notebooklm._atomic_io import atomic_write_json
 from notebooklm.client import NotebookLMClient
 from notebooklm.mcp._clientprovider import ClientProvider
 from notebooklm.mcp.server import create_server
@@ -24,15 +24,23 @@ def main() -> None:
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--transport", choices=("stdio", "http"), required=True)
     args = parser.parse_args()
-    state: dict[str, Any] = {"opens": 0, "waiters": 0, "cancelled_waiters": 0, "errors": []}
+    state: dict[str, Any] = {
+        "opens": 0,
+        "waiters": 0,
+        "cancelled_waiters": 0,
+        "errors": [],
+        "report_errors": [],
+    }
     clients: list[httpx.AsyncClient] = []
     library_clients: list[NotebookLMClient] = []
     report = args.directory / "report.json"
 
     def observe() -> None:
-        temporary = report.with_suffix(".tmp")
-        temporary.write_text(json.dumps(state), encoding="utf-8")
-        temporary.replace(report)
+        try:
+            atomic_write_json(report, state)
+        except OSError as error:
+            # Evidence I/O must not replace an authentication or shutdown error.
+            state["report_errors"].append(type(error).__name__)
 
     # This process owns one cohort. Preserve the real client class while changing
     # only socket routing, including the pre-client auth transport constructor.
