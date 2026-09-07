@@ -400,7 +400,7 @@ def pytest_configure(config):
 def pytest_ignore_collect(collection_path, config) -> bool | None:
     """Ignore collection of historical qualification tests unless --run-historical is passed."""
     if not config.getoption("--run-historical", default=False):
-        normalized = str(collection_path).replace("\\", "/")
+        normalized = Path(collection_path).resolve().as_posix()
         if "tests/qualification/historical" in normalized:
             return True
     return None

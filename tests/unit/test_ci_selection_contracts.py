@@ -11,10 +11,14 @@ Follows Section 5 and Section 6.5 of the test-optimization plan:
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
+
+from tests.conftest import pytest_collection_modifyitems
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLATFORM_MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "ci-platform-selection.json"
@@ -44,14 +48,52 @@ def test_promoted_lifecycle_invariants_are_unmarked_by_refactor_qualification() 
     source = path.read_text(encoding="utf-8")
     assert "pytestmark = pytest.mark.refactor_qualification" not in source
 
+    tree = ast.parse(source)
+    functions = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
     for name in PROMOTED_LIFECYCLE_NAMES:
-        assert f"def {name}(" in source
-        fn_idx = source.find(f"def {name}(")
-        lines_before = source[:fn_idx].strip().splitlines()
-        if lines_before:
-            assert "@pytest.mark.refactor_qualification" not in lines_before[-1], (
-                f"{name} must not be decorated with refactor_qualification"
-            )
+        assert name in functions, f"Expected {name} in {path}"
+        fn = functions[name]
+        decorator_names = [ast.unparse(d) for d in fn.decorator_list]
+        assert not any("refactor_qualification" in d for d in decorator_names), (
+            f"{name} must not be decorated with refactor_qualification"
+        )
+
+
+def test_pr_contract_implies_repo_lint() -> None:
+    """Ensure that the pytest hook auto-tags items carrying pr_contract with repo_lint."""
+
+    class FakeItem:
+        def __init__(self, markers: set[str], nodeid: str = "tests/unit/test_foo.py::test_bar"):
+            self.markers = set(markers)
+            self.nodeid = nodeid
+            self.keywords: dict[str, object] = {}
+
+        def get_closest_marker(self, name: str):
+            if name in self.markers:
+                return getattr(pytest.mark, name)
+            return None
+
+        def add_marker(self, marker):
+            self.markers.add(marker.name)
+
+    config_mock = MagicMock()
+    config_mock.getoption.return_value = False
+    config_mock.rootpath = REPO_ROOT
+
+    item1 = FakeItem({"pr_contract"})
+    item2 = FakeItem({"pr_contract", "repo_lint"})
+    item3 = FakeItem({"unit"})
+
+    items = [item1, item2, item3]
+    pytest_collection_modifyitems(config_mock, items)
+
+    assert "repo_lint" in item1.markers
+    assert "repo_lint" in item2.markers
+    assert "repo_lint" not in item3.markers
 
 
 def test_unconfirmed_contract_is_in_routine_behavioral_lane() -> None:

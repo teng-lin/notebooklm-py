@@ -242,12 +242,19 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
         source = path.read_text(encoding="utf-8")
         assert "pytestmark = pytest.mark.refactor_qualification" not in source
         assert "pytestmark = pytest.mark.repo_lint" not in source
+        tree = ast.parse(source)
+        functions = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
         for contract_name in contract_names:
-            assert f"def {contract_name}(" in source
-            fn_idx = source.find(f"def {contract_name}(")
-            lines_before = source[:fn_idx].strip().splitlines()
-            if lines_before:
-                assert "@pytest.mark.refactor_qualification" not in lines_before[-1]
+            assert contract_name in functions, f"Expected {contract_name} in {path}"
+            fn = functions[contract_name]
+            decorator_names = [ast.unparse(d) for d in fn.decorator_list]
+            assert not any("refactor_qualification" in d for d in decorator_names), (
+                f"{contract_name} in {path} must not be decorated with refactor_qualification"
+            )
 
     pr = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     pr_test = pr["jobs"]["test"]

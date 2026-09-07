@@ -49,8 +49,10 @@ def test_pytest_ignore_collect_excludes_historical_by_default() -> None:
 
     sample_historical_path = HISTORICAL_DIR / "test_v080_release_gate.py"
     sample_guardrail_path = GUARDRAILS_DIR / "test_v100_release_gate.py"
+    rel_historical_path = Path("tests/qualification/historical/test_v080_release_gate.py")
 
     assert pytest_ignore_collect(sample_historical_path, config_mock) is True
+    assert pytest_ignore_collect(rel_historical_path, config_mock) is True
     assert pytest_ignore_collect(sample_guardrail_path, config_mock) is None
 
 
