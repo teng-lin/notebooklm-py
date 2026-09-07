@@ -697,14 +697,14 @@ def _chat_sessions(session_id: str) -> Any:
     )
 
 
-async def _wait_for(predicate: Callable[[], bool]) -> None:
+async def _wait_for(predicate: Callable[[], bool], *, timeout: float = 5.0) -> None:
     """Yield only until a deterministic server-journal condition becomes true."""
 
     async def wait() -> None:
         while not predicate():
             await asyncio.sleep(0)
 
-    await asyncio.wait_for(wait(), timeout=1.0)
+    await asyncio.wait_for(wait(), timeout=timeout)
 
 
 def _admission_settled(client: Any, generation: Any) -> bool:

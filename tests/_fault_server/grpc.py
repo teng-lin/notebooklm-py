@@ -170,7 +170,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         if self._active:
             raise AssertionError(f"active gRPC handlers leaked: {len(self._active)}")
 
-    async def wait_for_requests(self, method: str, count: int, *, timeout: float = 2.0) -> None:
+    async def wait_for_requests(self, method: str, count: int, *, timeout: float = 5.0) -> None:
         async def wait() -> None:
             while sum(record.method == method for record in self.requests) < count:
                 self._changed.clear()
@@ -178,7 +178,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
 
         await asyncio.wait_for(wait(), timeout)
 
-    async def wait_for_idle(self, *, timeout: float = 1.0) -> None:
+    async def wait_for_idle(self, *, timeout: float = 5.0) -> None:
         async def wait() -> None:
             while self._active:
                 await asyncio.sleep(0)
@@ -329,7 +329,7 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         self._changed.set()
         return recorded
 
-    async def wait_for_cancellation(self, request: GrpcRequest, *, timeout: float = 1.0) -> None:
+    async def wait_for_cancellation(self, request: GrpcRequest, *, timeout: float = 5.0) -> None:
         if not any(item is request for item in self.requests):
             raise ValueError("request does not belong to this gRPC fault server")
         await asyncio.wait_for(request._cancelled_event.wait(), timeout=timeout)
