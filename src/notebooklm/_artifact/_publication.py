@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import tempfile
 from collections.abc import AsyncIterator, Callable
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from .._hop_credentials import CredentialPolicy, HopCredentials
+
+logger = logging.getLogger(__name__)
 
 
 async def write_staging(path: Path, writer: Callable[[Path], object]) -> None:
@@ -54,6 +57,22 @@ class AssetPublication:
 
         return credential_for
 
+    def _publish_download(self, staging: Path, destination: Path) -> None:
+        os.replace(staging, destination)
+
+    def _remove_download_staging(self, staging: Path) -> None:
+        staging.unlink(missing_ok=True)
+
+    def _cleanup_download_staging(self, staging: Path) -> None:
+        try:
+            self._remove_download_staging(staging)
+        except OSError as cleanup_error:
+            # Retention must not replace the primary error or cancellation.
+            logger.warning(
+                "Could not remove download staging file (%s)",
+                type(cleanup_error).__name__,
+            )
+
     async def write_file(self, output_path: str, writer: Callable[[Path], object]) -> str:
         """Stage bytes off-loop, settle the writer, then publish without an await gap."""
         self._assert_active()
@@ -67,7 +86,8 @@ class AssetPublication:
         try:
             await write_staging(staging, writer)
             self._assert_active()
-            os.replace(staging, destination)
+            self._publish_download(staging, destination)
             return str(destination)
-        finally:
-            staging.unlink(missing_ok=True)
+        except BaseException:
+            self._cleanup_download_staging(staging)
+            raise

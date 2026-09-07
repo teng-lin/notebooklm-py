@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 from urllib.parse import urlparse
 
 import httpx
@@ -338,6 +338,16 @@ class AssetDownloadService(AssetPublication):
             raise first_auth_error from None
         return result
 
+    def _create_download_staging(self, destination: Path) -> Path:
+        fd, name = tempfile.mkstemp(
+            dir=destination.parent, prefix=destination.name + ".", suffix=".tmp"
+        )
+        os.close(fd)
+        return Path(name)
+
+    def _open_download_staging(self, path: Path) -> BinaryIO:
+        return open(path, "wb")
+
     async def download_url(self, url: str, output_path: str) -> str:
         """Download a file from URL using streaming with proper cookie handling."""
         parsed = urlparse(url)
@@ -353,13 +363,7 @@ class AssetDownloadService(AssetPublication):
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        fd, temp_path_str = tempfile.mkstemp(
-            dir=output_file.parent,
-            prefix=output_file.name + ".",
-            suffix=".tmp",
-        )
-        os.close(fd)
-        temp_file = Path(temp_path_str)
+        temp_file = self._create_download_staging(output_file)
 
         try:
             cookies = await self._load_cookies()
@@ -399,7 +403,7 @@ class AssetDownloadService(AssetPublication):
                             temp_file, lambda path: path.write_bytes(response.content)
                         )
                     self._assert_active()
-                    os.replace(temp_file, output_file)
+                    self._publish_download(temp_file, output_file)
                     logger.debug(
                         "Downloaded %s%s (%d bytes)",
                         display_host,
@@ -446,7 +450,7 @@ class AssetDownloadService(AssetPublication):
                             # ``except`` BEFORE the drain so the producer short-
                             # circuits as early as possible.
                             try:
-                                with open(temp_file, "wb") as fh:
+                                with self._open_download_staging(temp_file) as fh:
                                     while True:
                                         item = chunk_q.get()
                                         if item is None:
@@ -532,7 +536,7 @@ class AssetDownloadService(AssetPublication):
                         _reject_empty_download(total_bytes)
 
                         self._assert_active()
-                        os.replace(temp_file, output_file)
+                        self._publish_download(temp_file, output_file)
                         logger.debug(
                             "Downloaded %s%s (%d bytes)",
                             display_host,
@@ -569,7 +573,7 @@ class AssetDownloadService(AssetPublication):
                     raise auth_error from _scrubbed_http_status_error(auth_failure_status)
                 raise auth_error from None
         except BaseException:
-            temp_file.unlink(missing_ok=True)
+            self._cleanup_download_staging(temp_file)
             raise
 
 
