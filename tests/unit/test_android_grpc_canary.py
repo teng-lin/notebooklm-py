@@ -335,6 +335,25 @@ async def test_output_carries_hashes_but_no_ids_or_tokens() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("fail_on", ["START", "OK open"])
+async def test_progress_pipe_failure_does_not_change_canary_result(fail_on, capsys) -> None:
+    failed = False
+
+    def broken_progress(line: str) -> None:
+        nonlocal failed
+        assert not failed, "progress writes must stop after the first pipe failure"
+        if fail_on in line:
+            failed = True
+            raise BrokenPipeError("closed diagnostic stream")
+
+    code, lines = await _run(_Service(), progress=broken_progress)
+    assert code == 0
+    assert failed
+    assert _line(lines, "OK get_project") == "OK get_project id round-trip"
+    assert capsys.readouterr().err.count("could not write live Android progress") == 1
+
+
+@pytest.mark.asyncio
 async def test_absent_conversation_is_still_a_pass() -> None:
     code, lines = await _run(_Service(with_session=False))
 

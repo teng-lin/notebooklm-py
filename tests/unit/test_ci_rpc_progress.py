@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 import pytest
@@ -130,3 +131,28 @@ async def test_cancelled_probe_keeps_failure_and_partial_summary(monkeypatch, tm
             await health.test_rpc_method(None, None, health.RPCMethod.DELETE_NOTEBOOK, [])
     assert "| cleanup | `RPC-ID DELETE_NOTEBOOK" in summary.read_text()
     assert "| ERROR |" in summary.read_text()
+
+
+def test_broken_pipe_preserves_cli_failure_and_summary(monkeypatch, tmp_path, capsys):
+    async def failed_call(*args, **kwargs):
+        return [], "HTTP 503"
+
+    async def run(**kwargs):
+        progress_phase("method inventory")
+        result = await health.check_method(None, None, health.RPCMethod.LIST_NOTEBOOKS, None)
+        return [result], health.CustomizationStatus.MATCH, None, None
+
+    monkeypatch.setattr(health, "make_rpc_call", failed_call)
+    monkeypatch.setattr(health, "run_health_check", run)
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    reader, writer = os.pipe()
+    os.close(reader)
+    try:
+        monkeypatch.setattr(sys, "argv", ["check_rpc_health.py", "--progress-fd", str(writer)])
+        assert health.main() == 3
+    finally:
+        os.close(writer)
+    assert "| ERROR |" in summary.read_text()
+    assert "HTTP 503; see report" in summary.read_text()
+    assert capsys.readouterr().err.count("could not write live RPC progress") == 1

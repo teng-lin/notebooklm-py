@@ -9,8 +9,24 @@ from __future__ import annotations
 import os
 import re
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TextIO
+
+
+@contextmanager
+def open_progress_stream(fd: int) -> Iterator[TextIO]:
+    """Own a duplicate descriptor without letting a final flush replace the verdict."""
+    stream = os.fdopen(os.dup(fd), "w", encoding="utf-8")
+    try:
+        yield stream
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            print("WARNING: could not close CI progress stream", file=sys.stderr, flush=True)
 
 
 def safe_test_name(node_id: str) -> str:

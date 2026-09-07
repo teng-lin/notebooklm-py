@@ -88,6 +88,11 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
+if __package__:
+    from ._ci_progress import open_progress_stream
+else:
+    from _ci_progress import open_progress_stream
+
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.unknown_fields import UnknownFieldSet
 
@@ -253,7 +258,15 @@ class CanaryReport:
             line = f"[{stamp}] START {step} {method}".rstrip()
             if self._redact:
                 line = line.replace(self._redact, REDACTED_NOTEBOOK_ID)
-            self._progress(line)
+            self._live_line(line)
+
+    def _live_line(self, text: str) -> None:
+        if self._progress is not None:
+            try:
+                self._progress(text)
+            except OSError:
+                self._progress = None
+                print("WARNING: could not write live Android progress", file=sys.stderr, flush=True)
 
     def _line(self, text: str, *, step: str | None = None) -> None:
         if self._redact:
@@ -264,7 +277,7 @@ class CanaryReport:
             timing = ""
             if step in self._started:
                 timing = f"; elapsed={time.monotonic() - self._started.pop(step):.1f}s"
-            self._progress(f"[{stamp}] {text}{timing}")
+            self._live_line(f"[{stamp}] {text}{timing}")
 
     def ok(self, step: str, detail: str = "") -> None:
         self._line(f"OK {step} {detail}".rstrip(), step=step)
@@ -679,7 +692,7 @@ def main(
     with ExitStack() as stack:
         progress = None
         if args.progress_fd is not None:
-            stream = stack.enter_context(os.fdopen(os.dup(args.progress_fd), "w", encoding="utf-8"))
+            stream = stack.enter_context(open_progress_stream(args.progress_fd))
             progress = functools.partial(print, file=stream, flush=True)
         return asyncio.run(
             run_canary(

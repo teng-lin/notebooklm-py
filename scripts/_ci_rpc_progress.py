@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import time
@@ -15,9 +14,9 @@ from functools import wraps
 from typing import Any, ParamSpec, TextIO, TypeVar
 
 if __package__:
-    from ._ci_progress import write_summary
+    from ._ci_progress import open_progress_stream, write_summary
 else:
-    from _ci_progress import write_summary
+    from _ci_progress import open_progress_stream, write_summary
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -91,12 +90,16 @@ class RPCProgress:
         self.stream = stream
         self.phase = "initialization"
         self.rows: list[tuple[str, str, str, float, str]] = []
+        self.stream_failed = False
 
     def emit(self, message: str) -> None:
+        if self.stream_failed:
+            return
         stamp = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
         try:
             print(f"[{stamp}] {message}", file=self.stream, flush=True)
         except OSError:
+            self.stream_failed = True
             print("WARNING: could not write live RPC progress", file=sys.stderr, flush=True)
 
     def finish(self, label: str, status: str, started: float, reason: str) -> None:
@@ -126,7 +129,7 @@ def live_progress(fd: int | None) -> Iterator[None]:
     if fd is None:
         yield
         return
-    with os.fdopen(os.dup(fd), "w", encoding="utf-8") as stream:
+    with open_progress_stream(fd) as stream:
         progress = RPCProgress(stream)
         token = _ACTIVE.set(progress)
         try:

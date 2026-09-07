@@ -198,7 +198,8 @@ def test_rpc_workflow_keeps_live_progress_separate_and_preserves_exit(
     data = yaml.safe_load((root / ".github/workflows/rpc-health.yml").read_text())
     command = next(row["run"] for row in data["jobs"][job]["steps"] if row.get("id") == "health")
     command = (
-        "uv() { printf 'START RPC-ID visible\\n' >&3; printf 'private response\\n'; return 3; }\n"
+        "uv() { case \" $* \" in *' --progress-fd 3 '*) ;; *) return 97;; esac; "
+        "printf 'START RPC-ID visible\\n' >&3; printf 'private response\\n'; return 3; }\n"
         + command
     )
     completed = subprocess.run(
