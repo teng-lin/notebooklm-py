@@ -22,6 +22,7 @@ tests/integration/concurrency/test_wait_for_sources_leak.py # existing mock-only
 tests/integration/faults/test_adapter_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_android_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_curl_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_startup.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_workflows.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/test_artifact_generation_idempotency.py # existing mock-only integration exception; migrate per test-suite taxonomy cleanup

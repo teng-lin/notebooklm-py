@@ -190,6 +190,8 @@ tests/integration/faults/test_curl_faults.py::test_curl_fault_scenario[curl_uplo
 tests/integration/faults/test_curl_faults.py::test_curl_fault_scenario[curl_upload_commit_loss] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_curl_faults.py::test_curl_fault_scenario[curl_upload_prefix_failure] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_curl_faults.py::test_curl_fault_scenario[curl_upload_success] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_startup.py::test_stdio_discovery_while_client_open_is_stalled[recover] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_startup.py::test_stdio_discovery_while_client_open_is_stalled[shutdown-during-open] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_cli_ambiguous_create] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_cli_transient_read] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_web_faults.py::test_web_fault_scenario[adapter_mcp_ambiguous_create] # real loopback fault service; socket failures cannot be reproduced by VCR

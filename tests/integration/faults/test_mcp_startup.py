@@ -23,6 +23,7 @@ pytestmark = pytest.mark.allow_no_vcr
 
 @pytest.fixture
 def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
+    """Use WindowsProactorEventLoopPolicy on Windows to support child subprocesses."""
     # Unlike the in-memory MCP tests, this test owns a real child process.
     if sys.platform == "win32":
         return asyncio.WindowsProactorEventLoopPolicy()
@@ -31,6 +32,7 @@ def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
 
 @pytest.mark.parametrize("recover", [True, False], ids=["recover", "shutdown-during-open"])
 async def test_stdio_discovery_while_client_open_is_stalled(tmp_path: Path, recover: bool) -> None:
+    """Verify stdio initialization, tool listing, and info succeed while open is stalled."""
     upstream = HttpFaultServer()
     upstream.enqueue(Route.homepage(), Stall("headers", "opening", Reply(body=homepage_response())))
     read = Route.rpc("wXbhsf")

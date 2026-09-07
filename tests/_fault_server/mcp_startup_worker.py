@@ -23,15 +23,18 @@ class _ParentFaultServer(HttpFaultServer):
     """Reuse the logical-host router against a listener owned by the parent."""
 
     def __init__(self, port: int) -> None:
+        """Initialize the fault server pointing to the parent port."""
         super().__init__()
         self._parent_address = ("127.0.0.1", port)
 
     @property
     def address(self) -> tuple[str, int]:
+        """Return the host and port of the parent fault server."""
         return self._parent_address
 
 
 def main() -> None:
+    """Run the MCP stdio worker with a socket-gated client factory."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--report", type=Path, required=True)
@@ -41,6 +44,7 @@ def main() -> None:
 
     @asynccontextmanager
     async def factory():
+        """Yield a test client after a gated HTTP request."""
         state["opens"] += 1
         opening = upstream.client_factory(timeout=60)
         client = None
