@@ -124,6 +124,54 @@ def _clean(result: ScenarioResult, server: HttpFaultServer, *, remaining: int = 
     result.require("resilience_expected_remaining", server.remaining() == remaining)
 
 
+def _record_http_trace(result: ScenarioResult, server: HttpFaultServer) -> None:
+    result.record(
+        "http_trace",
+        requests=[
+            {
+                "sequence": record.sequence,
+                "method": record.route.method,
+                "logical_host": record.route.host,
+                "path": record.route.path,
+                "rpc_id": record.route.rpc_id,
+                "action": record.action,
+            }
+            for record in server.journal
+        ],
+        committed=list(server.committed),
+    )
+
+
+async def _settle_cohort(
+    result: ScenarioResult,
+    server: HttpFaultServer,
+    client: NotebookLMClient | None,
+    primary_error: BaseException | None,
+) -> list[BaseException]:
+    cleanup_errors: list[BaseException] = []
+    if client is not None:
+        try:
+            await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
+        except BaseException as exc:
+            cleanup_errors.append(exc)
+    try:
+        await asyncio.wait_for(server.aclose(), _CLOSE_TIMEOUT)
+    except BaseException as exc:
+        cleanup_errors.append(exc)
+    result.record(
+        "cleanup",
+        component="resilience",
+        client_closed=client is None or not client._lifecycle.is_open(),
+        requests=len(server.journal),
+        remaining_actions=server.remaining(),
+        server_errors=list(server.errors),
+        primary_error=None if primary_error is None else type(primary_error).__name__,
+        cleanup_error_types=[type(error).__name__ for error in cleanup_errors],
+    )
+    _record_http_trace(result, server)
+    return cleanup_errors
+
+
 @asynccontextmanager
 async def _cohort(
     result: ScenarioResult,
@@ -137,13 +185,14 @@ async def _cohort(
     retry_sleep: Callable[[float], Awaitable[Any]] | None = None,
     async_client_factory: Callable[..., Any] | None = None,
 ) -> AsyncIterator[NotebookLMClient]:
-    await server.__aenter__()
     client: NotebookLMClient | None = None
+    primary_error: BaseException | None = None
 
     async def no_sleep(seconds: float) -> None:
         result.record("sleep", seconds=seconds)
 
     try:
+        await server.__aenter__()
         client = build_fault_client(
             server,
             timeout=timeout,
@@ -156,36 +205,17 @@ async def _cohort(
         )
         await client.__aenter__()
         yield client
+    except BaseException as exc:
+        primary_error = exc
+        raise
     finally:
-        if client is not None:
-            await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
-        await asyncio.wait_for(server.aclose(), _CLOSE_TIMEOUT)
-        result.record(
-            "cleanup",
-            component="resilience",
-            client_closed=client is None or not client._lifecycle.is_open(),
-            requests=len(server.journal),
-            remaining_actions=server.remaining(),
-            server_errors=list(server.errors),
-        )
-        result.record(
-            "http_trace",
-            requests=[
-                {
-                    "sequence": record.sequence,
-                    "method": record.route.method,
-                    "logical_host": record.route.host,
-                    "path": record.route.path,
-                    "rpc_id": record.route.rpc_id,
-                    "action": record.action,
-                }
-                for record in server.journal
-            ],
-            committed=list(server.committed),
-        )
-        result.require(
-            "resilience_client_closed", client is None or not client._lifecycle.is_open()
-        )
+        cleanup_errors = await _settle_cohort(result, server, client, primary_error)
+        if primary_error is None:
+            if cleanup_errors:
+                raise cleanup_errors[0]
+            result.require(
+                "resilience_client_closed", client is None or not client._lifecycle.is_open()
+            )
 
 
 async def _read_disconnect_recovery(result: ScenarioResult) -> None:
@@ -620,10 +650,12 @@ async def _auth_refresh_old_generation(result: ScenarioResult) -> None:
             },
         ),
     )
-    await server.__aenter__()
-    client = build_fault_client(server)
+    client: NotebookLMClient | None = None
     old_error: BaseException | None = None
+    primary_error: BaseException | None = None
     try:
+        await server.__aenter__()
+        client = build_fault_client(server)
         await client.__aenter__()
         old = asyncio.create_task(client.notebooks.list())
         await server.wait_for_requests(_HOME, 1)
@@ -636,33 +668,15 @@ async def _auth_refresh_old_generation(result: ScenarioResult) -> None:
         await server.wait_for_event("handler_settled", count=4)
         probe = await client.notebooks.list()
         auth_state = client.auth
+    except BaseException as exc:
+        primary_error = exc
+        raise
     finally:
         server.release("old-refresh")
-        await asyncio.wait_for(client.close(drain=False), _CLOSE_TIMEOUT)
-        await asyncio.wait_for(server.aclose(), _CLOSE_TIMEOUT)
-        result.record(
-            "cleanup",
-            component="resilience",
-            client_closed=not client._lifecycle.is_open(),
-            requests=len(server.journal),
-            remaining_actions=server.remaining(),
-            server_errors=list(server.errors),
-        )
-    result.record(
-        "http_trace",
-        requests=[
-            {
-                "sequence": record.sequence,
-                "method": record.route.method,
-                "logical_host": record.route.host,
-                "path": record.route.path,
-                "rpc_id": record.route.rpc_id,
-                "action": record.action,
-            }
-            for record in server.journal
-        ],
-        committed=list(server.committed),
-    )
+        cleanup_errors = await _settle_cohort(result, server, client, primary_error)
+        if primary_error is None and cleanup_errors:
+            raise cleanup_errors[0]
+    assert client is not None
     result.require("old_refresh_waiter_failed", old_error is not None)
     result.require("new_generation_succeeded", [row.id for row in current] == ["new"])
     result.require("old_refresh_did_not_publish", auth_state.csrf_token == newest_csrf)
