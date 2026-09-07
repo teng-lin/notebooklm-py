@@ -350,8 +350,21 @@ def _run_cli(config: RunConfig, registry: Registry) -> dict[str, Any]:
         try:
             report = loop.run_until_complete(main_task)
         except (KeyboardInterrupt, SystemExit) as error:
-            main_task.cancel()
-            report = loop.run_until_complete(main_task)
+            if main_task.done():
+                # An exit from main-owned preparation already stopped this task.
+                # asyncio's completion callback does not stop a newly driven loop
+                # for an already-failed KeyboardInterrupt/SystemExit task.
+                report = getattr(error, "_fault_report", None)
+                if report is None:
+                    report = {
+                        "schema_version": 1,
+                        "config": asdict(config),
+                        "failures": [type(error).__name__],
+                        "summary": {"ok": False},
+                    }
+            else:
+                main_task.cancel()
+                report = loop.run_until_complete(main_task)
             error._fault_report = report
             raise
         return report

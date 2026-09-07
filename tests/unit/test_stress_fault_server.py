@@ -592,6 +592,48 @@ else:
     assert any(event["kind"] == "cleanup" for event in report["operations"][0]["events"])
 
 
+@pytest.mark.parametrize(
+    "exit_expression,expected,error_type",
+    [
+        ("KeyboardInterrupt()", "KeyboardInterrupt", "KeyboardInterrupt"),
+        ("SystemExit(23)", "SystemExit:23", "SystemExit"),
+    ],
+)
+def test_cli_preparation_exit_writes_failure_report_without_redriving_finished_task(
+    tmp_path: Path, exit_expression: str, expected: str, error_type: str
+) -> None:
+    destination = tmp_path / "preparation-exit-report.json"
+    code = """
+import sys
+from scripts import stress_fault_server as stress
+async def scenario(name, *, operation_id, result):
+    raise AssertionError("scenario must not run after preparation exits")
+def interrupted_import(name):
+    assert name == "tests._fault_server.adapter_scenarios"
+    raise EXIT_EXPRESSION
+stress.load_registry = lambda backend: {("web", "adapter_exit"): scenario}
+stress.importlib.import_module = interrupted_import
+try:
+    stress.main(["--backend", "web", "--iterations", "1", "--json-report", sys.argv[1]])
+except KeyboardInterrupt:
+    print("KeyboardInterrupt")
+except SystemExit as error:
+    print("SystemExit:" + str(error.code))
+else:
+    raise AssertionError("interpreter exit was downgraded")
+""".replace("EXIT_EXPRESSION", exit_expression)
+    process = subprocess.run(
+        [sys.executable, "-c", code, str(destination)], capture_output=True, text=True, timeout=5
+    )
+    assert process.returncode == 0, process.stderr
+    assert process.stdout.strip() == expected
+    report = json.loads(destination.read_text())
+    assert report["schema_version"] == 1
+    assert report["config"]["backend"] == "web"
+    assert report["failures"] == [error_type]
+    assert report["summary"]["ok"] is False
+
+
 @pytest.mark.asyncio
 async def test_selected_adapter_dependencies_load_before_timed_cohorts(
     monkeypatch: pytest.MonkeyPatch,
