@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 
+import anyio
 import pytest
 
 pytest.importorskip("fastmcp")
@@ -19,6 +20,20 @@ from tests._fault_server.http import HttpFaultServer, Reply, Route, Stall
 from tests._fault_server.web import homepage_response, list_response
 
 pytestmark = pytest.mark.allow_no_vcr
+
+
+def _is_broken_resource_error(error: BaseException) -> bool:
+    """Return True if error is BrokenResourceError or an ExceptionGroup of only BrokenResourceError."""
+    pending = [error]
+    leaves: list[BaseException] = []
+    while pending:
+        current = pending.pop()
+        children = getattr(current, "exceptions", None)
+        if isinstance(children, tuple) and children:
+            pending.extend(children)
+        else:
+            leaves.append(current)
+    return bool(leaves) and all(isinstance(leaf, anyio.BrokenResourceError) for leaf in leaves)
 
 
 @pytest.fixture
@@ -58,36 +73,45 @@ async def test_stdio_discovery_while_client_open_is_stalled(tmp_path: Path, reco
             },
         )
         try:
-            with stderr.open("w", encoding="utf-8") as errors:
-                async with stdio_client(params, errlog=errors) as (reader, writer):
-                    async with ClientSession(reader, writer) as session:
-                        # Observe the upstream request BEFORE testing initialize: a
-                        # timeout cannot pass just because warm-up never started.
-                        await upstream.wait_for_gate("opening", timeout=10)
-                        await asyncio.wait_for(session.initialize(), timeout=5)
-                        tools = await asyncio.wait_for(session.list_tools(), timeout=5)
-                        assert {"server_info", "notebook_list"} <= {
-                            tool.name for tool in tools.tools
-                        }
-                        info = await asyncio.wait_for(
-                            session.call_tool("server_info", {}), timeout=5
-                        )
-                        assert not info.isError
-                        assert not upstream.gate("opening").is_set()
-                        assert [row.route for row in upstream.journal] == [Route.homepage()]
-                        assert not report.exists(), "client opening must still be in flight"
+            try:
+                with stderr.open("w", encoding="utf-8") as errors:
+                    async with stdio_client(params, errlog=errors) as (reader, writer):
+                        async with ClientSession(reader, writer) as session:
+                            # Observe the upstream request BEFORE testing initialize: a
+                            # timeout cannot pass just because warm-up never started.
+                            await upstream.wait_for_gate("opening", timeout=10)
+                            await asyncio.wait_for(session.initialize(), timeout=5)
+                            tools = await asyncio.wait_for(session.list_tools(), timeout=5)
+                            assert {"server_info", "notebook_list"} <= {
+                                tool.name for tool in tools.tools
+                            }
+                            info = await asyncio.wait_for(
+                                session.call_tool("server_info", {}), timeout=5
+                            )
+                            assert not info.isError
+                            assert not upstream.gate("opening").is_set()
+                            assert [row.route for row in upstream.journal] == [Route.homepage()]
+                            assert not report.exists(), "client opening must still be in flight"
 
-                        if recover:
-                            upstream.release("opening")
-                            notebooks = await asyncio.wait_for(
-                                session.call_tool("notebook_list", {}), timeout=5
-                            )
-                            assert not notebooks.isError
-                            assert notebooks.structuredContent is not None
-                            assert (
-                                notebooks.structuredContent["notebooks"][0]["id"] == "nb-recovered"
-                            )
-                        # Otherwise close stdin while the network open is pending.
+                            if recover:
+                                upstream.release("opening")
+                                notebooks = await asyncio.wait_for(
+                                    session.call_tool("notebook_list", {}), timeout=5
+                                )
+                                assert not notebooks.isError
+                                assert notebooks.structuredContent is not None
+                                assert (
+                                    notebooks.structuredContent["notebooks"][0]["id"]
+                                    == "nb-recovered"
+                                )
+                            # Otherwise close stdin while the network open is pending.
+            except BaseException as exc:
+                # On Windows, stdio_client's stdout_reader can race child process
+                # exit with read_stream closure, raising BrokenResourceError in the
+                # task group. Tolerate that teardown race if and only if all leaf
+                # exceptions are BrokenResourceError.
+                if not _is_broken_resource_error(exc):
+                    raise
             assert report.is_file(), "child must finalize the open during stdio shutdown"
             cleanup = json.loads(report.read_text(encoding="utf-8"))
             assert cleanup == {
