@@ -139,6 +139,7 @@ _SKIP_DIRS: frozenset[str] = frozenset(
         "_fixtures",
         "cassettes",
         "fixtures",
+        "qualification",
     }
 )
 

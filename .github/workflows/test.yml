@@ -11,6 +11,11 @@ on:
         description: 'Branch/ref to test (leave empty to use the triggering ref). Use this to run the full gate against a release branch that conflicts with main and so cannot run via pull_request.'
         required: false
         default: ''
+      run_historical:
+        description: 'Run historical qualification and retired layout inventories'
+        required: false
+        type: boolean
+        default: true
 
 concurrency:
   # Include the dispatch input so a manual run against a release branch gets its
@@ -393,6 +398,13 @@ jobs:
         tests/_guardrails/test_adapter_import_scanner.py
         tests/_guardrails/test_adapter_support_boundary.py
 
+    - name: Run PR contract suites
+      if: matrix.canonical
+      # Positive protocol, schema, release gate, and deprecation invariant suites.
+      run: >-
+        uv run pytest -n auto --dist loadgroup --timeout=180 --no-cov
+        -m "pr_contract and not requires_playwright and not requires_chromium and not reality"
+
     - name: Run tests without coverage
       # Every required compatibility cell runs the ordinary suite exactly once.
       # Repository lint has a bounded manual lane, coverage and per-file floors
@@ -451,4 +463,11 @@ jobs:
       # an explicit manual/release lane, not every required PR matrix cell.
       run: >-
         uv run pytest -n auto --dist loadgroup -m refactor_qualification
+        --timeout=180 --no-cov
+
+    - name: Run historical qualification tests
+      if: inputs.run_historical != false
+      # Historical v0.8 and retired layout migration inventories (Phase 2).
+      run: >-
+        uv run pytest tests/qualification/historical --run-historical -m historical
         --timeout=180 --no-cov

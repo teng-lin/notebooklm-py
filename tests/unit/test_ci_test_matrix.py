@@ -188,6 +188,7 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
         "Run required external-reality probes",
         "Run Playwright-dependent unit tests serially",
         "Run critical contract guards",
+        "Run PR contract suites",
     }
     for name in canonical_steps:
         assert _step(test_job, name)["if"] == "matrix.canonical"
@@ -220,6 +221,11 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
         "test_class_body_annotations_do_not_name_a_shadowed_builtin"
     ) in critical_command
     assert "tests/unit/test_ci_test_matrix.py" in critical_command
+
+    pr_contract_command = str(_step(test_job, "Run PR contract suites")["run"])
+    assert "-m" in pr_contract_command
+    assert "pr_contract" in pr_contract_command
+    assert "--no-cov" in pr_contract_command
 
     smoke = _step(test_job, "Run Windows Playwright compatibility smoke serially")
     assert smoke["if"] == "matrix.windows_playwright"
@@ -268,6 +274,10 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
     manual_command = str(_step(manual, "Run refactor qualification tests")["run"])
     assert "-m refactor_qualification" in manual_command
     assert "--no-cov" in manual_command
+    historical_command = str(_step(manual, "Run historical qualification tests")["run"])
+    assert "--run-historical" in historical_command
+    assert "-m historical" in historical_command
+    assert "--no-cov" in historical_command
 
     nightly = yaml.safe_load(NIGHTLY_CHECKS_WORKFLOW.read_text(encoding="utf-8"))
     compatibility = nightly["jobs"]["compatibility"]

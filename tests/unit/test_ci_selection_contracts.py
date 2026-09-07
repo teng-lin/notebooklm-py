@@ -17,10 +17,12 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 from tests.conftest import pytest_collection_modifyitems
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "test.yml"
 PLATFORM_MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "ci-platform-selection.json"
 LEDGER_PATH = REPO_ROOT / "tests" / "fixtures" / "test_relevance_ledger.json"
 
@@ -125,3 +127,36 @@ def test_pr_contract_and_historical_sets_are_disjoint() -> None:
 
     overlap = pr_nodes & historical_nodes
     assert not overlap, f"PR contracts and historical tests must be disjoint; overlap: {overlap}"
+
+
+def test_pr_contract_is_executed_in_canonical_pr_workflow() -> None:
+    assert WORKFLOW_PATH.is_file()
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    test_job = workflow["jobs"]["test"]
+    step = next(
+        (s for s in test_job.get("steps", []) if s.get("name") == "Run PR contract suites"),
+        None,
+    )
+    assert step is not None, "Missing 'Run PR contract suites' step in test.yml"
+    assert step.get("if") == "matrix.canonical"
+    run_cmd = str(step.get("run", ""))
+    assert "-m" in run_cmd
+    assert "pr_contract" in run_cmd
+
+
+def test_historical_qualification_is_executed_in_manual_workflow() -> None:
+    assert WORKFLOW_PATH.is_file()
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    repo_lint_job = workflow["jobs"]["repo-lint"]
+    step = next(
+        (
+            s
+            for s in repo_lint_job.get("steps", [])
+            if s.get("name") == "Run historical qualification tests"
+        ),
+        None,
+    )
+    assert step is not None, "Missing 'Run historical qualification tests' step in repo-lint job"
+    run_cmd = str(step.get("run", ""))
+    assert "--run-historical" in run_cmd
+    assert "-m historical" in run_cmd
