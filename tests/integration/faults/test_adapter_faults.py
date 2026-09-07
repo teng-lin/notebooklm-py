@@ -18,7 +18,8 @@ pytestmark = pytest.mark.allow_no_vcr
 async def test_adapter_fault_scenario(scenario: str) -> None:
     result = await asyncio.wait_for(
         run_scenario(scenario, operation_id=f"pytest-{scenario}"),
-        timeout=12.0,
+        # Allow the child's 10s watchdog and 2s terminate/2s kill settlement.
+        timeout=20.0,
     )
 
     assert result.checks
