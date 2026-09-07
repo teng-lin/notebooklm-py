@@ -58,7 +58,6 @@ from notebooklm import (
     ServerError,
     SharePermission,
 )
-from notebooklm._logging import scrub_secrets
 
 TEMPLATE_ID_ENV = "NOTEBOOKLM_E2E_TEMPLATE_NOTEBOOK_ID"
 DEFAULT_TEMPLATE_ID = "a109ad5c-834d-4f3d-82a0-fe41aa72318e"
@@ -185,9 +184,10 @@ class SweepResult:
 
 
 def _safe_exception_name(exc: BaseException) -> str:
-    """Return a scrubbed class name, never an exception body."""
+    """Return a Python class identifier, never an exception body."""
 
-    return scrub_secrets(type(exc).__name__).replace("\n", " ")[:100]
+    name = type(exc).__name__
+    return name if re.fullmatch(r"[A-Za-z_]\w{0,99}", name) else "Exception"
 
 
 def _category_for(exc: BaseException) -> str:

@@ -19,7 +19,6 @@ from typing import Any
 from _ci_progress import report, safe_test_name
 
 from notebooklm import NotebookLMClient
-from notebooklm._logging import scrub_secrets
 
 EXPECTED_FAMILIES = {
     "audio",
@@ -848,7 +847,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         asyncio.run(_run_client(args))
     except VerificationError as exc:
-        report(f"{exc.category}: {scrub_secrets(exc)}", error=True)
+        # These diagnostics are constructed here from owned labels, counts and
+        # validated test names. Arbitrary upstream exceptions take the branch below.
+        report(f"{exc.category}: {exc}", error=True)
         return exc.exit_code
     except Exception:
         # Arbitrary upstream exception text can carry resource IDs even after

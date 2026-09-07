@@ -416,7 +416,10 @@ async def _configured_queue_expiry_no_dispatch(result: ScenarioResult) -> None:
             error = caught
         server.release("held-rpc")
         await held
-        probe = await client.notebooks.list()
+        # Only the queued create tests the 50 ms default. Recovery must tolerate
+        # scheduler delays while other fault scenarios run concurrently.
+        async with client.operation(timeout=None):
+            probe = await client.notebooks.list()
     metadata = getattr(error, "operation_metadata", None)
     result.require("configured_queue_timeout", isinstance(error, OperationTimeoutError))
     result.require(
