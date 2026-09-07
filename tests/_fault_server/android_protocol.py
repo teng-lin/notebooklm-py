@@ -10,7 +10,6 @@ from notebooklm import RPCResponseTooLargeError
 
 from .android import build_android_client
 from .android_cleanup import finish_cleanup, settle_actions
-from .android_scenarios import _chat_sessions, _frame
 from .common import ScenarioResult
 from .grpc import GENERATE_STREAMED, LIST_CHAT_SESSIONS, GrpcFaultServer, reply, stream
 
@@ -31,6 +30,8 @@ CHECKS = [
 async def run_scenario(
     name: str, *, operation_id: str, result: ScenarioResult | None = None
 ) -> ScenarioResult:
+    from .android_scenarios import _chat_sessions, _frame
+
     if name not in SCENARIOS:
         raise ValueError("unknown Android protocol scenario")
     result = result or ScenarioResult("android", name, operation_id)
