@@ -749,7 +749,8 @@ async def test_incremental_response_delivers_complete_bytes_and_progress_events(
     server = HttpFaultServer()
     route = Route("GET", "notebook.google.com", "/asset")
     body = "café 世界".encode()
-    server.enqueue(route, Incremental(Reply(body=body), chunk_bytes=2, interval=0.01))
+    # Pace above the Windows clock resolution so the schedule spans real ticks.
+    server.enqueue(route, Incremental(Reply(body=body), chunk_bytes=2, interval=0.05))
     async with server:
         async with server.client_factory() as client:
             response = await client.get("https://notebook.google.com/asset")
@@ -758,7 +759,6 @@ async def test_incremental_response_delivers_complete_bytes_and_progress_events(
     progress = [event for event in server.events if event["phase"] == "response_chunk"]
     assert len(progress) == (len(body) + 1) // 2
     assert progress[-1]["response_bytes"] == len(body)
-    # Windows monotonic clock ticks can cover adjacent 10ms deliveries.
     assert all(
         a["monotonic"] <= b["monotonic"] for a, b in zip(progress, progress[1:], strict=False)
     )
