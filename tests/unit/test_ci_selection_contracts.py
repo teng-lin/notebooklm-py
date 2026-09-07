@@ -119,7 +119,9 @@ def test_ledger_pr_contract_nodes_receive_effective_contract_marker() -> None:
             self.markers.add(marker.name)
 
     ledger = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
-    nodeid = next(entry["nodeid"] for entry in ledger["entries"] if entry["decision"] == "pr_contract")
+    nodeid = next(
+        entry["nodeid"] for entry in ledger["entries"] if entry["decision"] == "pr_contract"
+    )
     item = FakeItem(f"{nodeid}[parameter]")
     config_mock = MagicMock()
     config_mock.getoption.return_value = False

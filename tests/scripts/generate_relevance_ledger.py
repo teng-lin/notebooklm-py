@@ -118,7 +118,7 @@ NODE_OVERRIDE_RULES: dict[str, dict[str, object]] = {
         "failure_detected": "Reintroduction of patchable NotebookLMClient on *_cmd modules",
         "oracle": "Dynamic import and runtime surface inspection of every discovered Click command module",
         "rationale": "Future command modules must not restore the retired patchable client seam",
-        "review_condition": "active_while_cli_factory_injection_is_supported",
+        "review_condition": "active_cli_injection",
         "runtime_cost": "fast_runtime_import",
     },
     "test_no_session_cmd_patch_surface.py": {

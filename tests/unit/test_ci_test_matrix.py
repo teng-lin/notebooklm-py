@@ -342,10 +342,16 @@ def test_refactor_qualification_is_out_of_prs_and_in_manual_nightly_release_lane
     candidate = qualification["jobs"]["candidate-wheel"]
     assert candidate["strategy"]["matrix"]["os"] == SUPPORTED_OSES
     assert candidate["strategy"]["matrix"]["python-version"] == SUPPORTED_PYTHONS
-    install = str(_step(candidate, "Install exact candidate wheel and qualification dependencies")["run"])
+    install = str(
+        _step(candidate, "Install exact candidate wheel and qualification dependencies")["run"]
+    )
     assert "mcp" in install
     assert "server" in install
-    routine = str(_step(candidate, "Run routine unit, integration, server, MCP, and REST qualification")["run"])
+    routine = str(
+        _step(candidate, "Run routine unit, integration, server, MCP, and REST qualification")[
+            "run"
+        ]
+    )
     assert "tests/unit tests/integration tests/server" in routine
     assert "not refactor_qualification" in routine
     assert "-m refactor_qualification" in str(
@@ -458,7 +464,6 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
             "python-version": SUPPORTED_PYTHONS,
         },
     }
-
 
     assert "environment" not in job
     assert "secrets." not in str(job)
@@ -741,7 +746,9 @@ def test_release_qualification_uses_exact_candidate_wheel_on_full_platform_matri
     provenance = str(_step(job, "Prove runtime imports the candidate wheel")["run"])
     assert "candidate-venv" in provenance
     assert '"src" not in package_path.parts' in provenance
-    routine = str(_step(job, "Run routine unit, integration, server, MCP, and REST qualification")["run"])
+    routine = str(
+        _step(job, "Run routine unit, integration, server, MCP, and REST qualification")["run"]
+    )
     assert "tests/unit tests/integration tests/server" in routine
     assert "not requires_playwright" in routine
     assert "not requires_chromium" in routine

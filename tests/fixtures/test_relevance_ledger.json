@@ -8157,7 +8157,7 @@
       "owner": "cli_adapters",
       "rationale": "Future command modules must not restore the retired patchable client seam",
       "replacement": null,
-      "review_condition": "active_while_cli_factory_injection_is_supported"
+      "review_condition": "active_cli_injection"
     },
     {
       "nodeid": "tests/_guardrails/test_no_cli_client_patch_surface.py::test_discovery_found_the_command_modules",
@@ -8171,7 +8171,7 @@
       "owner": "cli_adapters",
       "rationale": "Future command modules must not restore the retired patchable client seam",
       "replacement": null,
-      "review_condition": "active_while_cli_factory_injection_is_supported"
+      "review_condition": "active_cli_injection"
     },
     {
       "nodeid": "tests/_guardrails/test_no_cli_client_patch_surface.py::test_injection_seam_exists",
@@ -8185,7 +8185,7 @@
       "owner": "cli_adapters",
       "rationale": "Future command modules must not restore the retired patchable client seam",
       "replacement": null,
-      "review_condition": "active_while_cli_factory_injection_is_supported"
+      "review_condition": "active_cli_injection"
     },
     {
       "nodeid": "tests/_guardrails/test_no_cli_client_patch_surface.py::test_source_module_client_seam_is_untouched",
@@ -8199,7 +8199,7 @@
       "owner": "cli_adapters",
       "rationale": "Future command modules must not restore the retired patchable client seam",
       "replacement": null,
-      "review_condition": "active_while_cli_factory_injection_is_supported"
+      "review_condition": "active_cli_injection"
     },
     {
       "nodeid": "tests/_guardrails/test_no_core_imports.py::test_no_runtime_core_imports",
