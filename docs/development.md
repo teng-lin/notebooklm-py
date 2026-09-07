@@ -853,6 +853,10 @@ unfinished, then prove a stable empty inventory over the existing 90-second quie
 Reference artifact completion is checked separately by
 `test_copied_reference_artifacts_become_ready`, with a ten-minute budget. Missing copied artifacts
 fail that test with the missing families listed while allowing the other E2E tests to run.
+Completed copies need not expose download payloads. Once the inventory is ready, the test reports
+each required family's completed count, list URL count, exact-read count, and payload availability.
+Android checks `GetArtifact` when `ListArtifacts` omits a URL. Missing URLs produce explicit
+warnings rather than another readiness wait; download tests report their own outcomes and skips.
 The checked-in template shape is
 `tests/fixtures/e2e_template_contract.json`. Notes and chat history are deliberately absent from
 that contract. Provisioning creates and validates those on the disposable `reference` copy using
@@ -860,7 +864,7 @@ that contract. Provisioning creates and validates those on the disposable `refer
 
 Nightly logs show each preparation stage, per-test start/result lines, and a heartbeat every
 30 seconds while a test is running. Artifact verification reports pending families, producer
-tests, and missing download URLs during polling. The job summary retains preparation failures,
+tests, and copied download payload availability. The job summary retains preparation failures,
 E2E result counts, failed test names, failure phases and exception types, and a table of phase
 outcomes even after cleanup. Pytest logs retain tracebacks and skip/xfail reasons (`-ra`);
 live tests explicitly disable code coverage (`--no-cov`). Execution floors only detect when
