@@ -180,6 +180,11 @@ def _validate_evidence(result: ScenarioResult) -> None:
 async def run_stress(config: RunConfig, registry: Registry) -> dict[str, Any]:
     """Run a fixed worker pool and retain diagnostics for every planned cohort."""
     plans = build_plan(config, registry)
+    # FastMCP/FastAPI imports can take seconds in a cold CI interpreter. Load
+    # only selected adapter dependencies before any timed cohort owns sockets;
+    # importing them inside its first async call blocks every active deadline.
+    if any(plan.backend == "web" and plan.scenario.startswith("adapter_") for plan in plans):
+        importlib.import_module("tests._fault_server.adapter_scenarios")
     results = [ScenarioResult(p.backend, p.scenario, p.operation_id) for p in plans]
     operations: list[dict[str, Any]] = [
         {**asdict(plan), "status": "not_started", "events": result.events, "checks": result.checks}

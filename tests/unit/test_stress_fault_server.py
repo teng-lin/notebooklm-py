@@ -590,3 +590,29 @@ else:
     report = json.loads(destination.read_text())
     assert not report["summary"]["ok"]
     assert any(event["kind"] == "cleanup" for event in report["operations"][0]["events"])
+
+
+@pytest.mark.asyncio
+async def test_selected_adapter_dependencies_load_before_timed_cohorts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    def cold_import(name: str) -> None:
+        assert name == "tests._fault_server.adapter_scenarios"
+        # Models a cold dependency import taking longer than the work budget.
+        import time
+
+        time.sleep(0.04)
+        events.append("dependencies ready")
+
+    async def scenario(name: str, *, operation_id: str, result: ScenarioResult) -> ScenarioResult:
+        assert events == ["dependencies ready"]
+        return await _passing(name, operation_id=operation_id, result=result)
+
+    monkeypatch.setattr(stress.importlib, "import_module", cold_import)
+    report = await stress.run_stress(
+        stress.RunConfig(backend="web", iterations=1, scenario_timeout=0.02),
+        {("web", "adapter_test"): scenario},
+    )
+    assert report["summary"]["ok"]
