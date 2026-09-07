@@ -218,6 +218,9 @@ tests/integration/faults/test_mcp_auth_startup.py::test_stored_auth_mcp_startup[
 tests/integration/faults/test_mcp_auth_startup.py::test_stored_auth_mcp_startup[shutdown-stdio] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_mcp_auth_startup.py::test_stored_auth_mcp_startup[stall-http] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_mcp_auth_startup.py::test_stored_auth_mcp_startup[stall-stdio] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_stdio_shutdown.py::test_stdio_drains_late_notification_after_session_closes[False-False] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_stdio_shutdown.py::test_stdio_drains_late_notification_after_session_closes[False-True] # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_stdio_shutdown.py::test_stdio_drains_late_notification_after_session_closes[True-False] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_process_death.py::test_process_death_recovery[commit_before_ack] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_process_death.py::test_process_death_recovery[download_before_publish] # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_process_death.py::test_process_death_recovery[storage_before_replace] # real loopback fault service; socket failures cannot be reproduced by VCR

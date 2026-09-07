@@ -159,6 +159,7 @@ async def test_stored_auth_mcp_startup(tmp_path: Path, transport: str, fault: st
             "tool_timeout_s": 5,
             "http_readiness_timeout_s": 10,
             "http_child_lifetime_s": 25,
+            "stdio_receiver_drain_s": 2,
             "worker_graceful_stop_s": 5,
             "worker_forced_stop_s": 2,
             "upstream_close_s": 2,

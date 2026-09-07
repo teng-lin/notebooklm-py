@@ -26,6 +26,7 @@ tests/integration/faults/test_consistency_faults.py # real loopback fault servic
 tests/integration/faults/test_curl_faults.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_local_persistence.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_mcp_auth_startup.py # real loopback fault service; socket failures cannot be reproduced by VCR
+tests/integration/faults/test_mcp_stdio_shutdown.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_process_death.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_protocol_limits.py # real loopback fault service; socket failures cannot be reproduced by VCR
 tests/integration/faults/test_saturation.py # real loopback fault service; socket failures cannot be reproduced by VCR
