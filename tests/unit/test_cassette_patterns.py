@@ -159,6 +159,17 @@ def test_email_is_scrubbed_unquoted(provider: str) -> None:
     assert "SCRUBBED_EMAIL@example.com" in scrubbed
 
 
+@pytest.mark.parametrize("suffix", ["x", "_other"])
+def test_email_provider_prefix_is_not_scrubbed_or_reported_as_a_leak(suffix: str) -> None:
+    """Provider-domain prefixes within a larger identifier are not email addresses."""
+    from tests.cassette_patterns import _DETECT_EMAIL, is_clean
+
+    text = f"alice@gmail.com{suffix}"
+    assert scrub_string(text) == text
+    assert not list(_DETECT_EMAIL.finditer(text))
+    assert is_clean(text) == (True, [])
+
+
 # ---------------------------------------------------------------------------
 # scrub_string — negative: legitimate content survives unchanged
 # ---------------------------------------------------------------------------
@@ -1203,12 +1214,21 @@ def test_detect_email_is_linear_on_long_pathological_input() -> None:
 
     from tests.cassette_patterns import _DETECT_EMAIL, is_clean
 
+    def scan_duration(length: int) -> float:
+        t0 = time.perf_counter()
+        matches = list(_DETECT_EMAIL.finditer("a" * length))
+        assert not matches
+        return time.perf_counter() - t0
+
+    small_duration = scan_duration(25_000)
     long_path = "a" * 100_000
-    t0 = time.perf_counter()
-    matches = list(_DETECT_EMAIL.finditer(long_path))
-    dur = time.perf_counter() - t0
-    assert not matches
-    assert dur < 0.2, f"_DETECT_EMAIL took {dur:.2f}s, expected <0.2s"
+    long_duration = scan_duration(len(long_path))
+    # A fourfold input must not grow superlinearly. The fixed allowance avoids
+    # making this regression test depend on CI scheduling noise for tiny runs.
+    assert long_duration <= small_duration * 8 + 0.5, (
+        f"_DETECT_EMAIL scaling regressed: {small_duration:.3f}s for 25k vs "
+        f"{long_duration:.3f}s for 100k"
+    )
 
     ok, leaks = is_clean(f"https://example.com/{long_path}")
     assert ok

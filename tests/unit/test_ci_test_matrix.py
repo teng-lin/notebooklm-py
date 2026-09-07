@@ -743,7 +743,8 @@ def test_release_qualification_uses_exact_candidate_wheel_on_full_platform_matri
     assert '"src" not in package_path.parts' in provenance
     routine = str(_step(job, "Run routine unit, integration, server, MCP, and REST qualification")["run"])
     assert "tests/unit tests/integration tests/server" in routine
-    assert "requires_playwright" in routine
+    assert "not requires_playwright" in routine
+    assert "not requires_chromium" in routine
     browser = str(_step(job, "Run browser-dependent candidate-wheel qualification")["run"])
     assert "requires_playwright" in browser
     assert "-n 0" in browser

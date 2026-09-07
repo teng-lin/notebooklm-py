@@ -36,10 +36,12 @@ jobs:
         persist-credentials: false
     - name: Verify checked-out candidate
       shell: bash
+      env:
+        CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       run: |
         set -euo pipefail
-        test "$(git rev-parse HEAD)" = "${{ inputs.candidate_sha }}"
-        echo "Candidate SHA: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+        test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+        echo "Candidate SHA: $CANDIDATE_SHA" >> "$GITHUB_STEP_SUMMARY"
     - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # @ v8.0.1
       with:
         name: ${{ inputs.artifact_name }}
