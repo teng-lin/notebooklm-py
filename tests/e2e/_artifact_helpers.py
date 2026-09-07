@@ -69,7 +69,11 @@ async def report_copied_download_payloads(
     """
     backend = client.backends["artifacts"]
     for family in sorted(required_families & URL_BACKED_ARTIFACT_FAMILIES):
-        candidates = [artifact for artifact in completed if artifact.kind == family]
+        candidates = [
+            artifact
+            for artifact in completed
+            if not artifact.is_unclassified_type4 and artifact.kind == family
+        ]
         list_urls = sum(bool(artifact.url) for artifact in candidates)
         available = bool(list_urls)
         exact_reads = 0

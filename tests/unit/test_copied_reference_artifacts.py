@@ -1,5 +1,6 @@
 """Copied inventory is required; representation availability is reported separately."""
 
+import warnings
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -7,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from notebooklm import Artifact
+from notebooklm._types.common import UnknownTypeWarning
 from notebooklm.exceptions import RPCError
 from tests.e2e._artifact_helpers import assert_copied_reference_artifacts
 
@@ -28,23 +30,29 @@ async def operation_scope(_label):
 
 
 @pytest.mark.asyncio
-async def test_reference_assertion_waits_for_late_artifacts(capsys):
+@pytest.mark.parametrize("backend", ["web", "android"])
+async def test_reference_assertion_waits_for_late_artifacts(backend, capsys):
     clock = Clock()
     audio = Artifact(
         id="private-artifact", title="private-title", _artifact_type=1, status=3, url="private-url"
     )
+    legacy = Artifact(
+        id="private-legacy", title="private-title", _artifact_type=4, status=3, url="private-url"
+    )
     client = SimpleNamespace(
-        artifacts=SimpleNamespace(list=AsyncMock(side_effect=[[], [audio]])),
-        backends={"artifacts": "web"},
+        artifacts=SimpleNamespace(list=AsyncMock(side_effect=[[], [audio, legacy]])),
+        backends={"artifacts": backend},
     )
-    await assert_copied_reference_artifacts(
-        client,
-        "private-notebook",
-        required_families={"audio"},
-        require_interactive_mind_map=False,
-        clock=clock,
-        sleep=clock.sleep,
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UnknownTypeWarning)
+        await assert_copied_reference_artifacts(
+            client,
+            "private-notebook",
+            required_families={"audio"},
+            require_interactive_mind_map=False,
+            clock=clock,
+            sleep=clock.sleep,
+        )
     assert clock.now == 30
     output = capsys.readouterr().out
     assert "missing completed families: audio" in output
