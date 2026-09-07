@@ -170,6 +170,17 @@ def test_email_provider_prefix_is_not_scrubbed_or_reported_as_a_leak(suffix: str
     assert is_clean(text) == (True, [])
 
 
+@pytest.mark.parametrize("suffix", [".", ". Next"])
+def test_email_with_sentence_punctuation_is_scrubbed_and_reported_as_a_leak(suffix: str) -> None:
+    """A period ending a sentence is not part of the provider-domain identifier."""
+    from tests.cassette_patterns import _DETECT_EMAIL, is_clean
+
+    text = f"alice@gmail.com{suffix}"
+    assert scrub_string(text) == f"SCRUBBED_EMAIL@example.com{suffix}"
+    assert list(_DETECT_EMAIL.finditer(text))
+    assert is_clean(text) == (False, ["Leak (email): 'alice@gmail.com'"])
+
+
 # ---------------------------------------------------------------------------
 # scrub_string — negative: legitimate content survives unchanged
 # ---------------------------------------------------------------------------
