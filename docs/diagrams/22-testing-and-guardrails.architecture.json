@@ -59,7 +59,7 @@
       "label": "Authenticated E2E",
       "sublabel": "live Google · explicit credentials",
       "sources": [{ "path": "tests/e2e/test_notebooks.py", "line": 1, "label": "live read/write suite" }],
-      "pos": [978, 220],
+      "pos": [995, 220],
       "size": [170, 78]
     },
     {
@@ -85,7 +85,7 @@
         { "path": "tests/_guardrails/test_backend_boundaries.py", "line": 1, "label": "architecture checks" },
         { "path": "tests/scripts/check_method_coverage.py", "line": 1, "label": "RPC coverage audit" }
       ],
-      "pos": [800, 220],
+      "pos": [780, 220],
       "size": [170, 78]
     },
     {
