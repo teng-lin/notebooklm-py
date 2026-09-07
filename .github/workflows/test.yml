@@ -490,6 +490,7 @@ jobs:
       # fails closed to full coverage for all other inputs.
       env:
         TEST_SELECTION: ${{ steps.routine-selection.outputs.selection }}
+      shell: bash
       run: >-
         uv run pytest -n auto --dist loadgroup
         -m "$TEST_SELECTION"

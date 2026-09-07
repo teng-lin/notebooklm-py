@@ -179,6 +179,7 @@ def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> No
     assert "if" not in suite_step
     assert '-m "$TEST_SELECTION"' in suite_command
     assert suite_step["env"]["TEST_SELECTION"] == "${{ steps.routine-selection.outputs.selection }}"
+    assert suite_step["shell"] == "bash"
     assert "-n auto" in suite_command
     assert "--dist loadgroup" in suite_command
     assert "--no-cov" in suite_command
