@@ -28,6 +28,7 @@ from starlette.applications import Starlette  # noqa: E402
 from starlette.datastructures import Headers  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
+from notebooklm import paths  # noqa: E402
 from notebooklm.mcp._auth import McpBearerAuthProvider, build_auth  # noqa: E402
 from notebooklm.mcp._oauth import (  # noqa: E402
     MAX_CLIENTS,
@@ -53,6 +54,9 @@ _PW = "a-strong-random-password-1234567890"
 
 @pytest.fixture
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A CLI-selected profile outranks NOTEBOOKLM_PROFILE. Isolate both sources
+    # so earlier CLI tests cannot override this module's environment fixtures.
+    monkeypatch.setattr(paths, "_active_profile", None)
     for k in (
         OAUTH_PASSWORD_ENV,
         OAUTH_BASE_URL_ENV,
