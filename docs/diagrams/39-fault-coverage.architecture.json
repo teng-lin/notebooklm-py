@@ -79,7 +79,7 @@
       "id": "replay_auth",
       "type": "backend",
       "label": "Replay, auth & deadlines",
-      "sublabel": "R1–R2 • commit proof • retry/auth",
+      "sublabel": "Web + Android • R1–R2",
       "tag": "WEB + ANDROID",
       "sources": [
         { "path": "tests/_fault_server/web_resilience_scenarios.py", "label": "Web" },
@@ -92,7 +92,7 @@
       "id": "transfer_stream",
       "type": "database",
       "label": "Transfers, streams & content",
-      "sublabel": "R3–R6, R9, R12 • partial vs published",
+      "sublabel": "Web + Android • R3–R5, R9",
       "tag": "WEB + ANDROID",
       "sources": [
         { "path": "tests/_fault_server/web_transfers.py", "label": "Web" },
@@ -106,7 +106,7 @@
       "id": "shared_work",
       "type": "messagebus",
       "label": "Admission & shared work",
-      "sublabel": "R7–R8 • queues • shared generations",
+      "sublabel": "Web + Android • R7–R8",
       "tag": "WEB + ANDROID",
       "sources": [
         { "path": "tests/_fault_server/web_concurrency.py", "label": "Web concurrency" },
@@ -119,7 +119,7 @@
       "id": "workflow_state",
       "type": "frontend",
       "label": "Workflow state & readback",
-      "sublabel": "R10–R11 • generation • readback",
+      "sublabel": "Web • R10–R11",
       "tag": "WEB",
       "sources": [
         { "path": "tests/_fault_server/web_generation_faults.py", "label": "generation" },
@@ -132,7 +132,7 @@
       "id": "connection_tls",
       "type": "security",
       "label": "Connections & TLS routing",
-      "sublabel": "R13 • keepalive • restart • TLS",
+      "sublabel": "Web + curl • R13",
       "tag": "WEB + REAL CURL",
       "sources": [
         { "path": "tests/_fault_server/web_connections.py", "label": "connections" },
@@ -145,7 +145,7 @@
       "id": "adapter_projection",
       "type": "external",
       "label": "REST / MCP / CLI projection",
-      "sublabel": "R14 • mapping • downstream ownership",
+      "sublabel": "Web • R14",
       "tag": "WEB ONLY",
       "sources": [
         { "path": "tests/_fault_server/adapter_scenarios.py", "label": "adapters" },
