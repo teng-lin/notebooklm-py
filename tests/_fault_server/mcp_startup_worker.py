@@ -49,15 +49,16 @@ def main() -> None:
         opening = upstream.client_factory(timeout=60)
         client = None
         try:
-            async with opening:
-                response = await opening.get("https://notebook.google.com/")
-                response.raise_for_status()
-            client = build_fault_client(upstream, timeout=2, server_error_max_retries=0)
+            try:
+                async with opening:
+                    response = await opening.get("https://notebook.google.com/")
+                    response.raise_for_status()
+                client = build_fault_client(upstream, timeout=2, server_error_max_retries=0)
+            except asyncio.CancelledError:
+                state["cancelled"] = True
+                raise
             async with client:
                 yield client
-        except asyncio.CancelledError:
-            state["cancelled"] = True
-            raise
         finally:
             state["http_closed"] = opening.is_closed
             state["client_closed"] = client is None or not client._lifecycle.is_open()
