@@ -758,9 +758,11 @@ async def test_incremental_response_delivers_complete_bytes_and_progress_events(
     progress = [event for event in server.events if event["phase"] == "response_chunk"]
     assert len(progress) == (len(body) + 1) // 2
     assert progress[-1]["response_bytes"] == len(body)
+    # Windows monotonic clock ticks can cover adjacent 10ms deliveries.
     assert all(
-        a["monotonic"] < b["monotonic"] for a, b in zip(progress, progress[1:], strict=False)
+        a["monotonic"] <= b["monotonic"] for a, b in zip(progress, progress[1:], strict=False)
     )
+    assert progress[-1]["monotonic"] > progress[0]["monotonic"]
     assert not server.active_handlers
     server.assert_drained()
 
