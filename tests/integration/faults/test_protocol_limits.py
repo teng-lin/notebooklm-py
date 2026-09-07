@@ -25,6 +25,7 @@ async def test_web_protocol_limits(scenario: str) -> None:
     ],
 )
 async def test_android_protocol_limits(scenario: str) -> None:
+    pytest.importorskip("grpc")
     from tests._fault_server.android_protocol import run_scenario as run_android
 
     result = await asyncio.wait_for(run_android(scenario, operation_id=f"pytest-{scenario}"), 15)

@@ -115,6 +115,8 @@ def main() -> None:
             asyncio.run(serve_http())
     finally:
         state["http_closed"] = bool(clients) and all(client.is_closed for client in clients)
+        # Shutdown can cancel authentication before a library client is constructed.
+        state["library_clients_created"] = len(library_clients)
         state["client_closed"] = all(not client._lifecycle.is_open() for client in library_clients)
         state["settled"] = True
         observe()
