@@ -59,15 +59,17 @@ async def test_stdio_discovery_while_client_open_is_stalled(tmp_path: Path, reco
                         # Observe the upstream request BEFORE testing initialize: a
                         # timeout cannot pass just because warm-up never started.
                         await upstream.wait_for_gate("opening", timeout=10)
-                        await asyncio.wait_for(session.initialize(), timeout=5)
-                        tools = await asyncio.wait_for(session.list_tools(), timeout=5)
-                        assert {"server_info", "notebook_list"} <= {
-                            tool.name for tool in tools.tools
-                        }
-                        info = await asyncio.wait_for(
-                            session.call_tool("server_info", {}), timeout=5
-                        )
-                        assert not info.isError
+
+                        async def _discover() -> None:
+                            await session.initialize()
+                            tools = await session.list_tools()
+                            assert {"server_info", "notebook_list"} <= {
+                                tool.name for tool in tools.tools
+                            }
+                            info = await session.call_tool("server_info", {})
+                            assert not info.isError
+
+                        await asyncio.wait_for(_discover(), timeout=5)
                         assert not upstream.gate("opening").is_set()
                         assert [row.route for row in upstream.journal] == [Route.homepage()]
                         assert not report.exists(), "client opening must still be in flight"
