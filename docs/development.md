@@ -1535,7 +1535,7 @@ The `RedactingFilter` preserves `record.exc_info` (the live exception object) so
 | `test.yml` | Push/PR | Reduced 7-cell compatibility matrix (Ubuntu × Python 3.10–3.14, plus macOS/Windows on 3.12), linting, type checking |
 | `fault-stress.yml` | PR, daily 5:45 AM UTC, manual dispatch | Local HTTP/gRPC fault workloads with synthetic credentials and diagnostic report artifacts |
 | `nightly.yml` | Daily 6 AM UTC (`main`), manual dispatch on `main` | Full compatibility/coverage plus managed-copy full Web/Ubuntu, full Android/macOS, and read-only Web/Windows E2E; an owner may qualify an open same-repository PR at its pinned head SHA |
-| `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch on `main` | RPC monitoring on a disposable fallback copy plus the template-read-only [Android gRPC canary](#android-grpc-canary); an owner may qualify an open same-repository PR at its pinned head SHA |
+| `rpc-health.yml` | Daily 7 AM UTC (`main`), manual dispatch on `main` | RPC monitoring on its own temporary notebook plus the template-read-only [Android gRPC canary](#android-grpc-canary); an owner may qualify an open same-repository PR at its pinned head SHA |
 | `testpypi-publish.yml` | Manual dispatch | Publish to TestPyPI |
 | `verify-package.yml` | Manual dispatch on `main` | Verify TestPyPI or PyPI install plus managed-copy E2E; artifact inventory is advisory |
 | `publish.yml` | Tag push | Publish to PyPI |
@@ -1592,10 +1592,10 @@ baseline by hand, not something the canary fixes.
 ### Managed-copy live CI
 
 Canonical CI never points pytest or full RPC health at the immutable template.
-Each authenticated lane selects one opaque account slot, materializes only that
-slot's master token, and creates workload-isolated copies. Full lanes prepare a
+Each authenticated lane selects one opaque account slot and materializes only that
+slot's master token. E2E lanes create workload-isolated copies. Full lanes prepare a
 stable `reference` copy plus one mutable copy shared by `generation` and
-`multi-source`; Web RPC health uses one `rpc` fallback copy. The Android RPC
+`multi-source`; Web RPC health creates and cleans up its own temporary notebook. The Android RPC
 canary is the only lane that reads the template directly, and it performs no
 notebook mutation.
 
