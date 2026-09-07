@@ -723,3 +723,63 @@ def test_assert_drained_reports_only_generic_pending_action_count() -> None:
     with pytest.raises(AssertionError, match=r"^unconsumed HTTP actions: 1$") as exc_info:
         server.assert_drained()
     assert "private" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "body,chunk_bytes,interval",
+    [
+        (b"", 1, 0.01),
+        (b"a", 0, 0.01),
+        (b"a", 1, 0),
+        (b"a", 1, float("nan")),
+        (b"a", 1, float("inf")),
+        (b"ab", 1, 6),
+    ],
+)
+def test_incremental_response_rejects_unbounded_schedule(body, chunk_bytes, interval) -> None:
+    from tests._fault_server.http import Incremental
+
+    with pytest.raises(ValueError):
+        Incremental(Reply(body=body), chunk_bytes=chunk_bytes, interval=interval)
+
+
+async def test_incremental_response_delivers_complete_bytes_and_progress_events() -> None:
+    from tests._fault_server.http import Incremental
+
+    server = HttpFaultServer()
+    route = Route("GET", "notebook.google.com", "/asset")
+    body = "café 世界".encode()
+    server.enqueue(route, Incremental(Reply(body=body), chunk_bytes=2, interval=0.01))
+    async with server:
+        async with server.client_factory() as client:
+            response = await client.get("https://notebook.google.com/asset")
+            assert response.content == body
+        await server.wait_for_event("handler_settled")
+    progress = [event for event in server.events if event["phase"] == "response_chunk"]
+    assert len(progress) == (len(body) + 1) // 2
+    assert progress[-1]["response_bytes"] == len(body)
+    assert all(
+        a["monotonic"] < b["monotonic"] for a, b in zip(progress, progress[1:], strict=False)
+    )
+    assert not server.active_handlers
+    server.assert_drained()
+
+
+async def test_incremental_response_peer_cancellation_settles_handler() -> None:
+    from tests._fault_server.http import Incremental
+
+    server = HttpFaultServer()
+    server.enqueue(
+        Route("GET", "notebook.google.com", "/asset"),
+        Incremental(Reply(body=b"x" * 100), chunk_bytes=1, interval=0.01),
+    )
+    async with server:
+        async with server.client_factory() as client:
+            async with client.stream("GET", "https://notebook.google.com/asset") as response:
+                async for chunk in response.aiter_bytes():
+                    assert chunk
+                    break
+            assert response.is_closed
+        await server.wait_for_event("handler_settled")
+    assert not server.active_handlers
+    server.assert_drained()

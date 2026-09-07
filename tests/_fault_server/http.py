@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ipaddress
+import math
+import time
 from collections import Counter, defaultdict, deque
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -81,6 +83,24 @@ class Stall:
 
 
 @dataclass(frozen=True)
+class Incremental:
+    """Deliver a finite valid body in paced slices, independent of TCP boundaries."""
+
+    reply: Reply
+    chunk_bytes: int = 16
+    interval: float = 0.05
+
+    def __post_init__(self) -> None:
+        if not self.reply.body or len(self.reply.body) > _MAX_BODY:
+            raise ValueError("incremental body must be nonempty and bounded")
+        if self.chunk_bytes < 1:
+            raise ValueError("incremental chunk size must be positive")
+        chunks = math.ceil(len(self.reply.body) / self.chunk_bytes)
+        if not math.isfinite(self.interval) or self.interval <= 0 or chunks * self.interval > 10:
+            raise ValueError("incremental delivery must finish within ten seconds")
+
+
+@dataclass(frozen=True)
 class Transfer:
     """Select a fault at headers, before consuming a transfer body.
 
@@ -88,7 +108,7 @@ class Transfer:
     Gate names correspond to headers, body_prefix, full_body, and commit events.
     """
 
-    response: Reply | Disconnect | Truncate | Stall = field(default_factory=Reply)
+    response: Reply | Disconnect | Truncate | Stall | Incremental = field(default_factory=Reply)
     prefix_bytes: int = 65536
     gates: Mapping[str, str] = field(default_factory=dict)
     disconnect_at: Literal["headers", "body_prefix", "full_body"] | None = None
@@ -109,7 +129,7 @@ class Transfer:
             raise ValueError("transfer commit requires independent body expectations")
 
 
-Action = Reply | Disconnect | Truncate | Stall | Transfer
+Action = Reply | Disconnect | Truncate | Stall | Incremental | Transfer
 
 
 @dataclass
@@ -358,7 +378,7 @@ class HttpFaultServer:
 
         await asyncio.wait_for(wait(), timeout)
 
-    async def _event(self, phase: str, record: RequestRecord) -> None:
+    async def _event(self, phase: str, record: RequestRecord, **evidence: Any) -> None:
         self.events.append(
             {
                 "phase": phase,
@@ -366,6 +386,7 @@ class HttpFaultServer:
                 "connection_id": record.connection_id,
                 "body_bytes": record.body_bytes,
                 "body_digest": record.body_digest,
+                **evidence,
             }
         )
         async with self._changed:
@@ -431,7 +452,9 @@ class HttpFaultServer:
                     headers=head.headers,
                 )
                 self.journal.append(record)
-                expected_disconnect = isinstance(action, (Disconnect, Truncate, Stall, Transfer))
+                expected_disconnect = isinstance(
+                    action, (Disconnect, Truncate, Stall, Incremental, Transfer)
+                )
 
                 session_key: tuple[str, str, str] | None = None
                 if transfer is not None and transfer.require_session:
@@ -582,7 +605,7 @@ class HttpFaultServer:
 
     async def _run_action(
         self,
-        action: Reply | Disconnect | Truncate | Stall,
+        action: Reply | Disconnect | Truncate | Stall | Incremental,
         writer: asyncio.StreamWriter,
         record: RequestRecord,
     ) -> None:
@@ -590,11 +613,28 @@ class HttpFaultServer:
             action.status
             if isinstance(action, (Reply, Truncate))
             else action.reply.status
-            if isinstance(action, Stall)
+            if isinstance(action, (Stall, Incremental))
             else None
         )
         if isinstance(action, Reply):
             await self._write_reply(writer, action)
+        elif isinstance(action, Incremental):
+            headers = dict(action.reply.headers)
+            headers["Content-Length"] = str(len(action.reply.body))
+            headers["Connection"] = "close"
+            await self._write_head(writer, action.reply.status, headers)
+            for offset in range(0, len(action.reply.body), action.chunk_bytes):
+                if offset:
+                    await asyncio.sleep(action.interval)
+                chunk = action.reply.body[offset : offset + action.chunk_bytes]
+                writer.write(chunk)
+                await writer.drain()
+                await self._event(
+                    "response_chunk",
+                    record,
+                    response_bytes=offset + len(chunk),
+                    monotonic=time.monotonic(),
+                )
         elif isinstance(action, Disconnect):
             if action.commit_id is not None:
                 self.committed.append(action.commit_id)
@@ -666,6 +706,7 @@ async def iter_records(server: HttpFaultServer, route: Route) -> AsyncIterator[R
 __all__ = [
     "Disconnect",
     "HttpFaultServer",
+    "Incremental",
     "LogicalHostTransport",
     "Reply",
     "RequestRecord",

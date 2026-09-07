@@ -55,6 +55,7 @@ from .web_resilience_scenarios import REQUIRED_CHECKS as RESILIENCE_REQUIRED_CHE
 from .web_resilience_scenarios import (
     SCENARIOS as RESILIENCE_SCENARIOS,
 )
+from .web_slow_responses import SCENARIOS as SLOW_SCENARIOS
 from .web_streaming import IMPLEMENTATIONS as CHAT_IMPLEMENTATIONS
 from .web_streaming import PLANS as CHAT_PLANS
 from .web_transfers import IMPLEMENTATIONS as TRANSFER_IMPLEMENTATIONS
@@ -649,7 +650,9 @@ _IMPLEMENTATIONS.update(CHAT_IMPLEMENTATIONS)
 _PLANS.update(CHAT_PLANS)
 _IMPLEMENTATIONS.update(TRANSFER_IMPLEMENTATIONS)
 _PLANS.update(TRANSFER_PLANS)
-SCENARIOS = tuple(sorted((*_IMPLEMENTATIONS, *_ADAPTER_SCENARIOS, *WORKFLOW_SCENARIOS)))
+SCENARIOS = tuple(
+    sorted((*_IMPLEMENTATIONS, *_ADAPTER_SCENARIOS, *WORKFLOW_SCENARIOS, *SLOW_SCENARIOS))
+)
 
 
 def _required_checks(name: str) -> list[str]:
@@ -729,6 +732,10 @@ async def run_scenario(
     result: ScenarioResult | None = None,
 ) -> ScenarioResult:
     """Run one bounded Web cohort and retain evidence on every failure path."""
+    if name in SLOW_SCENARIOS:
+        from .web_slow_responses import run_scenario as run_slow
+
+        return await run_slow(name, operation_id=operation_id, result=result)
     if name in WORKFLOW_SCENARIOS:
         return await run_workflow_scenario(name, operation_id=operation_id, result=result)
     if name in _ADAPTER_SCENARIOS:
