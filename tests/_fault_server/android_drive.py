@@ -253,13 +253,21 @@ async def run_scenario(
                 path.write_bytes(_PAYLOAD)
                 baseline = await client.sources.add_file(_NOTEBOOK, path, wait_timeout=2.0)
                 result.require("fixture_decoded", baseline.id == _SOURCE)
-                task = asyncio.create_task(
-                    client.sources.add_file(
-                        _NOTEBOOK,
-                        path,
-                        wait_timeout=0.8 if variant == "import_timeout" else 2.0,
-                    )
-                )
+                async def observe_upload() -> tuple[Any, BaseException | None]:
+                    # Observe the exception at the public call boundary. Python
+                    # 3.10 Task cancellation retrieval can replace CancelledError
+                    # after another waiter has consumed it, dropping its metadata.
+                    try:
+                        value = await client.sources.add_file(
+                            _NOTEBOOK,
+                            path,
+                            wait_timeout=0.8 if variant == "import_timeout" else 2.0,
+                        )
+                        return value, None
+                    except (Exception, asyncio.CancelledError) as error:
+                        return None, error
+
+                task = asyncio.create_task(observe_upload())
                 owned.append(task)
                 if variant == "cancel_during_stage":
                     await server.wait_for_gate("stage-held")
@@ -284,7 +292,7 @@ async def run_scenario(
                 error: BaseException | None = None
                 value = None
                 try:
-                    value = await asyncio.wait_for(task, 4)
+                    value, error = await asyncio.wait_for(task, 4)
                 except (Exception, asyncio.CancelledError) as exc:
                     error = exc
                 metadata = getattr(error, "operation_metadata", None) or getattr(
