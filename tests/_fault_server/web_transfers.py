@@ -24,6 +24,9 @@ from .common import ScenarioResult
 from .http import Disconnect, HttpFaultServer, Reply, Route, Stall, Transfer, Truncate
 from .web import COOKIE_NAME, OLD_COOKIE, list_response, rpc_response
 
+_REDIRECT_HTTP_TIMEOUT = 3.0
+_REDIRECT_OPERATION_TIMEOUT = 8.0
+
 NOTEBOOK = "00000000-0000-4000-8000-000000000200"
 SOURCE = "00000000-0000-4000-8000-000000000201"
 LIST_ASSETS = Route.rpc(RPCMethod.LIST_ARTIFACTS.value)
@@ -374,6 +377,10 @@ async def _download(client: Any, destination: Path, *, batch: bool, url: str = A
 async def download_case(result: ScenarioResult, variant: str, *, batch: bool = False) -> None:
     from .web_scenarios import _cohort, _requests, _require_clean
 
+    # Redirect ceilings exercise a finite hop count, not inactivity expiry.
+    # Keep the short body-stall timeout for the other transfer variants.
+    http_timeout = _REDIRECT_HTTP_TIMEOUT if variant == "redirect_loop" else 0.2
+    operation_timeout = _REDIRECT_OPERATION_TIMEOUT if variant == "redirect_loop" else None
     server = HttpFaultServer(hosts=["lh3.googleusercontent.com", "storage.googleapis.com"])
     if not batch:
         server.enqueue(
@@ -420,7 +427,7 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
             response_headers.set()
 
     def transfer_factory(**kwargs: Any) -> httpx.AsyncClient:
-        kwargs["timeout"] = httpx.Timeout(0.2)
+        kwargs["timeout"] = httpx.Timeout(http_timeout)
         hooks = dict(kwargs.pop("event_hooks", {}))
         hooks["response"] = [*hooks.get("response", []), observe_response]
         return server.client_factory(event_hooks=hooks, **kwargs)
@@ -430,7 +437,8 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
         async with _cohort(
             result,
             server,
-            transfer_timeout=0.2,
+            transfer_timeout=http_timeout,
+            operation_timeout=operation_timeout,
             record_sleep=False,
             transfer_client_factory=transfer_factory,
         ) as client:
@@ -474,11 +482,23 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
                 result.require(
                     "old_destination_preserved", destination.read_bytes() == b"old destination"
                 )
+            underlying_error = (
+                returned.failed[0][1]
+                if batch and returned is not None and returned.failed
+                else getattr(error, "cause", None)
+            )
             result.record(
                 "outcome",
                 error=None if error is None else type(error).__name__,
                 publication="buffered_batch" if batch else "streamed_single",
+                underlying_error=None
+                if underlying_error is None
+                else type(underlying_error).__name__,
             )
+            if variant == "redirect_loop":
+                result.require(
+                    "redirect_limit_error", isinstance(underlying_error, httpx.TooManyRedirects)
+                )
             result.require("staging_removed", list(Path(directory).iterdir()) == [destination])
             result.require(
                 "writer_settled",
@@ -635,4 +655,17 @@ IMPLEMENTATIONS = {
 PLANS = {
     name: (("transfer:success-baseline", name, "same-client:recovery"), 1)
     for name in IMPLEMENTATIONS
+}
+
+BUDGETS = {
+    name: {
+        "http_inactivity_timeout_s": _REDIRECT_HTTP_TIMEOUT,
+        "operation_timeout_s": _REDIRECT_OPERATION_TIMEOUT,
+        "scenario_timeout_s": 15.0,
+        "cleanup_timeout_s": 2.0,
+        "max_redirects": 20,
+        "asset_request_limit": 22,
+        "commit_limit": 0,
+    }
+    for name in ("download_redirect_loop", "download_batch_redirect_loop")
 }

@@ -67,6 +67,7 @@ from .web_saturation import SCENARIOS as SATURATION_SCENARIOS
 from .web_slow_responses import SCENARIOS as SLOW_SCENARIOS
 from .web_streaming import IMPLEMENTATIONS as CHAT_IMPLEMENTATIONS
 from .web_streaming import PLANS as CHAT_PLANS
+from .web_transfers import BUDGETS as TRANSFER_BUDGETS
 from .web_transfers import IMPLEMENTATIONS as TRANSFER_IMPLEMENTATIONS
 from .web_transfers import PLANS as TRANSFER_PLANS
 from .web_workflows import SCENARIOS as WORKFLOW_SCENARIOS
@@ -714,6 +715,8 @@ def _required_checks(name: str) -> list[str]:
                 "bounded_asset_requests",
                 "asset_hop_cookie_policy",
             ]
+        if name in {"download_redirect_loop", "download_batch_redirect_loop"}:
+            checks += ["redirect_limit_error"]
     elif name.startswith("chat_"):
         checks += [
             "valid_chat_baseline",
@@ -785,9 +788,12 @@ async def run_scenario(
         faults=list(faults),
         cohort_ids=[f"{operation_id}:{index}" for index in range(cohort_count)],
         transport="httpx",
-        budgets={**RESILIENCE_BUDGETS, **CONCURRENCY_BUDGETS, **CONSISTENCY_BUDGETS}.get(
-            name, {"scenario_timeout_s": 15.0, "cleanup_timeout_s": 2.0}
-        ),
+        budgets={
+            **RESILIENCE_BUDGETS,
+            **CONCURRENCY_BUDGETS,
+            **CONSISTENCY_BUDGETS,
+            **TRANSFER_BUDGETS,
+        }.get(name, {"scenario_timeout_s": 15.0, "cleanup_timeout_s": 2.0}),
         required_checks={
             **RESILIENCE_REQUIRED_CHECKS,
             **CONCURRENCY_REQUIRED_CHECKS,
