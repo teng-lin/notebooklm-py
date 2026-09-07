@@ -693,7 +693,7 @@ def _rate_limit_skip_reports(terminalreporter) -> list[Any]:
 
 
 def _coverage_floor_enforced() -> bool:
-    """Whether coverage floors escalate to a suite failure.
+    """Whether execution floors escalate to a suite failure.
 
     Off by default so a shared daily-quota exhaustion can never red a release job
     (e.g. Verify Package, #1819) — the release path skips rate-limited
@@ -705,7 +705,7 @@ def _coverage_floor_enforced() -> bool:
 
 
 def _coverage_floor_failures(terminalreporter, exitstatus, marker: str) -> list[Any]:
-    """Rate-limit skips that breach the coverage floor for ``marker``.
+    """Rate-limit skips that breach the execution floor for ``marker``.
 
     Non-empty only when at least one ``marker`` test was rate-limit-skipped and no
     ``marker`` test passed — i.e. that live surface produced zero real coverage.
@@ -785,7 +785,7 @@ def pytest_sessionfinish(session, exitstatus):
     if terminalreporter is None:
         return
 
-    # Coverage floors are advisory unless the nightly opts in (see
+    # Execution floors are advisory unless the nightly opts in (see
     # _coverage_floor_enforced), so a rate-limited release job stays green (#1819).
     if not _coverage_floor_enforced():
         return
@@ -795,7 +795,7 @@ def pytest_sessionfinish(session, exitstatus):
         # Sentinel delivery (nightly). The main e2e step is ``continue-on-error`` and
         # its ``--last-failed`` retry re-runs only failures, so a ``session.exitstatus``
         # override would be masked. Instead every enforcing run (main AND retry)
-        # appends PASS/SKIP events; the "Enforce coverage floors" step breaches a
+        # appends PASS/SKIP events; the "Enforce execution floors" step breaches a
         # surface seen SKIP but never PASS across all runs. This closes the retry gap
         # (a marked test that fails on main then skips on retry) WITHOUT false-breaching
         # when coverage was achieved in another run (codex/coderabbit). Exit status is
@@ -879,13 +879,13 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         if not breaches:
             continue
         if enforced:
-            terminalreporter.write_sep("=", f"{label} coverage floor failed", red=True)
+            terminalreporter.write_sep("=", f"{label} execution floor failed", red=True)
             terminalreporter.write_line(
                 f"No marked {label} test completed successfully (all rate-limited)."
             )
         else:
             terminalreporter.write_sep(
-                "=", f"{label} coverage floor breached (not enforced)", yellow=True
+                "=", f"{label} execution floor breached (not enforced)", yellow=True
             )
             terminalreporter.write_line(
                 f"No marked {label} test passed; not failing (E2E_ENFORCE_COVERAGE_FLOOR unset)."

@@ -503,23 +503,29 @@ async def _retry_auth_operation_deadline(result: ScenarioResult) -> None:
         result,
         server,
         timeout=10.0,
-        operation_timeout=0.2,
+        # This budget tests expiration during the gated retry, not cold-start
+        # speed. Allow the three socket attempts and auth refresh to reach it
+        # while other stress scenarios share the runner.
+        operation_timeout=5.0,
         server_retries=3,
         rate_retries=3,
         retry_sleep=gated_sleep,
     ) as client:
-        task = asyncio.create_task(client.notebooks.list())
-        await asyncio.wait_for(backoff_started.wait(), 1.0)
         try:
-            await task
+            # Await the operation directly: an early timeout must remain an
+            # observed failure, rather than leaving an orphan behind a gate.
+            await client.notebooks.list()
         except BaseException as caught:
             error = caught
         attempts_before_recovery = len(_requests(server, _READ))
         release_backoff.set()
-        await asyncio.sleep(0)
-        probe = await client.notebooks.list()
+        async with client.operation(timeout=None):
+            probe = await client.notebooks.list()
     result.require("aggregate_deadline_timeout", isinstance(error, OperationTimeoutError))
-    result.require("aggregate_deadline_three_attempts", attempts_before_recovery == 3)
+    result.require(
+        "aggregate_deadline_three_attempts",
+        attempts_before_recovery == 3 and backoff_started.is_set(),
+    )
     result.require("aggregate_deadline_one_refresh", len(_requests(server, _HOME)) == 1)
     result.require("aggregate_deadline_recovery", [row.id for row in probe] == ["probe"])
     _clean(result, server)
@@ -841,7 +847,7 @@ BUDGETS["retry_auth_backoff_cancelled"].update(
 )
 BUDGETS["retry_auth_operation_deadline"].update(
     rpc_timeout_s=10.0,
-    operation_timeout_s=0.2,
+    operation_timeout_s=5.0,
     rate_limit_max_retries=3,
     server_error_max_retries=3,
     retry_clock="gated_instance",

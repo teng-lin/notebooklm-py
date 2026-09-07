@@ -84,6 +84,11 @@ from uuid import uuid4
 
 import httpx
 
+try:
+    from scripts._ci_rpc_progress import live_progress, progress_note, progress_phase, trace_probe
+except ModuleNotFoundError:
+    from _ci_rpc_progress import live_progress, progress_note, progress_phase, trace_probe
+
 from notebooklm._auth.tokens import LoadPolicy, _load_stored_auth
 from notebooklm._env import (
     BUILD_LABEL_STALE_AFTER_DAYS,
@@ -404,6 +409,9 @@ async def load_auth(storage_path: Path | None) -> AuthTokens:
         )
         return loaded.auth
     except FileNotFoundError as e:
+        progress_note(
+            "Authentication failed: credentials missing; configure CI auth or run notebooklm login"
+        )
         # ``e`` names the storage path that was actually checked — under
         # profiles that is the only way to see which one the script resolved.
         print(
@@ -413,6 +421,9 @@ async def load_auth(storage_path: Path | None) -> AuthTokens:
         )
         sys.exit(2)
     except ValueError as e:
+        progress_note(
+            "Authentication failed: stored credentials invalid or expired; inspect auth report"
+        )
         # Name the auth source. The file branch of ``_load_storage_state``
         # re-raises a bare ``json`` error carrying no context at all, so a
         # corrupt storage_state.json would otherwise print only
@@ -423,6 +434,9 @@ async def load_auth(storage_path: Path | None) -> AuthTokens:
         )
         sys.exit(2)
     except httpx.HTTPError as e:
+        progress_note(
+            "Authentication failed: network error while fetching tokens; inspect auth report"
+        )
         # ``httpx`` exception strings can echo full request URLs including
         # ``f.sid=<session_id>`` query params, so scrub before logging.
         print(
@@ -540,6 +554,7 @@ async def make_rpc_call(
         return [], f"Parse error: {type(e).__name__}"
 
 
+@trace_probe()
 async def test_rpc_method(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -581,6 +596,7 @@ async def test_rpc_method(
     )
 
 
+@trace_probe()
 async def test_rpc_method_with_data(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -858,6 +874,7 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     return None
 
 
+@trace_probe()
 async def check_method(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -978,6 +995,7 @@ class _ChatQueryProbe:
 CHAT_QUERY_PROBE = _ChatQueryProbe()
 
 
+@trace_probe("CHAT GENERATE_FREE_FORM_STREAMED", proof="streamed-chat framing recognized")
 async def check_chat_query(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -1206,6 +1224,7 @@ async def make_raw_rpc_request(
         return None, type(e).__name__
 
 
+@trace_probe("CUSTOMIZATION GET_CUSTOMIZATION_CHOICES (sqTeoe)")
 async def check_customization_table(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -1391,6 +1410,7 @@ def classify_rebrand_status(
     return RebrandProbeStatus.ABSENT, f"HTTP {status_code}"
 
 
+@trace_probe("REBRAND LIST_NOTEBOOKS (wXbhsf)")
 async def probe_rebrand_batchexecute(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -1466,6 +1486,7 @@ async def probe_rebrand_batchexecute(
     )
 
 
+@trace_probe("REBRAND GENERATE_FREE_FORM_STREAMED")
 async def probe_rebrand_chat(
     client: httpx.AsyncClient,
     auth: AuthTokens,
@@ -1814,6 +1835,7 @@ def classify_build_label(served: str | None, detail: str) -> BuildLabelProbe:
     return BuildLabelProbe(BuildLabelStatus.DRIFTED, drift, DEFAULT_BL, served, days)
 
 
+@trace_probe("BUILD_LABEL app shell")
 async def check_build_label(client: httpx.AsyncClient) -> BuildLabelProbe:
     """Read the served build label off the app shell and score the pin against it.
 
@@ -1893,6 +1915,9 @@ async def setup_temp_resources(
     # Response format: [title, None, notebook_id, ...]
     temp.notebook_id = extract_id(data, 2)
     if not temp.notebook_id:
+        progress_note(
+            "WARNING: notebook ID not returned; dependent probes cannot run; cleanup may be needed"
+        )
         print(
             "WARNING: Notebook created but ID not found in response. May need manual cleanup.",
             file=sys.stderr,
@@ -2079,6 +2104,9 @@ async def setup_temp_resources(
                 )
     else:
         # Skip artifact tests - no source_id available
+        progress_note(
+            "setup: SKIPPED CREATE_ARTIFACT; source creation did not yield a usable source"
+        )
         print("SKIP     CREATE_ARTIFACT - No source_id available (source extraction failed)")
 
     return temp
@@ -2209,9 +2237,11 @@ async def run_health_check(
     )
     previous_state_path = rebrand_previous_state_path or rebrand_state_path
 
+    progress_phase("authentication")
     storage_path = resolve_storage_path()
     print(f"Fetching auth tokens... (source: {describe_auth_source(storage_path)})")
     auth = await load_auth(storage_path)
+    progress_note("Authentication ready; RPC-ID checks validate response IDs, not full behavior")
     print(f"Auth OK (CSRF token length: {len(auth.csrf_token)})")
     print(f"  base host:     {httpx.URL(get_base_url()).host} (from: {base_url_source})")
     print(f"  account route: {auth.account_route}")
@@ -2222,6 +2252,7 @@ async def run_health_check(
     async with build_probe_client(auth) as client:
         try:
             if full_mode:
+                progress_phase("setup")
                 print("Creating temp resources for full testing...")
                 temp_resources = await setup_temp_resources(client, auth, results)
                 if temp_resources.notebook_id:
@@ -2234,6 +2265,10 @@ async def run_health_check(
             print(f"Checking {total} RPC methods...")
             print("=" * 60)
 
+            progress_phase("method inventory")
+            progress_note(
+                f"Checking {total} registered RPC methods; skipped probes include a reason"
+            )
             for i, method in enumerate(methods, 1):
                 result = await check_method(client, auth, method, notebook_id, full_mode)
                 results.append(result)
@@ -2257,6 +2292,7 @@ async def run_health_check(
             # so it is checked separately from the method-ID loop above — but
             # its ``CheckResult`` flows through the same summary + exit-code
             # machinery so chat drift fails the canary like any other probe.
+            progress_phase("chat framing")
             chat_result = await check_chat_query(client, auth, notebook_id)
             results.append(chat_result)
             chat_icon = STATUS_ICONS[chat_result.status]
@@ -2269,6 +2305,7 @@ async def run_health_check(
             # (the id echo is already covered by the regular GET_CUSTOMIZATION_CHOICES
             # row): MATCH is the steady state, DRIFT is the loud signal that the
             # served format codes / labels no longer agree with the client enums.
+            progress_phase("customization tables")
             customization_status, customization_detail = await check_customization_table(
                 client, auth, notebook_id
             )
@@ -2282,6 +2319,7 @@ async def run_health_check(
             # only STALE is exit-coded, and it clears itself the moment the
             # constant is bumped.
             await asyncio.sleep(CALL_DELAY)
+            progress_phase("build label")
             build_label = await check_build_label(client)
             for line in format_build_label_lane(build_label):
                 print(line)
@@ -2290,6 +2328,7 @@ async def run_health_check(
             # never join ``results``, so they cannot reach ``partition_errors``
             # / ``compute_exit_code`` and cannot poison the main lane's
             # title-deduped issue.
+            progress_phase("rebrand endpoints")
             rebrand_probes = await probe_rebrand_host(client, auth, notebook_id)
             rebrand_state = build_rebrand_state(
                 rebrand_probe_host(),
@@ -2304,6 +2343,7 @@ async def run_health_check(
         finally:
             if full_mode and temp_resources.notebook_id:
                 print()
+                progress_phase("cleanup")
                 print("Testing DELETE operations during cleanup...")
                 await cleanup_temp_resources(client, auth, temp_resources, results)
 
@@ -2641,6 +2681,12 @@ def main() -> int:
             "consumer can verify the document it reads was produced by this run."
         ),
     )
+    parser.add_argument(
+        "--progress-fd",
+        type=int,
+        default=None,
+        help="Additional file descriptor for safe live probe diagnostics (CI)",
+    )
     args = parser.parse_args()
 
     source = describe_base_url_source(args.base_url is not None)
@@ -2650,28 +2696,37 @@ def main() -> int:
         except ValueError as e:
             parser.error(str(e))
 
-    mode_str = "FULL" if args.full else "QUICK"
-    print(f"RPC Health Check ({mode_str} mode)")
-    print("=" * 60)
-    print()
+    with live_progress(args.progress_fd):
+        mode_str = "FULL" if args.full else "QUICK"
+        print(f"RPC Health Check ({mode_str} mode)")
+        print("=" * 60)
+        print()
 
-    try:
-        results, customization_status, rebrand_state, build_label = asyncio.run(
-            run_health_check(
-                full_mode=args.full,
-                base_url_source=source,
-                rebrand_state_path=args.rebrand_state_file,
-                rebrand_previous_state_path=args.rebrand_previous_state_file,
-                rebrand_run_id=args.rebrand_run_id,
+        try:
+            results, customization_status, rebrand_state, build_label = asyncio.run(
+                run_health_check(
+                    full_mode=args.full,
+                    base_url_source=source,
+                    rebrand_state_path=args.rebrand_state_file,
+                    rebrand_previous_state_path=args.rebrand_previous_state_file,
+                    rebrand_run_id=args.rebrand_run_id,
+                )
             )
-        )
-        return print_summary(results, customization_status, rebrand_state, build_label)
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(f"\nFATAL: RPC health check crashed: {scrub_secrets(e)}", file=sys.stderr)
-        print(scrub_secrets(traceback.format_exc()), file=sys.stderr)
-        return 2
+            exit_code = print_summary(results, customization_status, rebrand_state, build_label)
+            counts = Counter(result.status.value for result in results)
+            progress_note(
+                f"RPC health finished: exit={exit_code}; "
+                + " ".join(f"{status}={count}" for status, count in sorted(counts.items()))
+            )
+            return exit_code
+        except SystemExit as error:
+            progress_note(f"RPC health stopped: exit={error.code}; see authentication diagnostics")
+            raise
+        except Exception as e:
+            progress_note("RPC health crashed: exit=2; see full diagnostic report")
+            print(f"\nFATAL: RPC health check crashed: {scrub_secrets(e)}", file=sys.stderr)
+            print(scrub_secrets(traceback.format_exc()), file=sys.stderr)
+            return 2
 
 
 if __name__ == "__main__":

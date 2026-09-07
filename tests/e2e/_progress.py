@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections import Counter
 
+import pytest
 from scripts._ci_progress import report, safe_test_name, write_summary
 
 
@@ -16,6 +18,7 @@ class E2EProgress:
         self.current: tuple[str, float] | None = None
         self.results: dict[str, str] = {}
         self.failures: set[tuple[str, str]] = set()
+        self.failure_types: dict[tuple[str, str], str] = {}
         self.reruns = 0
         self.collection_errors = 0
         self._stop = threading.Event()
@@ -51,7 +54,18 @@ class E2EProgress:
         self.results[nodeid] = "running"
         # A rerun replaces the earlier attempt's failure in the final summary.
         self.failures = {entry for entry in self.failures if entry[0] != nodeid}
+        self.failure_types = {
+            key: value for key, value in self.failure_types.items() if key[0] != nodeid
+        }
         report(f"E2E [{len(self.results)}/{self.total}] START {name}")
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_makereport(self, item, call):
+        yield
+        if call.excinfo is not None:
+            name = call.excinfo.type.__name__
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", name):
+                self.failure_types[(item.nodeid, call.when)] = name
 
     def pytest_runtest_logreport(self, report) -> None:
         if report.outcome == "rerun":
@@ -72,8 +86,14 @@ class E2EProgress:
         current = self.current
         duration = time.monotonic() - current[1] if current else 0
         outcome = self.results.get(nodeid, "incomplete")
+        diagnostics = "; ".join(
+            f"{phase}: {self.failure_types.get((nodeid, phase), 'failure')}"
+            for failed_node, phase in sorted(self.failures)
+            if failed_node == nodeid
+        )
         report(
-            f"E2E {outcome.upper()} {safe_test_name(nodeid)}; elapsed={duration:.1f}s",
+            f"E2E {outcome.upper()} {safe_test_name(nodeid)}; elapsed={duration:.1f}s"
+            + (f"; {diagnostics}; see pytest traceback below" if diagnostics else ""),
             error=outcome == "failed",
         )
         self.current = None
@@ -89,9 +109,10 @@ class E2EProgress:
             summary=True,
         )
         if self.failures:
-            write_summary("\n| Failed E2E test | Phase |\n| --- | --- |")
+            write_summary("\n| Failed E2E test | Phase | Exception type |\n| --- | --- | --- |")
             for nodeid, phase in sorted(self.failures):
-                write_summary(f"| `{safe_test_name(nodeid)}` | {phase} |")
+                kind = self.failure_types.get((nodeid, phase), "see pytest traceback")
+                write_summary(f"| `{safe_test_name(nodeid)}` | {phase} | {kind} |")
 
     def pytest_unconfigure(self) -> None:
         self._stop.set()

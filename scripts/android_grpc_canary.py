@@ -80,12 +80,18 @@ import hashlib
 import json
 import os
 import sys
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, ExitStack
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, cast
+
+if __package__:
+    from ._ci_progress import open_progress_stream
+else:
+    from _ci_progress import open_progress_stream
 
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.unknown_fields import UnknownFieldSet
@@ -234,26 +240,51 @@ class CanaryReport:
     the id into a log or step summary.
     """
 
-    def __init__(self, emit: Emit, *, redact: str = "") -> None:
+    def __init__(self, emit: Emit, *, redact: str = "", progress: Emit | None = None) -> None:
         self._emit = emit
         self._redact = redact
+        self._progress = progress
+        self._started: dict[str, float] = {}
         self.failures: list[str] = []
 
     @property
     def all_ok(self) -> bool:
         return not self.failures
 
-    def _line(self, text: str) -> None:
+    def start(self, step: str, method: str = "") -> None:
+        self._started[step] = time.monotonic()
+        if self._progress is not None:
+            stamp = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+            line = f"[{stamp}] START {step} {method}".rstrip()
+            if self._redact:
+                line = line.replace(self._redact, REDACTED_NOTEBOOK_ID)
+            self._live_line(line)
+
+    def _live_line(self, text: str) -> None:
+        if self._progress is not None:
+            try:
+                self._progress(text)
+            except OSError:
+                self._progress = None
+                print("WARNING: could not write live Android progress", file=sys.stderr, flush=True)
+
+    def _line(self, text: str, *, step: str | None = None) -> None:
         if self._redact:
             text = text.replace(self._redact, REDACTED_NOTEBOOK_ID)
         self._emit(text)
+        if self._progress is not None:
+            stamp = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+            timing = ""
+            if step in self._started:
+                timing = f"; elapsed={time.monotonic() - self._started.pop(step):.1f}s"
+            self._live_line(f"[{stamp}] {text}{timing}")
 
     def ok(self, step: str, detail: str = "") -> None:
-        self._line(f"OK {step} {detail}".rstrip())
+        self._line(f"OK {step} {detail}".rstrip(), step=step)
 
     def fail(self, step: str, detail: str) -> None:
         self.failures.append(step)
-        self._line(f"FAIL {step} {detail}".rstrip())
+        self._line(f"FAIL {step} {detail}".rstrip(), step=step)
 
     def shape(self, rpc: str, fingerprint: str) -> None:
         self._line(f"SHAPE {rpc} {fingerprint}")
@@ -275,6 +306,12 @@ class StepFailure(Exception):
 
 async def run_step(report: CanaryReport, step: str, work: Awaitable[str]) -> bool:
     """Await one step; any exception becomes a sanitized ``FAIL`` line."""
+    method = {
+        "bearer": "authentication refresh",
+        "get_project": GET_PROJECT_METHOD,
+        "list_chat_sessions": LIST_CHAT_SESSIONS_METHOD,
+    }.get(step, "")
+    report.start(step, method)
     try:
         detail = await work
     except asyncio.CancelledError:
@@ -496,6 +533,7 @@ async def check_schema(
         return
     for rpc, method, request, response_type in probes:
         step = f"schema {rpc}"
+        report.start(step, method)
         try:
             response = await session.unary(
                 method,
@@ -537,9 +575,10 @@ async def run_canary(
     baseline_path: Path | None = None,
     missing_baseline_grace_until: date | None = None,
     out: Emit = print,
+    progress: Emit | None = None,
 ) -> int:
     """Drive every step against one client; return the process exit code."""
-    report = CanaryReport(out, redact=notebook_id)
+    report = CanaryReport(out, redact=notebook_id, progress=progress)
     baseline = load_baseline(
         baseline_path, report, missing_grace_until=missing_baseline_grace_until
     )
@@ -550,6 +589,7 @@ async def run_canary(
         return 1
 
     entered = False
+    report.start("open", "Android authentication/session")
     try:
         async with context as client:
             entered = True
@@ -625,6 +665,12 @@ def build_parser() -> argparse.ArgumentParser:
             "FAILs, so the drift check cannot stay inert once bootstrap is over."
         ),
     )
+    parser.add_argument(
+        "--progress-fd",
+        type=int,
+        default=None,
+        help="Additional file descriptor for live canary diagnostics (CI)",
+    )
     return parser
 
 
@@ -643,15 +689,22 @@ def main(
         return 2
     factory = client_factory or _default_client_factory(args.timeout)
     emit = functools.partial(print, flush=True)
-    return asyncio.run(
-        run_canary(
-            factory,
-            notebook_id,
-            baseline_path=args.baseline,
-            missing_baseline_grace_until=args.missing_baseline_grace_until,
-            out=emit,
+    with ExitStack() as stack:
+        progress = None
+        if args.progress_fd is not None:
+            stream = stack.enter_context(open_progress_stream(args.progress_fd))
+            if stream is not None:
+                progress = functools.partial(print, file=stream, flush=True)
+        return asyncio.run(
+            run_canary(
+                factory,
+                notebook_id,
+                baseline_path=args.baseline,
+                missing_baseline_grace_until=args.missing_baseline_grace_until,
+                out=emit,
+                progress=progress,
+            )
         )
-    )
 
 
 if __name__ == "__main__":

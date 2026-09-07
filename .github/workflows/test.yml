@@ -195,7 +195,7 @@ jobs:
         # Linux carries the full supported Python range. One 3.12 cell on each
         # secondary OS preserves platform compatibility without multiplying the
         # entire suite into a 3-by-5 bottleneck on every PR; the complete
-        # 15-cell product runs nightly (`nightly.yml` → `compatibility`) and on
+        # 15-cell product runs nightly (`nightly-checks.yml` → `compatibility`) and on
         # manual nightly dispatches. Canonical Ubuntu 3.12 owns Chromium,
         # external-reality work, and the critical contract guards.
         include:

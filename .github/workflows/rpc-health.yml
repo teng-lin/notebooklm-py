@@ -351,10 +351,10 @@ jobs:
         echo "Testing branch: $TARGET_BRANCH"
         echo "Full RPC check creates and cleans up its own temporary resources."
         set +e
-        uv run python scripts/check_rpc_health.py --full \
+        uv run python scripts/check_rpc_health.py --full --progress-fd 3 \
           --rebrand-state-file rebrand-state.json \
           --rebrand-previous-state-file rebrand-state-prev.json \
-          --rebrand-run-id "${GITHUB_RUN_ID}" > health-report.txt 2>&1
+          --rebrand-run-id "${GITHUB_RUN_ID}" 3>&1 > health-report.txt 2>&1
         exit_code=$?
         echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
         exit "$exit_code"
@@ -1095,9 +1095,9 @@ jobs:
       run: |
         echo "Testing branch: $TARGET_BRANCH"
         set +e
-        uv run python scripts/android_grpc_canary.py \
+        uv run python scripts/android_grpc_canary.py --progress-fd 3 \
           --baseline tests/fixtures/android/canary_baseline.json \
-          --missing-baseline-grace-until 2026-09-14 > android-canary-report.txt 2>&1
+          --missing-baseline-grace-until 2026-09-14 3>&1 > android-canary-report.txt 2>&1
         exit_code=$?
         # Diagnostic mode is green by design, so without this annotation an
         # inert drift check would never be visible from the run list. It does

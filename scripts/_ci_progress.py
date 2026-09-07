@@ -9,8 +9,40 @@ from __future__ import annotations
 import os
 import re
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TextIO
+
+
+@contextmanager
+def open_progress_stream(fd: int) -> Iterator[TextIO | None]:
+    """Best-effort duplicate; setup and final flush must not replace the verdict."""
+    duplicate: int | None = None
+    try:
+        duplicate = os.dup(fd)
+        stream = os.fdopen(duplicate, "w", encoding="utf-8")
+    except (OSError, ValueError):
+        if duplicate is not None:
+            try:
+                os.close(duplicate)
+            except OSError:
+                pass
+        print(
+            "WARNING: could not open CI progress stream; see normal report",
+            file=sys.stderr,
+            flush=True,
+        )
+        yield None
+        return
+    try:
+        yield stream
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            print("WARNING: could not close CI progress stream", file=sys.stderr, flush=True)
 
 
 def safe_test_name(node_id: str) -> str:
