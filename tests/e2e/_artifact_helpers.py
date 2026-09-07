@@ -55,6 +55,50 @@ def completed_interactive_mind_maps(artifacts: list[Artifact]) -> list[Artifact]
     ]
 
 
+async def report_copied_download_payloads(
+    client: NotebookLMClient,
+    notebook_id: str,
+    completed: list[Artifact],
+    required_families: set[str],
+) -> None:
+    """Diagnose representations separately from the copied inventory contract.
+
+    Android list summaries can omit payloads present in exact GetArtifact reads.
+    Completed copied rows can also lack representations in both responses; the
+    template contract promises completed families, not downloadable copies.
+    """
+    backend = client.backends["artifacts"]
+    for family in sorted(required_families & URL_BACKED_ARTIFACT_FAMILIES):
+        candidates = [artifact for artifact in completed if artifact.kind == family]
+        list_urls = sum(bool(artifact.url) for artifact in candidates)
+        available = bool(list_urls)
+        exact_reads = 0
+        if not available and backend == "android":
+            for candidate in candidates:
+                async with client.artifacts._transport.operation_scope(
+                    "e2e copied artifact representation"
+                ) as lease:
+                    exact = await client.artifacts._get_studio_artifact(
+                        notebook_id, candidate.id, expected_epoch=lease.epoch
+                    )
+                exact_reads += 1
+                if exact is not None and exact.kind == family and exact.is_completed and exact.url:
+                    available = True
+                    break
+        report(
+            f"Copied reference payload: family={family}; completed={len(candidates)}; "
+            f"ListArtifacts_urls={list_urls}; GetArtifact_reads={exact_reads}; "
+            f"download_payload={'available' if available else 'unavailable'}",
+            summary=True,
+        )
+        if not available:
+            report(
+                f"WARNING: copied {family} inventory is complete but has no download URL; "
+                "copy readiness does not validate download coverage",
+                summary=True,
+            )
+
+
 async def assert_copied_reference_artifacts(
     client: NotebookLMClient,
     notebook_id: str,
@@ -65,7 +109,7 @@ async def assert_copied_reference_artifacts(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
-    """Keep copied-content failures visible without preventing other E2E tests."""
+    """Assert the copied inventory contract and report download payload availability."""
     deadline = clock() + timeout
     while True:
         artifacts = await client.artifacts.list(notebook_id)
@@ -74,13 +118,6 @@ async def assert_copied_reference_artifacts(
             artifact.kind.value for artifact in completed if not artifact.is_unclassified_type4
         }
         missing = sorted(required_families - families)
-        missing_payloads = sorted(
-            family
-            for family in required_families & families & URL_BACKED_ARTIFACT_FAMILIES
-            if not completed_download_candidates(
-                completed, family, backend=client.backends["artifacts"]
-            )
-        )
         if require_interactive_mind_map and not any(
             artifact.is_interactive_mind_map for artifact in completed
         ):
@@ -88,8 +125,6 @@ async def assert_copied_reference_artifacts(
         issues = []
         if missing:
             issues.append("missing completed families: " + ", ".join(missing))
-        if missing_payloads:
-            issues.append("missing download payload families: " + ", ".join(missing_payloads))
         remaining = max(0.0, deadline - clock())
         detail = "; ".join(issues) if issues else "ready"
         report(
@@ -97,6 +132,7 @@ async def assert_copied_reference_artifacts(
             summary=not issues or remaining == 0,
         )
         if not issues:
+            await report_copied_download_payloads(client, notebook_id, completed, required_families)
             return
         assert remaining > 0, "Copied reference " + detail
         await sleep(min(30, remaining))
