@@ -389,7 +389,10 @@ class HttpFaultServer:
                 try:
                     head = await read_head(reader)
                 except asyncio.IncompleteReadError as exc:
-                    if not exc.partial and record is not None and self.keep_alive:
+                    # A canceled connect may close before sending any request;
+                    # idle keep-alive connections can also end at this boundary.
+                    # Partial headers still indicate a malformed/truncated request.
+                    if not exc.partial:
                         break
                     raise
                 target = urlsplit(head.target)

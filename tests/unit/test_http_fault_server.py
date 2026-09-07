@@ -33,6 +33,34 @@ def test_cleanup_records_every_failed_server_invariant(monkeypatch: pytest.Monke
     assert "private-error-sentinel" not in json.dumps(result.events)
 
 
+@pytest.mark.parametrize("prefix", [b"", b"GET / HTTP/1.1\r\n"])
+async def test_connection_abandoned_before_request_does_not_hide_partial_headers(
+    prefix: bytes,
+) -> None:
+    server = HttpFaultServer()
+
+    async def wait_for_handlers(count: int) -> None:
+        while server.active_handlers != count:
+            await asyncio.sleep(0)
+
+    async with server:
+        _reader, writer = await asyncio.open_connection(*server.address)
+        await asyncio.wait_for(wait_for_handlers(1), 1)
+        if prefix:
+            writer.write(prefix)
+            await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        await asyncio.wait_for(wait_for_handlers(0), 1)
+
+    assert server.journal == []
+    assert server.committed == []
+    if prefix:
+        assert server.errors == ["IncompleteReadError"]
+    else:
+        server.assert_drained()
+
+
 class _FakeLifecycle:
     def __init__(self) -> None:
         self.open = False
