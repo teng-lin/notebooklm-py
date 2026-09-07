@@ -253,6 +253,7 @@ async def run_scenario(
                 path.write_bytes(_PAYLOAD)
                 baseline = await client.sources.add_file(_NOTEBOOK, path, wait_timeout=2.0)
                 result.require("fixture_decoded", baseline.id == _SOURCE)
+
                 async def observe_upload() -> tuple[Any, BaseException | None]:
                     # Observe the exception at the public call boundary. Python
                     # 3.10 Task cancellation retrieval can replace CancelledError
