@@ -1,13 +1,16 @@
 # Repository Guidelines
 
 **Status:** Active
-**Last Updated:** 2026-06-11
+**Last Updated:** 2026-09-07
 
-## Project Structure & Module Organization
+## Structure & Modules
 
-`src/notebooklm/` contains the async client and typed APIs. Internal feature modules use `_` prefixes such as `_sources.py`, `_artifacts.py`, `_app/`, and `_runtime/`; `src/notebooklm/cli/` holds Click adapters, `src/notebooklm/mcp/` and `src/notebooklm/server/` hold the opt-in MCP and REST adapters, and `src/notebooklm/rpc/` handles protocol encoding and decoding. Tests are split by scope: `tests/unit/`, `tests/integration/`, `tests/server/`, and `tests/e2e/`. Recorded HTTP fixtures live in `tests/cassettes/`, split by client tier (`web/` for batchexecute YAML, `android/` for gRPC JSON). Examples are in `examples/`, and diagnostics live in `scripts/`.
+`src/notebooklm/` contains the async client (`client.py`) and typed exports (`__init__.py`).
+- **Internal:** `_*.py` and `_*/` (`_app/`, `_auth/`, `_runtime/`, `_sources.py`, `_artifacts.py`).
+- **Adapters & Wire:** `cli/` (Click), `mcp/` (FastMCP), `server/` (FastAPI), `rpc/` (batchexecute/gRPC).
+- **Tests & Data:** `tests/unit/`, `tests/integration/` (VCR), `tests/server/`, `tests/e2e/`, `tests/_guardrails/`, `tests/_fault_server/`, `tests/cassettes/` (`web/`, `android/`). Examples in `examples/`, tools in `scripts/`.
 
-## Build, Test, and Development Commands
+## Development Commands
 
 Canonical contributor install (full guide: [docs/installation.md](docs/installation.md)):
 
@@ -15,30 +18,26 @@ Canonical contributor install (full guide: [docs/installation.md](docs/installat
 uv sync --frozen --extra browser --extra dev --extra markdown
 source .venv/bin/activate
 uv run playwright install chromium
+
 uv run pytest
-uv run pytest -n auto --dist=worksteal  # optional faster local run
+uv run pytest -n auto --dist loadgroup  # faster parallel run
 uv run ruff check .
-uv run ruff format .
+uv run ruff format --check .
 uv run mypy src/notebooklm
-uv run pre-commit run --all-files
 ```
 
-Run `uv run pytest tests/e2e -m readonly` only after `notebooklm login` and setting test notebook env vars.
+For full adapter coverage, append `--extra mcp --extra server --extra impersonate`.
 
-## Coding Style & Naming Conventions
+## Conventions & Testing
 
-Target Python 3.10+, 4-space indentation, and double quotes. Ruff enforces formatting and import order with a 100-character line length. Keep module and test file names in `snake_case`; prefer descriptive Click command names that match existing groups such as `source`, `label`, `artifact`, and `research`. Preserve the internal/public split: `_*.py` and `_*/` for implementation, exported types in `src/notebooklm/__init__.py`.
+- **Style:** Python 3.10+, 4 spaces, double quotes, 100-char line limit (Ruff enforced).
+- **Naming:** `snake_case` modules and tests (`test_<behavior>.py`). Preserve public/internal split (`_*.py`).
+- **Testing:** Unit logic in `tests/unit/`, REST in `tests/server/`, VCR replay in `tests/integration/` (record: `NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/ -v`), e2e in `tests/e2e/`. 90% coverage gate.
+- **Commits/PRs:** Conventional commits (`feat(cli):`, `fix:`, `refactor:`, `style:`). Link issues and report test runs.
 
-## Testing Guidelines
+## Parallel & Autonomous Agents
 
-Put pure logic in `tests/unit/`, REST adapter coverage in `tests/server/`, VCR-backed flows in `tests/integration/`, and authenticated NotebookLM coverage in `tests/e2e/`. Name tests `test_<behavior>.py` and record cassettes with `NOTEBOOKLM_VCR_RECORD=1 uv run pytest tests/integration/ -v` (the integration suite uses `vcrpy` throughout — there is no `test_vcr_*.py` glob). Coverage is expected to stay at or above the configured 90% threshold.
+- Prefer `--json` output and pass explicit notebook IDs instead of relying on stateful `notebooklm use`.
+- Isolate concurrent runs with `NOTEBOOKLM_PROFILE=agent-<id>` (`~/.notebooklm/profiles/<name>/`) or `NOTEBOOKLM_HOME=/tmp/agent-<id>`.
+- In headless environments, authenticate with `notebooklm login --browser-cookies <browser>` (requires `pip install "notebooklm-py[cookies]"`).
 
-## Commit, PR, and Agent Notes
-
-Follow the existing commit style: `feat(cli): ...`, `fix(cli): ...`, `refactor(test): ...`, `style: ...`. PRs should include a short summary, linked issue when relevant, and the commands run locally.
-
-For Codex or other parallel agents:
-
-- Prefer `--json` output and pass explicit notebook IDs instead of relying on `notebooklm use`.
-- Isolate concurrent runs with `NOTEBOOKLM_PROFILE=agent-<id>` so each agent gets its own context file under `~/.notebooklm/profiles/<name>/`. Fall back to `NOTEBOOKLM_HOME=/tmp/agent-<id>` only when separate home directories are required.
-- In headless environments where Playwright login is impractical, authenticate with `notebooklm login --browser-cookies <browser>` (requires `pip install "notebooklm-py[cookies]"`).

@@ -1608,10 +1608,17 @@ migrate. See [ADR-0007](./adr/0007-test-monkeypatch-policy.md).
 
 ### Test suite taxonomy
 
-- **Unit tests** (`tests/unit/`): No network, decode/encode only.
-- **Integration tests** (`tests/integration/`): Mock HTTP responses or
-  use VCR cassettes scrubbed per
-  [ADR-0006](./adr/0006-vcr-scrubber-strategy.md).
+- **Unit tests** (`tests/unit/`): No network, decode/encode only. Includes
+  `_app/` transport-neutral core tests, CLI command tests, MCP unit tests,
+  Android unit tests, and payload drift canaries.
+- **REST server tests** (`tests/server/`): FastAPI route and adapter suite.
+- **Integration tests** (`tests/integration/`): Mock HTTP responses,
+  VCR cassettes scrubbed per [ADR-0006](./adr/0006-vcr-scrubber-strategy.md),
+  and local socket fault injection scenarios (`tests/integration/faults/`)
+  backed by the local test fault server (`tests/_fault_server/`).
+- **Architecture and invariant gates** (`tests/_guardrails/`): Meta-lint and AST
+  assertions enforcing architectural boundaries, shrink-only allowlists, and
+  ADR compliance.
 - **E2E tests** (`tests/e2e/`): Real API; require auth; marked
   `@pytest.mark.e2e` and excluded from the default run.
 
@@ -1626,12 +1633,13 @@ A fuller taxonomy can be generated with
 ## Implementation surface convention (ADR-0012)
 
 `notebooklm-py` keeps a small set of public-named modules (`artifacts.py`,
-`auth.py`, `client.py`, `config.py`, `exceptions.py`, `io.py`, `log.py`,
-`migration.py`, `notebooklm_cli.py`, `paths.py`, `research.py`,
-`types.py`, `urls.py`, `utils.py`) and routes everything else through
-underscore-prefixed seam modules. Anything underscored is *not* a
-supported import surface; it can be moved, renamed, or deleted without a
-deprecation cycle. See [ADR-0012](./adr/0012-implementation-surface-convention.md).
+`auth.py`, `client.py`, `config.py`, `downloads.py`, `exceptions.py`, `io.py`,
+`log.py`, `migration.py`, `notebooklm_cli.py`, `options.py`, `outcomes.py`,
+`paths.py`, `raw.py`, `research.py`, `types.py`, `urls.py`, `utils.py`)
+and routes everything else through underscore-prefixed seam modules. Anything
+underscored is *not* a supported import surface; it can be moved, renamed,
+or deleted without a deprecation cycle. See
+[ADR-0012](./adr/0012-implementation-surface-convention.md).
 
 The corollary for contributors: if you find yourself reaching into
 `notebooklm._foo`, prefer a capability Protocol or a public function in
@@ -2680,6 +2688,9 @@ src/notebooklm/
 - [ADR-0034](./adr/0034-auth-storage-object-model.md) — Current auth storage object model and owner extraction (Accepted; Phase 12C complete).
 - [ADR-0035](./adr/0035-mobile-resilience-transport.md) — Explicit Android backend as a resilience transport (Accepted; all eleven namespaces now close their former Web compatibility seams).
 - [ADR-0036](./adr/0036-browser-acquisition-package.md) — Browser acquisition package and neutral login orchestration (Accepted; browser implementation isolated behind lazy auth capabilities).
+- [ADR-0037](./adr/0037-live-usage-and-quota-api.md) — Live usage and quota API (`client.get_user_usage()`, `_usage.py`, `docs/quota-limits.md`).
+- [ADR-0038](./adr/0038-local-fault-injection-harness.md) — Local fault-injection services and concurrent resilience scenarios (`tests/_fault_server/`, `docs/fault-injection.md`, `tests/integration/faults/`).
+- [ADR-0039](./adr/0039-backend-specific-credential-surfaces.md) — Backend-specific credential surfaces (`WebCredentials`, `AndroidCredentials`, `_client_contracts.py`).
 
 ## See also
 

@@ -1,7 +1,7 @@
 # Contributing Guide
 
 **Status:** Active
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-07
 
 This guide covers everything you need to contribute to `notebooklm-py`: architecture overview, testing, and releasing.
 
@@ -23,62 +23,58 @@ Use the [system overview](https://teng-lin.github.io/notebooklm-py/diagrams/01-s
 the [testing/guardrails map](https://teng-lin.github.io/notebooklm-py/diagrams/22-testing-and-guardrails.html)
 when deciding which boundary a change must exercise.
 
-### Package Structure
+### High-Level Package Layout
 
-```
+```text
 src/notebooklm/
-├── __init__.py          # Public exports
-├── client.py            # NotebookLMClient main class
-├── auth.py              # Public auth facade
-├── types.py             # Dataclasses and type definitions
-├── _app/                # Transport-neutral business logic shared by adapters
-│   └── login_browser.py # Markup-free browser-login plan and orchestration
+├── __init__.py          # Public API exports
+├── client.py            # NotebookLMClient composition root
+├── auth.py              # Public authentication facade
+├── types.py             # Public dataclasses and type definitions
+├── options.py           # Typed client construction and request options
+├── outcomes.py          # Operation and batch reconciliation outcome types
+├── downloads.py         # Representation registry and download format resolution
+├── raw.py               # Public backend-selected raw wire APIs
+├── exceptions.py        # Public exception hierarchy
+├── config.py            # Configuration facade
+├── io.py, log.py        # Public I/O and logging facades
+├── migration.py         # Profile storage migration
+├── paths.py             # Profile-aware path resolution
+├── research.py          # Research helper functions
+├── urls.py, utils.py    # Public URL and async utility helpers
+├── _app/                # Transport-neutral business logic shared by adapters (CLI/MCP/REST)
+├── _runtime/            # Neutral runtime contracts, lifecycle, call supervisor, deadlining
+├── _client_assembly.py  # Typed collaborator graph composition and sole client installer
+├── _client_compat.py    # 0.x Android-to-Web compatibility sidecar proxy and factory
+├── _client_contracts.py # Frozen assembly graph declarations and P4 carriers
+├── _client_metrics.py   # Telemetry, metrics snapshots, and event callbacks
+├── _client_options.py   # Constructor option normalization
+├── _auth/               # Credential tier: storage lock, profile store, cold recovery, tokens
 ├── _browser/            # Optional Playwright-backed credential acquisition
-├── _runtime/            # Neutral runtime contracts, config, helpers, init, lifecycle
-├── _web/contracts.py    # Web-only Kernel and RpcCaller Protocols
-├── _web/transport/      # Web runtime bundle, composition holder, HTTP transport, middleware
-├── _web/wire/           # Web batchexecute codecs, overrides, and strict indexing
-├── _android/            # Android gRPC/Scotty adapters, codecs, and lazy generated protos
-├── _notebooks.py        # Backend-neutral NotebooksAPI + share-URL builder
-├── _web/notebooks.py    # WebNotebooksAPI implementation
+├── _web/                # Web backend: batchexecute codecs, transport, middleware, feature APIs
+├── _android/            # Android backend: gRPC session, codecs, Scotty uploads, feature APIs
+├── _notebooks.py        # Backend-neutral abstract NotebooksAPI
 ├── _sources.py          # Backend-neutral abstract SourcesAPI
-├── _web/sources/        # WebSourcesAPI + concrete web source services
-├── _web/params/         # Web batchexecute payload builders
-├── _notebook_metadata.py # Neutral metadata protocols + composition service
-├── _source/             # Neutral source polling/Markdown + lazy shims
 ├── _artifacts.py        # Backend-neutral abstract ArtifactsAPI
-├── _artifact/           # Neutral artifact polling, formatting, validation, and asset transfer
-├── _web/artifacts.py    # WebArtifactsAPI implementation
-├── _web/artifact/       # Web artifact listing/generation/download-selection services
 ├── _chat.py             # Backend-neutral ChatAPI orchestration
-├── _research.py         # BaseResearchAPI + shared import classification/workflows
-├── _research_import.py  # Neutral import policies/classification/reconciliation
-├── _web/research.py     # WebResearchAPI wire hooks + verification policy
+├── _research.py         # Backend-neutral BaseResearchAPI + shared workflows
 ├── _notes.py            # Backend-neutral abstract NotesAPI
-├── _web/notes.py        # WebNotesAPI + NoteService implementation
 ├── _mind_maps_api.py    # Backend-neutral abstract MindMapsAPI
-├── _web/mind_maps.py    # WebMindMapsAPI + NoteBackedMindMapService
-├── _android/mind_maps.py # Selected mind-map artifact/note composition; generation seam documented
 ├── _labels.py           # Backend-neutral abstract LabelsAPI
-├── _web/labels.py       # WebLabelsAPI implementation
 ├── _collections.py      # Backend-neutral abstract CollectionsAPI
-├── _web/collections.py  # WebCollectionsAPI implementation
 ├── _settings.py         # Backend-neutral abstract SettingsAPI
-├── _web/settings.py     # WebSettingsAPI + web settings helpers
 ├── _sharing.py          # Backend-neutral abstract SharingAPI
-├── _web/sharing.py      # WebSharingAPI + legacy ShareManager
-├── rpc/                 # Public power-user and compatibility facade
-│   ├── __init__.py
-│   ├── _identifiers.py  # Dependency-bottom RPCMethod owner
-│   └── types.py         # Constants and exact-identity RPCMethod compatibility re-export
-├── cli/                 # Click adapter (`*_cmd.py`) plus `cli/services/`
+├── rpc/                 # Public power-user RPC compatibility facade and identifiers
+├── cli/                 # Click CLI adapter (`*_cmd.py`) and `cli/services/`
 ├── mcp/                 # FastMCP adapter (optional `mcp` extra)
 └── server/              # FastAPI REST adapter (optional `server` extra)
 ```
 
+See [Repository Structure in `docs/architecture.md`](./architecture.md#repository-structure) for the complete, canonical module map.
+
 ### Layered Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                      Adapter Layer                          │
 │        cli/ (Click), mcp/ (FastMCP), server/ (FastAPI)       │
@@ -91,13 +87,13 @@ src/notebooklm/
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
 │                      Client Layer                           │
-│  NotebookLMClient → NotebooksAPI, SourcesAPI, ArtifactsAPI  │
+│  NotebookLMClient → 11 typed namespaces, public types       │
 │       private services compose cross-facade behavior         │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
 │                    Shared Runtime Layer                     │
-│       CallSupervisor, ClientLifecycle, transport owners     │
+│    CallSupervisor, ClientLifecycle, telemetry, deadlining   │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
@@ -117,11 +113,12 @@ src/notebooklm/
 |-------|-------|----------------|
 | **Adapters** | `cli/`, `mcp/`, `server/` | User commands/tools/routes, transport-specific input/output, auth envelopes |
 | **App core** | `_app/*.py` | Transport-neutral workflows reused by adapters |
-| **Client** | `client.py`, `_*.py` | High-level Python API, returns typed dataclasses |
-| **Runtime** | `client.py`, `_runtime/`, `_web/transport/`, `_android/session.py`, transfer participants | `NotebookLMClient` composition root; protocol-neutral root lifecycle and call supervision; backend resource lifecycles, admission, telemetry, and feature-owned polling/upload state |
-| **Web wire** | `_web/wire/*.py` | Batchexecute encoding/decoding, runtime ID overrides, strict positional access |
-| **Android wire** | `_android/codecs/`, `_android/proto/` | Lazy generated protobuf contracts, request construction, and public-type projection for selected Android namespaces |
-| **RPC facade** | `rpc/*.py` | Public power-user compatibility exports and method IDs |
+| **Client** | `client.py`, `_*.py`, `downloads.py`, `options.py`, `outcomes.py`, `types.py` | High-level Python API, returns typed dataclasses |
+| **Runtime** | `client.py`, `_runtime/`, `_client_assembly.py`, `_client_metrics.py`, `_deadline.py`, `_loop_bound.py`, `_idempotency.py` | `NotebookLMClient` composition root; protocol-neutral root lifecycle and call supervision; admission, telemetry, deadlines, and idempotency journals |
+| **Auth** | `_auth/*.py`, `_auth/profile_store.py`, `_auth/storage_lock.py` | Profile store, cross-process file locks, token refresh/re-minting, and cold recovery |
+| **Web wire & transport** | `_web/wire/*.py`, `_web/transport/*.py`, `_web/*.py` | Batchexecute encoding/decoding, runtime ID overrides, HTTP transport, middleware, Web feature implementations |
+| **Android wire & transport** | `_android/codecs/`, `_android/proto/`, `_android/*.py` | Lazy generated protobuf contracts, gRPC session, Scotty uploads, Android feature implementations |
+| **Raw facades** | `raw.py`, `rpc/*.py` | Public raw wire APIs (`client.raw.call`, `client.raw.unary`) and Web RPC compatibility exports |
 
 #### Runtime seam modules
 
@@ -147,6 +144,13 @@ a narrow Protocol surface so it can be unit-tested against a stub:
 | `_web/transport/composed.py` | `ClientComposed` | Write-once holder for Web transport, executor, chain host, and middleware metadata. It has no back-edge to the shared runtime and owns no loop primitive or RPC semaphore. |
 | `_client_metrics.py` | `ClientMetrics` | `ClientMetricsSnapshot` counters, queue-wait recorders, `on_rpc_event` async callback. |
 | `_runtime/call_supervisor.py` | `CallSupervisor` | Concrete client-wide admission authority: generation-bearing call/operation leases, drain hooks, admitted child tasks, terminal RPC metrics, and the global RPC semaphore. |
+| `_auth/profile_store.py` | `ProfileStore` | Credential persistence owner: transactional `storage_state.json` mutations, CAS cookie merges, account metadata, and master token delegation. |
+| `_auth/storage_lock.py` | `StorageLockManager` | Cross-process file locks (`flock`/`msvcrt`) guarding credential writes, rotation, and refresh. |
+| `_auth/recovery.py` | `ColdRecoveryCoordinator` | Single-flight auth recovery ladder managing refresh commands, headless bootstrap, and L4 re-minting. |
+| `_deadline.py` | `RuntimeDeadline` | Aggregate operation deadline tracking and timeout budget enforcement across nested steps. |
+| `_idempotency.py` | `JournalWriter` | Mutating-operation journal, semantic-send attempts, replay gating, and idempotency recovery evidence. |
+| `_loop_bound.py` | `LoopBoundPrimitive`, `EpochFenced` | Event-loop binding guards and resource epoch fences for runtime lifecycle components. |
+| `_curl_cffi_transport.py` | `CurlCffiTransport` | Opt-in browser-impersonation HTTP transport (`NOTEBOOKLM_TRANSPORT=curl_cffi`). |
 | `_web/transport/reqid_counter.py` | `ReqidCounter` | Monotonic `_reqid` counter for chat backend (baseline 100000, step 100000). |
 | `_web/transport/auth.py` | `AuthRefreshCoordinator` | Refresh-task lifecycle, refresh lock, `AuthSnapshot` rotation. |
 | `_runtime/contracts.py` | Neutral runtime Protocol | `LoopGuard`, used by transport-neutral orchestration. |
@@ -284,31 +288,28 @@ from those catalogues rather than introducing parallel patterns.
 5. Add CLI command if user-facing
 
 **New API Class:**
-1. Create `_newfeature.py` with `NewFeatureAPI` class.
-2. Type each constructor parameter against the **narrowest shared
-   capability Protocol** it actually uses (`LoopGuard` from
-   `_runtime/contracts.py`, or web-only `RpcCaller` / `Kernel` from
-   `_web/contracts.py` — see
-   [`docs/architecture.md`](./architecture.md) for the protocol
-   catalog). If the capability has only one consumer, define the
-   Protocol locally beside that consumer instead of promoting it to either
-   contracts module. Pass each collaborator by keyword-only
-   argument; do not bundle them into a feature-local composite-runtime
-   Protocol unless a second production consumer materialises. **Do NOT
-   depend on a broad runtime facade for type annotations** — there is no
-   concrete `Session` class (the broad `Session` Protocol was deleted;
-   see ADR-0013).
-3. Add the wiring in `_client_assembly.py::_assemble_client(...)`, not
-   directly in `client.py`. The assembly seam is shared by
-   `NotebookLMClient.__init__` and the canonical test factory; set every
-   constructor-time attribute there and thread concrete collaborators
-   from `compose_client_internals(...)`.
-4. **Tests** should inject the narrow collaborator the feature actually
-   needs. `tests/_fixtures/fake_core.py:FakeSession` remains available
-   for legacy broad-fixture tests, but new direct feature tests should
-   prefer `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))`-style
-   fakes or local protocol fakes.
-5. Export types from `__init__.py`.
+1. Define the backend-neutral abstract API or shared workflows in `_newfeature.py`
+   (e.g., `NewFeatureAPI` or `BaseNewFeatureAPI`).
+2. Implement backend-specific adapters:
+   - Web implementation under `_web/` (e.g. `_web/notes.py`) using narrow Web capability Protocols
+     (`RpcCaller` / `Kernel` from `_web/contracts.py`).
+   - Android implementation under `_android/` (e.g. `_android/notes.py`) using `AndroidSession` / codecs.
+   Type each constructor parameter against the **narrowest shared capability Protocol** it
+   actually uses (`LoopGuard` from `_runtime/contracts.py`, or web-only `RpcCaller` / `Kernel` from
+   `_web/contracts.py` — see [`docs/architecture.md`](./architecture.md) for the protocol catalog).
+   If a capability has only one consumer, define the Protocol locally beside that consumer. Pass
+   each collaborator by keyword-only argument. **Do NOT depend on a broad runtime facade for type
+   annotations** (the broad `Session` Protocol was deleted; see ADR-0013).
+3. Declare the namespace contract in `_client_contracts.py` (add to `NamespaceProtocols` and
+   `BackendNamespaces`).
+4. Wire concrete instances in `_web/assembly.py::_build_web_assembly(...)` and
+   `_android/assembly.py::_build_android_assembly(...)`.
+5. Install the namespace attribute on `NotebookLMClient` in
+   `_client_assembly.py::_install_client(...)`.
+6. Export public types from `src/notebooklm/types.py` and public exports from
+   `src/notebooklm/__init__.py`.
+7. **Tests** should inject the narrow collaborator the feature actually needs (e.g.
+   `MagicMock(spec=RpcCaller, rpc_call=AsyncMock(...))` or local protocol fakes).
 
 ---
 
@@ -601,7 +602,7 @@ lock sibling and the two invocations never contend.
 # Unit + integration tests (no auth needed)
 uv run pytest
 
-# Same suite in parallel — the full suite is ~10.6k tests and runs single-process
+# Same suite in parallel — the full suite is ~22k+ tests and runs single-process
 # by default (slow). pytest-xdist (a dev dep) cuts wall-clock to ~1–2 min. CI runs
 # `-n auto --dist loadgroup`; loadgroup keeps @pytest.mark.xdist_group tests pinned
 # to one worker. Mirror it locally when running the whole suite.
@@ -932,29 +933,33 @@ jobs per slot; check that queue before bulk manual dispatch.
 
 ### Test Structure
 
-```
+```text
 tests/
 ├── unit/                            # No network, fast, mock everything
-│   ├── app/                         # _app/ transport-neutral core
+│   ├── app/                         # _app/ transport-neutral core tests
 │   ├── cli/                         # CLI command tests
-│   └── mcp/                         # MCP adapter unit tests (importorskip fastmcp)
+│   ├── mcp/                         # MCP adapter unit tests (importorskip fastmcp)
+│   ├── android/                     # Android codec, session, and stub tests
+│   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
+│   └── test_get_summary_drift.py    # GET_NOTEBOOK_SUMMARY drift guard
 ├── server/                          # REST adapter suite — FastAPI routes (importorskip fastapi)
 ├── _guardrails/                     # Architecture/invariant gates (custom AST + filesystem lint)
+├── _fault_server/                   # Local HTTP/gRPC fault injection test server (ADR-0038)
 ├── _baselines/                      # Regenerable-baseline registry (ADR-0022): derive/store/compare
 ├── fixtures/
-│   └── baselines/                   # Committed derived baselines (types_all.json, ungated_surface.json)
-├── integration/                     # Mocked HTTP responses + VCR cassettes
+│   └── baselines/                   # Committed derived baselines (types_all.json, ungated_surface.json, ...)
+├── integration/                     # Mocked HTTP responses + VCR cassettes + fault harness
+│   ├── faults/                      # Local socket fault-injection scenarios (R1–R14 contracts)
+│   ├── cli_vcr/                     # CLI → Client → RPC VCR tests
+│   ├── mcp_vcr/                     # MCP adapter VCR tier (replays CLI cassettes)
+│   ├── concurrency/                 # Cross-process / asyncio races
 │   ├── test_artifacts_integration.py # ArtifactsAPI integration
-│   ├── test_artifacts_drift.py      # CREATE_ARTIFACT payload drift guard
+│   ├── test_android_grpc_cassette.py # Android gRPC replay tests
 │   ├── test_auth_refresh_vcr.py     # Auth refresh token VCR test
 │   ├── test_auto_refresh.py         # Keepalive/refresh integration
 │   ├── test_chat_delete_conversation_vcr.py
 │   ├── test_chat_multi_source_vcr.py
-│   ├── test_chat_passage_resolver.py
-│   ├── test_cli_session_local.py
-│   ├── test_download_multi_artifact.py
 │   ├── test_error_paths_vcr.py      # Synthetic and VCR error paths
-│   ├── test_get_summary_drift.py    # GET_NOTEBOOK_SUMMARY drift guard
 │   ├── test_notebooks_integration.py # NotebooksAPI integration
 │   ├── test_notes_integration.py     # NotesAPI integration
 │   ├── test_notes_idempotency.py
@@ -964,21 +969,15 @@ tests/
 │   ├── test_save_chat_as_note_integration.py
 │   ├── test_session_integration.py  # Client init + RPC plumbing
 │   ├── test_settings_integration.py  # SettingsAPI integration
-│   ├── test_settings_vcr.py
 │   ├── test_sharing_integration.py   # SharingAPI integration
-│   ├── test_sharing_vcr.py
-│   ├── test_skill_packaging.py      # Packaging smoke (skills, entry-points)
 │   ├── test_sources_integration.py   # SourcesAPI integration
 │   ├── test_vcr_comprehensive.py    # End-to-end VCR walkthrough
 │   ├── test_vcr_example.py          # VCR pattern reference
-│   ├── test_vcr_real_api.py         # VCR against real-API cassettes
-│   ├── cli_vcr/                     # CLI → Client → RPC VCR tests
-│   ├── mcp_vcr/                     # MCP adapter VCR tier (replays CLI cassettes)
-│   └── concurrency/                 # Cross-process / asyncio races
+│   └── test_vcr_real_api.py         # VCR against real-API cassettes
 └── e2e/                             # Real API calls (requires auth; incl. test_mcp*.py, test_cli_live.py)
 ```
 
-The `*_drift.py` tests are payload-shape canaries: they decode a recorded
+The `*_drift.py` tests (under `tests/unit/`) are payload-shape canaries: they decode a recorded
 RPC response (or assemble a synthetic one) and assert the live decoder still
 produces the expected dataclass. They fail loudly when Google changes a
 payload field, so the failure shows up here before users hit it.
@@ -1137,6 +1136,9 @@ surface change is a deliberate, diff-visible act. These **regenerable baselines*
 | `auth_facade_patch_sites` | public `notebooklm.auth` no-growth relocation sentinel | `tests/fixtures/baselines/auth_facade_patch_sites.json` |
 | `auth_family_patch_scorecard` | combined full-joint auth/browser/facade scorecard | `tests/fixtures/baselines/auth_family_patch_scorecard.json` |
 | `auth_shared_mutations` | class/singleton/process-default mutation audit | `tests/fixtures/baselines/auth_shared_mutations.json` |
+| `backend_boundary` | AST-derived boundary classification between Web and Android | `tests/fixtures/baselines/backend_boundary.json` |
+| `backend_runtime_coupling` | dynamic runtime cross-backend coupling audit | `tests/fixtures/baselines/backend_runtime_coupling.json` |
+| `backend_static_coupling` | static cross-backend import coupling audit | `tests/fixtures/baselines/backend_static_coupling.json` |
 | `module_size` | live over-budget and ADR-0033 shrink-locked LOC | `tests/fixtures/baselines/module_size.json` |
 | `storage_transaction_policy` | AST-derived lock-policy callers | `tests/fixtures/baselines/storage_transaction_policy.json` |
 | `guardrail_inline_literals` | grandfathered large guardrail literals | `tests/fixtures/baselines/guardrail_inline_literals.json` |
