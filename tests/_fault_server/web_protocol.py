@@ -21,6 +21,7 @@ VARIANTS = (
     "cap_below",
     "cap_at",
     "cap_above",
+    "cap_stream_abort",
     "gzip_valid",
     "gzip_corrupt",
     "gzip_cap_above",
@@ -55,13 +56,27 @@ async def run_scenario(
     if (result.backend, result.scenario, result.operation_id) != ("web", name, operation_id):
         raise ValueError("protocol scenario identity mismatch")
     variant = name.removeprefix("protocol_chat_")
-    answer = "Large 世界 answer " * (8192 if variant == "large_fragmented_frame" else 8)
+    answer = "Large 世界 answer " * (
+        8192
+        if variant == "large_fragmented_frame"
+        else 2048
+        if variant == "cap_stream_abort"
+        else 8
+    )
     body = b")]}'" + _frame(answer, final=True)
     healthy = b")]}'" + _frame("Recovered", final=True)
     limit = len(body) + 1 if variant == "cap_below" else len(body)
     if variant in {"cap_above", "gzip_cap_above"}:
         limit -= 1
-    expected_failure = variant in {"cap_above", "gzip_cap_above", "gzip_corrupt", "invalid_length"}
+    if variant == "cap_stream_abort":
+        limit = 2048
+    expected_failure = variant in {
+        "cap_above",
+        "cap_stream_abort",
+        "gzip_cap_above",
+        "gzip_corrupt",
+        "invalid_length",
+    }
     wire = gzip.compress(body, mtime=0) if variant.startswith("gzip") else body
     if variant == "gzip_corrupt":
         # Real gzip member with a corrupt CRC, rather than a merely incomplete trailer.
@@ -70,6 +85,8 @@ async def run_scenario(
     if variant == "invalid_length":
         headers["content-length"] = "-1"
     checks = CHECKS + (["fragment_progress"] if variant == "large_fragmented_frame" else [])
+    if variant == "cap_stream_abort":
+        checks += ["first_crossing_aborts", "peer_settled_before_suffix"]
     result.record(
         "plan",
         required_checks=checks,
@@ -93,10 +110,12 @@ async def run_scenario(
         if variant == "large_fragmented_frame"
         else reply
     )
+    if variant == "cap_stream_abort":
+        action = Incremental(reply, chunk_bytes=1024, interval=0.05)
     server.enqueue(CHAT, action, Reply(body=healthy))
     server.enqueue(TURNS, *[Reply(body=rpc_response(TURNS.rpc_id or "", [])) for _ in range(2)])
     responses: list[httpx.Response] = []
-    chunks: list[int] = []
+    chunks: list[bytes] = []
     factory = server.client_factory
 
     class ObservedStream(httpx.AsyncByteStream):
@@ -105,7 +124,7 @@ async def run_scenario(
 
         async def __aiter__(self):
             async for chunk in self.stream:
-                chunks.append(len(chunk))
+                chunks.append(chunk)
                 yield chunk
 
         async def aclose(self):
@@ -141,14 +160,16 @@ async def run_scenario(
         result.record(
             "protocol_outcome",
             error=None if error is None else type(error).__name__,
-            wire_bytes_observed=sum(chunks),
+            wire_bytes_observed=sum(map(len, chunks)),
             expected_wire_bytes=len(wire),
             decoded_bytes=len(body),
             wire_digest=hashlib.sha256(wire).hexdigest(),
+            observed_digest=hashlib.sha256(b"".join(chunks)).hexdigest(),
+            received_chunk_sizes=list(map(len, chunks)),
             limit_bytes=limit,
             error_bytes_read=getattr(error, "bytes_read", None),
         )
-        if variant in {"cap_above", "gzip_cap_above"}:
+        if variant in {"cap_above", "cap_stream_abort", "gzip_cap_above"}:
             valid_outcome = (
                 isinstance(error, RPCResponseTooLargeError) and error.limit_bytes == limit
             )
@@ -161,12 +182,40 @@ async def run_scenario(
             "no_partial_success",
             returned is None if expected_failure else returned.answer == answer,
         )
+        if variant == "cap_stream_abort":
+            received = sum(map(len, chunks))
+            # Judge the actual received chunks, not TCP/write-slice boundaries.
+            # The first crossing chunk must abort before the long suffix.
+            result.require(
+                "first_crossing_aborts",
+                len(chunks) >= 2
+                and limit < received <= limit + len(chunks[-1])
+                and sum(map(len, chunks[:-1])) <= limit
+                and error.bytes_read == received
+                and b"".join(chunks) == wire[:received]
+                and received < len(wire) // 4,
+            )
+            await server.wait_for_event("handler_settled", count=2)
+            sent = [event for event in server.events if event["phase"] == "response_chunk"]
+            result.require(
+                "peer_settled_before_suffix",
+                server.active_handlers == 0
+                and bool(sent)
+                and sent[-1]["response_bytes"] < len(wire),
+            )
+            result.record(
+                "abort_delivery",
+                sent_bytes=sent[-1]["response_bytes"],
+                received_bytes=received,
+                complete_bytes=len(wire),
+            )
         # Size enforcement is post-chunk: one decoded chunk of overshoot is permitted.
         result.require(
             "bounded_consumption",
-            sum(chunks) <= len(wire)
+            sum(map(len, chunks)) <= len(wire)
             and (
-                error.bytes_read == len(body)
+                error.bytes_read
+                == (sum(map(len, chunks)) if variant == "cap_stream_abort" else len(body))
                 if isinstance(error, RPCResponseTooLargeError)
                 else True
             ),
@@ -180,7 +229,7 @@ async def run_scenario(
             result.require(
                 "fragment_progress",
                 len(chunks) >= 2
-                and sum(chunks) == len(body)
+                and sum(map(len, chunks)) == len(body)
                 and sum(event["phase"] == "response_chunk" for event in server.events) >= 2,
             )
         recovered = await asyncio.wait_for(ask(), 8)
