@@ -688,7 +688,10 @@ loading, synthetic RotateCookies/homepage responses, and public notebook RPCs.
 They establish responsive discovery during opening, failed-opening recovery,
 cancellation of one shared-opening waiter, and shutdown during opening. They observe
 request counts, live and persisted cookie transitions, waiter cancellation, closed
-clients/listeners, and absence of synthetic secrets from logs.
+clients/listeners, and absence of synthetic secrets from logs. Each case declares
+its required checks, gate order, exact request/commit limits, and operation/cleanup
+budgets before allocation. A 45-second operation watchdog bounds the cohort;
+captured JSON preserves sanitized partial checks and cleanup observations on failure.
 
 Successful token acquisition persists rotation; failed or cancelled homepage
 acquisition retains the previous credential file. Retrying uses the same credential
