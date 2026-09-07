@@ -31,14 +31,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# Sibling-relative import keeps this guard independent of pytest import-mode
-# details and avoids depending on the absolute ``tests._guardrails`` package
-# name.
-from .test_v080_deprecation_coverage import (
+import pytest
+
+from tests._helpers._v080_history import (
     PROJECT_ROOT,
     SRC_ROOT,
     V080_BREAKING_CHANGES,
 )
+
+pytestmark = pytest.mark.historical
 
 # The release that flips the breaking half of ADR-0019. The gate's behavior
 # pivots here: < this version is "runway live", >= is "flip shipped".

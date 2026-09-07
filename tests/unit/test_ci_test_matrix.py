@@ -19,7 +19,6 @@ VERIFY_PACKAGE_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "verify-packa
 PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 REFACTOR_QUALIFICATION_FILES = {
     PROJECT_ROOT / "tests" / "unit" / "test_client_lifecycle_waves.py",
-    PROJECT_ROOT / "tests" / "_guardrails" / "test_client_operation_contract_inventory.py",
     PROJECT_ROOT / "tests" / "_guardrails" / "test_backend_coupling_observability.py",
 }
 PR_LIFECYCLE_CONTRACTS = {

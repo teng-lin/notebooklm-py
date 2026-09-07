@@ -32,6 +32,8 @@ import importlib
 
 import pytest
 
+pytestmark = pytest.mark.historical
+
 SESSION_CMD_MODULE = "notebooklm.cli.session_cmd"
 
 # The exact names removed from the ``session_cmd`` patch-surface bridge in

@@ -43,7 +43,9 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+pytestmark = pytest.mark.historical
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 # Retired Session-private attribute names. Keep this set even after the

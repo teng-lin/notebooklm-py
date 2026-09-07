@@ -44,88 +44,17 @@ carries a non-empty reason).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
+from tests._helpers._v080_history import (
+    SRC_ROOT,
+    V080_BREAKING_CHANGES,
+    BreakingChange,
+    Runway,
+)
 
-
-@dataclass(frozen=True)
-class Runway:
-    """A v0.7.0 deprecation signal whose *presence today* the gate can verify.
-
-    Exactly one of ``symbol`` / ``notice`` is set:
-
-    * ``symbol`` — a warn-helper / mixin name (e.g. ``warn_get_returns_none``)
-      that must appear in :attr:`module`. This proves the runway is wired into
-      the public surface, not merely defined in ``_deprecation.py``.
-    * ``notice`` — a substring of a stderr transition notice (e.g. the
-      ``generate mind-map`` ``--kind`` nudge) that must appear in
-      :attr:`module`. Used for CLI notices that aren't routed through a named
-      ``DeprecationWarning`` helper.
-
-    ``module`` is POSIX-relative to ``src/notebooklm/``. ``description`` is the
-    human-readable "how it warns today" note that the table column records.
-    """
-
-    module: str
-    description: str
-    symbol: str | None = None
-    notice: str | None = None
-
-    def __post_init__(self) -> None:
-        provided = [v for v in (self.symbol, self.notice) if v is not None]
-        if len(provided) != 1:
-            raise ValueError(
-                "Runway must set exactly one of {symbol, notice}; "
-                f"got symbol={self.symbol!r}, notice={self.notice!r}"
-            )
-
-    @property
-    def needle(self) -> str:
-        """The literal string the gate searches for in :attr:`module`."""
-        # Exactly one is non-None (enforced in __post_init__).
-        return self.symbol if self.symbol is not None else self.notice  # type: ignore[return-value]
-
-    @property
-    def is_symbol(self) -> bool:
-        """True for a ``symbol`` runway (verified against code, not comments)."""
-        return self.symbol is not None
-
-
-@dataclass(frozen=True)
-class BreakingChange:
-    """One tracked v0.8.0-breaking change, runwayed XOR reason-exempted.
-
-    ``issue`` is the tracking issue number (e.g. ``1247``); ``summary`` names
-    the break for failure messages. Exactly one of ``runway`` / ``exemption``
-    must be set — :func:`_tag` asserts the XOR so no entry is silent-and-
-    unexplained and none is over-tagged.
-    """
-
-    issue: int
-    summary: str
-    runway: Runway | None = None
-    exemption: str | None = None
-
-
-# The registry. Anchored to the ADR-0019 contract (umbrella #1346) and the
-# tracked v0.8.0 issues. Each entry carries EITHER a verified runway OR a
-# reason-tagged exemption — never both, never neither.
-#
-# DO NOT add a silent entry. A new v0.8.0 break must either ship a v0.7.0 runway
-# (and cite the module that wires it) or carry an explicit exemption reason.
-# The exemption set is meant to SHRINK as runways are added.
-#
-# Emptied at the v0.8.0 release (#1365): every tracked break has shipped, so the
-# table is empty and the bidirectional release gate
-# (``test_v080_release_gate.py``) now requires it to STAY empty at/after 0.8.0.
-# The detector + self-checks below stay live so the gate keeps biting for any
-# FUTURE breaking-change program that re-populates this table.
-V080_BREAKING_CHANGES: tuple[BreakingChange, ...] = ()
+pytestmark = pytest.mark.historical
 
 
 # --- Pure detector (no I/O) ---------------------------------------------------

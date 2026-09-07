@@ -40,9 +40,6 @@ _ALLOWED_CROSS_TEST_IMPORTS: frozenset[tuple[str, str]] = frozenset(
         # Behavioural Tier-1 floor pins ``LOOKUP_NAMESPACES`` to the static contract gate
         # so the two halves stay in lock-step (test_public_api_behavior.py).
         ("unit/test_public_api_behavior.py", "test_public_api_contract"),
-        # v0.8.0 release gate shares PROJECT_ROOT / SRC_ROOT / V080_BREAKING_CHANGES
-        # with the deprecation-coverage gate.
-        ("_guardrails/test_v080_release_gate.py", "test_v080_deprecation_coverage"),
     }
 )
 

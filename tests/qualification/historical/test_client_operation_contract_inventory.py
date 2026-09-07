@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.refactor_qualification
+pytestmark = pytest.mark.historical
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src" / "notebooklm"
 APP = SRC / "_app"
 

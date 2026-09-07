@@ -414,9 +414,10 @@ MIXED_NODE_RULES: dict[str, dict[str, object]] = {
 
 
 def build_ledger() -> dict[str, object]:
-    """Inspect all guardrail files and build comprehensive relevance ledger."""
+    """Inspect all guardrail and historical files and build comprehensive relevance ledger."""
     guardrails_dir = REPO_ROOT / "tests" / "_guardrails"
-    files = sorted(guardrails_dir.glob("test_*.py"))
+    historical_dir = REPO_ROOT / "tests" / "qualification" / "historical"
+    files = sorted(list(guardrails_dir.glob("test_*.py")) + list(historical_dir.glob("test_*.py")))
 
     entries: list[dict[str, object]] = []
 
