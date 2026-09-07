@@ -11,6 +11,12 @@ contracts, construction seams, scenario registries, evidence rules, and measured
 local results. The architectural decision remains in
 [ADR-0038](adr/0038-local-fault-injection-harness.md).
 
+Visual guides: [test infrastructure](diagrams/22-testing-and-guardrails.html),
+[fault coverage](diagrams/39-fault-coverage.html), and
+[scenario lifecycle](diagrams/40-fault-scenario-lifecycle.html). These standalone
+viewers support search, light/dark themes, and export; open them from a local
+checkout or use the hosted links in the [diagram catalog](diagrams/README.md#testing-and-fault-coverage).
+
 Quick links: [commands](#run-the-harness),
 [measurements](#current-measured-results),
 [runner and cleanup](#runner-acceptance-budgets-and-cleanup),
