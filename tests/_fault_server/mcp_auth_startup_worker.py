@@ -100,7 +100,7 @@ def main() -> None:
         from .adapter_listener import live_listener
 
         async with live_listener(server.http_app()) as (url, _listener):
-            (args.directory / "ready").write_text(url + "/mcp", encoding="utf-8")
+            atomic_write_json(args.directory / "ready", {"url": url + "/mcp"})
 
             async def stopped() -> None:
                 while not (args.directory / "stop").exists():

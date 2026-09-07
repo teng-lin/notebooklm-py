@@ -138,7 +138,7 @@ async def test_http_session_retains_body_error_when_worker_wait_fails(tmp_path, 
     monkeypatch.setattr(startup.asyncio, "create_subprocess_exec", spawn)
     monkeypatch.setattr(startup, "streamable_http_client", connection)
     monkeypatch.setattr(startup, "ClientSession", session)
-    (tmp_path / "ready").write_text("http://127.0.0.1:1/mcp")
+    (tmp_path / "ready").write_text(json.dumps({"url": "http://127.0.0.1:1/mcp"}))
     primary = ValueError("original MCP assertion")
     with pytest.raises(ValueError) as caught:
         async with startup._mcp_connection(tmp_path, 1, "http"):

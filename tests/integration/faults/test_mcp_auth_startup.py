@@ -83,7 +83,7 @@ async def _mcp_connection(directory: Path, port: int, transport: str):
                     while not (directory / "ready").exists():
                         assert process.returncode is None, "MCP worker exited before readiness"
                         await asyncio.sleep(0.025)
-                    return (directory / "ready").read_text(encoding="utf-8")
+                    return json.loads((directory / "ready").read_text(encoding="utf-8"))["url"]
 
                 url = await asyncio.wait_for(ready(), 10)
                 async with (
