@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fault-Injection Coverage Map",
+    "locale": "en",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/teng-lin/notebooklm-py",
+      "revision": "acb7fa96de00be9b07d81abf433f96beb607a560"
+    },
+    "viewBox": [1380, 820]
+  },
+  "components": [
+    {
+      "id": "runner_gate",
+      "type": "cloud",
+      "label": "Stress runner + CI gates",
+      "sublabel": "Full deck • watchdogs",
+      "tag": "ENTRY",
+      "sources": [
+        { "path": "scripts/stress_fault_server.py", "label": "runner" },
+        { "path": ".github/workflows/fault-stress.yml", "label": "CI selection" }
+      ],
+      "pos": [560, 34],
+      "size": [260, 82]
+    },
+    {
+      "id": "web_registry",
+      "type": "backend",
+      "label": "Web registry",
+      "sublabel": "105 portable scenarios • HTTP + batchexecute",
+      "tag": "WEB",
+      "sources": [
+        { "path": "tests/_fault_server/web_scenarios.py", "label": "dispatcher" }
+      ],
+      "pos": [100, 182],
+      "size": [260, 76]
+    },
+    {
+      "id": "android_registry",
+      "type": "backend",
+      "label": "Android registry",
+      "sublabel": "69 portable scenarios • local gRPC + HTTP",
+      "tag": "ANDROID",
+      "sources": [
+        { "path": "tests/_fault_server/android_scenarios.py", "label": "dispatcher" }
+      ],
+      "pos": [560, 182],
+      "size": [260, 76]
+    },
+    {
+      "id": "curl_registry",
+      "type": "security",
+      "label": "Native curl registry",
+      "sublabel": "10 separate Web cases • TLS + logical routing",
+      "tag": "REAL CURL",
+      "sources": [
+        { "path": "tests/_fault_server/curl_scenarios.py", "label": "registry" },
+        { "path": "tests/_fault_server/curl_routing.py", "label": "routing" }
+      ],
+      "pos": [1020, 182],
+      "size": [260, 76]
+    },
+    {
+      "id": "contract_index",
+      "type": "messagebus",
+      "label": "R1–R14 acceptance contracts",
+      "sublabel": "Backend tags show implemented scope",
+      "tag": "CONTRACT MAP",
+      "sources": [
+        { "path": "docs/fault-injection.md", "line": 279, "label": "contract tables" }
+      ],
+      "pos": [510, 330],
+      "size": [360, 84]
+    },
+    {
+      "id": "replay_auth",
+      "type": "backend",
+      "label": "Replay, auth & deadlines",
+      "sublabel": "R1–R2 • commit proof • retry/auth",
+      "tag": "WEB + ANDROID",
+      "sources": [
+        { "path": "tests/_fault_server/web_resilience_scenarios.py", "label": "Web" },
+        { "path": "tests/_fault_server/android_resilience_scenarios.py", "label": "Android" }
+      ],
+      "pos": [15, 510],
+      "size": [215, 82]
+    },
+    {
+      "id": "transfer_stream",
+      "type": "database",
+      "label": "Transfers, streams & content",
+      "sublabel": "R3–R6, R9, R12 • partial vs published",
+      "tag": "WEB + ANDROID",
+      "sources": [
+        { "path": "tests/_fault_server/web_transfers.py", "label": "Web" },
+        { "path": "tests/_fault_server/android_transfers.py", "label": "Android" },
+        { "path": "tests/_fault_server/android_drive.py", "label": "Drive stage" }
+      ],
+      "pos": [242, 510],
+      "size": [215, 82]
+    },
+    {
+      "id": "shared_work",
+      "type": "messagebus",
+      "label": "Admission & shared work",
+      "sublabel": "R7–R8 • queues • shared generations",
+      "tag": "WEB + ANDROID",
+      "sources": [
+        { "path": "tests/_fault_server/web_concurrency.py", "label": "Web concurrency" },
+        { "path": "tests/_fault_server/android_resilience_scenarios.py", "label": "Android mint" }
+      ],
+      "pos": [469, 510],
+      "size": [215, 82]
+    },
+    {
+      "id": "workflow_state",
+      "type": "frontend",
+      "label": "Workflow state & readback",
+      "sublabel": "R10–R11 • generation • readback",
+      "tag": "WEB",
+      "sources": [
+        { "path": "tests/_fault_server/web_generation_faults.py", "label": "generation" },
+        { "path": "tests/_fault_server/web_workflows.py", "label": "workflows" }
+      ],
+      "pos": [696, 510],
+      "size": [215, 82]
+    },
+    {
+      "id": "connection_tls",
+      "type": "security",
+      "label": "Connections & TLS routing",
+      "sublabel": "R13 • keepalive • restart • TLS",
+      "tag": "WEB + REAL CURL",
+      "sources": [
+        { "path": "tests/_fault_server/web_connections.py", "label": "connections" },
+        { "path": "tests/_fault_server/curl_scenarios.py", "label": "curl" }
+      ],
+      "pos": [923, 510],
+      "size": [215, 82]
+    },
+    {
+      "id": "adapter_projection",
+      "type": "external",
+      "label": "REST / MCP / CLI projection",
+      "sublabel": "R14 • mapping • downstream ownership",
+      "tag": "WEB ONLY",
+      "sources": [
+        { "path": "tests/_fault_server/adapter_scenarios.py", "label": "adapters" },
+        { "path": "tests/_fault_server/adapter_lifecycle.py", "label": "lifecycle" }
+      ],
+      "pos": [1150, 510],
+      "size": [215, 82]
+    }
+  ],
+  "connections": [
+    {
+      "id": "select_web",
+      "from": "runner_gate",
+      "to": "web_registry",
+      "label": "portable selection",
+      "variant": "emphasis"
+    },
+    {
+      "id": "select_android",
+      "from": "runner_gate",
+      "to": "android_registry",
+      "label": "portable selection",
+      "labelDy": 24,
+      "variant": "emphasis"
+    },
+    {
+      "id": "select_curl",
+      "from": "runner_gate",
+      "to": "curl_registry",
+      "label": "separate job",
+      "variant": "security"
+    },
+    {
+      "id": "web_contracts",
+      "from": "web_registry",
+      "to": "contract_index",
+      "label": "registered scenarios"
+    },
+    {
+      "id": "android_contracts",
+      "from": "android_registry",
+      "to": "contract_index",
+      "label": "registered scenarios",
+      "labelDy": 24
+    },
+    {
+      "id": "family_replay",
+      "from": "contract_index",
+      "to": "replay_auth",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "family_transfer",
+      "from": "contract_index",
+      "to": "transfer_stream",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "family_shared",
+      "from": "contract_index",
+      "to": "shared_work",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "family_workflow",
+      "from": "contract_index",
+      "to": "workflow_state",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "family_connection",
+      "from": "contract_index",
+      "to": "connection_tls",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "family_adapter",
+      "from": "contract_index",
+      "to": "adapter_projection",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Registry coverage",
+      "items": [
+        "Portable deck: 174 unique scenarios = 105 Web + 69 Android.",
+        "Native curl: 10 additional Web scenarios selected in a separate job.",
+        "CI uses --require-all-scenarios so selected, executed, and skipped remain explicit."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Evidence and claim boundary • revision acb7fa96d",
+      "items": [
+        "Production clients cross local sockets; every scenario records required checks, plan, fault, commit, and cleanup evidence.",
+        "R6 chat is Web; R12 Drive is Android; other transfer checks span both. Adapter projections are Web only.",
+        "R1–R14 are behavior contracts, not exhaustive backend promises. Cassettes and live tests remain the service-agreement authority."
+      ]
+    }
+  ]
+}
