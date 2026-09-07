@@ -20,9 +20,11 @@ from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 im
     artifacts_pb2,
     chat_pb2,
     notebooks_pb2,
+    organization_pb2,
     read_pb2,
     sources_pb2,
 )
+from notebooklm._android.proto.notebooklm.android.wire.v1 import organization_mutations_pb2
 from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import (
     notebooks_pb2 as wire_notebooks_pb2,
 )
@@ -34,8 +36,14 @@ ADD_TENTATIVE_SOURCES = f"/{SERVICE}/AddTentativeSources"
 ADD_SOURCES = f"/{SERVICE}/AddSources"
 LIST_ARTIFACTS = f"/{SERVICE}/ListArtifacts"
 LIST_CHAT_SESSIONS = f"/{SERVICE}/ListChatSessions"
+GET_LABELS = f"/{SERVICE}/GetLabels"
+MUTATE_LABEL = f"/{SERVICE}/MutateLabel"
+LIST_CHAT_TURNS = f"/{SERVICE}/ListChatTurns"
 GENERATE_STREAMED = f"/{SERVICE}/GenerateFreeFormStreamed"
 _METHOD_KINDS = {
+    GET_LABELS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
+    MUTATE_LABEL: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
+    LIST_CHAT_TURNS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     ADD_TENTATIVE_SOURCES: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     ADD_SOURCES: frozenset({"reply", "abort", "wait_reply", "wait_abort", "commit_abort"}),
     LIST_ARTIFACTS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
@@ -233,6 +241,21 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         return grpc.method_handlers_generic_handler(
             SERVICE,
             {
+                "GetLabels": grpc.unary_unary_rpc_method_handler(
+                    self._get_labels,
+                    request_deserializer=organization_pb2.GetLabelsRequest.FromString,
+                    response_serializer=organization_mutations_pb2.GetLabelsWireResponse.SerializeToString,
+                ),
+                "MutateLabel": grpc.unary_unary_rpc_method_handler(
+                    self._mutate_label,
+                    request_deserializer=organization_pb2.MutateLabelRequest.FromString,
+                    response_serializer=organization_pb2.MutateLabelResponse.SerializeToString,
+                ),
+                "ListChatTurns": grpc.unary_unary_rpc_method_handler(
+                    self._list_chat_turns,
+                    request_deserializer=chat_pb2.ListChatTurnsRequest.FromString,
+                    response_serializer=chat_pb2.ListChatTurnsResponse.SerializeToString,
+                ),
                 "GetProject": grpc.unary_unary_rpc_method_handler(
                     self._get_project,
                     request_deserializer=read_pb2.GetProjectRequest.FromString,
@@ -353,6 +376,12 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
             if action.response is not None:
                 # Stateful fixtures may echo production-generated correlation IDs.
                 return action.response(request) if callable(action.response) else action.response
+            if method == GET_LABELS:
+                return organization_mutations_pb2.GetLabelsWireResponse()
+            if method == MUTATE_LABEL:
+                return organization_pb2.MutateLabelResponse()
+            if method == LIST_CHAT_TURNS:
+                return chat_pb2.ListChatTurnsResponse()
             if method == GET_PROJECT:
                 return wire_notebooks_pb2.WireGetProjectResponse(
                     project=wire_notebooks_pb2.WireProjectWithAdvancedSettings(
@@ -380,6 +409,15 @@ class GrpcFaultServer(AbstractAsyncContextManager["GrpcFaultServer"]):
         finally:
             if task is not None:
                 self._active.discard(task)
+
+    async def _get_labels(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+        return await self._apply_unary(GET_LABELS, request, context)
+
+    async def _mutate_label(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+        return await self._apply_unary(MUTATE_LABEL, request, context)
+
+    async def _list_chat_turns(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
+        return await self._apply_unary(LIST_CHAT_TURNS, request, context)
 
     async def _get_project(self, request: Any, context: grpc.aio.ServicerContext) -> Any:
         return await self._apply_unary(GET_PROJECT, request, context)
