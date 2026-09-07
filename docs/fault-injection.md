@@ -373,7 +373,9 @@ separate public batch API exists. The test must not describe them as new APIs.
 | Android guarded single and batch | The same six transfer variants using generated artifact protobuf rows and valid 1×1 PNG/media signatures; typed transport errors and no partial publication. |
 | Curl buffered single | success, prefix failure, body stall, cancel, close/reopen as selected in R13; real native handle and response cleanup. |
 
-Failure preserves an existing destination and leaves no `.tmp` or `.part` file.
+Transfer failure preserves an existing destination and removes staging when cleanup
+is available. Deliberate filesystem cleanup failures retain explicitly observed staging
+as described in the local-persistence expansion below.
 Web transport failures retain established `ArtifactDownloadError` causes or batch
 failed results. Android exposes bounded `code=transport` data without raw causes.
 I2–I4, I6–I8.
@@ -538,6 +540,51 @@ where applicable, 2-second component cleanup waits, and a 12-second integration
 wrapper. Each child process returns partial evidence on failure. Shutdown closes
 the chat registry before its provider and leaves no unhandled task exception.
 I1–I6 and I8 apply according to each row.
+
+## Local persistence and continuous response expansion
+
+These families extend the preceding socket failures with local publication errors
+and responses that keep making progress. Assertions follow the existing public
+contract: Web local I/O errors remain `OSError`, and successful refresh may remain
+usable in memory when cookie persistence fails.
+
+| Family | New evidence | Reused coverage and exclusions |
+| --- | --- | --- |
+| `download_local_*` | Public audio: staging creation, nonzero write, writer close/flush, replacement, and cleanup failures; absent destination replacement. Public report exercises the separate neutral thread publication owner. Exact delivered bytes/digest, preserved destinations, joined writer, explicit retained staging, and same-client download recovery. | Existing download writer/cancellation units and R5 socket cases. Audio has no explicit fsync; this is not a durability claim. Deterministic owner hooks do not exhaust the host disk or alter broad permissions. |
+| Auth persistence, pytest-only | Successful public refresh receives synthetic cookies over HTTP; real atomic JSON writing fails after a prefix or at replacement. Previous file stays byte-identical and parseable, errors are observable without secret values, and a second refresh writes cookies readable by a fresh store. | Atomic storage and profile transaction unit tests. Filesystem substitutions run only inside an isolated child. The successful second save also reacquires the real locks. |
+| `slow_download_operation_deadline`, `slow_chat_operation_deadline` | At least four HTTPX body chunks arrive with progress inside the inactivity window, but the explicit operation deadline expires before completion. Response/peer and download writer settle; the same public operation recovers on the same client. | R5 WAV fixtures, R6 production chat framing, operation-context units. Standalone chat and transfer read timeouts are inactivity windows, not total budgets. |
+
+Slow-response cases use a 0.1-second cadence, 4-second read-inactivity timeout,
+2-second `client.operation(timeout=...)` budget and 8-second external watchdog.
+Monotonic client receive times and independent server send events establish
+progress. Application gates do not establish kernel backpressure.
+
+The publication tests exposed two primary-error masking sites: streamed download
+cleanup and neutral `write_file` cleanup could replace an active publication error
+with an unlink error. Both preserve the primary exception and log only the cleanup
+exception type. Deliberately retained staging is explicit and removed after the
+fault is disabled; it does not prevent the next download. The new continuous-response
+and auth-persistence cases have not exposed another production defect.
+
+Sensitivity checks restored unsafe unlink handling (both cleanup cases failed at
+`primary_io_error`), delayed the operation timer (both slow-response cases failed at
+`aggregate_deadline`), and logged a cookie-write exception's text (both auth cases
+failed at `logs_exclude_secrets`). Production code was restored after each probe.
+
+### Stored-auth MCP startup, pytest-only
+
+Eight cases cover stdio and streamable HTTP with real `NotebookLMClient.from_storage`
+loading, synthetic RotateCookies/homepage responses, and public notebook RPCs.
+They establish responsive discovery during opening, failed-opening recovery,
+cancellation of one shared-opening waiter, and shutdown during opening. They observe
+request counts, live and persisted cookie transitions, waiter cancellation, closed
+clients/listeners, and absence of synthetic secrets from logs.
+
+Successful token acquisition persists rotation; failed or cancelled homepage
+acquisition retains the previous credential file. Retrying uses the same credential
+directory. Restoring eager lifespan opening fails discovery, and removing the shared
+opening shield cancels both waiters instead of one. These fixtures do not establish
+real Google issuance, cold recovery ladders, connector setup, or package installation.
 
 ## Add or investigate a scenario
 

@@ -44,6 +44,9 @@ from .web_concurrency import PLANS as CONCURRENCY_PLANS
 from .web_concurrency import REQUIRED_CHECKS as CONCURRENCY_REQUIRED_CHECKS
 from .web_connections import IMPLEMENTATIONS as CONNECTION_IMPLEMENTATIONS
 from .web_connections import PLANS as CONNECTION_PLANS
+from .web_persistence import IMPLEMENTATIONS as PERSISTENCE_IMPLEMENTATIONS
+from .web_persistence import PLANS as PERSISTENCE_PLANS
+from .web_persistence import REQUIRED_CHECKS as PERSISTENCE_REQUIRED_CHECKS
 from .web_resilience_scenarios import BUDGETS as RESILIENCE_BUDGETS
 from .web_resilience_scenarios import (
     IMPLEMENTATIONS as RESILIENCE_IMPLEMENTATIONS,
@@ -648,6 +651,8 @@ _IMPLEMENTATIONS.update(CONNECTION_IMPLEMENTATIONS)
 _PLANS.update(CONNECTION_PLANS)
 _IMPLEMENTATIONS.update(CHAT_IMPLEMENTATIONS)
 _PLANS.update(CHAT_PLANS)
+_IMPLEMENTATIONS.update(PERSISTENCE_IMPLEMENTATIONS)
+_PLANS.update(PERSISTENCE_PLANS)
 _IMPLEMENTATIONS.update(TRANSFER_IMPLEMENTATIONS)
 _PLANS.update(TRANSFER_PLANS)
 SCENARIOS = tuple(
@@ -758,9 +763,11 @@ async def run_scenario(
         budgets={**RESILIENCE_BUDGETS, **CONCURRENCY_BUDGETS}.get(
             name, {"scenario_timeout_s": 15.0, "cleanup_timeout_s": 2.0}
         ),
-        required_checks={**RESILIENCE_REQUIRED_CHECKS, **CONCURRENCY_REQUIRED_CHECKS}.get(
-            name, _required_checks(name)
-        ),
+        required_checks={
+            **RESILIENCE_REQUIRED_CHECKS,
+            **CONCURRENCY_REQUIRED_CHECKS,
+            **PERSISTENCE_REQUIRED_CHECKS,
+        }.get(name, _required_checks(name)),
     )
     await implementation(result)
     return result
