@@ -12,7 +12,7 @@ import pytest
 pytestmark = pytest.mark.allow_no_vcr
 
 
-@pytest.mark.parametrize("variant", ["write", "replace"])
+@pytest.mark.parametrize("variant", ["write", "replace", "sequence"])
 def test_refresh_recovers_after_atomic_storage_failure(tmp_path: Path, variant: str) -> None:
     report = tmp_path / "report.json"
     # subprocess.run kills and waits on timeout on POSIX and Windows alike.

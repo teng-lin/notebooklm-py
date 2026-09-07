@@ -26,7 +26,7 @@ from notebooklm.rpc import RPCMethod
 from . import web
 from .common import ScenarioResult
 from .environment import isolated_environment
-from .http import HttpFaultServer, Reply, Route
+from .http import HttpFaultServer, Reply, Route, Stall
 
 _OLD = "fault-persistence-old-secret"
 _NEW = "fault-persistence-new-secret"
@@ -61,6 +61,17 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
         "client_closed",
         "server_settled",
     )
+    sequence = variant == "sequence"
+    if sequence:
+        required += (
+            "failed_save_baseline_unchanged",
+            "cancelled_read_settled",
+            "close_with_fault_preserves_state",
+            "reopen_keeps_retryable_baseline",
+            "old_generation_transport_closed",
+            "recovered_save_advances_order",
+            "cancelled_and_recovered_auth_routed",
+        )
     result.record(
         "plan",
         required_checks=list(required),
@@ -97,6 +108,15 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
             for _ in range(2)
         ],
     )
+    if sequence:
+        server.enqueue(
+            _READ,
+            Stall(
+                "headers",
+                "cancel-read",
+                Reply(body=web.list_response(_READ.rpc_id or "", [("cancelled", "Read")])),
+            ),
+        )
     server.enqueue(
         _READ, Reply(body=web.list_response(_READ.rpc_id or "", [("recovered", "Read")]))
     )
@@ -125,11 +145,18 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
 
     client = None
     primary_error = None
+    pending: asyncio.Task | None = None
     try:
         await server.__aenter__()
         with patch.object(web, "synthetic_auth", return_value=auth):
             client = web.build_fault_client(server, timeout=3, server_error_max_retries=0)
         await client.__aenter__()
+        persistence = client._web_runtime.cookie_persistence
+        key = ProfileStore(storage).ordering_key
+        initial_state = persistence._states[key]
+        baseline_before = initial_state.baseline
+        sequence_before = initial_state.last_applied_sequence
+        old_transport = client._web_runtime.kernel.http_client
         target, name, replacement = (
             (json, "dump", failed_dump)
             if variant == "write"
@@ -137,43 +164,102 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
         )
         with patch.object(target, name, replacement):
             refreshed = await asyncio.wait_for(client.refresh_auth(), 8)
-        result.require(
-            "refresh_remains_usable",
-            refreshed.csrf_token == web.NEW_CSRF
-            and refreshed.cookie_jar is not None
-            and refreshed.cookie_jar.get("SID", domain=".google.com") == _NEW,
-        )
-        result.require(
-            "local_fault_observed",
-            faults == ["nonzero_write" if variant == "write" else "complete_staging"],
-        )
-        result.require("previous_file_preserved", storage.read_bytes() == original)
-        previous = ProfileStore(storage).read_document().cookies()
-        result.require("previous_file_parseable", any(c.value == _OLD for c in previous))
-        result.require("staging_removed", not list(directory.glob("*.tmp")))
-        result.require(
-            "failure_observable",
-            any("Failed to write updated cookies" in message for message in logs.messages),
-        )
-        result.require(
-            "logs_exclude_secrets",
-            all(
-                secret not in message
-                for secret in (_OLD, _NEW, _ERROR)
-                for message in logs.messages
-            ),
-        )
+            result.require(
+                "refresh_remains_usable",
+                refreshed.csrf_token == web.NEW_CSRF
+                and refreshed.cookie_jar is not None
+                and refreshed.cookie_jar.get("SID", domain=".google.com") == _NEW,
+            )
+            result.require(
+                "local_fault_observed",
+                faults == ["nonzero_write" if variant == "write" else "complete_staging"],
+            )
+            result.require("previous_file_preserved", storage.read_bytes() == original)
+            previous = ProfileStore(storage).read_document().cookies()
+            result.require("previous_file_parseable", any(c.value == _OLD for c in previous))
+            result.require("staging_removed", not list(directory.glob("*.tmp")))
+            result.require(
+                "failure_observable",
+                any("Failed to write updated cookies" in message for message in logs.messages),
+            )
+            if sequence:
+                state = persistence._states[key]
+                result.require(
+                    "failed_save_baseline_unchanged",
+                    state.baseline == baseline_before
+                    and state.last_applied_sequence == sequence_before,
+                )
+                pending = asyncio.create_task(client.notebooks.list())
+                await server.wait_for_gate("cancel-read", timeout=3)
+                pending.cancel()
+                outcome = await asyncio.wait_for(asyncio.gather(pending, return_exceptions=True), 3)
+                result.require(
+                    "cancelled_read_settled",
+                    pending.done() and isinstance(outcome[0], asyncio.CancelledError),
+                )
+                fault_count = len(faults)
+                await asyncio.wait_for(client.close(drain=False), 3)
+                result.require(
+                    "close_with_fault_preserves_state",
+                    len(faults) > fault_count
+                    and storage.read_bytes() == original
+                    and state.baseline == baseline_before
+                    and state.last_applied_sequence == sequence_before,
+                )
+                result.require(
+                    "old_generation_transport_closed",
+                    old_transport is not None and old_transport.is_closed,
+                )
+                server.release("cancel-read")
+                await asyncio.wait_for(client.__aenter__(), 3)
+                reopened = persistence._states[key]
+                result.require(
+                    "reopen_keeps_retryable_baseline",
+                    reopened.baseline == baseline_before
+                    and reopened.last_applied_sequence == sequence_before
+                    and client._web_runtime.kernel.http_client is not old_transport,
+                )
+                result.record(
+                    "sequence",
+                    states=[
+                        "refresh-save-failed",
+                        "read-dispatched",
+                        "read-cancelled",
+                        "close-save-failed",
+                        "reopened",
+                    ],
+                    failed_save_attempts=len(faults),
+                    cancelled_calls=1,
+                )
         recovered = await asyncio.wait_for(client.refresh_auth(), 8)
         result.require("recovery_refresh", recovered.csrf_token == web.NEW_CSRF)
+        if sequence:
+            state = persistence._states[key]
+            result.require(
+                "recovered_save_advances_order",
+                state.baseline != baseline_before and state.last_applied_sequence > sequence_before,
+            )
         fresh = ProfileStore(storage).read_document().cookies()
         result.require("fresh_reader_observes_commit", any(c.value == _NEW for c in fresh))
         probe = await asyncio.wait_for(client.notebooks.list(), 8)
         result.require("same_client_probe", [item.id for item in probe] == ["recovered"])
         result.require(
             "exact_network_work",
-            [record.route for record in server.journal] == [_HOME, _HOME, _READ],
+            [record.route for record in server.journal]
+            == ([_HOME, _READ, _HOME, _READ] if sequence else [_HOME, _HOME, _READ]),
         )
         result.require("no_remote_mutation", not server.committed)
+        if sequence:
+            reads = [record for record in server.journal if record.route == _READ]
+            result.require(
+                "cancelled_and_recovered_auth_routed",
+                all(
+                    record.csrf == web.NEW_CSRF
+                    and record.session_id == web.NEW_SESSION
+                    and record.cookie_values.get("SID") == _NEW
+                    for record in reads
+                ),
+            )
         result.record(
             "http_trace",
             requests=len(server.journal),
@@ -184,8 +270,15 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
         primary_error = error
         raise
     finally:
-        logger.removeHandler(logs)
         cleanup_errors: list[BaseException] = []
+        if pending is not None:
+            if not pending.done():
+                pending.cancel()
+            try:
+                await asyncio.wait_for(asyncio.gather(pending, return_exceptions=True), 3)
+            except BaseException as error:
+                cleanup_errors.append(error)
+        server.release("cancel-read")
         if client is not None:
             try:
                 await asyncio.wait_for(client.close(drain=False), 3)
@@ -195,6 +288,7 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
             await asyncio.wait_for(server.aclose(), 3)
         except BaseException as error:
             cleanup_errors.append(error)
+        logger.removeHandler(logs)
         result.record(
             "cleanup",
             client_closed=client is None or not client._lifecycle.is_open(),
@@ -209,12 +303,28 @@ async def run(variant: str, directory: Path, result: ScenarioResult) -> Scenario
         "server_settled",
         server.active_handlers == 0 and not server.errors and server.remaining() == 0,
     )
+    result.require(
+        "logs_exclude_secrets",
+        all(
+            secret not in message
+            for secret in (
+                _OLD,
+                _NEW,
+                _ERROR,
+                web.OLD_CSRF,
+                web.OLD_SESSION,
+                web.NEW_CSRF,
+                web.NEW_SESSION,
+            )
+            for message in logs.messages
+        ),
+    )
     return result
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--variant", choices=("write", "replace"), required=True)
+    parser.add_argument("--variant", choices=("write", "replace", "sequence"), required=True)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
