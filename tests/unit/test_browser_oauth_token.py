@@ -7,7 +7,7 @@ import logging
 import time
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, PropertyMock
 
 import pytest
 
@@ -261,6 +261,60 @@ def test_capture_local_launch_closes_owned_page_context_and_browser(monkeypatch)
     page.close.assert_called_once_with()
     context.close.assert_called_once_with()
     browser_obj.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize("debug_enabled", [False, True], ids=["normal", "debug"])
+@pytest.mark.parametrize("token_present", [False, True], ids=["timeout", "capture"])
+def test_capture_unreadable_url_preserves_cookie_outcome(
+    monkeypatch, caplog, debug_enabled, token_present
+):
+    """An unavailable diagnostic URL must not abort capture or replace its timeout."""
+    caplog.set_level(
+        logging.DEBUG if debug_enabled else logging.INFO, logger=capture_service.__name__
+    )
+    clock = SimpleNamespace(now=0.0)
+
+    def sleep(seconds):
+        """Advance the host clock without delaying the test."""
+        clock.now += seconds
+
+    monkeypatch.setattr(
+        capture_service, "time", SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep)
+    )
+    page = Mock()
+    url_secret = "SYNTHETIC-UNREADABLE-URL-2350"
+    unreadable_url = PropertyMock(side_effect=RuntimeError(url_secret))
+    monkeypatch.setattr(type(page), "url", unreadable_url, raising=False)
+    context = Mock()
+    context.new_page.return_value = page
+    context.cookies.side_effect = [
+        [],
+        [{"name": "oauth_token", "value": "CAPTURED"}] if token_present else [],
+    ]
+    browser = Mock()
+    browser.new_context.return_value = context
+
+    @contextmanager
+    def playwright_context():
+        """Keep the browser context readable while its page URL raises."""
+        yield SimpleNamespace(chromium=SimpleNamespace(launch=Mock(return_value=browser)))
+
+    monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)
+
+    if token_present:
+        assert capture_service.capture_oauth_token(timeout_s=1.5) == "CAPTURED"
+    else:
+        with pytest.raises(MasterTokenError, match="Did not observe an oauth_token cookie"):
+            capture_service.capture_oauth_token(timeout_s=1.5)
+        assert clock.now == 1.5
+
+    assert unreadable_url.call_count == (2 if debug_enabled else 0)
+    assert context.cookies.call_count == 2
+    assert url_secret not in caplog.text
+    assert all(url_secret not in repr(record.args) for record in caplog.records)
+    page.close.assert_called_once_with()
+    context.close.assert_called_once_with()
+    browser.close.assert_called_once_with()
 
 
 def test_capture_cleanup_failure_preserves_parent_precedence(monkeypatch):

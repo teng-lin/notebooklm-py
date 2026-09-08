@@ -145,12 +145,17 @@ def capture_oauth_token(
                         poll_count,
                         bool(token),
                     )
-                    # page.url is Playwright's cached URL, not a JavaScript call.
-                    # The fragment is diagnostic only: success still requires
-                    # the cookie. Never log the URL, which can contain secrets.
-                    if not completion_seen and page.url.endswith("#close"):
-                        completion_seen = True
-                        logger.debug("OAuth capture: login page reached #close")
+                    # This cached URL is diagnostic only. An unreadable page
+                    # must not interrupt capture; URLs and exception messages
+                    # can contain secrets, so neither is logged.
+                    if not completion_seen and logger.isEnabledFor(logging.DEBUG):
+                        try:
+                            completion_seen = page.url.endswith("#close")
+                        except Exception:
+                            logger.debug("OAuth capture: login page URL unavailable")
+                        else:
+                            if completion_seen:
+                                logger.debug("OAuth capture: login page reached #close")
                     if token:
                         break
                     time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))

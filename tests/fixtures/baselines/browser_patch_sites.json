@@ -21,7 +21,7 @@
       "path": "tests/unit/test_auth_session_refresh_cmd.py"
     },
     {
-      "count": 11,
+      "count": 13,
       "path": "tests/unit/test_browser_oauth_token.py"
     }
   ],
@@ -267,12 +267,32 @@
       "path": "tests/unit/test_browser_oauth_token.py"
     },
     {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_unreadable_url_preserves_cookie_outcome",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
       "attribute": "time",
       "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
       "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "time",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_unreadable_url_preserves_cookie_outcome",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
     }
@@ -421,6 +441,12 @@
       "owner_kind": "test",
       "owner_qualname": "test_capture_timeout_uses_host_clock_and_bounds_sleep",
       "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_unreadable_url_preserves_cookie_outcome",
+      "path": "tests/unit/test_browser_oauth_token.py"
     }
   ],
   "package": "notebooklm._browser",
@@ -457,13 +483,13 @@
     },
     {
       "attribute": "sync_playwright_context",
-      "count": 10,
+      "count": 11,
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token"
     },
     {
       "attribute": "time",
-      "count": 1,
+      "count": 2,
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token"
     }
@@ -471,8 +497,8 @@
   "summary": {
     "TOTAL": {
       "private": 0,
-      "public": 25,
-      "total": 25
+      "public": 27,
+      "total": 27
     },
     "browser_capture": {
       "private": 0,
@@ -486,8 +512,8 @@
     },
     "oauth_token": {
       "private": 0,
-      "public": 12,
-      "total": 12
+      "public": 14,
+      "total": 14
     }
   },
   "version": 2
