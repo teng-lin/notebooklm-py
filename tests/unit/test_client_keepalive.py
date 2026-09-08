@@ -76,11 +76,19 @@ async def _read_storage_text_when_available(storage_path):
 
 
 async def _wait_until_storage_contains(storage_path, needle: str, failure_message: str) -> None:
-    for _ in range(50):
-        if needle in await _read_storage_text_when_available(storage_path):
-            return
-        await asyncio.sleep(0.05)
-    pytest.fail(failure_message)
+    """Allow background disk I/O to settle within one bounded wait on busy CI workers."""
+
+    async def wait_for_cookie() -> None:
+        """Observe the real storage file while the keepalive task runs."""
+        while needle not in await _read_storage_text_when_available(storage_path):
+            await asyncio.sleep(0.05)
+
+    try:
+        # Thread scheduling and Windows file access can outlast the old 2.5s
+        # budget. This also bounds sharing-violation retries inside each read.
+        await asyncio.wait_for(wait_for_cookie(), timeout=10.0)
+    except asyncio.TimeoutError:
+        pytest.fail(f"{failure_message} within 10 seconds")
 
 
 def _rotate_requests(httpx_mock: HTTPXMock) -> list[httpx.Request]:
