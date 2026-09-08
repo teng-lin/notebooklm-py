@@ -21,7 +21,7 @@
       "path": "tests/unit/test_auth_session_refresh_cmd.py"
     },
     {
-      "count": 10,
+      "count": 11,
       "path": "tests/unit/test_browser_oauth_token.py"
     }
   ],
@@ -183,6 +183,16 @@
       "module": "oauth_token",
       "owner_kind": "test",
       "owner_qualname": "test_capture_cleanup_failure_preserves_parent_precedence",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
+      "owner_qualname": "test_capture_handles_close_fragment_in_live_tab",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
     },
@@ -367,6 +377,12 @@
     {
       "count": 1,
       "owner_kind": "test",
+      "owner_qualname": "test_capture_handles_close_fragment_in_live_tab",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
       "owner_qualname": "test_capture_local_launch_closes_owned_page_context_and_browser",
       "path": "tests/unit/test_browser_oauth_token.py"
     },
@@ -441,7 +457,7 @@
     },
     {
       "attribute": "sync_playwright_context",
-      "count": 9,
+      "count": 10,
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token"
     },
@@ -455,8 +471,8 @@
   "summary": {
     "TOTAL": {
       "private": 0,
-      "public": 24,
-      "total": 24
+      "public": 25,
+      "total": 25
     },
     "browser_capture": {
       "private": 0,
@@ -470,8 +486,8 @@
     },
     "oauth_token": {
       "private": 0,
-      "public": 11,
-      "total": 11
+      "public": 12,
+      "total": 12
     }
   },
   "version": 2

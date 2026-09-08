@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import builtins
+import logging
+import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -393,5 +395,93 @@ def test_capture_reads_cookie_after_login_page_closes_in_real_chromium(monkeypat
             assert browser.is_connected() is attached
             if attached:
                 assert read_cookies()[0]["name"] == "oauth_token"
+        finally:
+            browser.close()
+
+
+@pytest.mark.requires_chromium
+@pytest.mark.timeout(15)
+@pytest.mark.parametrize("token_present", [True, False], ids=["cookie", "no-cookie"])
+@pytest.mark.parametrize("renderer_paused", [False, True], ids=["live-js", "paused-js"])
+def test_capture_handles_close_fragment_in_live_tab(
+    monkeypatch, caplog, token_present, renderer_paused
+):
+    """Consent's #close neither requires tab closure nor guarantees a cookie.
+
+    Pausing the renderer models an evaluation that cannot return, independently
+    of the browser's cookie store. The v0.8.2 page-clock loop hangs in that case.
+    This is a synthetic probe, not a reproduction of Google's Windows trigger.
+    """
+    caplog.set_level(logging.DEBUG, logger=capture_service.__name__)
+    cookie_value = "SYNTHETIC-NONCREDENTIAL-2350"
+    url_secret = "SYNTHETIC-CONSENT-QUERY-2350"
+    consent_url = (
+        "https://accounts.google.com/v3/signin/speedbump/embeddedsigninconsent"
+        f"?TL={url_secret}&flowName=EmbeddedSetupAndroid#close"
+    )
+    with capture_service.sync_playwright_context() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            context = browser.new_context()
+            context.route(
+                "**/*",
+                lambda route: route.fulfill(
+                    content_type="text/html", body="<title>Synthetic consent</title>"
+                ),
+            )
+            read_cookies = context.cookies
+            completed_pages = []
+
+            def cookies():
+                """Complete consent between snapshots while keeping the login tab open."""
+                page = context.pages[0]
+                assert not page.is_closed()
+                snapshot = read_cookies()
+                if not completed_pages:
+                    page.evaluate("url => history.replaceState(null, '', url)", consent_url)
+                    if token_present:
+                        context.add_cookies(
+                            [
+                                {
+                                    "name": "oauth_token",
+                                    "value": cookie_value,
+                                    "url": "https://accounts.google.com/",
+                                }
+                            ]
+                        )
+                    if renderer_paused:
+                        session = context.new_cdp_session(page)
+                        session.send("Debugger.enable")
+                        session.send("Debugger.pause")
+                    completed_pages.append(page)
+                return snapshot
+
+            monkeypatch.setattr(context, "cookies", cookies)
+            monkeypatch.setattr(browser, "new_context", Mock(return_value=context))
+
+            @contextmanager
+            def playwright_context():
+                """Supply a real isolated Chromium through the owned-browser path."""
+                yield SimpleNamespace(chromium=SimpleNamespace(launch=Mock(return_value=browser)))
+
+            monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)
+
+            started = time.monotonic()
+            if token_present:
+                assert capture_service.capture_oauth_token(timeout_s=1.5) == cookie_value
+            else:
+                with pytest.raises(MasterTokenError, match="Did not observe an oauth_token cookie"):
+                    capture_service.capture_oauth_token(timeout_s=1.5)
+                assert time.monotonic() - started >= 1.5
+
+            assert len(completed_pages) == 1
+            assert "OAuth capture: login page reached #close" in caplog.text
+            assert f"token_present={token_present}" in caplog.text
+            assert "OAuth capture: Playwright stopped" in caplog.text
+            # Check raw arguments as well as formatted output, so redaction
+            # cannot hide credentials accidentally handed to a logger.
+            for secret in (cookie_value, url_secret, consent_url):
+                assert secret not in caplog.text
+                assert all(secret not in repr(record.args) for record in caplog.records)
         finally:
             browser.close()

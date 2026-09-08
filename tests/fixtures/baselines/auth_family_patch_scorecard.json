@@ -6256,6 +6256,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
+      "owner_qualname": "test_capture_handles_close_fragment_in_live_tab",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
       "owner_qualname": "test_capture_local_launch_closes_owned_page_context_and_browser",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
@@ -6343,17 +6353,17 @@
   ],
   "packages": {
     "notebooklm._auth": 85,
-    "notebooklm._browser": 24,
+    "notebooklm._browser": 25,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
     "distinct_targets": 62,
     "files": 84,
-    "lexical_owners": 597,
+    "lexical_owners": 598,
     "private": 50,
-    "public": 585,
-    "total": 635
+    "public": 586,
+    "total": 636
   },
   "version": 1
 }

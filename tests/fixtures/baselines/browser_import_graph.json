@@ -128,7 +128,7 @@
       "path": "src/notebooklm/_browser/navigation_errors.py"
     },
     {
-      "lines": 167,
+      "lines": 203,
       "name": "oauth_token",
       "path": "src/notebooklm/_browser/oauth_token.py"
     }
@@ -141,7 +141,7 @@
     "function_local_edges": 1,
     "module_edges": 19,
     "modules": 6,
-    "total_lines": 2963,
+    "total_lines": 2999,
     "unique_edges": 20
   },
   "version": 1

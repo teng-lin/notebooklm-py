@@ -3488,7 +3488,7 @@
     },
     {
       "kind": "from",
-      "lineno": 15,
+      "lineno": 16,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._browser.oauth_token",
@@ -11375,7 +11375,7 @@
       "modules": 39
     },
     "root": {
-      "lines": 27074,
+      "lines": 27110,
       "modules": 90
     },
     "rpc": {
@@ -11400,7 +11400,7 @@
     }
   },
   "summary": {
-    "authored_lines": 150722,
+    "authored_lines": 150758,
     "authored_modules": 479,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1250,

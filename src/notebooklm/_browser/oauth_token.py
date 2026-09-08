@@ -8,6 +8,7 @@ code; callers receive only the captured token string or a canonical
 
 from __future__ import annotations
 
+import logging
 import time
 from ipaddress import ip_address
 from urllib.parse import SplitResult, urlsplit
@@ -23,6 +24,7 @@ from .._auth.master_token_types import MasterTokenError
 from .browser_capture import classify_launch_failure, sync_playwright_context
 
 _EMBEDDED_SETUP_URL = "https://accounts.google.com/EmbeddedSetup"
+logger = logging.getLogger(__name__)
 
 
 def _is_loopback_host(host: str | None) -> bool:
@@ -59,6 +61,8 @@ def capture_oauth_token(
     launch_help = None
     owns_browser = False
     owns_context = False
+    poll_count = 0
+    completion_seen = False
     try:
         try:
             import playwright.sync_api  # noqa: F401, PLC0415
@@ -92,7 +96,9 @@ def capture_oauth_token(
             # browser/context while still settling every C-created resource.
             try:
                 if cdp_url:
+                    logger.debug("OAuth capture: connecting to browser over CDP")
                     browser_obj = playwright_driver.chromium.connect_over_cdp(cdp_url)
+                    logger.debug("OAuth capture: CDP connected")
                     if browser_obj.contexts:
                         context = browser_obj.contexts[0]
                     else:
@@ -101,6 +107,7 @@ def capture_oauth_token(
                 else:
                     channel = browser if browser and browser != "chromium" else None
                     try:
+                        logger.debug("OAuth capture: launching browser")
                         browser_obj = playwright_driver.chromium.launch(
                             headless=False,
                             channel=channel,
@@ -113,31 +120,58 @@ def capture_oauth_token(
                             raise
                         raise MasterTokenError(launch_help) from exc
                     owns_browser = True
+                    logger.debug("OAuth capture: browser launched")
                     context = browser_obj.new_context()
                     owns_context = True
 
+                logger.debug("OAuth capture: creating login page")
                 page = context.new_page()
+                logger.debug("OAuth capture: opening EmbeddedSetup")
                 page.goto(_EMBEDDED_SETUP_URL)
                 # Cookies outlive the login tab. Keep polling independent of
                 # its JavaScript context, which can navigate or close during
                 # sign-in; each cookies() call pumps Playwright's sync loop.
                 deadline = time.monotonic() + timeout_s
+                logger.debug("OAuth capture: polling for up to %.1f seconds", timeout_s)
                 while time.monotonic() < deadline:
+                    poll_count += 1
+                    logger.debug("OAuth capture: reading cookies (poll %d)", poll_count)
                     for cookie in context.cookies():
                         if cookie.get("name") == "oauth_token" and cookie.get("value"):
                             token = cookie["value"]
                             break
+                    logger.debug(
+                        "OAuth capture: cookie read finished (poll %d, token_present=%s)",
+                        poll_count,
+                        bool(token),
+                    )
+                    # page.url is Playwright's cached URL, not a JavaScript call.
+                    # The fragment is diagnostic only: success still requires
+                    # the cookie. Never log the URL, which can contain secrets.
+                    if not completion_seen and page.url.endswith("#close"):
+                        completion_seen = True
+                        logger.debug("OAuth capture: login page reached #close")
                     if token:
                         break
                     time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+                if not token:
+                    logger.debug("OAuth capture: timeout expired without oauth_token cookie")
             finally:
                 if page is not None:
+                    logger.debug("OAuth capture: closing login page")
                     page.close()
+                    logger.debug("OAuth capture: login page closed")
                 if owns_context and context is not None:
+                    logger.debug("OAuth capture: closing browser context")
                     context.close()
+                    logger.debug("OAuth capture: browser context closed")
                 if owns_browser and browser_obj is not None:
+                    logger.debug("OAuth capture: closing browser")
                     browser_obj.close()
+                    logger.debug("OAuth capture: browser closed")
+                logger.debug("OAuth capture: stopping Playwright")
 
+        logger.debug("OAuth capture: Playwright stopped")
         if not token:
             raise MasterTokenError(
                 "Did not observe an oauth_token cookie. If Google showed 'This browser "
@@ -162,6 +196,8 @@ def capture_oauth_token(
         del launch_help
         del owns_browser
         del owns_context
+        del poll_count
+        del completion_seen
         del browser
         del cdp_url
         del timeout_s
