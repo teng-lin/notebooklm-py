@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -80,15 +81,39 @@ async def _wait_until_storage_contains(storage_path, needle: str, failure_messag
 
     async def wait_for_cookie() -> None:
         """Observe the real storage file while the keepalive task runs."""
-        while needle not in await _read_storage_text_when_available(storage_path):
+        while True:
+            try:
+                if needle in storage_path.read_text():
+                    return
+            except PermissionError:
+                pass
             await asyncio.sleep(0.05)
 
     try:
         # Thread scheduling and Windows file access can outlast the old 2.5s
-        # budget. This also bounds sharing-violation retries inside each read.
+        # budget. Sharing-violation retries use this same overall deadline.
         await asyncio.wait_for(wait_for_cookie(), timeout=10.0)
     except asyncio.TimeoutError:
         pytest.fail(f"{failure_message} within 10 seconds")
+
+
+@pytest.mark.asyncio
+async def test_storage_wait_retries_extended_sharing_violations(monkeypatch):
+    """A locked file can become readable after the per-read retry budget expires."""
+    storage_path = Mock()
+    storage_path.read_text.side_effect = [PermissionError("file locked") for _ in range(51)] + [
+        "rotated"
+    ]
+    real_sleep = asyncio.sleep
+
+    async def yield_without_delay(_delay):
+        await real_sleep(0)
+
+    monkeypatch.setattr(asyncio, "sleep", yield_without_delay)
+
+    await _wait_until_storage_contains(storage_path, "rotated", "Cookie was not persisted")
+
+    assert storage_path.read_text.call_count == 52
 
 
 def _rotate_requests(httpx_mock: HTTPXMock) -> list[httpx.Request]:
