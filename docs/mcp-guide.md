@@ -227,6 +227,8 @@ bearer-only deploy → the two file tools return a clear "not configured" error
   stream against it and rejects a corrupted transfer with a clean 400 (retryable) *before*
   adding the source.
 - Links use HMAC-URL authentication (not bearer/OAuth) and expire on server restart.
+- An upload link is frozen after an unconfirmed source registration. Check
+  `source_list` before requesting a new link so an uncertain commit is not duplicated.
   Ordinary upload links last 15 minutes, widget upload pools last 60 minutes, and
   download links last 30 minutes. A leaked link is a timed capability; see
   [ADR-0024](adr/0024-mcp-remote-file-transfer.md) and [SECURITY.md](../SECURITY.md).

@@ -116,6 +116,10 @@ password: phishing still requires the owner to authenticate on `/login`. The
 login page shows the (escaped) redirect target so a rogue client is visible
 before the password is typed.
 
+Signed MCP upload URLs are normally reusable after validation or transport
+failures. If source registration has an unconfirmed outcome, the URL is frozen
+until expiry because the source may already exist and retrying can duplicate it.
+
 ### Stdio `source_add(path=...)`
 
 On **stdio**, `source_add(source_type="file", path=...)` reads a file on the

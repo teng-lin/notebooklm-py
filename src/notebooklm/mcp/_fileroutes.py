@@ -773,13 +773,18 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                     # false, because registration failed BEFORE the resumable
                     # upload started. Worse, it invites the retry that duplicates.
                     if getattr(exc, "unconfirmed", False):
+                        # The registration may already have committed upstream.
+                        # Freeze this capability until its signed expiry instead
+                        # of releasing it for a retry that can create a duplicate.
+                        config.jti_store.commit(jti, payload["exp"])
+                        committed = True
                         return _upstream_error_response(
                             exc,
                             note=(
                                 "Nothing was uploaded. The source registration could "
-                                "not be confirmed, so it may or may not exist — check "
-                                "the notebook's source list before retrying, or a "
-                                "retry may add it twice."
+                                "not be confirmed, so it may or may not exist. This "
+                                "upload link is frozen to prevent a duplicate; check "
+                                "the notebook's source list before requesting a new link."
                             ),
                         )
                     return _upstream_error_response(
@@ -803,9 +808,10 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                 _inflight_uploads -= 1
         finally:
             # Release a claimed-but-not-committed jti so the link can be retried: this
-            # covers the 429, the validation / upstream / OSError returns, and a
+            # covers the 429, confirmed validation / upstream / OSError returns, and a
             # mid-stream disconnect (``CancelledError`` ⊂ ``BaseException``, which
             # ``finally`` still runs on — an ``except Exception`` would miss it and wedge
-            # the jti in the active set). A committed upload keeps the jti burned.
+            # the jti in the active set). A successful or unconfirmed registration keeps
+            # the jti burned; the latter may already have committed upstream.
             if not committed:
                 config.jti_store.rollback(jti)

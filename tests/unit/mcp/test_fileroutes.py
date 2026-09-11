@@ -898,6 +898,30 @@ def test_upload_failed_add_frees_jti_for_retry(monkeypatch, mock_client, config)
     assert "src-ok" in second.text
 
 
+def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+    from notebooklm.exceptions import NetworkError
+
+    calls = 0
+
+    async def fake(client, exec_plan):
+        nonlocal calls
+        calls += 1
+        raise mark_unconfirmed(NetworkError("connection reset"))
+
+    monkeypatch.setattr(_fileroutes.add_core, "execute_source_add", fake)
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        first = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+        second = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+
+    assert first.status_code == 502
+    assert "link is frozen" in first.text
+    assert second.status_code == 403
+    assert calls == 1
+
+
 def test_upload_429_does_not_burn_jti(monkeypatch, mock_client, config) -> None:
     # A 429 (concurrency cap) is not a use of the token: the claim is rolled back in the
     # outer finally, so the same link works once a slot frees up.
