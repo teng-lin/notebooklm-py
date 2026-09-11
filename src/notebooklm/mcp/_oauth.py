@@ -660,7 +660,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         await super().revoke_token(token)
         await self._save_state()
 
-    async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override]
+    async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override, unused-ignore]
         access = await super().verify_token(token)
         if access is None or _normalize_resource(access.resource) != self._expected_resource():
             return None
