@@ -20,26 +20,15 @@ import pytest
 from fastmcp import Client
 
 from notebooklm import NotebookLMClient
+from notebooklm.mcp._smoke import (
+    DOWNLOADABLE_ARTIFACT_TYPES as DOWNLOADABLE_ARTIFACT_TYPES,
+)
+from notebooklm.mcp._smoke import (
+    pick_downloadable_artifact as pick_downloadable_artifact,
+)
 from notebooklm.mcp.server import create_server
 
-from ._artifact_helpers import studio_item_may_have_download_payload
 from ._generation_helpers import _TYPED_RATE_LIMIT_ATTR
-
-#: Merged ``studio_list`` item ``type`` values (hyphenated, the shared Studio
-#: vocabulary) whose download is wired through ``studio_download``. An item's
-#: ``type`` doubles as the ``studio_download`` ``artifact_type`` key, so no
-#: translation is needed (unlike the old underscored ``_artifact_type`` codes).
-DOWNLOADABLE_ARTIFACT_TYPES = {
-    "audio",
-    "video",
-    "slide-deck",
-    "infographic",
-    "report",
-    "mind-map",
-    "data-table",
-    "quiz",
-    "flashcards",
-}
 
 _ANDROID_INVENTORY_ONLY_SLIDE_DETAIL = "PDF URL not available in artifact data"
 
@@ -97,37 +86,6 @@ def _only_typed_rate_limit_skip(error: BaseException) -> BaseException | None:
     ):
         return leaves[0]
     return None
-
-
-def pick_downloadable_artifact(
-    items: list[dict[str, Any]], *, backend: str
-) -> dict[str, Any] | None:
-    """Return the first ready, downloadable artifact among merged studio ``items``.
-
-    Operates on the unified ``studio_list`` item shape: a hyphenated ``type``
-    discriminator (``note`` items and non-downloadable types are skipped) plus a
-    tolerant ``status_label`` check ("ready" tolerates a missing/None label as well
-    as the terminal ``ready``/``completed`` states). Lets a test reuse whatever
-    artifact a notebook already has and skip cleanly when none qualifies.
-    """
-    candidates = [
-        item
-        for item in items
-        if item.get("type") in DOWNLOADABLE_ARTIFACT_TYPES
-        and item.get("status_label") in (None, "ready", "completed")
-        and studio_item_may_have_download_payload(item, backend=backend)
-    ]
-    confirmed = next(
-        (
-            item
-            for item in candidates
-            if not (
-                backend == "android" and item.get("type") == "slide-deck" and not item.get("url")
-            )
-        ),
-        None,
-    )
-    return confirmed or (candidates[0] if candidates else None)
 
 
 @contextlib.asynccontextmanager
