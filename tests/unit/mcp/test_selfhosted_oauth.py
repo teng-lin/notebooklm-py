@@ -22,7 +22,11 @@ import pytest
 pytest.importorskip("fastmcp")
 
 from fastmcp.server.auth import MultiAuth  # noqa: E402
-from mcp.server.auth.provider import AuthorizationParams, AuthorizeError  # noqa: E402
+from mcp.server.auth.provider import (  # noqa: E402
+    AuthorizationParams,
+    AuthorizeError,
+    TokenError,
+)
 from mcp.shared.auth import OAuthClientInformationFull  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.datastructures import Headers  # noqa: E402
@@ -1001,5 +1005,34 @@ def test_resource_binding_survives_exchange_refresh_and_restart(tmp_path) -> Non
             refreshed.access_token
         ].model_copy(update={"resource": "https://other.example.com/mcp"})
         assert await restarted.verify_token(refreshed.access_token) is None
+
+    asyncio.run(run())
+
+
+def test_resource_binding_rejects_unbound_and_foreign_refresh_tokens() -> None:
+    async def run() -> None:
+        provider = _provider()
+        provider.get_routes("/mcp")
+        client = _client()
+        await provider.register_client(client)
+        sid = (await provider.authorize(client, _params())).split("sid=")[1]
+        with TestClient(Starlette(routes=provider.get_routes("/mcp"))) as http:
+            response = http.post(
+                "/login", data={"sid": sid, "password": _PW}, follow_redirects=False
+            )
+        code = response.headers["location"].split("code=")[1].split("&")[0]
+        issued = await provider.exchange_authorization_code(client, provider.auth_codes[code])
+        assert issued.refresh_token is not None
+        refresh = provider.refresh_tokens[issued.refresh_token]
+
+        provider._refresh_resources.pop(issued.refresh_token)
+        with pytest.raises(TokenError, match="reauthorization"):
+            await provider.exchange_refresh_token(client, refresh, scopes=[])
+        assert issued.refresh_token in provider.refresh_tokens
+
+        provider._refresh_resources[issued.refresh_token] = "https://other.example.com/mcp"
+        with pytest.raises(TokenError, match="reauthorization"):
+            await provider.exchange_refresh_token(client, refresh, scopes=[])
+        assert issued.refresh_token in provider.refresh_tokens
 
     asyncio.run(run())

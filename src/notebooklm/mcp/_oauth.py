@@ -77,6 +77,7 @@ from mcp.server.auth.provider import (
     AuthorizeError,
     RefreshToken,
     RegistrationError,
+    TokenError,
 )
 from mcp.server.auth.settings import ClientRegistrationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -632,8 +633,14 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        resource = self._refresh_resources.pop(refresh_token.token, self._expected_resource())
+        resource = self._refresh_resources.get(refresh_token.token)
+        if resource is None or _normalize_resource(resource) != self._expected_resource():
+            raise TokenError(
+                "invalid_grant",
+                "Refresh token is not bound to this MCP resource; reauthorization is required.",
+            )
         token = await super().exchange_refresh_token(client, refresh_token, scopes)
+        self._refresh_resources.pop(refresh_token.token, None)
         stored_access = self.access_tokens[token.access_token]
         self.access_tokens[token.access_token] = stored_access.model_copy(
             update={"resource": resource}
