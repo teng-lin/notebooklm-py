@@ -83,6 +83,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Force a Studio artifact type instead of selecting a ready item.",
     )
     parser.add_argument("--skip-download", action="store_true", help="Only run the upload leg.")
+    parser.add_argument(
+        "--allow-insecure-http",
+        action="store_true",
+        help="Allow cleartext HTTP only for a loopback smoke server.",
+    )
     return parser.parse_args(argv)
 
 
@@ -103,6 +108,15 @@ async def run(args: argparse.Namespace) -> bool:
         return False
 
     base_url = args.base_url.rstrip("/")
+    parsed_base = urlsplit(base_url)
+    is_loopback_http = parsed_base.scheme == "http" and parsed_base.hostname in {
+        "127.0.0.1",
+        "::1",
+        "localhost",
+    }
+    if parsed_base.scheme != "https" and not (args.allow_insecure_http and is_loopback_http):
+        print("  FAIL  --base-url must use HTTPS (or explicit loopback-only insecure HTTP)")
+        return False
     transport = StreamableHttpTransport(
         f"{base_url}/mcp", headers={"Authorization": f"Bearer {args.bearer}"}
     )
@@ -120,7 +134,10 @@ async def run(args: argparse.Namespace) -> bool:
         )
         structured = _structured(result)
         if structured.get("status") != "upload_required" or not structured.get("url"):
-            print(f"  FAIL  source_add(file) did not return an upload URL: {structured}")
+            print(
+                "  FAIL  source_add(file) did not return an upload URL: "
+                f"status={structured.get('status')!r}, keys={sorted(structured)}"
+            )
             return False
         print("  PASS  minted signed upload URL")
 
@@ -172,7 +189,10 @@ async def run(args: argparse.Namespace) -> bool:
         download = await mcp.call_tool("studio_download", download_args)
         payload = _structured(download)
         if payload.get("status") != "download_ready" or not payload.get("url"):
-            print(f"  FAIL  studio_download did not return a download URL: {payload}")
+            print(
+                "  FAIL  studio_download did not return a download URL: "
+                f"status={payload.get('status')!r}, keys={sorted(payload)}"
+            )
             return False
         print(f"  PASS  minted signed download URL for {artifact_type}")
         response = await http.get(str(payload["url"]))

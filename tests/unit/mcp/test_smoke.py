@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from notebooklm.mcp._smoke import (
     DOWNLOADABLE_ARTIFACT_TYPES,
     parse_args,
@@ -123,3 +125,71 @@ async def test_run_uses_current_studio_tools(monkeypatch) -> None:
         "studio_download",
     ]
     assert calls[-1][1]["artifact_id"] == "report-1"
+
+
+async def test_run_rejects_cleartext_before_attaching_bearer(capsys) -> None:
+    from notebooklm.mcp import _smoke
+
+    args = _smoke.parse_args(
+        ["--base-url", "http://mcp.example.com", "--bearer", "secret", "--notebook", "nb"]
+    )
+    assert await _smoke.run(args) is False
+    assert "must use HTTPS" in capsys.readouterr().out
+
+
+async def test_run_allows_explicit_loopback_http(monkeypatch) -> None:
+    from notebooklm.mcp import _smoke
+
+    class StopAfterTransport(Exception):
+        pass
+
+    def stop(_transport):
+        raise StopAfterTransport
+
+    monkeypatch.setattr("fastmcp.Client", stop)
+    args = _smoke.parse_args(
+        [
+            "--base-url",
+            "http://127.0.0.1:9420",
+            "--allow-insecure-http",
+            "--bearer",
+            "local-token",
+            "--notebook",
+            "nb",
+        ]
+    )
+    with pytest.raises(StopAfterTransport):
+        await _smoke.run(args)
+
+
+async def test_run_redacts_signed_url_from_failure_output(monkeypatch, capsys) -> None:
+    from notebooklm.mcp import _smoke
+
+    class FakeMcp:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def call_tool(self, _name, _arguments):
+            return _Result({"status": "unexpected", "url": "https://secret.example/capability"})
+
+    class FakeHttp:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("fastmcp.Client", lambda _transport: FakeMcp())
+    monkeypatch.setattr("httpx.AsyncClient", lambda **_kwargs: FakeHttp())
+    args = _smoke.parse_args(
+        ["--base-url", "https://mcp.example.com", "--bearer", "token", "--notebook", "nb"]
+    )
+
+    assert await _smoke.run(args) is False
+    output = capsys.readouterr().out
+    assert "status='unexpected'" in output
+    assert "keys=['status', 'url']" in output
+    assert "secret.example" not in output
