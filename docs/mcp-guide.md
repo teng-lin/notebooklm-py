@@ -159,6 +159,9 @@ full-account credential. Multi-tenant hosting is out of scope for this single-te
 the OAuth state file. Rotating `NOTEBOOKLM_MCP_OAUTH_PASSWORD` does not revoke them; real
 revocation is delete that file and restart. Open DCR (registering a client) does **not**
 bypass the login password — phishing still requires the owner to authenticate.
+OAuth access tokens are audience-bound to the canonical `<base-url>/mcp`
+resource; requests for another resource are rejected and refresh rotation keeps
+the binding. Existing unbound tokens require reauthorization after upgrade.
 
 **Where OAuth state lives.** The registered clients + issued tokens persist to a
 deployment-scoped file keyed on `NOTEBOOKLM_MCP_OAUTH_BASE_URL` (the OAuth issuer), **not**
