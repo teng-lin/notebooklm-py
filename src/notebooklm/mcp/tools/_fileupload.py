@@ -524,6 +524,9 @@ def register_file_tools(mcp: Any) -> None:
         * ``{"status":"received","source_id",...,"file":{...}}`` — the upload landed.
         * ``{"status":"pending",...}`` — nothing yet after ~``timeout`` s; **re-invoke with
           the same link** (the wait resumes; a transport reset does not lose it).
+        * ``{"status":"unconfirmed",...}`` — the upload may have landed, but its source
+          could not be confirmed. Check ``source_list`` before requesting a new link
+          to avoid adding the same file twice.
         * ``{"status":"expired_or_invalid",...}`` — the link failed; mint a fresh one via
           ``source_add(source_type="file")``.
         """
