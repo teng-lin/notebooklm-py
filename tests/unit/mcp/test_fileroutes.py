@@ -878,6 +878,7 @@ def test_upload_page_get_does_not_consume_jti(mock_client, config) -> None:
 def test_upload_failed_add_frees_jti_for_retry(monkeypatch, mock_client, config) -> None:
     # record-on-success: a failed add rolls the jti back (via the route's finally), so the
     # SAME link is retryable — honors ADR-0024's large-file retry window.
+    """Allow a retry when source registration fails before an uncertain commit."""
     from notebooklm.exceptions import ServerError
 
     calls = {"n": 0}
@@ -934,6 +935,7 @@ def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) ->
 def test_upload_429_does_not_burn_jti(monkeypatch, mock_client, config) -> None:
     # A 429 (concurrency cap) is not a use of the token: the claim is rolled back in the
     # outer finally, so the same link works once a slot frees up.
+    """Retain an unused upload token when admission rejects a throttled request."""
     add_file = AsyncMock(return_value=MagicMock(id="src-1"))
     mock_client.sources.add_file = add_file
     app = _build(mock_client, config)

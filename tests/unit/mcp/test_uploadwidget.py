@@ -56,6 +56,7 @@ def test_widget_html_is_cross_host() -> None:
     # Renders + acquires the tool result on both claude.ai/Grok (postMessage) and ChatGPT
     # (window.openai.toolOutput), with the unconditional initialized handshake and a universal
     # <input type=file> + direct POST to the upload_url.
+    """Keep the widget handshake and confirmation hooks usable on supported hosts."""
     for marker in (
         'method:"ui/notifications/initialized"',  # claude.ai render gate
         "window.openai",  # ChatGPT bridge
@@ -129,6 +130,7 @@ elements.f.listeners.change();
 def test_widget_html_hard_allowlists_the_confirm_tool() -> None:
     # SECURITY: confirmSpec arrives via the un-origin-checked postMessage handler, so the tool name
     # must be hard-allowlisted — a spoofed message must not be able to redirect which tool runs.
+    """Reject arbitrary tool names from widget output before invoking confirmation."""
     assert 'CONFIRM_TOOL="await_upload"' in _WIDGET_HTML
     assert "confirmSpec.tool!==CONFIRM_TOOL" in _WIDGET_HTML  # gate before invoking
     # The invocation uses the constant, never the message-supplied name.
