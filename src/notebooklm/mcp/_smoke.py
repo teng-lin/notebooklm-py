@@ -98,6 +98,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _structured(result: object) -> Mapping[str, Any]:
+    """Read mapping-shaped MCP structured content, treating absent content as empty."""
     value = getattr(result, "structured_content", None)
     return value if isinstance(value, Mapping) else {}
 
