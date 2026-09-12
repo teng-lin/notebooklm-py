@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -44,6 +45,7 @@ def test_job_level_env_never_uses_step_only_runner_context() -> None:
 def test_manifest_paths_use_a_store_owned_private_child_directory() -> None:
     jobs = (
         _load("nightly.yml")["jobs"]["e2e"],
+        _load("nightly.yml")["jobs"]["e2e-readonly"],
         _load("verify-package.yml")["jobs"]["verify"],
     )
     for job in jobs:
@@ -288,6 +290,7 @@ def test_pr_qualification_keeps_account_selection_and_raw_token_consumer_trusted
 
     live_jobs = (
         workflows[0]["jobs"]["e2e"],
+        workflows[0]["jobs"]["e2e-readonly"],
         workflows[1]["jobs"]["health-check"],
         workflows[1]["jobs"]["android-grpc-health"],
     )
@@ -327,6 +330,7 @@ def test_pr_qualification_keeps_account_selection_and_raw_token_consumer_trusted
 def test_secret_bearing_jobs_have_both_literal_gates_and_exact_sha_checkout() -> None:
     jobs = [
         (_load("nightly.yml")["jobs"]["e2e"], "${{ needs.resolve-target.outputs.sha }}"),
+        (_load("nightly.yml")["jobs"]["e2e-readonly"], "${{ needs.resolve-target.outputs.sha }}"),
         (
             _load("rpc-health.yml")["jobs"]["health-check"],
             "${{ needs.resolve-target.outputs.sha }}",
@@ -350,6 +354,7 @@ def test_secret_bearing_jobs_have_both_literal_gates_and_exact_sha_checkout() ->
 def test_each_authenticated_job_queues_by_one_non_secret_slot() -> None:
     live_jobs = [
         _load("nightly.yml")["jobs"]["e2e"],
+        _load("nightly.yml")["jobs"]["e2e-readonly"],
         _load("rpc-health.yml")["jobs"]["health-check"],
         _load("rpc-health.yml")["jobs"]["android-grpc-health"],
         _load("verify-package.yml")["jobs"]["verify"],
@@ -564,3 +569,65 @@ def test_rpc_reports_do_not_stream_raw_output_and_drop_files_on_scrub_failure() 
     diagnostic = (ROOT / "scripts" / "check_rpc_health.py").read_text(encoding="utf-8")
     assert "repr(data)" not in diagnostic
     assert "WARNING: Notebook {temp.notebook_id}" not in diagnostic
+
+
+@pytest.mark.parametrize("enabled_slots", ["A", "A,B", "A,B,C"])
+@pytest.mark.parametrize("lane", ["all", "web", "android", "readonly"])
+@pytest.mark.parametrize("test_filter", ["", "tests/e2e/test_chat.py"])
+def test_nightly_planner_partitions_every_selected_lane_once(
+    enabled_slots, lane, test_filter, tmp_path
+):
+    planner = _load("nightly.yml")["jobs"]["plan-live-lanes"]
+    command = _step(planner, "plan")["run"]
+    output = tmp_path / "plan.out"
+    subprocess.run(
+        ["bash", "-c", command],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "ENABLED_SLOTS": enabled_slots,
+            "MANUAL_BASE": "auto",
+            "E2E_LANE": lane,
+            "TEST_FILTER": test_filter,
+            "RUNNER_TEMP": str(tmp_path),
+            "GITHUB_OUTPUT": str(output),
+        },
+    )
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    all_rows = json.loads(values["matrix"])["include"]
+    full = json.loads(values["full_matrix"])["include"]
+    readonly = json.loads(values["readonly_matrix"])["include"]
+    assert full + readonly == all_rows
+    assert all(row["mode"] == "full" for row in full)
+    assert all(row["mode"] == "readonly" for row in readonly)
+    expected_full = 2 if lane == "all" else int(lane in {"web", "android"})
+    expected_readonly = int(lane == "readonly" or (lane == "all" and not test_filter))
+    assert len(full) == expected_full
+    assert len(readonly) == expected_readonly
+    assert values["has_full"] == str(bool(expected_full)).lower()
+    assert values["has_readonly"] == str(bool(expected_readonly)).lower()
+
+
+def test_nightly_orders_readonly_before_full_without_suppressing_other_lane_failures():
+    jobs = _load("nightly.yml")["jobs"]
+    full, readonly = jobs["e2e"], jobs["e2e-readonly"]
+    assert full["needs"] == ["resolve-target", "plan-live-lanes", "e2e-readonly"]
+    assert readonly["needs"] == ["resolve-target", "plan-live-lanes"]
+    # Full lanes still execute if readonly was omitted by a filter or failed.
+    assert "always() && !cancelled()" in full["if"]
+    assert "needs.plan-live-lanes.result == 'success'" in full["if"]
+    assert "needs.plan-live-lanes.outputs.has_full == 'true'" in full["if"]
+    assert "needs.e2e-readonly.result" not in full["if"]
+    assert "needs.plan-live-lanes.outputs.has_readonly == 'true'" in readonly["if"]
+    assert readonly["strategy"]["matrix"] == (
+        "${{ fromJSON(needs.plan-live-lanes.outputs.readonly_matrix) }}"
+    )
+    # Aliases share the complete lifecycle, including cleanup and failure aggregation.
+    for key in ("steps", "env", "defaults", "concurrency"):
+        assert readonly[key] == full[key]
+    assert _step(readonly, "primary")["if"] == "steps.journal_policy.outcome == 'success'"
+    assert _step(readonly, "cleanup")["if"] == "always()"
+    assert _step(readonly, "purge")["if"] == "always()"

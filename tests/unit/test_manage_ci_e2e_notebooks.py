@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -711,9 +712,15 @@ async def test_readonly_provision_creates_only_a_managed_reference_copy(
     contracts: tuple[dict[str, Any], dict[str, Any]],
 ) -> None:
     manager, client, _store, _clock = _manager(tmp_path, contracts)
+    # Preparation's successful readback is the validation. Do not repeat the
+    # same live conversation reads immediately after it returns.
+    for name in ("get_conversation_id", "get_history", "get_conversation_turns"):
+        setattr(client.chat, name, AsyncMock(wraps=getattr(client.chat, name)))
     manifest = await _provision(manager, tmp_path, mode="readonly")
     assert [row["role"] for row in manifest["copies"]] == ["reference"]
     assert len(client.notebooks.copy_calls) == 1
+    for name in ("get_conversation_id", "get_history", "get_conversation_turns"):
+        getattr(client.chat, name).assert_awaited_once()
     lines = (tmp_path / "github-env").read_text().splitlines()
     assert lines == [
         "NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID=copy-1",

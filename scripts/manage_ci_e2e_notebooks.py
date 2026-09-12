@@ -1178,10 +1178,13 @@ class NotebookLifecycleManager:
                 )
                 self._progress("preparation", "preparing role state", summary=True)
                 if role == "reference":
+                    # prepare_reference already reads back and validates the exact
+                    # note, conversation, completed Q&A and turns before returning.
+                    # Repeating that entire snapshot here adds no coverage.
                     await self.prepare_reference(notebook_id)
                 else:
                     await self.prepare_clean_role(notebook_id, role)
-                await self.validate_prepared_role(notebook_id, role)
+                    await self.validate_prepared_role(notebook_id, role)
             except BaseException as exc:
                 report(f"Provision failed; last observation: {self._last_progress}", error=True)
                 if isinstance(exc, ContractError):
