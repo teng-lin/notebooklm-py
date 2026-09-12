@@ -900,6 +900,7 @@ def test_upload_failed_add_frees_jti_for_retry(monkeypatch, mock_client, config)
 
 
 def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) -> None:
+    """Freeze a possibly committed upload and reject replay without another source add."""
     from notebooklm._idempotency import mark_unconfirmed
     from notebooklm.exceptions import NetworkError
     from notebooklm.mcp.tools._fileupload import _await_upload
@@ -907,6 +908,7 @@ def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) ->
     calls = 0
 
     async def fake(client, exec_plan):
+        """Model a source add whose bytes were sent but whose registration is unconfirmed."""
         nonlocal calls
         calls += 1
         raise mark_unconfirmed(NetworkError("connection reset"))

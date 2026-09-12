@@ -75,6 +75,7 @@ def test_widget_html_is_cross_host() -> None:
 
 def test_widget_html_confirms_committed_outcomes() -> None:
     # The tool distinguishes successful and unconfirmed registrations.
+    """Preserve the tool confirmation contract after retiring a consumed upload URL."""
     assert "uploadUrls[i]=null;confirmUpload(tok)" in _WIDGET_HTML
     # It reads the confirm contract the tool returns for the arg/link...
     assert "confirmSpec=d.confirm" in _WIDGET_HTML
@@ -82,6 +83,7 @@ def test_widget_html_confirms_committed_outcomes() -> None:
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is needed for widget execution")
 def test_widget_retires_frozen_link_without_retry() -> None:
+    """Execute the widget to verify that unconfirmed uploads retire their single-use link."""
     script = _WIDGET_HTML.split('<script type="module">', 1)[1].split("</script>", 1)[0]
     harness = r"""
 const vm = require('node:vm');

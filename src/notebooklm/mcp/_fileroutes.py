@@ -512,6 +512,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
 
     @mcp.custom_route("/files/ul/{token}", methods=["POST", "PUT"])
     async def upload_route(request: Request) -> Response:
+        """Validate and consume a signed upload request, freezing uncertain registrations."""
         token = request.path_params["token"]
         try:
             payload = config.signer.verify(token, op="ul")
