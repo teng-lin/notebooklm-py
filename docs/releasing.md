@@ -308,6 +308,11 @@ python scripts/mcp_live_smoke.py \
     --notebook <notebook-id>
 ```
 
+The smoke follows Studio pagination until a downloadable artifact is found. For
+an Android-backed deployment pass `--backend android` so URL-less slide decks
+can use the backend's exact-download fallback.
+
+
 ---
 
 ## Package Verification
