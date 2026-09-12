@@ -72,7 +72,9 @@ class _Response:
         return self._payload
 
 
-async def test_run_uses_current_studio_tools(monkeypatch) -> None:
+@pytest.mark.parametrize("backend", ["web", "android"])
+@pytest.mark.parametrize("first_page_notes", [0, 50])
+async def test_run_uses_current_studio_tools(monkeypatch, backend, first_page_notes) -> None:
     from notebooklm.mcp import _smoke
 
     calls = []
@@ -86,6 +88,27 @@ async def test_run_uses_current_studio_tools(monkeypatch) -> None:
 
         async def call_tool(self, name, arguments):
             calls.append((name, arguments))
+            if name == "studio_list":
+                if first_page_notes and arguments.get("offset", 0) == 0:
+                    return _Result(
+                        {
+                            "items": [{"id": f"note-{i}", "type": "note"} for i in range(50)],
+                            "has_more": True,
+                            "offset": 0,
+                        }
+                    )
+                return _Result(
+                    {
+                        "items": [
+                            {
+                                "id": "report-1",
+                                "type": "slide-deck" if backend == "android" else "report",
+                                "status_label": "ready",
+                            }
+                        ],
+                        "has_more": False,
+                    }
+                )
             responses = {
                 "source_add": _Result({"status": "upload_required", "url": "https://x/upload"}),
                 "source_list": _Result({"sources": [{"id": "source-1"}]}),
@@ -114,7 +137,16 @@ async def test_run_uses_current_studio_tools(monkeypatch) -> None:
     monkeypatch.setattr("fastmcp.Client", lambda _transport: FakeMcp())
     monkeypatch.setattr("httpx.AsyncClient", lambda **_kwargs: FakeHttp())
     args = _smoke.parse_args(
-        ["--base-url", "https://mcp.example.com", "--bearer", "token", "--notebook", "nb"]
+        [
+            "--base-url",
+            "https://mcp.example.com",
+            "--bearer",
+            "token",
+            "--notebook",
+            "nb",
+            "--backend",
+            backend,
+        ]
     )
 
     assert await _smoke.run(args) is True
@@ -122,8 +154,11 @@ async def test_run_uses_current_studio_tools(monkeypatch) -> None:
         "source_add",
         "source_list",
         "studio_list",
+        *(["studio_list"] if first_page_notes else []),
         "studio_download",
     ]
+    if first_page_notes:
+        assert calls[-2][1]["offset"] == 50
     assert calls[-1][1]["artifact_id"] == "report-1"
 
 

@@ -82,6 +82,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=sorted(DOWNLOADABLE_ARTIFACT_TYPES),
         help="Force a Studio artifact type instead of selecting a ready item.",
     )
+    parser.add_argument(
+        "--backend",
+        choices=("web", "android"),
+        default="web",
+        help="Artifact backend used by the deployed server (default: web).",
+    )
     parser.add_argument("--skip-download", action="store_true", help="Only run the upload leg.")
     parser.add_argument(
         "--allow-insecure-http",
@@ -170,9 +176,19 @@ async def run(args: argparse.Namespace) -> bool:
 
         print("Download round-trip:")
         notebook = args.download_notebook or args.notebook
-        studio = await mcp.call_tool("studio_list", {"notebook": notebook})
-        items = _structured(studio).get("items", [])
-        candidate = None if args.artifact_type else pick_downloadable_artifact(items, backend="web")
+        candidate = None
+        offset = 0
+        while not args.artifact_type:
+            studio = await mcp.call_tool("studio_list", {"notebook": notebook, "offset": offset})
+            page = _structured(studio)
+            items = page.get("items", [])
+            candidate = pick_downloadable_artifact(items, backend=args.backend)
+            if candidate or not page.get("has_more"):
+                break
+            if not items:
+                print("  FAIL  studio_list reported more items but returned an empty page")
+                return False
+            offset += len(items)
         artifact_type = args.artifact_type or (candidate and candidate.get("type"))
         if not artifact_type:
             print(
