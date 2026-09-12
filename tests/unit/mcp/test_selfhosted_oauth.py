@@ -955,7 +955,10 @@ def test_migrate_legacy_state_skips_when_the_legacy_cannot_be_retired(
 
 
 def test_resource_binding_rejects_cross_server_authorization() -> None:
+    """Reject an authorization request naming another server’s MCP resource."""
+
     async def run() -> None:
+        """Register a client and check the mismatched audience within one event loop."""
         provider = _provider()
         provider.get_routes("/mcp")
         client = _client()
@@ -969,7 +972,10 @@ def test_resource_binding_rejects_cross_server_authorization() -> None:
 
 
 def test_resource_binding_survives_exchange_refresh_and_restart(tmp_path) -> None:
+    """Retain token audiences through issuance, rotation, and a provider restart."""
+
     async def run() -> None:
+        """Exercise persisted resource binding through the real login and exchange flow."""
         provider = _provider(tmp_path)
         routes = provider.get_routes("/mcp")
         client = _client()
@@ -1010,7 +1016,10 @@ def test_resource_binding_survives_exchange_refresh_and_restart(tmp_path) -> Non
 
 
 def test_resource_binding_rejects_unbound_and_foreign_refresh_tokens() -> None:
+    """Require reauthorization for legacy unbound or foreign-audience refresh tokens."""
+
     async def run() -> None:
+        """Check both invalid bindings without consuming the original refresh token."""
         provider = _provider()
         provider.get_routes("/mcp")
         client = _client()

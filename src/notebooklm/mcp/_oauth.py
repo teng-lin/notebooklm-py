@@ -368,6 +368,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         state_path: Path | None = None,
         trust_proxy: bool = False,
     ) -> None:
+        """Configure the password gate, resource-bound token state, and optional persistence."""
         super().__init__(
             base_url=base_url,
             # DCR is OFF by default — without this NO /register route is mounted and
@@ -471,11 +472,13 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
     def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         # Public OAuth routes (authorize/token/register/.well-known) from the parent,
         # PLUS our public /login page. (Do NOT swap /authorize; do NOT call create_auth_routes.)
+        """Append the gated login endpoint to the SDK routes for the selected MCP path."""
         routes = super().get_routes(mcp_path or "/mcp")
         routes.append(Route("/login", self._login, methods=["GET", "POST"]))
         return routes
 
     async def _login(self, request: Request) -> Response:
+        """Render consent or validate a bounded login attempt before issuing a resource-bound code."""
         if request.method == "GET":
             self._prune_pending()
             sid = request.query_params.get("sid", "")
@@ -616,6 +619,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
+        """Issue tokens with the authorization code audience and persist their bindings."""
         token = await super().exchange_authorization_code(client, authorization_code)
         resource = authorization_code.resource or self._expected_resource()
         stored_access = self.access_tokens[token.access_token]
@@ -633,6 +637,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
+        """Rotate a refresh token only when its stored audience matches this MCP server."""
         resource = self._refresh_resources.get(refresh_token.token)
         if resource is None or _normalize_resource(resource) != self._expected_resource():
             raise TokenError(
@@ -651,6 +656,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         return token
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        """Revoke the token and remove its refresh audience before persisting the change."""
         if isinstance(token, RefreshToken):
             self._refresh_resources.pop(token.token, None)
         else:
@@ -661,12 +667,14 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         await self._save_state()
 
     async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override, unused-ignore]
+        """Accept a valid access token only for this server’s canonical MCP resource."""
         access = await super().verify_token(token)
         if access is None or _normalize_resource(access.resource) != self._expected_resource():
             return None
         return access
 
     async def _save_state(self) -> None:
+        """Serialize snapshots and persist OAuth clients, tokens, and audience bindings."""
         if self._state_path is None:
             return
         # Serialize saves so the snapshot order equals the on-disk write order
@@ -719,6 +727,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
             logger.warning("Could not persist OAuth state to %s: %s", self._state_path, exc)
 
     def _load_state(self) -> None:
+        """Validate persisted state into local values before replacing live token maps."""
         if self._state_path is None or not self._state_path.exists():
             return
         try:
