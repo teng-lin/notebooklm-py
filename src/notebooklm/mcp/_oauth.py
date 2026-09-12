@@ -64,7 +64,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NamedTuple
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import anyio
 from fastmcp.server.auth import AuthProvider
@@ -74,8 +74,10 @@ from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
     AuthorizationParams,
+    AuthorizeError,
     RefreshToken,
     RegistrationError,
+    TokenError,
 )
 from mcp.server.auth.settings import ClientRegistrationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -349,6 +351,12 @@ def _client_ip(request: Request, *, trust_proxy: bool) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _normalize_resource(resource: str | None) -> str:
+    """Normalize an RFC 8707 resource URI for exact audience comparison."""
+
+    return (resource or "").rstrip("/")
+
+
 class SelfHostedOAuthProvider(InMemoryOAuthProvider):
     """``InMemoryOAuthProvider`` + a password-gated ``/authorize``, with DoS bounds and
     file-backed persistence of clients + tokens."""
@@ -360,6 +368,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         state_path: Path | None = None,
         trust_proxy: bool = False,
     ) -> None:
+        """Configure the password gate, resource-bound token state, and optional persistence."""
         super().__init__(
             base_url=base_url,
             # DCR is OFF by default — without this NO /register route is mounted and
@@ -394,6 +403,10 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         self._pending: dict[str, _Pending] = {}
         # per-IP failed-login timestamps (throttle).
         self._fail_times: dict[str, list[float]] = {}
+        # The MCP SDK's RefreshToken model has no RFC 8707 resource field yet.
+        # Keep the binding beside each refresh token and persist it with the
+        # provider state so rotation cannot drop the original audience.
+        self._refresh_resources: dict[str, str] = {}
         self._load_state()
 
     def _kdf(self, password: str) -> bytes:
@@ -434,6 +447,16 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
     ) -> str:
         """Reached ONLY after the SDK handler validated client/redirect_uri/scope/PKCE.
         Stash the validated request and divert the browser to the password page."""
+        expected_resource = self._expected_resource()
+        if (
+            params.resource is not None
+            and _normalize_resource(params.resource) != expected_resource
+        ):
+            raise AuthorizeError(
+                error="invalid_request",
+                error_description="The requested resource does not match this MCP server.",
+            )
+        params = params.model_copy(update={"resource": expected_resource})
         self._prune_pending()
         # Bound the stash by EVICTING the oldest pending login rather than rejecting the
         # new one — DCR is open, so a flood of pre-password /authorize calls must NOT be
@@ -449,11 +472,13 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
     def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         # Public OAuth routes (authorize/token/register/.well-known) from the parent,
         # PLUS our public /login page. (Do NOT swap /authorize; do NOT call create_auth_routes.)
-        routes = super().get_routes(mcp_path)
+        """Append the gated login endpoint to the SDK routes for the selected MCP path."""
+        routes = super().get_routes(mcp_path or "/mcp")
         routes.append(Route("/login", self._login, methods=["GET", "POST"]))
         return routes
 
     async def _login(self, request: Request) -> Response:
+        """Render consent or validate a bounded login attempt before issuing a resource-bound code."""
         if request.method == "GET":
             self._prune_pending()
             sid = request.query_params.get("sid", "")
@@ -503,7 +528,22 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         self._pending.pop(sid, None)
         self._fail_times.pop(ip, None)
         redirect = await InMemoryOAuthProvider.authorize(self, client, params)
+        code = next(iter(parse_qs(urlsplit(redirect).query).get("code", [])), None)
+        if code is not None and code in self.auth_codes:
+            self.auth_codes[code] = self.auth_codes[code].model_copy(
+                update={"resource": params.resource}
+            )
         return RedirectResponse(redirect, status_code=302, headers={"Cache-Control": "no-store"})
+
+    def _expected_resource(self) -> str:
+        """Return the canonical audience advertised for the MCP endpoint."""
+
+        resource = (
+            str(self._resource_url)
+            if self._resource_url is not None
+            else f"{str(self.base_url).rstrip('/')}/mcp"
+        )
+        return _normalize_resource(resource)
 
     def _render_form(
         self, sid: str, *, redirect_uri: str | None = None, error: str = ""
@@ -514,6 +554,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         # and `error` are likewise escaped. create_secure_html_response adds X-Frame-
         # Options: DENY; we add a strict CSP (no scripts; inline styles only; form posts
         # same-origin) as defense-in-depth so even a reflection slip can't execute script.
+        """Render escaped consent and error details with restrictive login-page headers."""
         safe_sid = html.escape(sid, quote=True)
         err = f'<p style="color:#c00">{html.escape(error)}</p>' if error else ""
         # Consent line: show where the code will be returned so a rogue registered client
@@ -579,7 +620,15 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
+        """Issue tokens with the authorization code audience and persist their bindings."""
         token = await super().exchange_authorization_code(client, authorization_code)
+        resource = authorization_code.resource or self._expected_resource()
+        stored_access = self.access_tokens[token.access_token]
+        self.access_tokens[token.access_token] = stored_access.model_copy(
+            update={"resource": resource}
+        )
+        if token.refresh_token is not None:
+            self._refresh_resources[token.refresh_token] = resource
         await self._save_state()
         return token
 
@@ -589,15 +638,44 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
+        """Rotate a refresh token only when its stored audience matches this MCP server."""
+        resource = self._refresh_resources.get(refresh_token.token)
+        if resource is None or _normalize_resource(resource) != self._expected_resource():
+            raise TokenError(
+                "invalid_grant",
+                "Refresh token is not bound to this MCP resource; reauthorization is required.",
+            )
         token = await super().exchange_refresh_token(client, refresh_token, scopes)
+        self._refresh_resources.pop(refresh_token.token, None)
+        stored_access = self.access_tokens[token.access_token]
+        self.access_tokens[token.access_token] = stored_access.model_copy(
+            update={"resource": resource}
+        )
+        if token.refresh_token is not None:
+            self._refresh_resources[token.refresh_token] = resource
         await self._save_state()
         return token
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        """Revoke the token and remove its refresh audience before persisting the change."""
+        if isinstance(token, RefreshToken):
+            self._refresh_resources.pop(token.token, None)
+        else:
+            paired = self._access_to_refresh_map.get(token.token)
+            if paired is not None:
+                self._refresh_resources.pop(paired, None)
         await super().revoke_token(token)
         await self._save_state()
 
+    async def verify_token(self, token: str) -> AccessToken | None:  # type: ignore[override, unused-ignore]
+        """Accept a valid access token only for this server’s canonical MCP resource."""
+        access = await super().verify_token(token)
+        if access is None or _normalize_resource(access.resource) != self._expected_resource():
+            return None
+        return access
+
     async def _save_state(self) -> None:
+        """Serialize snapshots and persist OAuth clients, tokens, and audience bindings."""
         if self._state_path is None:
             return
         # Serialize saves so the snapshot order equals the on-disk write order
@@ -621,6 +699,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
                 },
                 "a2r": dict(self._access_to_refresh_map),
                 "r2a": dict(self._refresh_to_access_map),
+                "refresh_resources": dict(self._refresh_resources),
             }
             await anyio.to_thread.run_sync(self._write_state_file, data)
 
@@ -649,6 +728,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
             logger.warning("Could not persist OAuth state to %s: %s", self._state_path, exc)
 
     def _load_state(self) -> None:
+        """Validate persisted state into local values before replacing live token maps."""
         if self._state_path is None or not self._state_path.exists():
             return
         try:
@@ -669,6 +749,10 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
             }
             a2r = dict(data.get("a2r", {}))
             r2a = dict(data.get("r2a", {}))
+            refresh_resources = {
+                str(token): str(resource)
+                for token, resource in data.get("refresh_resources", {}).items()
+            }
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             # A malformed/truncated/wrong-shape file must NOT be a hard startup failure
             # (a valid-JSON non-dict makes `.get`/`.items` raise AttributeError/TypeError;
@@ -684,8 +768,10 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
             refresh_tokens,
         )
         self._access_to_refresh_map, self._refresh_to_access_map = a2r, r2a
+        self._refresh_resources = refresh_resources
 
     def __repr__(self) -> str:  # never surface the password digest
+        """Identify the provider and client count without exposing password or token state."""
         return f"{type(self).__name__}(base_url={self.base_url!r}, clients={len(self.clients)})"
 
 
