@@ -10,6 +10,7 @@ running byte cap, ``?filename`` handling, temp cleanup, and the lifespan-unset 5
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import hashlib
@@ -901,6 +902,7 @@ def test_upload_failed_add_frees_jti_for_retry(monkeypatch, mock_client, config)
 def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) -> None:
     from notebooklm._idempotency import mark_unconfirmed
     from notebooklm.exceptions import NetworkError
+    from notebooklm.mcp.tools._fileupload import _await_upload
 
     calls = 0
 
@@ -918,8 +920,13 @@ def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) ->
 
     assert first.status_code == 502
     assert "link is frozen" in first.text
+    assert first.headers["X-NotebookLM-Upload-Status"] == "unconfirmed"
+    assert "X-NotebookLM-Upload-Status" in first.headers["Access-Control-Expose-Headers"]
     assert second.status_code == 403
     assert calls == 1
+    outcome = asyncio.run(_await_upload(config, url, timeout_s=0))
+    assert outcome["status"] == "unconfirmed"
+    assert "source_list" in outcome["hint"]
 
 
 def test_upload_429_does_not_burn_jti(monkeypatch, mock_client, config) -> None:

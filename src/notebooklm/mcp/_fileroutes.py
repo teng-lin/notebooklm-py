@@ -776,9 +776,17 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                         # The registration may already have committed upstream.
                         # Freeze this capability until its signed expiry instead
                         # of releasing it for a retry that can create a duplicate.
-                        config.jti_store.commit(jti, payload["exp"])
+                        config.jti_store.commit(
+                            jti,
+                            payload["exp"],
+                            result={
+                                "status": "unconfirmed",
+                                "hint": "The upload link is frozen. Check source_list to reconcile "
+                                "the uncertain registration before requesting a new link.",
+                            },
+                        )
                         committed = True
-                        return _upstream_error_response(
+                        response = _upstream_error_response(
                             exc,
                             note=(
                                 "Nothing was uploaded. The source registration could "
@@ -787,6 +795,11 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                                 "the notebook's source list before requesting a new link."
                             ),
                         )
+                        response.headers["X-NotebookLM-Upload-Status"] = "unconfirmed"
+                        response.headers["Access-Control-Expose-Headers"] = (
+                            "X-NotebookLM-Upload-Status"
+                        )
+                        return response
                     return _upstream_error_response(
                         exc,
                         note="Your file uploaded, but adding it as a source failed "

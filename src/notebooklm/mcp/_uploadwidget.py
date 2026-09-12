@@ -158,9 +158,9 @@ _WIDGET_HTML = """<!doctype html>
    const n=Math.min(files.length,cap);
    // FREEZE the selection: retry maps files[i]→uploadUrls[i] by index, so the file list must not
    // change between clicks (a fresh batch = re-invoke the tool for a new token pool).
-   btn.disabled=true; fi.disabled=true; let ok=0, failed=0, skipped=0;
+   btn.disabled=true; fi.disabled=true; let ok=0, failed=0, skipped=0, frozen=0;
    for(let i=0;i<n;i++){ const file=files[i], tok=uploadUrls[i];
-     if(!tok){skipped++;log("• "+file.name+": already added");continue;} // token consumed on a prior click
+     if(!tok){skipped++;log("• "+file.name+": upload link retired");continue;} // token consumed on a prior click
      if(file.size>200*1024*1024){log("❌ "+file.name+": exceeds 200 MB — skipped");failed++;continue;} // mirrors MAX_UPLOAD_BYTES
      log("uploading "+file.name+" ("+file.size+" B)…");
      try{
@@ -169,10 +169,15 @@ _WIDGET_HTML = """<!doctype html>
        const text=await res.text();
        log("["+res.status+"] "+file.name+": "+text.slice(0,160));
        if(res.ok){ok++;uploadUrls[i]=null;confirmUpload(tok);} // burn locally + auto-confirm the add (#1891)
-       else failed++;                                    // non-2xx: token uncommitted → still valid for retry
+       else if(res.headers.get("X-NotebookLM-Upload-Status")==="unconfirmed"){
+         frozen++;uploadUrls[i]=null;confirmUpload(tok);
+         log("Registration unconfirmed: check source_list before requesting a new upload link.");
+       }
+       else failed++;                                    // confirmed failure remains retryable
      }catch(e){log("❌ "+file.name+": upload failed (CSP/CORS/network): "+e);failed++;} // transient → retryable
    }
-   sub.textContent = failed ? ("✅ "+ok+" added · "+failed+" to retry — fix and click Upload again")
+   sub.textContent = frozen ? ("⚠ "+frozen+" unconfirmed — check source_list and request new links"+(failed ? " · "+failed+" other files can retry" : ""))
+     : failed ? ("✅ "+ok+" added · "+failed+" to retry — fix and click Upload again")
      : ok ? ("✅ "+ok+" added — you can close this and continue in chat")
      : "nothing to upload — already added";           // all files were skipped (tokens consumed): no misleading "0 added"
    btn.disabled = !failed;  // Upload stays enabled only when there's something to retry; fi stays frozen

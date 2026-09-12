@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import json
+import shutil
+import subprocess
 import time
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -70,12 +73,55 @@ def test_widget_html_is_cross_host() -> None:
         assert marker in _WIDGET_HTML, marker
 
 
-def test_widget_html_auto_confirms_only_on_success() -> None:
-    # #1891: the auto-confirm fires from inside the res.ok branch (a committed upload), never on a
-    # failed POST — a corrupted/failed upload must not tell the model a source was added.
+def test_widget_html_confirms_committed_outcomes() -> None:
+    # The tool distinguishes successful and unconfirmed registrations.
     assert "uploadUrls[i]=null;confirmUpload(tok)" in _WIDGET_HTML
     # It reads the confirm contract the tool returns for the arg/link...
     assert "confirmSpec=d.confirm" in _WIDGET_HTML
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is needed for widget execution")
+def test_widget_retires_frozen_link_without_retry() -> None:
+    script = _WIDGET_HTML.split('<script type="module">', 1)[1].split("</script>", 1)[0]
+    harness = r"""
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const elements = Object.fromEntries(['sub', 'out', 'f', 'up'].map(id => [id, {
+  textContent: '', disabled: true, listeners: {},
+  addEventListener(event, fn) { this.listeners[event] = fn; }
+}]));
+const confirms = [];
+let requests = 0;
+const context = {
+  document: { getElementById: id => elements[id], documentElement: {} },
+  window: { parent: {postMessage() {}}, addEventListener() {}, openai: {
+    toolOutput: { upload_urls: ['https://example.test/files/ul/token'],
+      confirm: {tool: 'await_upload', arg: 'upload_link'} },
+    callTool: async (name, args) => { confirms.push({name, args}); }
+  } },
+  setTimeout() {}, setInterval() {}, clearInterval() {},
+  fetch: async () => { requests++; return {
+    ok: false, status: 502,
+    headers: {get: name => name === 'X-NotebookLM-Upload-Status' ? 'unconfirmed' : null},
+    text: async () => 'registration unconfirmed'
+  }; }
+};
+vm.createContext(context);
+vm.runInContext(SCRIPT, context);
+vm.runInContext('pullOai()', context);
+elements.f.files = [{name: 'note.txt', size: 3, type: 'text/plain'}];
+elements.f.listeners.change();
+(async () => {
+  await elements.up.listeners.click();
+  assert.equal(elements.up.disabled, true);
+  assert.match(elements.sub.textContent, /unconfirmed/);
+  assert.match(elements.out.textContent, /source_list/);
+  assert.equal(confirms.length, 1);
+  await elements.up.listeners.click();
+  assert.equal(requests, 1);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+""".replace("SCRIPT", json.dumps(script))
+    subprocess.run(["node", "-e", harness], check=True, capture_output=True, text=True)
 
 
 def test_widget_html_hard_allowlists_the_confirm_tool() -> None:
