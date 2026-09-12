@@ -1480,6 +1480,89 @@ def test_ci_pool_guard_requires_exact_repository_and_standard_output(script) -> 
     )
 
 
+@pytest.mark.parametrize(
+    "restriction",
+    [
+        "always() && !cancelled()",
+        "needs.plan-live-lanes.result == 'success'",
+        "needs.plan-live-lanes.outputs.has_full == 'true'",
+        "needs.plan-live-lanes.outputs.has_readonly == 'true'",
+    ],
+)
+def test_scheduling_restrictions_never_replace_or_bypass_trust(script, restriction):
+    trust = (
+        "github.repository == 'teng-lin/notebooklm-py' && "
+        "needs.resolve-target.outputs.is_standard == 'true'"
+    )
+    assert script._expression_is_ci_pool_guard(f"{restriction} && {trust}")
+    assert not script._expression_is_ci_pool_guard(restriction)
+    assert not script._expression_is_ci_pool_guard(f"{restriction} || {trust}")
+    assert not script._expression_is_ci_pool_guard(
+        f"{restriction} && {trust.replace('==', '!=', 1)}"
+    )
+    assert not script._expression_is_ci_pool_guard(f"{restriction} && !({trust})")
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        (None, None),
+        (("is_standard == 'true'", "is_standard != 'true'"), "job gate"),
+        (("environment: protected-readonly", "environment: typo"), "Environment"),
+        (("queue: max", "queue: latest"), "queue: max"),
+        (("cancel-in-progress: false", "cancel-in-progress: true"), "concurrency cancellation"),
+        (("matrix.account_slot", "needs.plan-account.outputs.account_slot"), "selected token"),
+    ],
+)
+def test_step_alias_is_audited_in_the_consuming_jobs_envelope(
+    tmp_path, script, replacement, message
+):
+    envelope = """    if: github.repository == 'teng-lin/notebooklm-py' && needs.resolve-target.outputs.is_standard == 'true'
+    environment: protected-readonly
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      queue: max
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+"""
+    consumer = envelope if replacement is None else envelope.replace(*replacement)
+    path = tmp_path / "aliased.yml"
+    path.write_text(
+        "name: aliased\non: workflow_dispatch\njobs:\n  original:\n"
+        + envelope
+        + """    steps: &live-steps
+    - env:
+        NOTEBOOKLM_MASTER_TOKEN_JSON: ${{ secrets[matrix.master_token_secret_name] }}
+      run: echo ready
+  consumer:
+"""
+        + consumer
+        + "    steps: *live-steps\n"
+    )
+    errors = script._scan_workflow(path) + script._scan_pooled_account_jobs(path)
+    if message is None:
+        assert errors == []
+    else:
+        assert any("consumer" in error and message in error for error in errors), errors
+        assert not any("'original'" in error for error in errors)
+
+
+@pytest.mark.parametrize("alias", ["missing", "live-steps"])
+def test_unknown_or_duplicate_step_anchors_fail_closed(tmp_path, script, alias):
+    path = tmp_path / "invalid.yml"
+    path.write_text(
+        "jobs:\n  first:\n    steps: &live-steps\n    - run: echo first\n"
+        + "  second:\n"
+        + (
+            "    steps: *missing\n"
+            if alias == "missing"
+            else "    steps: &live-steps\n    - run: echo second\n"
+        )
+    )
+    assert script._scan_workflow(path)
+    assert script._scan_pooled_account_jobs(path)
+
+
 def test_mismatched_environment_quotes_are_not_approved(script) -> None:
     assert not script._environment_value_is_approved("'protected-readonly\"")
 

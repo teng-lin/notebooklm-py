@@ -473,7 +473,7 @@ def test_nightly_runs_full_sha_pinned_compatibility_matrix() -> None:
     assert set(triggers) == {"schedule", "workflow_dispatch"}
     assert set(triggers["workflow_dispatch"]["inputs"]) == {"custom_branch"}
     e2e = yaml.safe_load(NIGHTLY_WORKFLOW.read_text(encoding="utf-8"))
-    assert set(e2e["jobs"]) == {"resolve-target", "plan-live-lanes", "e2e"}
+    assert set(e2e["jobs"]) == {"resolve-target", "plan-live-lanes", "e2e", "e2e-readonly"}
     e2e_triggers = e2e.get("on", e2e.get(True))
     assert "run_compatibility" not in e2e_triggers["workflow_dispatch"]["inputs"]
 
@@ -619,7 +619,7 @@ def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
     job = workflow["jobs"]["e2e"]
     planner = workflow["jobs"]["plan-live-lanes"]
 
-    assert job["strategy"]["matrix"] == "${{ fromJSON(needs.plan-live-lanes.outputs.matrix) }}"
+    assert job["strategy"]["matrix"] == "${{ fromJSON(needs.plan-live-lanes.outputs.full_matrix) }}"
     assert job["env"]["NOTEBOOKLM_BACKEND"] == "${{ matrix.backend }}"
     assert job["concurrency"] == {
         "group": "notebooklm-account-${{ matrix.account_slot }}",

@@ -261,12 +261,12 @@ def _flow_style_ci_bindings(line: str) -> set[str]:
 
 
 def _expression_is_ci_pool_guard(expr: str) -> bool:
-    """Return whether a job guard is the canonical two-predicate conjunction.
+    """Return whether a conjunction requires both canonical trust predicates.
 
     Pooled credentials deliberately use one narrow grammar instead of substring
-    matching.  Requiring exactly the repository and resolver predicates prevents
-    negation, disjunction, or a matching string inside another expression from
-    turning an inverted condition into an accepted gate.
+    matching. Require exactly one repository and resolver predicate, allowing
+    only enumerated scheduling restrictions as additional conjuncts. Negation,
+    disjunction and trust-looking string literals cannot satisfy either gate.
     """
 
     def strip_wrappers(value: str) -> str:
@@ -300,6 +300,14 @@ def _expression_is_ci_pool_guard(expr: str) -> bool:
 
     normalized = strip_wrappers(expr)
     parts = [strip_wrappers(part) for part in normalized.split("&&")]
+    scheduling_terms = {
+        "always()",
+        "!cancelled()",
+        "needs.plan-live-lanes.result == 'success'",
+        "needs.plan-live-lanes.outputs.has_full == 'true'",
+        "needs.plan-live-lanes.outputs.has_readonly == 'true'",
+    }
+    parts = [part for part in parts if part not in scheduling_terms]
     if len(parts) != 2:
         return False
     repository_terms = sum(bool(_REPOSITORY_GUARD_RE.fullmatch(part)) for part in parts)
@@ -410,6 +418,55 @@ def main() -> int:
     return 0
 
 
+def _workflow_lines(path: Path) -> list[tuple[int, str]]:
+    """Expand job-level block step aliases for both secret scanners.
+
+    The aliased steps must be audited inside *each consuming job's* trust and
+    concurrency envelope. Only this narrow block form is supported; unknown or
+    duplicate step anchors fail closed. Diagnostics for expanded steps point to
+    the consumer's alias line. No general YAML dependency is needed.
+    """
+    lines = path.read_text().splitlines()
+    anchors: dict[str, list[str]] = {}
+    result: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        anchor = re.fullmatch(r"    steps: &([A-Za-z0-9_-]+)\s*(?:#.*)?", line)
+        alias = re.fullmatch(r"    steps: \*([A-Za-z0-9_-]+)\s*(?:#.*)?", line)
+        if anchor:
+            name = anchor.group(1)
+            if name in anchors:
+                raise ValueError(f"{path}:{index + 1}: duplicate step anchor {name}")
+            result.append((index + 1, "    steps:"))
+            index += 1
+            body: list[str] = []
+            while index < len(lines):
+                child = lines[index]
+                if (
+                    child.strip()
+                    and not _COMMENT_RE.match(child)
+                    and len(child) - len(child.lstrip()) <= 4
+                    and not child.startswith("    - ")
+                ):
+                    break
+                body.append(child)
+                result.append((index + 1, child))
+                index += 1
+            anchors[name] = body
+            continue
+        if alias:
+            name = alias.group(1)
+            if name not in anchors:
+                raise ValueError(f"{path}:{index + 1}: unknown step anchor {name}")
+            result.append((index + 1, "    steps:"))
+            result.extend((index + 1, child) for child in anchors[name])
+        else:
+            result.append((index + 1, line))
+        index += 1
+    return result
+
+
 def _scan_workflow(path: Path) -> list[str]:
     """Return a list of violation messages for ``path``.
 
@@ -425,7 +482,11 @@ def _scan_workflow(path: Path) -> list[str]:
     ``environment:`` declaration in the same job (e.g. inside a
     ``strategy: matrix`` block at the top of the job body).
     """
-    lines = path.read_text().splitlines()
+    try:
+        numbered_lines = _workflow_lines(path)
+    except ValueError as exc:
+        return [str(exc)]
+    lines = [line for _number, line in numbered_lines]
 
     # Workflow-wide state.
     jobs_section_started = False
@@ -518,7 +579,7 @@ def _scan_workflow(path: Path) -> list[str]:
         in_if_block_scalar = False
         saw_any_job = True
 
-    for i, raw_line in enumerate(lines, start=1):
+    for i, raw_line in numbered_lines:
         line = raw_line.rstrip("\r")
 
         # Detect entry into the top-level ``jobs:`` section.
@@ -731,12 +792,15 @@ def _scan_workflow(path: Path) -> list[str]:
 
 def _scan_pooled_account_jobs(path: Path) -> list[str]:
     """Enforce the pooled-token job envelope used by authenticated live CI."""
-    lines = path.read_text().splitlines()
+    try:
+        numbered_lines = _workflow_lines(path)
+    except ValueError as exc:
+        return [str(exc)]
     jobs_started = False
     violations: list[str] = []
     chunks: list[tuple[str, int, list[str]]] = []
     current: tuple[str, int, list[str]] | None = None
-    for line_number, line in enumerate(lines, 1):
+    for line_number, line in numbered_lines:
         if _JOBS_HEADER_RE.fullmatch(line):
             jobs_started = True
             continue

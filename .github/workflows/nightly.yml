@@ -156,6 +156,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      full_matrix: ${{ steps.plan.outputs.full_matrix }}
+      readonly_matrix: ${{ steps.plan.outputs.readonly_matrix }}
+      has_full: ${{ steps.plan.outputs.has_full }}
+      has_readonly: ${{ steps.plan.outputs.has_readonly }}
     steps:
     - uses: actions/checkout@v7
       with:
@@ -234,6 +238,11 @@ jobs:
         value = json.dumps(matrix, separators=(",", ":"))
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as stream:
             stream.write(f"matrix={value}\n")
+            for group, mode in (("full", "full"), ("readonly", "readonly")):
+                rows = [row for row in include if row["mode"] == mode]
+                group_matrix = json.dumps({"include": rows}, separators=(",", ":"))
+                stream.write(f"{group}_matrix={group_matrix}\n")
+                stream.write(f"has_{group}={str(bool(rows)).lower()}\n")
             stream.write(f"rotation_day={web['rotation_day']}\n")
             stream.write(f"web_slot={web['account_slot']}\n")
             stream.write(f"android_slot={android['account_slot']}\n")
@@ -273,10 +282,16 @@ jobs:
           fi
         } >> "$GITHUB_STEP_SUMMARY"
 
+  # The read-only lane still seeds a chat during provisioning. Run it before
+  # either full suite can spend the same account's quota; a concurrency group
+  # alone serializes jobs but does not establish their order.
   e2e:
     name: E2E (${{ matrix.backend }}/${{ matrix.lane }}/${{ matrix.account_slot }})
-    needs: [resolve-target, plan-live-lanes]
+    needs: [resolve-target, plan-live-lanes, e2e-readonly]
     if: >-
+      always() && !cancelled() &&
+      needs.plan-live-lanes.result == 'success' &&
+      needs.plan-live-lanes.outputs.has_full == 'true' &&
       github.repository == 'teng-lin/notebooklm-py' &&
       needs.resolve-target.outputs.is_standard == 'true'
     runs-on: ${{ matrix.os }}
@@ -284,7 +299,7 @@ jobs:
     environment: protected-readonly
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan-live-lanes.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.plan-live-lanes.outputs.full_matrix) }}
     concurrency:
       group: notebooklm-account-${{ matrix.account_slot }}
       queue: max
@@ -300,7 +315,7 @@ jobs:
       NOTEBOOKLM_PROFILE: ci-${{ matrix.account_slot }}-${{ matrix.lane }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
       E2E_COVERAGE_FLOOR_SENTINEL: ${{ github.workspace }}/.e2e-coverage-floor-failed
-    steps:
+    steps: &e2e-steps
     - uses: actions/checkout@v7
       with:
         ref: ${{ needs.resolve-target.outputs.sha }}
@@ -687,3 +702,32 @@ jobs:
         --phase coverage=${{ (steps.primary.outcome == 'success' || (steps.primary.outcome == 'failure' && (steps.lastfailed.outcome == 'failure' || (steps.lastfailed.outcome == 'success' && (steps.retry.outcome == 'success' || steps.retry.outcome == 'failure'))))) && (steps.coverage.outcome == 'success' && 'success' || 'failure') || 'not_applicable' }}
         --phase cleanup=${{ steps.cleanup.outcome == 'success' && 'success' || 'failure' }}
         --phase purge=${{ steps.purge.outcome == 'success' && 'success' || 'failure' }}
+
+  e2e-readonly:
+    name: E2E (${{ matrix.backend }}/${{ matrix.lane }}/${{ matrix.account_slot }})
+    needs: [resolve-target, plan-live-lanes]
+    if: >-
+      github.repository == 'teng-lin/notebooklm-py' &&
+      needs.resolve-target.outputs.is_standard == 'true' &&
+      needs.plan-live-lanes.outputs.has_readonly == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
+    environment: protected-readonly
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan-live-lanes.outputs.readonly_matrix) }}
+    concurrency:
+      group: notebooklm-account-${{ matrix.account_slot }}
+      queue: max
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUNBUFFERED: "1"
+      CI_E2E_PROGRESS: "1"
+      NOTEBOOKLM_BACKEND: ${{ matrix.backend }}
+      NOTEBOOKLM_PROFILE: ci-${{ matrix.account_slot }}-${{ matrix.lane }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      E2E_COVERAGE_FLOOR_SENTINEL: ${{ github.workspace }}/.e2e-coverage-floor-failed
+    steps: *e2e-steps

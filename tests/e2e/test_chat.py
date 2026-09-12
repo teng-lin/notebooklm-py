@@ -4,6 +4,8 @@ These tests require valid NotebookLM authentication.
 Run with: pytest tests/e2e/test_chat.py -m e2e
 """
 
+from copy import deepcopy
+
 import pytest
 
 from notebooklm import AskResult, ChatReference
@@ -15,6 +17,36 @@ from .conftest import (
 )
 
 
+@pytest.fixture(scope="module")
+def _cited_chat_samples():
+    # Store response values only, never an async client tied to another test's loop.
+    return {}
+
+
+@pytest.fixture
+async def cited_chat_sample(client, multi_source_notebook_id, _cited_chat_samples, request):
+    """One real cited answer for independent response-shape assertions.
+
+    These consumers inspect the returned value, not current conversation state.
+    Mutation/follow-up tests keep their own fresh conversations and live calls.
+    A rerun gets a fresh sample, as does a different notebook or backend.
+    """
+    key = (
+        client.backends["chat"],
+        multi_source_notebook_id,
+        getattr(request.node, "execution_count", 1),
+    )
+    if key not in _cited_chat_samples:
+        await reset_current_chat_conversation(client, multi_source_notebook_id)
+        sources = await client.sources.list(multi_source_notebook_id)
+        result = await client.chat.ask(
+            multi_source_notebook_id,
+            "Summarize the main concepts with specific citations and quote a passage from the sources.",
+        )
+        _cited_chat_samples[key] = (result, {source.id for source in sources})
+    return deepcopy(_cited_chat_samples[key])
+
+
 @pytest.mark.e2e
 @pytest.mark.live_chat_ask
 @pytest.mark.timeout(300)
@@ -23,16 +55,14 @@ class TestChatE2E:
     """E2E tests for chat API."""
 
     @pytest.fixture(autouse=True)
-    async def _start_with_fresh_conversation(self, client, multi_source_notebook_id):
-        await reset_current_chat_conversation(client, multi_source_notebook_id)
+    async def _start_with_fresh_conversation(self, client, multi_source_notebook_id, request):
+        if "cited_chat_sample" not in request.fixturenames:
+            await reset_current_chat_conversation(client, multi_source_notebook_id)
 
     @pytest.mark.asyncio
-    async def test_ask_question_returns_answer(self, client, multi_source_notebook_id):
+    async def test_ask_question_returns_answer(self, cited_chat_sample):
         """Test asking a question returns a valid answer."""
-        result = await client.chat.ask(
-            multi_source_notebook_id,
-            "What is the main topic of these sources?",
-        )
+        result, _source_ids = cited_chat_sample
 
         assert isinstance(result, AskResult)
         assert result.answer
@@ -41,16 +71,13 @@ class TestChatE2E:
         assert result.turn_number >= 1
 
     @pytest.mark.asyncio
-    async def test_ask_returns_references_with_source_ids(self, client, multi_source_notebook_id):
+    async def test_ask_returns_references_with_source_ids(self, cited_chat_sample):
         """Test that ask returns references with valid source IDs."""
-        # Ask a question likely to generate citations
-        result = await client.chat.ask(
-            multi_source_notebook_id,
-            "Summarize the key points with specific citations.",
-        )
+        result, _source_ids = cited_chat_sample
 
         assert isinstance(result, AskResult)
         assert result.answer
+        assert result.references, "The shared cited answer must exercise citation decoding"
 
         # If the answer contains citations [1], [2], etc., there should be references
         if "[1]" in result.answer:
@@ -65,20 +92,17 @@ class TestChatE2E:
                 assert ref.source_id.count("-") == 4
 
     @pytest.mark.asyncio
-    async def test_ask_returns_references_with_cited_text(self, client, multi_source_notebook_id):
+    async def test_ask_returns_references_with_cited_text(self, cited_chat_sample):
         """Test that references include cited text when available."""
-        result = await client.chat.ask(
-            multi_source_notebook_id,
-            "Quote specific passages that explain the main concept.",
-        )
+        result, _source_ids = cited_chat_sample
 
         assert isinstance(result, AskResult)
 
         # Check if any references have cited_text
         refs_with_text = [ref for ref in result.references if ref.cited_text]
+        assert refs_with_text, "The shared quoted answer must exercise cited-text decoding"
 
-        # Note: Not all citations may have cited_text depending on the response
-        # So we just verify the structure is correct when present
+        # Individual structural citations may still omit their text.
         for ref in refs_with_text:
             assert isinstance(ref.cited_text, str)
             assert len(ref.cited_text) > 0
@@ -169,12 +193,9 @@ class TestChatE2E:
         assert result.answer
 
     @pytest.mark.asyncio
-    async def test_references_have_citation_numbers(self, client, multi_source_notebook_id):
+    async def test_references_have_citation_numbers(self, cited_chat_sample):
         """Test that references have sequential citation numbers."""
-        result = await client.chat.ask(
-            multi_source_notebook_id,
-            "List the key points with citations.",
-        )
+        result, _source_ids = cited_chat_sample
 
         if result.references:
             # Citation numbers should be assigned sequentially
@@ -389,22 +410,10 @@ class TestChatHistoryE2E:
 class TestChatReferencesE2E:
     """E2E tests specifically for chat references and citations."""
 
-    @pytest.fixture(autouse=True)
-    async def _start_with_fresh_conversation(self, client, multi_source_notebook_id):
-        await reset_current_chat_conversation(client, multi_source_notebook_id)
-
     @pytest.mark.asyncio
-    async def test_reference_source_ids_exist_in_notebook(self, client, multi_source_notebook_id):
+    async def test_reference_source_ids_exist_in_notebook(self, cited_chat_sample):
         """Test that reference source IDs correspond to actual sources."""
-        # Get all sources in the notebook
-        sources = await client.sources.list(multi_source_notebook_id)
-        source_ids = {s.id for s in sources}
-
-        # Ask a question that generates citations
-        result = await client.chat.ask(
-            multi_source_notebook_id,
-            "Explain the main concepts with references to sources.",
-        )
+        result, source_ids = cited_chat_sample
 
         # All reference source IDs should exist in the notebook
         for ref in result.references:
@@ -413,12 +422,9 @@ class TestChatReferencesE2E:
             )
 
     @pytest.mark.asyncio
-    async def test_cited_text_matches_source_content(self, client, multi_source_notebook_id):
+    async def test_cited_text_matches_source_content(self, cited_chat_sample):
         """Test that cited text comes from the actual source content."""
-        result = await client.chat.ask(
-            multi_source_notebook_id,
-            "Quote a specific passage from the sources.",
-        )
+        result, _source_ids = cited_chat_sample
 
         # For references with cited_text, verify it's non-empty
         for ref in result.references:
