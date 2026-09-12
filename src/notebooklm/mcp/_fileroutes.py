@@ -769,10 +769,9 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                         )
                     # An UNCONFIRMED registration (#2220) reaches neither branch
                     # above: its idempotency probe could not say whether the
-                    # register committed, so there is no ``source_id`` to name —
-                    # and the "your file uploaded" note below would be flatly
-                    # false, because registration failed BEFORE the resumable
-                    # upload started. Worse, it invites the retry that duplicates.
+                    # register committed, so there is no confirmed ``source_id``.
+                    # Report that uncertainty instead of asserting either a
+                    # successful upload or an absence of upstream changes.
                     if getattr(exc, "unconfirmed", False):
                         # The registration may already have committed upstream.
                         # Freeze this capability until its signed expiry instead
@@ -790,7 +789,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
                         response = _upstream_error_response(
                             exc,
                             note=(
-                                "Nothing was uploaded. The source registration could "
+                                "The source registration could "
                                 "not be confirmed, so it may or may not exist. This "
                                 "upload link is frozen to prevent a duplicate; check "
                                 "the notebook's source list before requesting a new link."

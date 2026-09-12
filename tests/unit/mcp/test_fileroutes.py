@@ -909,7 +909,7 @@ def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) ->
     calls = 0
 
     async def fake(client, exec_plan):
-        """Model a source add whose bytes were sent but whose registration is unconfirmed."""
+        """Model a source registration whose outcome could not be confirmed."""
         nonlocal calls
         calls += 1
         raise mark_unconfirmed(NetworkError("connection reset"))
@@ -923,6 +923,8 @@ def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) ->
 
     assert first.status_code == 502
     assert "link is frozen" in first.text
+    assert "The source registration could not be confirmed" in first.text
+    assert "Nothing was uploaded" not in first.text
     assert first.headers["X-NotebookLM-Upload-Status"] == "unconfirmed"
     assert "X-NotebookLM-Upload-Status" in first.headers["Access-Control-Expose-Headers"]
     assert second.status_code == 403

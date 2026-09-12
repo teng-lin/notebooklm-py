@@ -231,7 +231,8 @@ bearer-only deploy → the two file tools return a clear "not configured" error
   `source_list` before requesting a new link so an uncertain commit is not duplicated.
   `await_upload` reports `unconfirmed` for that link instead of asking you to poll
   again. The upload widget retires the frozen link and shows the same reconciliation
-  guidance; confirmed transient failures remain retryable.
+  guidance without claiming that nothing was uploaded; confirmed transient
+  failures remain retryable.
   Ordinary upload links last 15 minutes, widget upload pools last 60 minutes, and
   download links last 30 minutes. A leaked link is a timed capability; see
   [ADR-0024](adr/0024-mcp-remote-file-transfer.md) and [SECURITY.md](../SECURITY.md).
