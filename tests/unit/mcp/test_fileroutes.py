@@ -10,6 +10,7 @@ running byte cap, ``?filename`` handling, temp cleanup, and the lifespan-unset 5
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 import hashlib
@@ -877,6 +878,7 @@ def test_upload_page_get_does_not_consume_jti(mock_client, config) -> None:
 def test_upload_failed_add_frees_jti_for_retry(monkeypatch, mock_client, config) -> None:
     # record-on-success: a failed add rolls the jti back (via the route's finally), so the
     # SAME link is retryable — honors ADR-0024's large-file retry window.
+    """Allow a retry when source registration fails before an uncertain commit."""
     from notebooklm.exceptions import ServerError
 
     calls = {"n": 0}
@@ -898,9 +900,44 @@ def test_upload_failed_add_frees_jti_for_retry(monkeypatch, mock_client, config)
     assert "src-ok" in second.text
 
 
+def test_upload_unconfirmed_add_freezes_jti(monkeypatch, mock_client, config) -> None:
+    """Freeze a possibly committed upload and reject replay without another source add."""
+    from notebooklm._idempotency import mark_unconfirmed
+    from notebooklm.exceptions import NetworkError
+    from notebooklm.mcp.tools._fileupload import _await_upload
+
+    calls = 0
+
+    async def fake(client, exec_plan):
+        """Model a source registration whose outcome could not be confirmed."""
+        nonlocal calls
+        calls += 1
+        raise mark_unconfirmed(NetworkError("connection reset"))
+
+    monkeypatch.setattr(_fileroutes.add_core, "execute_source_add", fake)
+    app = _build(mock_client, config)
+    url = config.upload_url({"op": "ul", "nb": NB})
+    with starlette_testclient.TestClient(app) as client:
+        first = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+        second = client.post(_path(url) + "?filename=a.pdf", content=b"DATA")
+
+    assert first.status_code == 502
+    assert "link is frozen" in first.text
+    assert "The source registration could not be confirmed" in first.text
+    assert "Nothing was uploaded" not in first.text
+    assert first.headers["X-NotebookLM-Upload-Status"] == "unconfirmed"
+    assert "X-NotebookLM-Upload-Status" in first.headers["Access-Control-Expose-Headers"]
+    assert second.status_code == 403
+    assert calls == 1
+    outcome = asyncio.run(_await_upload(config, url, timeout_s=0))
+    assert outcome["status"] == "unconfirmed"
+    assert "source_list" in outcome["hint"]
+
+
 def test_upload_429_does_not_burn_jti(monkeypatch, mock_client, config) -> None:
     # A 429 (concurrency cap) is not a use of the token: the claim is rolled back in the
     # outer finally, so the same link works once a slot frees up.
+    """Retain an unused upload token when admission rejects a throttled request."""
     add_file = AsyncMock(return_value=MagicMock(id="src-1"))
     mock_client.sources.add_file = add_file
     app = _build(mock_client, config)

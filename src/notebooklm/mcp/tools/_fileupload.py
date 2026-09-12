@@ -427,6 +427,8 @@ async def _await_upload(
     Returns one of:
     - ``{"status": "received", "source_id": ..., "file": {...}}`` — the browser/agent
       upload committed a source (same process wrote it; ADR-0024).
+    - ``{"status": "unconfirmed", "hint": ...}`` — registration is uncertain;
+      reconcile with source_list before minting a new link. Do not retry this token.
     - ``{"status": "pending", "hint": ...}`` — nothing yet after ``timeout_s``; the
       model should re-invoke with the same link.
     - ``{"status": "expired_or_invalid", "hint": ...}`` — the link failed signature/
@@ -474,6 +476,8 @@ async def _await_upload(
             return invalid
         done = cfg.jti_store.completed(str(expired_payload.get("jti") or ""))
         if done is not None:
+            if done.get("status") == "unconfirmed":
+                return done
             return {"status": "received", "source_id": done.get("source_id"), "file": done}
         return invalid
     jti = str(payload.get("jti") or "")
@@ -482,6 +486,8 @@ async def _await_upload(
     while True:
         result = cfg.jti_store.completed(jti)
         if result is not None:
+            if result.get("status") == "unconfirmed":
+                return result
             return {"status": "received", "source_id": result.get("source_id"), "file": result}
         if time.monotonic() >= deadline:
             return {
@@ -518,6 +524,9 @@ def register_file_tools(mcp: Any) -> None:
         * ``{"status":"received","source_id",...,"file":{...}}`` — the upload landed.
         * ``{"status":"pending",...}`` — nothing yet after ~``timeout`` s; **re-invoke with
           the same link** (the wait resumes; a transport reset does not lose it).
+        * ``{"status":"unconfirmed",...}`` — the upload may have landed, but its source
+          could not be confirmed. Check ``source_list`` before requesting a new link
+          to avoid adding the same file twice.
         * ``{"status":"expired_or_invalid",...}`` — the link failed; mint a fresh one via
           ``source_add(source_type="file")``.
         """
