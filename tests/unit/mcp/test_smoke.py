@@ -160,6 +160,9 @@ async def test_run_uses_current_studio_tools(monkeypatch, backend, first_page_no
     if first_page_notes:
         assert calls[-2][1]["offset"] == 50
     assert calls[-1][1]["artifact_id"] == "report-1"
+    assert calls[-1][1]["artifact_type"] == (
+        "slide-deck" if backend == "android" else "report"
+    )
 
 
 async def test_run_rejects_cleartext_before_attaching_bearer(capsys) -> None:
