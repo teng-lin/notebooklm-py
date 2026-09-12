@@ -554,6 +554,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         # and `error` are likewise escaped. create_secure_html_response adds X-Frame-
         # Options: DENY; we add a strict CSP (no scripts; inline styles only; form posts
         # same-origin) as defense-in-depth so even a reflection slip can't execute script.
+        """Render escaped consent and error details with restrictive login-page headers."""
         safe_sid = html.escape(sid, quote=True)
         err = f'<p style="color:#c00">{html.escape(error)}</p>' if error else ""
         # Consent line: show where the code will be returned so a rogue registered client
@@ -770,6 +771,7 @@ class SelfHostedOAuthProvider(InMemoryOAuthProvider):
         self._refresh_resources = refresh_resources
 
     def __repr__(self) -> str:  # never surface the password digest
+        """Identify the provider and client count without exposing password or token state."""
         return f"{type(self).__name__}(base_url={self.base_url!r}, clients={len(self.clients)})"
 
 
