@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from dataclasses import dataclass
 from enum import Enum
 from types import SimpleNamespace
@@ -212,6 +213,8 @@ class _Channel:
         self.invocations = 0
         self.methods: list[str] = []
         self.readback_cancellation: asyncio.CancelledError | None = None
+        self.deadline_clock = 0.0
+        self.deadline_cancelled = False
 
     def unary_unary(self, method: str, *, request_serializer: Any, response_deserializer: Any):
         async def invoke(request: Any, *, metadata: Any, timeout: float | None) -> Any:
@@ -227,7 +230,11 @@ class _Channel:
                 return response_deserializer(b"\x80")
             if self.case == "transport_deadline":
                 assert timeout is not None and timeout > 0
-                await asyncio.Event().wait()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.deadline_cancelled = True
+                    raise
                 raise AssertionError("the AndroidSession deadline must cancel the wire await")
             if self.case == "readback_cancellation" and method == GET_PROJECT_METHOD:
                 assert self.readback_cancellation is not None
@@ -284,6 +291,18 @@ class _Channel:
                 raise AssertionError(f"unexpected Android method {method}")
             return response_deserializer(response.SerializeToString())
 
+        if self.case == "transport_deadline":
+
+            def dispatch(request: Any, *, metadata: Any, timeout: float | None):
+                assert timeout is not None and timeout > 0.01
+                # Spend the aggregate budget only after dispatch. Setup must
+                # not race a 10 ms wall-clock deadline on a busy CI worker.
+                # The real session deadline still cancels the wire await.
+                self.deadline_clock += timeout - 0.01
+                return invoke(request, metadata=metadata, timeout=timeout)
+
+            return dispatch
+
         return invoke
 
     def unary_stream(self, method: str, *, request_serializer: Any, response_deserializer: Any):
@@ -337,7 +356,10 @@ async def _android_session(case: str) -> tuple[AndroidSession, _Channel]:
         supervisor,
         # Android already owns a real aggregate *per-RPC* deadline. P6 will add
         # the wider workflow deadline; do not synthesize that later contract.
-        timeout=0.01 if case == "transport_deadline" else 1.0,
+        timeout=60.0 if case == "transport_deadline" else 1.0,
+        monotonic=(lambda: channel.deadline_clock)
+        if case == "transport_deadline"
+        else time.monotonic,
         rate_limit_max_retries=0,
         server_error_max_retries=0,
         grpc_loader=lambda: _Grpc(channel),
@@ -381,6 +403,8 @@ async def _produce(backend: str, case: str) -> tuple[BaseException, _Expected]:
                 return error, _UNKNOWN
         finally:
             await session.close_resources()
+            if case == "transport_deadline":
+                assert channel.deadline_cancelled
         assert channel.invocations == (0 if case == "pre_dispatch" else 1)
 
     error = outcomes[0].error
