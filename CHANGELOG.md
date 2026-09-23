@@ -52,6 +52,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Artifact polling preserves unresolved absence (#2432).** Repeated listing
+  misses no longer produce a terminal `REMOVED` or fabricated quota error.
+  Waiters keep the original ID until completion, explicit failure, or timeout;
+  a completed sibling never substitutes for the requested artifact. Web listing
+  errors carried by null RPC responses now propagate, with bounded retries for
+  transient polling reads. The public `max_not_found` and
+  `min_not_found_window` arguments are deprecated and ignored; non-default
+  values warn. Permanently missing IDs now reach the caller's timeout. The
+  `REMOVED` enum remains available for compatibility.
+
 - **MCP stdio `source_add` host-path file-add is default-deny.**
   `source_add(source_type="file", path=...)` over stdio now requires
   `NOTEBOOKLM_MCP_ALLOWED_ROOTS` (OS-pathsep directories; `$HOME` and

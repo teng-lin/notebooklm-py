@@ -13,6 +13,9 @@ Amended for the post-v0.8 aggregate artifact-read contract: additive
 The legacy artifact `get()`/`get_or_none()` behavior remains in its own release
 runway and warns only when an unavailable backing makes absence ambiguous.
 
+Amended for #2432: artifact listing absence remains unresolved until the
+original task reappears or the wait times out; it no longer implies removal.
+
 ## Context
 
 The public API has accreted incompatible conventions for the *same* outcome.
@@ -54,7 +57,7 @@ contract and converging the rest in the same release.
 | collection | zero-or-more (empty → `[]`) |
 | `ArtifactListing` | aggregate items plus explicit completeness and bounded component failures |
 | `ArtifactLookup` | `FOUND`, authoritative `MISSING`, or incomplete-read `UNKNOWN` |
-| status handle (`GenerationStatus`/`ResearchTask`/`ResearchStart`) | async lifecycle only; terminal `failed`/`removed` and the *poll-observed* `not_found` are typed states. `status="failed"` ⇒ *started-then-failed*, never *couldn't-start* |
+| status handle (`GenerationStatus`/`ResearchTask`/`ResearchStart`) | async lifecycle only; terminal `failed` and the *poll-observed* `not_found` are typed states. `removed` remains a legacy value, no longer inferred from absence. `status="failed"` ⇒ *started-then-failed*, never *couldn't-start* |
 | `None` | (a) idempotent `delete`; (b) explicit `get_or_none()`; (c) no-payload **command** success (`update`, `configure`, `remove_from_recent`, `rename(return_object=False)`); (d) a transient *not-ready* read (`get_tree` of an existing-but-unpopulated map); (e) a domain-optional field |
 
 Anything else that today carries an error meaning is banned.
@@ -69,7 +72,7 @@ Anything else that today carries an error meaning is banned.
 | Idempotent mutation | `delete` | success *or* already-absent → `None`; raise only on real failure. |
 | Mutate existing | `rename`, `update`, `configure` | target missing → **raise `*NotFoundError`**; no-payload success → `None`. |
 | Async kickoff | `generate_*`, `create`, `revise_slide`, `retry_failed`, `research.start`, `mind_maps.generate` | accepted → return status handle; **synchronous refusal → raise**; null/missing-id/shape-drift → raise. |
-| Lifecycle status / await | `poll_status`, `research.poll`, `wait_for_completion` | reflect lifecycle; terminal `failed`/`removed` stay returned status; *poll-observed* `not_found` is a typed sentinel (not a raise); does **not** raise for a terminal `failed`, but **does** raise on timeout and on cross-cutting faults. |
+| Lifecycle status / await | `poll_status`, `research.poll`, `wait_for_completion` | reflect lifecycle; terminal `failed` stays returned status; *poll-observed* `not_found` is a typed sentinel (not a raise) and never implies `removed`; does **not** raise for a terminal `failed`, but **does** raise on timeout and on cross-cutting faults. |
 | Readiness wait | `wait_until_ready`, `wait_for_sources` | return the ready **resource**; raise `*TimeoutError` on timeout and the domain error on terminal processing failure. (*Distinct from the lifecycle-status handles above.*) |
 | Cross-cutting | any | transport→`NetworkError`/`RPCTimeoutError`; auth→`AuthError`; rate-limit→`RateLimitError`; oversize→`RPCResponseTooLargeError`; decode→`DecodingError`. Always raise. |
 
@@ -113,18 +116,21 @@ exception — refusal reuses the existing `RateLimitError`/`RPCError`.
    `MISSING`, and a no-hit after a secondary outage as `UNKNOWN`. Legacy
    `get()`/`get_or_none()` preserve their 0.x projections and emit a registered
    warning only for the ambiguous `UNKNOWN` case.
-4. **Lifecycle is data.** Async status handles carry `failed`/`not_found`/
-   `removed` as typed states; `wait_for_completion` returns a terminal `failed`
+4. **Lifecycle is data.** Async status handles carry `failed`/`not_found`
+   as typed states; `wait_for_completion` returns a terminal `failed`
    and raises only on timeout or a cross-cutting fault. The poll-observed
    `not_found` (artifact not yet listed, or research task absent) is a typed
    sentinel — `GenerationStatus.is_not_found`, and a **new** `ResearchStatus.NOT_FOUND`
    member (distinct from the existing `NO_RESEARCH` "nothing in flight"). The
    *termination* guarantee for a task that never appears lives in
-   `wait_for_completion`, not `poll_status`: a sustained run of `not_found`
-   (`max_not_found`/`min_not_found_window`) escalates to a terminal `removed`
-   status (`_artifact/polling.py:366-384`). `poll_status` is a stateless
-   primitive where `not_found` is inherently *lag-or-bogus* ambiguous by design;
-   callers needing a terminal answer use `wait_for_completion`.
+   `wait_for_completion`, not `poll_status`: sustained `not_found` remains
+   unresolved until the original task reappears or the caller's timeout expires.
+   Absence cannot establish removal or quota rejection, and a completed sibling
+   cannot substitute for the requested task. `max_not_found` and
+   `min_not_found_window` are deprecated and ignored; the legacy `removed` state
+   remains accepted but is no longer emitted by polling. `poll_status` is a
+   stateless primitive where `not_found` is inherently *lag-or-bogus* ambiguous
+   by design; callers needing a bounded wait use `wait_for_completion`.
 5. **The facade owns the contract.** Per [ADR-0017](0017-public-facade-private-implementation.md)
    the public facade *surface* owns the compatibility contract (logic stays
    private); breaks ship via [ADR-0018](0018-deprecation-strategy.md). The

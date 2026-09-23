@@ -2,8 +2,8 @@
 
 These cover the branches the existing polling suites do not reach: the
 follower's ``on_status_change`` fan-out, the leader done-callback's
-cancellation and invariant guards, and the whole sustained-absence
-("removed") ladder including the #1198 reset-on-reappearance rule.
+cancellation and invariant guards, and unresolved-absence timeouts
+including reset-on-reappearance diagnostics.
 
 The service is driven directly (rather than through ``WebArtifactsAPI``)
 with an injected clock and sleep, so every assertion is about the polling
@@ -25,7 +25,7 @@ from notebooklm._artifact.polling import (
 )
 from notebooklm._polling_registry import PollRegistry
 from notebooklm._types.enums import ArtifactStatus, ArtifactTypeCode
-from notebooklm.exceptions import ArtifactPendingTimeoutError
+from notebooklm.exceptions import ArtifactPendingTimeoutError, RateLimitError
 from notebooklm.rpc import NetworkError
 from notebooklm.types import Artifact, GenerationState, GenerationStatus
 
@@ -354,92 +354,69 @@ async def test_a_transient_error_that_already_burned_the_budget_never_sleeps_fir
 
 
 # ---------------------------------------------------------------------------
-# Sustained-absence ("removed") ladder
+# Listing absence stays unresolved until the caller's deadline
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_a_sustained_absence_past_the_window_is_reported_as_removed_not_failed() -> None:
-    """Delisting is its own terminal state, distinct from a server-marked failure.
-
-    Reporting ``failed`` here would fabricate a generation failure for what is
-    usually a quota rejection; reporting ``completed``/timing out would hide it.
-    """
-    clock = _Clock()
-    service, _supervisor, _ = _make_service(clock)
+async def test_sustained_absence_reaches_the_deadline_without_removal() -> None:
+    service, _supervisor, clock = _make_service()
     seen: list[GenerationStatus] = []
     poll_status = AsyncMock(side_effect=lambda *_: _not_found())
 
-    result = await service.wait_for_completion(
-        "nb1",
-        "task1",
-        timeout=600.0,
-        initial_interval=4.0,
-        max_interval=4.0,
-        max_not_found=3,
-        min_not_found_window=8.0,
-        poll_status=poll_status,
-        on_status_change=seen.append,
-    )
+    with pytest.raises(ArtifactPendingTimeoutError) as caught:
+        await service.wait_for_completion(
+            "nb1", "task1", timeout=40.0, poll_status=poll_status, on_status_change=seen.append
+        )
 
-    assert result.status == GenerationState.REMOVED
-    assert result.is_removed is True
-    assert result.is_failed is False
-    assert result.error is not None and "removed from the" in result.error
-    # 3 consecutive misses is the count trigger, but the window needs 8s of
-    # wall clock: polls at t=0/4/8 satisfy both on the third.
-    assert poll_status.await_count == 3
-    assert clock.now == 8.0
-    # One "not_found" transition, then the terminal "removed" — the removal is
-    # announced to the caller's callback, not just returned.
-    assert [status.status for status in seen] == [
-        GenerationState.NOT_FOUND,
-        GenerationState.REMOVED,
-    ]
+    assert clock.now == 40.0
+    assert poll_status.await_count > 5
+    assert caught.value.last_status == GenerationState.NOT_FOUND
+    assert [status.status for status in seen] == [GenerationState.NOT_FOUND]
 
 
 @pytest.mark.asyncio
-async def test_a_long_absence_run_trips_removal_even_before_the_window_elapses(
-    caplog: pytest.LogCaptureFixture,
+async def test_a_fast_poll_cadence_cannot_fabricate_removal() -> None:
+    service, _supervisor, clock = _make_service()
+    done = GenerationStatus(task_id="task1", status=GenerationState.COMPLETED)
+    poll_status = AsyncMock(side_effect=[_not_found() for _ in range(10)] + [done])
+
+    result = await service.wait_for_completion(
+        "nb1", "task1", initial_interval=0.1, max_interval=0.1, poll_status=poll_status
+    )
+
+    assert result is done
+    assert clock.now == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retry_after,timeout,expected_sleep", [(7, 20.0, 7.0), (30, 5.0, 5.0)])
+async def test_poll_rate_limit_retry_after_respects_the_deadline(
+    retry_after: int, timeout: float, expected_sleep: float
 ) -> None:
-    """Twice the miss threshold is terminal on its own.
+    service, _supervisor, clock = _make_service()
+    done = GenerationStatus(task_id="task1", status=GenerationState.COMPLETED)
+    error = RateLimitError("Read throttled", retry_after=retry_after)
+    poll_status = AsyncMock(side_effect=[error, done])
 
-    Without the window-independent trigger a fast poll cadence could miss the
-    artifact indefinitely and never declare removal, because wall clock never
-    reaches ``min_not_found_window``.
-    """
-    clock = _Clock()
-    service, _supervisor, _ = _make_service(clock)
-    poll_status = AsyncMock(side_effect=lambda *_: _not_found())
-
-    with caplog.at_level(logging.WARNING, logger="notebooklm._artifact.polling"):
+    if retry_after < timeout:
         result = await service.wait_for_completion(
-            "nb1",
-            "task1",
-            # A window no realistic poll run can reach, so only the
-            # consecutive-run trigger can end this wait. The finite timeout
-            # keeps a regression here a fast failure rather than a hang.
-            timeout=100.0,
-            max_not_found=2,
-            min_not_found_window=1_000_000.0,
-            poll_status=poll_status,
+            "nb1", "task1", timeout=timeout, poll_status=poll_status
         )
-
-    assert result.status == GenerationState.REMOVED
-    # 2 * max_not_found misses, and not one poll more.
-    assert poll_status.await_count == 4
-    assert "window-independent" in caplog.text
+        assert result is done
+    else:
+        with pytest.raises(ArtifactPendingTimeoutError) as caught:
+            await service.wait_for_completion(
+                "nb1", "task1", timeout=timeout, poll_status=poll_status
+            )
+        assert caught.value.__cause__ is error
+        assert poll_status.await_count == 1
+    assert clock.sleeps == [expected_sleep]
 
 
 @pytest.mark.asyncio
 async def test_an_artifact_that_keeps_reappearing_never_accumulates_toward_removal() -> None:
-    """#1198: absences must be a *run*, not a cumulative tally.
-
-    A flapping listing produces plenty of misses in total; treating those as
-    removal would abandon an artifact that is still generating. Here 6 total
-    misses — more than ``max_not_found=3`` — never trip removal because the
-    artifact reappears between them.
-    """
+    """Repeated visibility changes must not abandon the original generation."""
     clock = _Clock()
     service, _supervisor, _ = _make_service(clock)
     completed = GenerationStatus(task_id="task1", status=GenerationState.COMPLETED)
@@ -463,8 +440,6 @@ async def test_an_artifact_that_keeps_reappearing_never_accumulates_toward_remov
         timeout=600.0,
         initial_interval=1.0,
         max_interval=1.0,
-        max_not_found=3,
-        min_not_found_window=0.0,
         poll_status=poll_status,
         on_status_change=None,
     )
@@ -474,13 +449,9 @@ async def test_an_artifact_that_keeps_reappearing_never_accumulates_toward_remov
 
 
 @pytest.mark.asyncio
-async def test_the_absence_window_is_measured_from_the_first_miss_of_the_current_run() -> None:
-    """The reset must clear the window anchor, not only the counter.
-
-    If ``first_not_found_time`` survived a reappearance, the second run would
-    inherit the first run's start and satisfy ``min_not_found_window``
-    immediately — turning a brief later blip into a spurious removal.
-    """
+async def test_absence_diagnostics_reset_when_the_artifact_reappears(caplog) -> None:
+    """Each diagnostic reports only the current uninterrupted absence."""
+    caplog.set_level(logging.DEBUG, logger="notebooklm._artifact.polling")
     clock = _Clock()
     service, _supervisor, _ = _make_service(clock)
     completed = GenerationStatus(task_id="task1", status=GenerationState.COMPLETED)
@@ -489,7 +460,7 @@ async def test_the_absence_window_is_measured_from_the_first_miss_of_the_current
             _not_found(),  # t=0   run #1 starts here
             _pending(),  # t=10  run #1 ends
             _not_found(),  # t=20  run #2 starts here
-            _not_found(),  # t=30  elapsed-in-run = 10 < 30 → no removal
+            _not_found(),  # t=30  current absence is 10 seconds old
             completed,  # t=40
         ]
     )
@@ -500,13 +471,11 @@ async def test_the_absence_window_is_measured_from_the_first_miss_of_the_current
         timeout=600.0,
         initial_interval=10.0,
         max_interval=10.0,
-        max_not_found=2,
-        min_not_found_window=30.0,
         poll_status=poll_status,
     )
 
-    # Had the anchor leaked from run #1 (t=0), the miss at t=30 would have
-    # measured 30s elapsed and returned "removed" instead.
+    assert "absent for 2 polls (10.0s)" in caplog.text
+    assert "absent for 3 polls" not in caplog.text
     assert result is completed
     assert poll_status.await_count == 5
 

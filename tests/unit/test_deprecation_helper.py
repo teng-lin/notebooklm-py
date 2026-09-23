@@ -78,6 +78,7 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
         "client_legacy_constructor_options",
         "client_legacy_from_storage_options",
         "mcp_confirmed_name_references",
+        "artifact_poll_absence_thresholds",
         "artifact_poll_follower_options",
         "artifact_poll_follower_callback",
         "artifact_raw_download_prefetch",
@@ -219,6 +220,14 @@ def test_registered_deprecation_registry_is_exact_frozen_and_immutable() -> None
             "Non-default legacy NotebookLMClient.from_storage tuning arguments are deprecated; "
             "group them under config=ClientConfig(...). They will be removed in v1.0.",
             "notebooklm.options.ClientConfig",
+            "0.9.0",
+            3,
+        ),
+        "artifact_poll_absence_thresholds": (
+            "ArtifactsAPI.wait_for_completion max_not_found and min_not_found_window "
+            "are deprecated and ignored; use timeout to bound unresolved listing absence. "
+            "The parameters will be removed in v1.0.",
+            "notebooklm.NotebookLMClient.artifacts",
             "0.9.0",
             3,
         ),

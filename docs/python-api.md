@@ -485,13 +485,29 @@ is reported this way instead of surfacing as schema drift or a failed
 `GenerationStatus`.
 
 `client.artifacts.wait_for_completion(...)` raises
-`ArtifactPendingTimeoutError` when a task stays queued and never reaches
+`ArtifactPendingTimeoutError` when a task stays queued or absent and never reaches
 `in_progress`, or `ArtifactInProgressTimeoutError` when it starts but does not
 finish before `timeout`. Both subclass `ArtifactTimeoutError` and built-in
 `TimeoutError`. The exception exposes `task_id`, `notebook_id`,
 `timeout_seconds`, `last_status`, `stalled_phase`, `status_history`, and
 `status_transitions` so callers can retry, fail soft, or log upstream queueing
 patterns without parsing the message.
+
+An artifact missing from the listing remains unresolved: the waiter keeps the
+original task ID until completion, explicit failure, or timeout. It never infers
+`REMOVED` or a quota failure from repeated absence, and never substitutes a
+completed sibling. A timeout does not prove generation failed; retry polling the
+same ID rather than automatically starting another generation.
+
+`max_not_found` and `min_not_found_window` are deprecated and ignored. Use
+`timeout` to bound the wait. Non-default values emit a `DeprecationWarning`;
+explicit values equal to the historical defaults (`5` and `10.0`) remain silent
+because the compatibility signature cannot distinguish them from omission.
+Permanently missing IDs therefore wait until timeout instead of failing early.
+
+Web artifact listings preserve non-OK null-response statuses as exceptions.
+Transient polling read errors receive bounded retries within the wait budget;
+exhausted retries propagate the read error without inventing an artifact outcome.
 
 The CLI defaults to longer wait budgets for media generation (`audio`: 1200s,
 `video`: 1800s, `cinematic-video`: 3600s). In Python, pass the same budget
@@ -3028,30 +3044,17 @@ class GenerationStatus:
     def is_not_found(self) -> bool:
         """Check if the artifact is absent from the poll response.
 
-        Distinct from ``is_pending``: a *pending* artifact exists in the
-        artifact list and is queued, while *not_found* means the artifact
-        has either not yet appeared (brief lag after creation) or was
-        silently removed server-side (e.g. after a daily-quota rejection).
-        ``wait_for_completion`` treats a sustained run of ``not_found``
-        responses as a *removal* — see its ``max_not_found`` parameter and
-        ``is_removed``.
+        A pending artifact is listed and queued; not_found is an unresolved
+        absence. wait_for_completion keeps polling the original ID until
+        completion, explicit failure, or timeout.
         """
 
     @property
     def is_removed(self) -> bool:
-        """Check if the artifact was delisted by the server.
+        """Check for the legacy client-synthesized removal status.
 
-        Set by ``wait_for_completion`` when an artifact disappears from the
-        listing for a *sustained* run of polls (``max_not_found``). The absence
-        must be sustained: a transient/flapping omission where the artifact
-        reappears resets the not-found window, so a still-progressing artifact is
-        never fabricated into a terminal *removed* and instead polls through to
-        completion (or timeout). Kept *distinct* from ``is_failed``: a *failed*
-        artifact still exists in the listing with a terminal FAILED status,
-        whereas a *removed* artifact vanished from the listing and stayed gone —
-        typically a daily-quota rejection, occasionally a longer-lived server-
-        side omission. Branch on this when a delisting and a real terminal
-        failure warrant different handling.
+        Retained for stored statuses and older callers. Current polling no
+        longer infers removal from listing absence.
         """
 
     @property
@@ -3076,7 +3079,7 @@ working unchanged. **Prefer the `.is_*` predicates** (`status.is_complete`,
 | `UNKNOWN` | `"unknown"` | status code 0, plus any code outside the backend enum (future-proofing) |
 | `SUGGESTED` | `"suggested"` | status code 5 — a suggestion row; listings filter these out server-side |
 | `PENDING_REVIEW` | `"pending_review"` | status code 6 — backend state with unconfirmed semantics ([#2127](https://github.com/teng-lin/notebooklm-py/issues/2127)) |
-| `REMOVED` | `"removed"` | `wait_for_completion` after a sustained delisting |
+| `REMOVED` | `"removed"` | Legacy compatibility value; no longer emitted by polling |
 
 `GenerationState.is_terminal` is the single authority for "generation ended":
 it is `True` for exactly `COMPLETED`, `FAILED` and `REMOVED`. Everything else —
@@ -3094,9 +3097,9 @@ if not status.is_terminal:
 
 `NOT_FOUND` is non-terminal but is *not* interchangeable with the others: it
 means the artifact is absent from the listing (post-create lag, or a delisting)
-rather than reporting an outcome, and `wait_for_completion` escalates a
-sustained run of it to the terminal `REMOVED`. Branch on `is_not_found` when
-that difference matters.
+rather than reporting an outcome. `wait_for_completion` keeps it unresolved
+until the original ID reappears or the caller's timeout expires. Branch on
+`is_not_found` when that difference matters.
 
 > **Note:** because `status` is now typed `GenerationState`, constructing
 > `GenerationStatus(..., status="completed")` with a bare string literal is a

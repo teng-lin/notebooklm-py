@@ -310,6 +310,19 @@ DEPRECATION_SPECS: Mapping[str, DeprecationSpec] = MappingProxyType(
             removal="1.0",
             stacklevel=4,
         ),
+        "artifact_poll_absence_thresholds": DeprecationSpec(
+            key="artifact_poll_absence_thresholds",
+            message=(
+                "ArtifactsAPI.wait_for_completion max_not_found and min_not_found_window "
+                "are deprecated and ignored; use timeout to bound unresolved listing absence. "
+                "The parameters will be removed in v1.0."
+            ),
+            category=DeprecationWarning,
+            replacement="notebooklm.NotebookLMClient.artifacts",
+            since="0.9.0",
+            removal="1.0",
+            stacklevel=3,
+        ),
         "artifact_poll_follower_options": DeprecationSpec(
             key="artifact_poll_follower_options",
             message=(

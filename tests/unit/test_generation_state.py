@@ -256,13 +256,12 @@ def test_is_terminal_equals_the_is_complete_or_is_failed_predicate_pair():
 
     Scope note: this compares two derivations, it does not drive the loop —
     ``_run_poll_loop`` itself returns on ``status.is_complete or
-    status.is_failed`` (``REMOVED`` it synthesizes locally, so ``poll_status``
-    can never hand it back). Pinning the pair is what keeps the enum's partition
-    from drifting away from the condition the loop actually evaluates.
+    status.is_failed`` (legacy ``REMOVED`` is never emitted by ``poll_status``).
+    Pinning the pair keeps the enum partition aligned with the loop condition.
     """
     for state in GenerationState:
         if state is GenerationState.REMOVED:
-            continue  # never emitted by poll_status; wait_for_completion makes it
+            continue  # legacy compatibility value; no longer emitted
         status = GenerationStatus(task_id="t", status=state)
         assert state.is_terminal == (status.is_complete or status.is_failed), state
 

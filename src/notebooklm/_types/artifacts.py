@@ -521,7 +521,7 @@ class GenerationState(str, Enum):
     # greppable against the recovered enum dump. Semantics unconfirmed; see
     # :class:`~notebooklm.rpc.types.ArtifactStatus`.
     PENDING_REVIEW = "pending_review"
-    # wait-only: emitted by wait_for_completion() on a sustained delisting
+    # Legacy client-synthesized outcome; retained for compatibility, no longer emitted.
     REMOVED = "removed"
 
     @property
@@ -542,8 +542,8 @@ class GenerationState(str, Enum):
         ``tests/unit/test_generation_state.py``:
 
         * the client-side poll loop stops on ``is_complete or is_failed``,
-          because ``REMOVED`` is terminal but is *synthesized by that loop* and
-          so can never arrive from ``poll_status``;
+          because legacy ``REMOVED`` is retained for compatibility but is never
+          emitted by ``poll_status`` or synthesized by the loop;
         * ``_app.generate_retry.generation_outcome_from_status`` duck-types over
           the ``is_*`` predicates so it can accept non-``GenerationStatus``
           payloads, which rules out calling this property at all.
@@ -551,8 +551,8 @@ class GenerationState(str, Enum):
         ``NOT_FOUND`` is deliberately non-terminal too, but it is *not*
         interchangeable with the others: it is a transport-level absence (the
         post-create lag, or a delisting) rather than a generation outcome, and
-        ``wait_for_completion`` escalates a sustained run of it to the terminal
-        ``REMOVED``. Consumers that must distinguish "absent" from "still
+        ``wait_for_completion`` keeps polling until completion, explicit failure,
+        or timeout. Consumers that must distinguish "absent" from "still
         working" test :attr:`GenerationStatus.is_not_found` explicitly.
 
         Defined so a member added later is non-terminal by default — the safe
@@ -663,31 +663,21 @@ class GenerationStatus:
         """Check if the artifact was not found in the poll response.
 
         This status is set by ``poll_status()`` when the artifact ID is
-        absent from the artifact list.  It differs from ``is_pending``:
-        a ``pending`` artifact exists in the list and is queued, while a
-        ``not_found`` artifact has either not yet appeared (brief lag after
-        creation) or was silently removed by the server (e.g. after a
-        daily-quota rejection).
-
-        ``wait_for_completion`` treats a sustained run of ``not_found``
-        responses as a *removal* — see its ``max_not_found`` parameter and
-        :attr:`is_removed`.
+        absent from the artifact list. A ``pending`` artifact is listed and
+        queued; ``not_found`` is unresolved and can reflect delayed visibility
+        or deletion. It does not establish removal or a quota rejection.
+        ``wait_for_completion`` keeps polling the original ID until completion,
+        explicit failure, or timeout.
         """
         return self.status == "not_found"
 
     @property
     def is_removed(self) -> bool:
-        """Check if the artifact was delisted by the server.
+        """Check for the legacy client-synthesized removal status.
 
-        This status is set by ``wait_for_completion()`` when an artifact
-        disappears from the listing for a sustained run of polls (see its
-        ``max_not_found`` parameter). It is deliberately *distinct* from
-        :attr:`is_failed`: a ``failed`` artifact still exists in the listing
-        with a terminal FAILED status, whereas a ``removed`` artifact vanished
-        from the listing entirely — typically after a daily-quota rejection,
-        but possibly a transient list omission. Conflating the two would mask
-        a genuine terminal failure as a transient hiccup, or vice versa, so
-        callers that need to react differently can branch on this property.
+        Retained for compatibility with stored statuses and older callers.
+        ``wait_for_completion`` no longer infers this outcome from listing
+        absence; unresolved artifacts remain ``not_found`` until timeout.
         """
         return self.status == "removed"
 
@@ -712,10 +702,9 @@ class GenerationStatus:
         """Check if generation failed due to rate limiting or quota exceeded.
 
         Returns True when the API rejected the request, typically due to
-        too many requests or quota exhaustion. A ``removed`` status (the
-        artifact was delisted, often after a quota rejection) is treated the
-        same as a ``failed`` status here so that rate-limit retry policies
-        keep working when the server silently drops the artifact.
+        too many requests or quota exhaustion. Legacy ``removed`` statuses still
+        participate in error-code/message matching for compatibility. Current
+        polling never fabricates quota evidence from listing absence.
         """
         if not (self.is_failed or self.is_removed):
             return False

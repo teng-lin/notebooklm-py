@@ -70,6 +70,10 @@ V100_BREAKING_CHANGES: Mapping[str, BreakingChange] = MappingProxyType(
             "Remove NotebookLMClient.rpc_call Android-to-Web compatibility entrypoint",
             _spec("client_rpc_call_android", "client.py"),
         ),
+        "artifact_poll_absence_thresholds": BreakingChange(
+            "Remove ignored artifact polling absence thresholds",
+            _spec("artifact_poll_absence_thresholds", "_artifacts.py"),
+        ),
         "artifact_poll_follower_options": BreakingChange(
             "Make artifact polling options per waiter",
             Runway(

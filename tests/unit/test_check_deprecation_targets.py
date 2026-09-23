@@ -178,6 +178,10 @@ def _install_registered_tree(
             replacement='"notebooklm.NotebookLMClient.artifacts"',
         ),
         _spec_entry(
+            "artifact_poll_absence_thresholds",
+            replacement='"notebooklm.NotebookLMClient.artifacts"',
+        ),
+        _spec_entry(
             "artifact_poll_follower_callback",
             replacement='"notebooklm.NotebookLMClient"',
         ),
@@ -250,6 +254,7 @@ def _install_registered_tree(
         'warn_registered_deprecation("auth_tokens_sync_storage_construction")',
         'warn_registered_deprecation("artifact_from_api_response")',
         'warn_registered_deprecation("artifact_from_mind_map")',
+        'warn_registered_deprecation("artifact_poll_absence_thresholds")',
         'warn_registered_deprecation("artifact_poll_follower_callback")',
         'warn_registered_deprecation("artifact_poll_follower_options", detail="timeout")',
         'warn_registered_deprecation("client_rpc_call_web")',

@@ -426,6 +426,7 @@ class TestArtifactsAPI:
             [[2], "nb_123", 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'],
             source_path="/notebook/nb_123",
             allow_null=True,
+            raise_on_null_status=True,
         )
 
     @pytest.mark.asyncio
@@ -505,6 +506,7 @@ class TestArtifactsAPI:
             [[2], "nb_123", 'NOT artifact.status = "ARTIFACT_STATUS_SUGGESTED"'],
             source_path="/notebook/nb_123",
             allow_null=True,
+            raise_on_null_status=True,
         )
         mind_maps.list_mind_maps.assert_not_awaited()
 

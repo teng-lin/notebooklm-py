@@ -1,21 +1,11 @@
-"""Tests for quota/daily-limit failure detection during artifact polling.
+"""Tests for explicit quota rejection and unresolved artifact absence.
 
-Regression tests for GitHub issue #239: when a daily quota is reached
-(e.g. Cinematics limit) the generation task silently polled until timeout
-instead of failing quickly with a helpful error message.
-
-Root causes:
-1. poll_status() returned status="pending" when the artifact disappeared
-   from the list (the API removes quota-rejected artifacts).
-2. wait_for_completion() had no mechanism to detect a sustained run of
-   "artifact not found" responses and would spin until timeout.
-3. A quota rejection at generation time had to fail fast instead of polling
-   to a timeout.
+A listing miss does not prove quota rejection (#2432). Only server evidence
+can establish a generation refusal; a missing task may still complete later.
 
 Where a failure reason does and does not come from (#2134 / #2188 / #2193)
 --------------------------------------------------------------------------
-Root cause 3 used to read "failed artifacts had no error message surfaced to
-the caller", and the tests below tried to surface one from the artifact row.
+Earlier tests tried to surface a failure reason from the artifact row.
 No such field exists. ``Artifact`` in ``docs/android/schema.proto`` has no error
 or failure field at all: index 3 is ``sources`` and index 5 is
 ``isPubliclyReadable``, and #2134 deleted the reader that pretended otherwise.
@@ -167,309 +157,66 @@ class TestPollStatusNotFound:
 
 
 # ---------------------------------------------------------------------------
-# wait_for_completion: detects quota failure via consecutive not-found
+# wait_for_completion: only explicit server failures establish failure
 # ---------------------------------------------------------------------------
 
 
 class TestWaitForCompletionQuotaDetection:
-    """wait_for_completion fails fast when artifact disappears from list."""
-
     @pytest.mark.asyncio
-    async def test_consecutive_not_found_returns_removed(self):
-        """After max_not_found consecutive not-found polls, returns removed.
-
-        Regression for issue #1168: a delisted artifact is reported with a
-        distinct ``"removed"`` status, *not* ``"failed"``, so callers do not
-        conflate a transient list omission with a genuine terminal failure.
-        """
-        api = _make_api()
-        # Always return not_found
-        api.poll_status = AsyncMock(
-            return_value=GenerationStatus(task_id="task_abc", status="not_found")
-        )
-
-        result = await api.wait_for_completion(
-            "nb1",
-            "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            max_not_found=3,
-            min_not_found_window=0.0,
-        )
-
-        assert result.is_removed is True
-        # A removal is NOT a terminal FAILED artifact — see issue #1168.
-        assert result.is_failed is False
-        assert result.status == "removed"
-        assert result.error is not None
-        assert "quota" in result.error.lower() or "limit" in result.error.lower()
-
-    @pytest.mark.asyncio
-    async def test_not_found_then_found_resets_counter(self):
-        """Prove consecutive counter resets: with max_not_found=2, a
-        [not_found, pending, not_found, completed] sequence should succeed
-        because the pending response resets the consecutive counter."""
-        api = _make_api()
-        responses = [
-            GenerationStatus(task_id="task_abc", status="not_found"),
-            GenerationStatus(task_id="task_abc", status="pending"),
-            GenerationStatus(task_id="task_abc", status="not_found"),
-            GenerationStatus(task_id="task_abc", status="completed"),
-        ]
-        api.poll_status = AsyncMock(side_effect=responses)
-
-        result = await api.wait_for_completion(
-            "nb1",
-            "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            max_not_found=2,
-            min_not_found_window=0.0,
-        )
-
-        assert result.is_complete is True
-        # All 4 calls were made (counter was reset after the pending)
-        assert api.poll_status.call_count == 4
-
-    @pytest.mark.asyncio
-    async def test_sustained_not_found_fails_before_timeout(self):
-        """Sustained not-found responses fail fast, not at timeout."""
+    async def test_absence_does_not_invent_quota_evidence(self):
         api = _make_api()
         api.poll_status = AsyncMock(
             return_value=GenerationStatus(task_id="task_abc", status="not_found")
         )
+        observed = []
 
-        import time
+        with pytest.raises(TimeoutError) as caught:
+            await api.wait_for_completion(
+                "nb1",
+                "task_abc",
+                initial_interval=0.001,
+                max_interval=0.001,
+                timeout=0.02,
+                on_status_change=observed.append,
+            )
 
-        start = time.monotonic()
-        result = await api.wait_for_completion(
-            "nb1",
-            "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            timeout=60.0,  # Long timeout — should NOT reach it
-            max_not_found=3,
-            min_not_found_window=0.0,
-        )
-        elapsed = time.monotonic() - start
-
-        assert result.is_removed is True
-        # Should complete well before the 60s timeout
-        assert elapsed < 5.0, f"Expected fast failure, took {elapsed:.2f}s"
+        assert caught.value.last_status == "not_found"
+        assert [status.status for status in observed] == ["not_found"]
+        assert all(status.error is None and not status.is_rate_limited for status in observed)
 
     @pytest.mark.asyncio
     async def test_normal_failure_still_returns_failed(self):
-        """A FAILED status from poll_status propagates normally."""
         api = _make_api()
-        api.poll_status = AsyncMock(
-            return_value=GenerationStatus(
-                task_id="task_abc",
-                status="failed",
-                error="Some server error",
-            )
-        )
+        failed = GenerationStatus(task_id="task_abc", status="failed", error="Server failure")
+        api.poll_status = AsyncMock(return_value=failed)
 
-        result = await api.wait_for_completion(
-            "nb1", "task_abc", initial_interval=0.01, max_interval=0.01
-        )
+        result = await api.wait_for_completion("nb1", "task_abc")
 
-        assert result.is_failed is True
-        # A genuine terminal FAILED artifact must NOT be reported as removed
-        # (issue #1168: the two states must stay disjoint).
-        assert result.is_removed is False
-        assert result.error == "Some server error"
+        assert result is failed
+        assert not result.is_removed
 
     @pytest.mark.asyncio
-    async def test_removed_status_invokes_status_change_callback(self):
-        """on_status_change fires once with the synthesized removed status."""
+    async def test_prolonged_absence_then_completion_emits_no_removal(self):
         api = _make_api()
+        completed = GenerationStatus(task_id="task_abc", status="completed")
         api.poll_status = AsyncMock(
-            return_value=GenerationStatus(task_id="task_abc", status="not_found")
+            side_effect=[
+                GenerationStatus(task_id="task_abc", status="not_found") for _ in range(10)
+            ]
+            + [completed]
         )
-        observed: list[str] = []
+        observed = []
 
         result = await api.wait_for_completion(
             "nb1",
             "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            max_not_found=3,
-            min_not_found_window=0.0,
-            on_status_change=lambda status: observed.append(status.status),
+            initial_interval=0.001,
+            max_interval=0.001,
+            on_status_change=observed.append,
         )
 
-        assert result.is_removed is True
-        # The terminal "removed" status is the last status emitted, exactly once.
-        assert observed[-1] == "removed"
-        assert observed.count("removed") == 1
-
-    @pytest.mark.asyncio
-    async def test_timeout_includes_last_status(self):
-        """TimeoutError message includes the last observed status."""
-        api = _make_api()
-        api.poll_status = AsyncMock(
-            return_value=GenerationStatus(task_id="task_abc", status="in_progress")
-        )
-
-        with pytest.raises(TimeoutError) as exc_info:
-            await api.wait_for_completion(
-                "nb1",
-                "task_abc",
-                initial_interval=0.01,
-                max_interval=0.01,
-                timeout=0.05,
-            )
-
-        assert "in_progress" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_max_not_found_default_is_5(self):
-        """Default max_not_found is 5 consecutive polls."""
-        api = _make_api()
-        call_count = 0
-
-        async def side_effect(notebook_id, task_id):
-            nonlocal call_count
-            call_count += 1
-            return GenerationStatus(task_id=task_id, status="not_found")
-
-        api.poll_status = AsyncMock(side_effect=side_effect)
-
-        result = await api.wait_for_completion(
-            "nb1",
-            "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            min_not_found_window=0.0,
-        )
-
-        # Should have polled exactly 5 times (default max_not_found=5)
-        assert call_count == 5
-        assert result.is_removed is True
-
-    @pytest.mark.asyncio
-    async def test_transient_omissions_reset_accumulators_and_complete(self):
-        """A flickering artifact that keeps reappearing is NOT declared removed.
-
-        Regression for issue #1198: previously ``total_not_found`` accumulated
-        across the whole poll and never reset on reappearance, so an artifact
-        with sporadic brief omissions during an otherwise-healthy generation
-        could trip the total threshold and be fabricated into a terminal
-        ``"removed"`` before it ever completed. Now every reappearance resets
-        the not-found accumulators, so ``"removed"`` requires a *sustained*
-        absence — a flapping artifact polls through to completion instead.
-        """
-        api = _make_api()
-        # 7 not-found omissions interleaved with in_progress sightings, then a
-        # genuine completion. With max_not_found=3 the OLD cumulative total
-        # threshold was 6, so the pre-fix loop would have returned "removed" at
-        # the 6th not-found (before completing). With the reset, each in_progress
-        # wipes the counter, so no removal trigger ever fires.
-        responses = []
-        for _ in range(7):
-            responses.append(GenerationStatus(task_id="task_abc", status="not_found"))
-            responses.append(GenerationStatus(task_id="task_abc", status="in_progress"))
-        responses.append(GenerationStatus(task_id="task_abc", status="completed"))
-        api.poll_status = AsyncMock(side_effect=responses)
-
-        result = await api.wait_for_completion(
-            "nb1",
-            "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            max_not_found=3,
-            min_not_found_window=0.0,
-        )
-
-        assert result.is_complete is True
-        assert result.is_removed is False
-        # All 15 responses were consumed: the loop never short-circuited to
-        # "removed" despite 7 total not-found polls (> the old total threshold).
-        assert api.poll_status.call_count == 15
-
-    @pytest.mark.asyncio
-    async def test_sustained_not_found_with_blocking_window_still_removed(self):
-        """Sustained absence still triggers removal via the total fallback even
-        when ``min_not_found_window`` blocks the consecutive trigger.
-
-        Guards the issue #1198 change: resetting the counter on reappearance
-        must not weaken detection of a *genuinely* delisted artifact that never
-        comes back. With a large window the time-gated trigger is suppressed,
-        but the window-independent trigger still fires once the consecutive run
-        reaches ``max_not_found * 2`` and reports ``"removed"``.
-        """
-        api = _make_api()
-        api.poll_status = AsyncMock(
-            return_value=GenerationStatus(task_id="task_abc", status="not_found")
-        )
-
-        result = await api.wait_for_completion(
-            "nb1",
-            "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            max_not_found=3,
-            min_not_found_window=9999.0,  # blocks the consecutive trigger
-        )
-
-        assert result.is_removed is True
-        assert result.is_failed is False
-        # Fires on the total path at max_not_found * 2 = 6 consecutive not-founds.
-        assert api.poll_status.call_count == 6
-
-    @pytest.mark.asyncio
-    async def test_last_status_set_before_timeout(self):
-        """Timeout message includes actual status even on immediate timeout."""
-        api = _make_api()
-        api.poll_status = AsyncMock(
-            return_value=GenerationStatus(task_id="task_abc", status="in_progress")
-        )
-
-        with pytest.raises(TimeoutError) as exc_info:
-            await api.wait_for_completion(
-                "nb1",
-                "task_abc",
-                initial_interval=0.01,
-                max_interval=0.01,
-                timeout=0.0,  # Immediate timeout after first poll
-            )
-
-        # last_status should be set even though we timed out on first iteration
-        assert "in_progress" in str(exc_info.value)
-        assert "None" not in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_min_not_found_window_prevents_false_positive(self):
-        """Not-found failure is deferred until min_not_found_window elapses."""
-        api = _make_api()
-        call_count = 0
-
-        async def side_effect(notebook_id, task_id):
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 5:
-                return GenerationStatus(task_id=task_id, status="not_found")
-            return GenerationStatus(task_id=task_id, status="completed")
-
-        api.poll_status = AsyncMock(side_effect=side_effect)
-
-        # With a large window, consecutive threshold alone won't trigger
-        # because the window hasn't elapsed.  But after enough polls,
-        # the total count (5*2=10) would trigger on the total path.
-        # Use max_not_found=5, min_not_found_window=9999 so consecutive
-        # trigger is blocked, but total triggers at 10.
-        result = await api.wait_for_completion(
-            "nb1",
-            "task_abc",
-            initial_interval=0.01,
-            max_interval=0.01,
-            max_not_found=5,
-            min_not_found_window=9999.0,
-        )
-
-        # Should complete since we return completed at poll 6
-        assert result.is_complete is True
-        assert call_count == 6
+        assert result is completed
+        assert [status.status for status in observed] == ["not_found", "completed"]
 
 
 # ---------------------------------------------------------------------------

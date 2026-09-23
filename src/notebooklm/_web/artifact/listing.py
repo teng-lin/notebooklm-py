@@ -14,8 +14,9 @@ from ..._types.enums import (
     INTERACTIVE_MIND_MAP_VARIANT,
     QUIZ_VARIANT,
     ArtifactTypeCode,
+    GrpcStatusCode,
 )
-from ...exceptions import DecodingError
+from ...exceptions import AuthError, DecodingError, RateLimitError, RPCTimeoutError, ServerError
 from ...rpc import (
     RPCError,
     RPCMethod,
@@ -121,12 +122,42 @@ class ArtifactListingService:
             notebook_id,
             f'NOT artifact.status = "{ARTIFACT_STATUS_SUGGESTED_WIRE_NAME}"',
         ]
-        result = await rpc.rpc_call(
-            RPCMethod.LIST_ARTIFACTS,
-            params,
-            source_path=f"/notebook/{notebook_id}",
-            allow_null=True,
-        )
+        try:
+            result = await rpc.rpc_call(
+                RPCMethod.LIST_ARTIFACTS,
+                params,
+                source_path=f"/notebook/{notebook_id}",
+                allow_null=True,
+                raise_on_null_status=True,
+            )
+        except (AuthError, RateLimitError, ServerError):
+            raise
+        except RPCError as exc:
+            # A rejected read is not an empty listing (#2432). Classify bare
+            # status-tagged nulls here so polling can retry this read without
+            # changing the decoder's contract for unrelated RPC methods.
+            if type(exc) is not RPCError:
+                raise
+            if exc.rpc_code == GrpcStatusCode.DEADLINE_EXCEEDED:
+                # Preserve the status code and raw response on the cause,
+                # since transport timeout errors do not expose wire fields.
+                raise RPCTimeoutError(
+                    str(exc), method_id=exc.method_id, original_error=exc
+                ) from exc
+            error_type: type[RPCError]
+            if exc.rpc_code == GrpcStatusCode.RESOURCE_EXHAUSTED:
+                error_type = RateLimitError
+            elif exc.rpc_code in (GrpcStatusCode.INTERNAL, GrpcStatusCode.UNAVAILABLE):
+                error_type = ServerError
+            else:
+                raise
+            raise error_type(
+                str(exc),
+                method_id=exc.method_id,
+                rpc_code=exc.rpc_code,
+                found_ids=exc.found_ids,
+                raw_response=exc.raw_response,
+            ) from exc
         # LIST_ARTIFACTS returns either a wrapped single-element envelope
         # (``[[row1, row2, ...]]``) or an already-flat list of rows. The wrap
         # probe (``result[0]`` / ``inner[0]``) is centralised in
@@ -179,8 +210,18 @@ class ArtifactListingService:
         this before the backend split, so malformed optional metadata on an
         unrelated artifact must not change the requested task's result.
         """
-        row = find_artifact_row_by_id(await list_raw(notebook_id), task_id)
+        raw_rows = await list_raw(notebook_id)
+        row = find_artifact_row_by_id(raw_rows, task_id)
         if row is None:
+            if logger.isEnabledFor(logging.DEBUG):
+                # Capture siblings before the target-only projection discards
+                # them. Do not decode unrelated metadata or log content/URLs.
+                logger.debug(
+                    "Artifact %s not listed in notebook %s; listed_ids=%s",
+                    task_id,
+                    notebook_id,
+                    [candidate.id for candidate in iter_artifact_rows(raw_rows)],
+                )
             return []
         status = row.status
         artifact_type = row.type_code

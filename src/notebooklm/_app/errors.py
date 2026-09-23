@@ -161,7 +161,7 @@ CATEGORY_HINTS: dict[ErrorCategory, str | None] = {
     ErrorCategory.NETWORK: "Transient connectivity issue; retry.",
     ErrorCategory.NOTEBOOK_LIMIT: "Notebook quota is exhausted; delete an existing notebook first.",
     ErrorCategory.ARTIFACT_TIMEOUT: (
-        "Generation is still running; poll the task status with the task_id."
+        "Generation outcome is unresolved; poll the task status with the task_id."
     ),
     ErrorCategory.TIMEOUT: "The operation did not finish in time; retry or poll for completion.",
     ErrorCategory.SERVER: "Upstream NotebookLM error; retry after a short delay.",

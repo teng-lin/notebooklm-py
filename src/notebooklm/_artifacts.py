@@ -915,8 +915,8 @@ class ArtifactsAPI(ABC):
 
         Returns a ``GenerationStatus``; when the artifact is absent from the
         list, ``status`` is ``"not_found"`` so callers can distinguish
-        "genuinely pending" from "removed by the server" (e.g. after a quota
-        rejection).
+        a queued artifact from an unresolved listing absence. Absence does not
+        establish removal or a quota rejection.
 
         .. versionchanged:: 0.4.0
             **Breaking change:** Previously returned ``status="pending"`` when
@@ -949,32 +949,31 @@ class ArtifactsAPI(ABC):
         requests. Cancellation is per-caller — only the cancelled caller's
         ``await`` raises ``CancelledError``; the poll continues and remaining
         followers still receive the result. Only the *leader's* interval /
-        timeout / not-found knobs apply to the shared loop; followers' values
+        timeout options apply to the shared loop; followers' values
         are ignored once they attach. Distinct waiters that genuinely need
         distinct timeouts should serialize their calls instead.
 
-        ``max_not_found`` (default 5) is the consecutive "not found" poll count
-        before the task is treated as *removed* — the returned status is
-        ``"removed"`` (see :attr:`GenerationStatus.is_removed`), kept distinct
-        from ``"failed"`` so a delisted artifact (e.g. after a daily-quota
-        rejection) is not conflated with a server terminal-FAILED.
-        ``min_not_found_window`` (default 10.0) is the minimum elapsed seconds
-        since the *first* not-found before a consecutive run triggers failure,
-        avoiding false positives on slow networks. ``on_status_change`` is an
-        optional sync/async callback invoked when the leader observes a new
-        status (followers receive only the final status).
+        A missing artifact remains ``"not_found"`` until it reappears or the
+        timeout expires. Listing absence never establishes removal or quota
+        failure, and a completed sibling never substitutes for ``task_id``.
+
+        ``max_not_found`` and ``min_not_found_window`` are deprecated and ignored;
+        use ``timeout`` to bound the wait. Non-default values emit a
+        ``DeprecationWarning``. The historical defaults remain accepted silently.
+        ``on_status_change`` is an optional sync/async callback invoked when the
+        leader observes a new status (followers receive only the final status).
 
         Raises:
             TimeoutError: If task doesn't complete within ``timeout``.
         """
+        if max_not_found != 5 or min_not_found_window != 10.0:
+            warn_registered_deprecation("artifact_poll_absence_thresholds")
         return await self._polling.wait_for_completion(
             notebook_id,
             task_id,
             initial_interval=initial_interval,
             max_interval=max_interval,
             timeout=timeout,
-            max_not_found=max_not_found,
-            min_not_found_window=min_not_found_window,
             poll_status=self.poll_status,
             on_status_change=on_status_change,
         )
