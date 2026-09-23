@@ -130,6 +130,8 @@ class ArtifactListingService:
                 allow_null=True,
                 raise_on_null_status=True,
             )
+        # The catch-order contract guard requires explicit infrastructure
+        # pass-through before a broad RPCError handler, even with the type check.
         except (AuthError, RateLimitError, ServerError):
             raise
         except RPCError as exc:
