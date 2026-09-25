@@ -59,11 +59,13 @@ async def test_nested_explicit_operation_can_only_shorten_parent() -> None:
     supervisor = _supervisor()
 
     with pytest.raises(OperationTimeoutError):
-        async with supervisor.operation_scope("outer", timeout=1.0):
-            async with supervisor.operation_scope("inner", timeout=0.01) as lease:
-                assert lease.context.remaining() is not None
-                assert lease.context.remaining() <= 0.02
-                await asyncio.sleep(10)
+        async with (
+            supervisor.operation_scope("outer", timeout=1.0),
+            supervisor.operation_scope("inner", timeout=0.01) as lease,
+        ):
+            assert lease.context.remaining() is not None
+            assert lease.context.remaining() <= 0.02
+            await asyncio.sleep(10)
 
 
 async def test_public_operation_none_is_unbounded_and_explicit_timeout_applies() -> None:
@@ -273,9 +275,11 @@ async def test_rpc_queue_expiry_uses_operation_timeout_and_never_dispatches() ->
     dispatched = False
     try:
         with pytest.raises(OperationTimeoutError):
-            async with supervisor.operation_scope("queued", timeout=0.01):
-                async with supervisor.call_scope("queued rpc", "WRITE", None):
-                    dispatched = True
+            async with (
+                supervisor.operation_scope("queued", timeout=0.01),
+                supervisor.call_scope("queued rpc", "WRITE", None),
+            ):
+                dispatched = True
     finally:
         release.set()
         await holder

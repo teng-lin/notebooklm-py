@@ -54,37 +54,37 @@ async def test_stdio_discovery_while_client_open_is_stalled(tmp_path: Path, reco
         )
         try:
             with stderr.open("w", encoding="utf-8") as errors:
-                async with stdio_client(params, errlog=errors) as (reader, writer):
-                    async with ClientSession(reader, writer) as session:
-                        # Observe the upstream request BEFORE testing initialize: a
-                        # timeout cannot pass just because warm-up never started.
-                        await upstream.wait_for_gate("opening", timeout=10)
+                async with (
+                    stdio_client(params, errlog=errors) as (reader, writer),
+                    ClientSession(reader, writer) as session,
+                ):
+                    # Observe the upstream request BEFORE testing initialize: a
+                    # timeout cannot pass just because warm-up never started.
+                    await upstream.wait_for_gate("opening", timeout=10)
 
-                        async def _discover() -> None:
-                            await session.initialize()
-                            tools = await session.list_tools()
-                            assert {"server_info", "notebook_list"} <= {
-                                tool.name for tool in tools.tools
-                            }
-                            info = await session.call_tool("server_info", {})
-                            assert not info.isError
+                    async def _discover() -> None:
+                        await session.initialize()
+                        tools = await session.list_tools()
+                        assert {"server_info", "notebook_list"} <= {
+                            tool.name for tool in tools.tools
+                        }
+                        info = await session.call_tool("server_info", {})
+                        assert not info.isError
 
-                        await asyncio.wait_for(_discover(), timeout=5)
-                        assert not upstream.gate("opening").is_set()
-                        assert [row.route for row in upstream.journal] == [Route.homepage()]
-                        assert not report.exists(), "client opening must still be in flight"
+                    await asyncio.wait_for(_discover(), timeout=5)
+                    assert not upstream.gate("opening").is_set()
+                    assert [row.route for row in upstream.journal] == [Route.homepage()]
+                    assert not report.exists(), "client opening must still be in flight"
 
-                        if recover:
-                            upstream.release("opening")
-                            notebooks = await asyncio.wait_for(
-                                session.call_tool("notebook_list", {}), timeout=5
-                            )
-                            assert not notebooks.isError
-                            assert notebooks.structuredContent is not None
-                            assert (
-                                notebooks.structuredContent["notebooks"][0]["id"] == "nb-recovered"
-                            )
-                        # Otherwise close stdin while the network open is pending.
+                    if recover:
+                        upstream.release("opening")
+                        notebooks = await asyncio.wait_for(
+                            session.call_tool("notebook_list", {}), timeout=5
+                        )
+                        assert not notebooks.isError
+                        assert notebooks.structuredContent is not None
+                        assert notebooks.structuredContent["notebooks"][0]["id"] == "nb-recovered"
+                    # Otherwise close stdin while the network open is pending.
             assert report.is_file(), "child must finalize the open during stdio shutdown"
             cleanup = json.loads(report.read_text(encoding="utf-8"))
             assert cleanup == {

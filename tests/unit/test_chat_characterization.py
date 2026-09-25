@@ -1571,14 +1571,16 @@ class TestGetHistoryErrorHandling:
         id_response = build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [[["conv_001"]]])
         httpx_mock.add_response(content=id_response.encode())
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.chat,
-                "get_conversation_turns",
-                new_callable=AsyncMock,
-                side_effect=ChatError("API error"),
+            with (
+                patch.object(
+                    client.chat,
+                    "get_conversation_turns",
+                    new_callable=AsyncMock,
+                    side_effect=ChatError("API error"),
+                ),
+                pytest.raises(ChatError, match="API error"),
             ):
-                with pytest.raises(ChatError, match="API error"):
-                    await client.chat.get_history("nb_123")
+                await client.chat.get_history("nb_123")
 
     @pytest.mark.asyncio
     async def test_get_history_raises_on_network_error(
@@ -1641,14 +1643,16 @@ class TestGetHistoryErrorHandling:
         id_response = build_rpc_response(RPCMethod.GET_LAST_CONVERSATION_ID, [[["conv_001"]]])
         httpx_mock.add_response(content=id_response.encode())
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.chat,
-                "get_conversation_turns",
-                new_callable=AsyncMock,
-                return_value=["not-the-turn-list"],
+            with (
+                patch.object(
+                    client.chat,
+                    "get_conversation_turns",
+                    new_callable=AsyncMock,
+                    return_value=["not-the-turn-list"],
+                ),
+                pytest.raises(UnknownRPCMethodError),
             ):
-                with pytest.raises(UnknownRPCMethodError):
-                    await client.chat.get_history("nb_123")
+                await client.chat.get_history("nb_123")
 
     @pytest.mark.asyncio
     async def test_get_history_reverses_turns(

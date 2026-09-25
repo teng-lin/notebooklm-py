@@ -367,13 +367,15 @@ async def test_add_file_missing_path_raises_clear_error(
         return "should_not_get_here"
 
     async with NotebookLMClient(auth_tokens) as client:
-        with patch.object(
-            client.sources._uploader,
-            "register_file_source",
-            side_effect=stub_register,
+        with (
+            patch.object(
+                client.sources._uploader,
+                "register_file_source",
+                side_effect=stub_register,
+            ),
+            pytest.raises(FileNotFoundError),
         ):
-            with pytest.raises(FileNotFoundError):
-                await client.sources.add_file("nb_123", missing)
+            await client.sources.add_file("nb_123", missing)
     assert not register_calls, (
         "FileNotFoundError must be raised before any RPC fires; got "
         f"{len(register_calls)} register call(s)."
@@ -499,9 +501,9 @@ async def test_add_file_closes_fd_when_registration_fails(
             patch.object(
                 client.sources._uploader, "register_file_source", side_effect=failing_register
             ),
+            pytest.raises(_RegistrationError),
         ):
-            with pytest.raises(_RegistrationError):
-                await client.sources.add_file("nb_123", file_path)
+            await client.sources.add_file("nb_123", file_path)
 
     assert captured_fd, "add_file did not open the file"
     # No handoff happened (registration failed before

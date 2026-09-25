@@ -1724,13 +1724,15 @@ class TestAddTextErrorPaths:
     ):
         """Test add_text() wraps RPCError in SourceAddError (lines 374-375)."""
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources._rpc,
-                "rpc_call",
-                side_effect=RPCError("Text RPC failed"),
+            with (
+                patch.object(
+                    client.sources._rpc,
+                    "rpc_call",
+                    side_effect=RPCError("Text RPC failed"),
+                ),
+                pytest.raises(SourceAddError, match="Failed to add text source"),
             ):
-                with pytest.raises(SourceAddError, match="Failed to add text source"):
-                    await client.sources.add_text("nb_123", "My Title", "content")
+                await client.sources.add_text("nb_123", "My Title", "content")
 
     @pytest.mark.asyncio
     async def test_add_text_none_result_raises_source_add_error(
@@ -1739,14 +1741,16 @@ class TestAddTextErrorPaths:
     ):
         """Test add_text() raises SourceAddError when API returns None (line 382)."""
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources._rpc,
-                "rpc_call",
-                new_callable=AsyncMock,
-                return_value=None,
+            with (
+                patch.object(
+                    client.sources._rpc,
+                    "rpc_call",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ),
+                pytest.raises(SourceAddError, match="API returned no data"),
             ):
-                with pytest.raises(SourceAddError, match="API returned no data"):
-                    await client.sources.add_text("nb_123", "My Title", "content")
+                await client.sources.add_text("nb_123", "My Title", "content")
 
     @pytest.mark.asyncio
     async def test_add_text_wait_true(
@@ -1758,21 +1762,21 @@ class TestAddTextErrorPaths:
         ready_source = Source(id="src_wait_text", title="My Title")
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources._rpc,
-                "rpc_call",
-                new_callable=AsyncMock,
-                return_value=source_data,
-            ):
-                with patch.object(
+            with (
+                patch.object(
+                    client.sources._rpc,
+                    "rpc_call",
+                    new_callable=AsyncMock,
+                    return_value=source_data,
+                ),
+                patch.object(
                     client.sources,
                     "wait_until_ready",
                     new_callable=AsyncMock,
                     return_value=ready_source,
-                ) as mock_wait:
-                    result = await client.sources.add_text(
-                        "nb_123", "My Title", "content", wait=True
-                    )
+                ) as mock_wait,
+            ):
+                result = await client.sources.add_text("nb_123", "My Title", "content", wait=True)
 
         mock_wait.assert_called_once()
         assert result.id == "src_wait_text"
@@ -1794,30 +1798,32 @@ class TestAddFileWait:
         ready_source = Source(id="file_src_001", title="test.pdf")
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources._uploader,
-                "register_file_source",
-                new_callable=AsyncMock,
-                return_value="file_src_001",
-            ):
-                with patch.object(
+            with (
+                patch.object(
+                    client.sources._uploader,
+                    "register_file_source",
+                    new_callable=AsyncMock,
+                    return_value="file_src_001",
+                ),
+                patch.object(
                     client.sources._uploader,
                     "start_resumable_upload",
                     new_callable=AsyncMock,
                     return_value="https://notebooklm.google.com/upload/_/?upload_id=abc",
-                ):
-                    with patch.object(
-                        client.sources._uploader,
-                        "upload_file_streaming",
-                        new_callable=AsyncMock,
-                    ):
-                        with patch.object(
-                            client.sources._uploader,
-                            "wait_until_ready",
-                            new_callable=AsyncMock,
-                            return_value=ready_source,
-                        ) as mock_wait:
-                            result = await client.sources.add_file("nb_123", test_file, wait=True)
+                ),
+                patch.object(
+                    client.sources._uploader,
+                    "upload_file_streaming",
+                    new_callable=AsyncMock,
+                ),
+                patch.object(
+                    client.sources._uploader,
+                    "wait_until_ready",
+                    new_callable=AsyncMock,
+                    return_value=ready_source,
+                ) as mock_wait,
+            ):
+                result = await client.sources.add_file("nb_123", test_file, wait=True)
 
         mock_wait.assert_called_once_with(
             "nb_123", "file_src_001", timeout=120.0, transient_error_types=()
@@ -2911,19 +2917,21 @@ class TestWaitUntilReadyErrorPaths:
         processing_source = Source(id="src_slow", title="Slow Source", status=1)
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources,
-                "get_or_none",
-                new_callable=AsyncMock,
-                return_value=processing_source,
+            with (
+                patch.object(
+                    client.sources,
+                    "get_or_none",
+                    new_callable=AsyncMock,
+                    return_value=processing_source,
+                ),
+                pytest.raises(SourceTimeoutError),
             ):
-                with pytest.raises(SourceTimeoutError):
-                    await client.sources.wait_until_ready(
-                        "nb_123",
-                        "src_slow",
-                        timeout=0.05,  # Very short timeout so polling loop hits elapsed > timeout
-                        initial_interval=0.001,
-                    )
+                await client.sources.wait_until_ready(
+                    "nb_123",
+                    "src_slow",
+                    timeout=0.05,  # Very short timeout so polling loop hits elapsed > timeout
+                    initial_interval=0.001,
+                )
 
 
 class TestWaitUntilReadyMidLoopTimeout:
@@ -2957,18 +2965,18 @@ class TestWaitUntilReadyMidLoopTimeout:
             return val
 
         async with NotebookLMClient(auth_tokens) as client:
-            with patch.object(
-                client.sources,
-                "get_or_none",
-                new_callable=AsyncMock,
-                return_value=processing_source,
-            ):
-                with patch.object(
+            with (
+                patch.object(
+                    client.sources,
+                    "get_or_none",
+                    new_callable=AsyncMock,
+                    return_value=processing_source,
+                ),
+                patch.object(
                     _sources_base_mod, "monotonic", side_effect=fake_monotonic
-                ) as mock_monotonic:
-                    with pytest.raises(SourceTimeoutError):
-                        await client.sources.wait_until_ready(
-                            "nb_123", "src_race", timeout=timeout_val
-                        )
+                ) as mock_monotonic,
+                pytest.raises(SourceTimeoutError),
+            ):
+                await client.sources.wait_until_ready("nb_123", "src_race", timeout=timeout_val)
 
         mock_monotonic.assert_called()
