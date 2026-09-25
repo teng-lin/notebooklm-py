@@ -52,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Research import no longer hangs on unclosed Markdown links (#2434).**
+  Citation URL extraction no longer triggers catastrophic regex backtracking
+  on long URLs in malformed Markdown links or images. Cited-only research
+  imports can process these reports without blocking the MCP event loop,
+  which previously caused connector and OAuth requests to time out.
+
 - **Artifact polling preserves unresolved absence (#2432).** Repeated listing
   misses no longer produce a terminal `REMOVED` or fabricated quota error.
   Waiters keep the original ID until completion, explicit failure, or timeout;

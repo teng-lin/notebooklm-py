@@ -113,6 +113,7 @@ class TestCitedSourceSelection:
 
     @pytest.mark.parametrize("prefix", ["[source](", "![chart]("])
     def test_extract_report_urls_handles_long_unclosed_markdown(self, prefix):
+        """Unclosed Markdown links and images must not hang citation extraction."""
         url = "https://example.com/" + "a" * 10_000
         # Isolate the regex so a regression fails with a timeout instead of
         # wedging the test runner in non-interruptible regex backtracking.
