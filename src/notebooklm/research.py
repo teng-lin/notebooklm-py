@@ -22,7 +22,10 @@ from .types import CitedSourceSelection
 
 logger = logging.getLogger(__name__)
 
-_URL_RE = r"https?://(?:[^\s<>\]\(\)\"']+|\([^\s<>\]\(\)\"']*\))+"
+# Consume one ordinary character per repetition. Nesting a ``+`` inside the
+# outer ``+`` makes malformed Markdown links backtrack exponentially and can
+# block the MCP event loop during cited-only research imports.
+_URL_RE = r"https?://(?:[^\s<>\]\(\)\"']|\([^\s<>\]\(\)\"']*\))+"
 _URL_PATTERN = re.compile(_URL_RE)
 _MARKDOWN_IMAGE_PATTERN = re.compile(rf"!\[[^\]]*\]\(({_URL_RE})(?:\s+[^\)]*)?\)")
 _MARKDOWN_LINK_PATTERN = re.compile(rf"(?<!!)\[[^\]]+\]\(({_URL_RE})\)")

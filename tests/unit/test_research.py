@@ -2,6 +2,8 @@
 
 import json
 import logging
+import subprocess
+import sys
 import warnings
 from collections.abc import Mapping, Sequence
 from typing import get_args, get_origin, get_type_hints
@@ -108,6 +110,28 @@ class TestCitedSourceSelection:
 
     def test_extract_report_urls_empty_report_returns_empty_set(self):
         assert extract_report_urls("") == set()
+
+    @pytest.mark.parametrize("prefix", ["[source](", "![chart]("])
+    def test_extract_report_urls_handles_long_unclosed_markdown(self, prefix):
+        url = "https://example.com/" + "a" * 10_000
+        # Isolate the regex so a regression fails with a timeout instead of
+        # wedging the test runner in non-interruptible regex backtracking.
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import json, sys; "
+                "from notebooklm.research import extract_report_urls; "
+                "print(json.dumps(sorted(extract_report_urls(json.load(sys.stdin)))))",
+            ],
+            input=json.dumps(prefix + url + " "),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+
+        assert json.loads(result.stdout) == [url]
 
     def test_select_cited_sources_filters_urls_and_preserves_report_entry(self):
         sources = [
