@@ -10769,7 +10769,7 @@
     },
     {
       "kind": "from",
-      "lineno": 8,
+      "lineno": 10,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.server._profiles",
@@ -11450,7 +11450,7 @@
       "modules": 11
     },
     "server": {
-      "lines": 4162,
+      "lines": 4186,
       "modules": 20
     },
     "types": {
@@ -11463,7 +11463,7 @@
     }
   },
   "summary": {
-    "authored_lines": 151446,
+    "authored_lines": 151470,
     "authored_modules": 482,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1257,

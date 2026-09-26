@@ -441,6 +441,7 @@ To serve several already-provisioned profiles from one process:
 
 <!-- not mirrored: REST-server operator configuration, not a contributor install. -->
 ```bash
+pip install "notebooklm-py[server,android]"
 notebooklm-server --backend android --profiles work,personal
 # Or set NOTEBOOKLM_SERVER_PROFILES=work,personal and NOTEBOOKLM_BACKEND=android.
 curl -H "Authorization: Bearer $NOTEBOOKLM_SERVER_TOKEN" \
@@ -467,8 +468,16 @@ including case-only aliases on all platforms. Request header values still select
 the exact configured spelling.
 A failed profile stays unavailable (`503 profile_unavailable`) while healthy profiles
 serve requests. Its next client-dependent request attempts recovery; concurrent
-requests coalesce and failed retries have a five-second cooldown. Authenticated
-`/v1/server/info` reports the selected profile's Android credential presence, startup
+requests coalesce and failed retries have a five-second cooldown.
+
+Each profile's complete startup or recovery attempt has a 30-second timeout,
+including credential inspection and its readiness read. Set
+`NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT` to positive finite seconds to adjust
+it. An expired attempt is cancelled and cleaned up before being marked unavailable;
+other profiles retain their own deadlines. Cancellation cannot stop filesystem
+work already running in a thread, but that work cannot later publish a client.
+
+Authenticated `/v1/server/info` reports the selected profile's Android credential presence, startup
 error, and `ready` state (whether a client was bound after its startup read, not a
 new upstream health probe). `?include_account=true` also attempts recovery and
 fetches account settings. Public `/healthz` remains minimal liveness.

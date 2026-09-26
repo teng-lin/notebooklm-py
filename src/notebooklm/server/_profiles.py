@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -9,6 +11,19 @@ from ..paths import get_storage_path
 
 PROFILES_ENV = "NOTEBOOKLM_SERVER_PROFILES"
 PROFILE_HEADER = "X-NotebookLM-Profile"
+PROFILE_STARTUP_TIMEOUT_ENV = "NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT"
+
+
+def profile_startup_timeout() -> float:
+    """Bound each multi-profile construction attempt, including recovery."""
+    raw = os.environ.get(PROFILE_STARTUP_TIMEOUT_ENV, "").strip() or "30"
+    try:
+        timeout = float(raw)
+    except ValueError:
+        raise ValueError(f"{PROFILE_STARTUP_TIMEOUT_ENV} must be positive finite seconds") from None
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(f"{PROFILE_STARTUP_TIMEOUT_ENV} must be positive finite seconds")
+    return timeout
 
 
 def configured_profiles(profiles: Sequence[str]) -> dict[str, Path]:

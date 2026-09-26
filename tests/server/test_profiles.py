@@ -252,6 +252,81 @@ async def test_profile_startup_overlaps_and_closes_all_clients() -> None:
     assert sorted(closed) == ["personal", "work"]
 
 
+@pytest.mark.parametrize("stage", ["credential_thread", "readiness"])
+async def test_profile_deadline_isolates_stalls_and_bounds_recovery(
+    monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    import threading
+
+    monkeypatch.setenv("NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT", "0.05")
+    release = threading.Event()
+    attempts: Counter[str] = Counter()
+    cleaned: Counter[str] = Counter()
+    repaired = False
+
+    @asynccontextmanager
+    async def factory(name: str) -> Any:
+        attempts[name] += 1
+        try:
+            if name == "work" and not repaired:
+                if stage == "credential_thread":
+                    await asyncio.to_thread(release.wait)
+                else:
+                    await asyncio.Event().wait()
+            yield FakeClient()
+        finally:
+            cleaned[name] += 1
+
+    app = profile_app(profile_client_factory=factory)
+    try:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app, client=("127.0.0.1", 1)),
+                base_url="http://127.0.0.1",
+                headers=HEADERS,
+            ) as client,
+        ):
+            work = app.state.notebooklm.profiles["work"]
+            assert work.client is None
+            assert work.client_error is not None
+            assert cleaned["work"] == 1
+            headers = {"X-NotebookLM-Profile": "work"}
+            assert (await client.get("/healthz")).status_code == 200
+            assert (
+                await client.get("/v1/notebooks", headers={"X-NotebookLM-Profile": "personal"})
+            ).status_code == 200
+            # The first recovery also expires; immediate retries share its
+            # failure and do not keep spawning new attempts during cooldown.
+            for _ in range(2):
+                response = await asyncio.wait_for(client.get("/v1/notebooks", headers=headers), 2)
+                assert response.status_code == 503
+                assert response.json()["error"]["code"] == "profile_unavailable"
+            assert attempts == {"work": 2, "personal": 1}
+            assert cleaned["work"] == 2
+            release.set()
+            repaired = True
+            # Expire cooldown without sleeping five seconds.
+            now = time.monotonic()
+            with pytest.MonkeyPatch.context() as patch:
+                patch.setattr(time, "monotonic", lambda: now + 6)
+                assert (await client.get("/v1/notebooks", headers=headers)).status_code == 200
+            assert work.client is not None
+    finally:
+        release.set()
+    assert attempts == {"work": 3, "personal": 1}
+    assert cleaned == {"work": 3, "personal": 1}
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "invalid"])
+def test_invalid_profile_startup_timeout_fails_before_startup(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT", value)
+    with pytest.raises(ValueError, match="positive finite seconds"):
+        profile_app()
+
+
 async def test_cancelled_profile_startup_settles_before_closing_clients() -> None:
     opened = asyncio.Event()
     waiting = asyncio.Event()
