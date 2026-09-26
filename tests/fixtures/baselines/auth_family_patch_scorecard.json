@@ -491,6 +491,16 @@
       "path": "tests/unit/test_auth_stored_auth.py"
     },
     {
+      "attribute": "_load_stored_auth",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens",
+      "owner_kind": "test",
+      "owner_qualname": "test_real_clients_allow_copied_tokens_without_web_bootstrap",
+      "package": "notebooklm._auth",
+      "path": "tests/server/test_profiles.py"
+    },
+    {
       "attribute": "_master_token_to_legacy_record",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -6372,18 +6382,18 @@
     }
   ],
   "packages": {
-    "notebooklm._auth": 85,
+    "notebooklm._auth": 86,
     "notebooklm._browser": 27,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
     "distinct_targets": 62,
-    "files": 84,
-    "lexical_owners": 599,
-    "private": 50,
+    "files": 85,
+    "lexical_owners": 600,
+    "private": 51,
     "public": 588,
-    "total": 638
+    "total": 639
   },
   "version": 1
 }

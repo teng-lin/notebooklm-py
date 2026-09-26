@@ -172,11 +172,12 @@ def _state(request: Request) -> AppState:
         raise RuntimeError("no client bound to the server (lifespan did not run)")
     if isinstance(state, ProfileRegistry):
         names = request.headers.getlist(PROFILE_HEADER)
-        if not names or not names[0].strip():
+        name = next(iter(names), "").strip()
+        if not name:
             raise ProfileHTTPError(400, "profile_required", f"{PROFILE_HEADER} is required")
-        if len(names) != 1 or "," in names[0]:
+        if len(names) != 1 or "," in name:
             raise ProfileHTTPError(400, "invalid_profile", "Select exactly one profile")
-        selected = state.profiles.get(names[0].strip())
+        selected = state.profiles.get(name)
         if selected is None:
             raise ProfileHTTPError(404, "unknown_profile", "Unknown profile")
         request.state.notebooklm_profile_state = selected

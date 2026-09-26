@@ -2123,6 +2123,7 @@ src/notebooklm/
 ├── _version_info.py             # version_string(): version + short git commit
 ├── _redact.py                   # Transport-neutral secret/home-path/file-link scrubber (redact(msg, max_length)); shared chokepoint under both mcp/_errors.py and server/_errors.py
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
+│   ├── android_profiles.py      # Cookie-free Android client construction for isolated profile adapters
 │   ├── __init__.py              # Re-exports the neutral primitives
 │   ├── client_config.py         # Explicit bound request-policy configuration for first-party client factories
 │   ├── artifacts.py             # Click-free artifact core: get/rename/delete/export + poll/wait/retry; kind-aware mind-map dispatch (mind_maps.list for rename, notes.list_mind_maps for delete), get_artifact raises ArtifactNotFoundError, typed Rename/Export results + ArtifactStatusView/status_view neutral status DTO (CLI builds every --json envelope from the typed fields)
@@ -2633,8 +2634,9 @@ src/notebooklm/
 └── server/                      # Single-tenant REST API adapter (the third _app adapter, after cli/ and mcp/; behind the optional `server` extra). EXPERIMENTAL: /v1 surface may change, excluded from the api-compat gate. Imports no click/rich/cli.
     ├── __init__.py              # Re-exports create_app + SERVER_NAME; importing it without the `server` extra fails on the fastapi import
     ├── __main__.py              # `notebooklm-server` entry: argparse + NOTEBOOKLM_SERVER_* env defaults + loopback-bind guard + fail-closed token check
-    ├── app.py                   # create_app(*, client_factory=None) -> FastAPI; ASGI lifespan binds one client; public /healthz; auth-gated /v1 mount (docs/redoc/openapi disabled)
-    ├── _context.py              # AppState (lifespan-bound client + pending registry) + get_client / get_pending FastAPI dependencies
+    ├── app.py                   # create_app(...) -> FastAPI; lifespan binds one client per configured profile; public /healthz; authenticated /v1 mount (docs/redoc/openapi disabled)
+    ├── _context.py              # Per-profile AppState and ProfileRegistry + selected get_client / get_pending dependencies
+    ├── _profiles.py             # Profile header, configuration validation, and canonical storage-path uniqueness
     ├── _limits.py               # Lifespan-owned REST route-group concurrency limiters for expensive source/chat/research/artifact work
     ├── _auth.py                 # Bearer-token (constant-time, 401) + loopback-Host (DNS-rebinding guard, 403) dependency for /v1
     ├── _errors.py               # ErrorCategory -> HTTP status table + _redact + the classify-once exception handler emitting {error:{category,message}}

@@ -233,10 +233,91 @@ async def test_concurrent_requests_coalesce_only_their_profile_recovery() -> Non
     assert attempts == {"work": 2, "personal": 1}
 
 
+async def test_profile_startup_overlaps_and_closes_all_clients() -> None:
+    entered = {name: asyncio.Event() for name in ("work", "personal")}
+    closed: list[str] = []
+
+    @asynccontextmanager
+    async def factory(name: str) -> Any:
+        entered[name].set()
+        await asyncio.wait_for(asyncio.gather(*(event.wait() for event in entered.values())), 2)
+        try:
+            yield FakeClient()
+        finally:
+            closed.append(name)
+
+    app = profile_app(profile_client_factory=factory)
+    async with app.router.lifespan_context(app):
+        assert all(state.client is not None for state in app.state.notebooklm.profiles.values())
+    assert sorted(closed) == ["personal", "work"]
+
+
+async def test_cancelled_profile_startup_settles_before_closing_clients() -> None:
+    opened = asyncio.Event()
+    waiting = asyncio.Event()
+    closed: list[str] = []
+
+    @asynccontextmanager
+    async def factory(name: str) -> Any:
+        try:
+            if name == "work":
+                opened.set()
+            else:
+                await opened.wait()
+                waiting.set()
+                await asyncio.Event().wait()
+            yield FakeClient()
+        finally:
+            closed.append(name)
+
+    app = profile_app(profile_client_factory=factory)
+
+    async def start() -> None:
+        async with app.router.lifespan_context(app):
+            pytest.fail("startup should be cancelled")
+
+    task = asyncio.create_task(start())
+    await asyncio.wait_for(waiting.wait(), 2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert sorted(closed) == ["personal", "work"]
+
+
+def test_transient_startup_diagnostics_are_retriable_and_sanitized() -> None:
+    @asynccontextmanager
+    async def factory(name: str) -> Any:
+        if name == "work":
+            raise RuntimeError("sensitive upstream body")
+        yield FakeClient()
+
+    app = profile_app(profile_client_factory=factory)
+    with TestClient(app, headers=HEADERS, client=("127.0.0.1", 1)) as client:
+        response = client.get("/v1/server/info", headers={"X-NotebookLM-Profile": "work"})
+        error = response.json()["auth"]["startup_error"]
+        assert error["code"] == "profile_unavailable"
+        assert error["retriable"] is True
+        assert "sensitive" not in response.text
+
+
+def test_real_profiles_with_missing_or_malformed_tokens_degrade(tmp_path: Path) -> None:
+    malformed = tmp_path / "profiles" / "personal" / "master_token.json"
+    malformed.parent.mkdir(parents=True)
+    malformed.write_text("not JSON")
+    app = profile_app()
+    with TestClient(app, headers=HEADERS, client=("127.0.0.1", 1)) as client:
+        for name in ("work", "personal"):
+            headers = {"X-NotebookLM-Profile": name}
+            info = client.get("/v1/server/info", headers=headers).json()["auth"]
+            assert info["ready"] is False
+            assert info["master_token_valid"] is False
+            assert client.get("/v1/notebooks", headers=headers).status_code == 503
+
+
 async def test_chat_capacity_is_shared_across_profiles(monkeypatch: pytest.MonkeyPatch) -> None:
     from notebooklm.types import AskResult
 
-    from .test_backpressure import ActiveHold
+    from ._concurrency import ActiveHold
 
     monkeypatch.setenv("NOTEBOOKLM_SERVER_CHAT_CONCURRENCY", "1")
     hold = ActiveHold()
@@ -361,6 +442,7 @@ def test_real_clients_allow_copied_tokens_without_web_bootstrap(
     monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "also not valid Web auth")
     mints: list[MasterToken] = []
     wire_bearers: list[str] = []
+    initial_bearers: dict[str, str] = {}
     reject_work = False
 
     async def no_web(*args: Any, **kwargs: Any) -> Any:
@@ -376,7 +458,7 @@ def test_real_clients_allow_copied_tokens_without_web_bootstrap(
         async def send(request: Any, *, metadata: Any, timeout: Any) -> Any:
             bearer = dict(metadata)["authorization"]
             wire_bearers.append(bearer)
-            if reject_work and bearer == "Bearer fake-bearer-1":
+            if reject_work and bearer == initial_bearers["work"]:
                 raise grpc.aio.AioRpcError(grpc.StatusCode.UNAUTHENTICATED, (), ())
             return read_pb2.ListRecentlyViewedProjectsResponse()
 
@@ -392,6 +474,7 @@ def test_real_clients_allow_copied_tokens_without_web_bootstrap(
                 client.get("/v1/notebooks", headers={"X-NotebookLM-Profile": name}).status_code
                 == 200
             )
+            initial_bearers[name] = wire_bearers[-1]
             info = client.get("/v1/server/info", headers={"X-NotebookLM-Profile": name}).json()
             assert info["auth"] == {
                 "backend": "android",
@@ -411,7 +494,7 @@ def test_real_clients_allow_copied_tokens_without_web_bootstrap(
             client.get("/v1/notebooks", headers={"X-NotebookLM-Profile": "personal"}).status_code
             == 200
         )
-        assert wire_bearers[-1] == "Bearer fake-bearer-2"
+        assert wire_bearers[-1] == initial_bearers["personal"]
         assert len(mints) == 3
     assert all(token == record for token in mints)
     assert set(wire_bearers) == {

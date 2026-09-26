@@ -453,15 +453,28 @@ def create_app(
             async with AsyncExitStack() as clients:
                 if multi_profile:
                     registry = ProfileRegistry({})
+                    bindings = []
                     for name, path in profile_paths.items():
                         selected_factory = (
                             (lambda name=name: profile_client_factory(name))
                             if profile_client_factory is not None
                             else (lambda path=path: android_profile_client(path))
                         )
-                        registry.profiles[name] = await bind_state(
-                            name, selected_factory, clients, limiters
+                        bindings.append(
+                            asyncio.create_task(
+                                bind_state(name, selected_factory, clients, limiters)
+                            )
                         )
+                    try:
+                        states = await asyncio.gather(*bindings)
+                    finally:
+                        # Settle all enters before the stack closes, including
+                        # when startup is cancelled while another profile opens.
+                        for binding in bindings:
+                            if not binding.done():
+                                binding.cancel()
+                        await asyncio.gather(*bindings, return_exceptions=True)
+                    registry.profiles.update(zip(profile_paths, states, strict=True))
                     app.state.notebooklm = registry
                 else:
                     app.state.notebooklm = await bind_state(

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 
-from ..auth import AuthTokens
+from .. import AuthTokens
 from ..client import NotebookLMClient
 from ..exceptions import ConfigurationError
 from ..options import AndroidBackendConfig, ClientConfig

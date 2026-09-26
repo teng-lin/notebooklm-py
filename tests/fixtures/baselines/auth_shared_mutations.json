@@ -511,6 +511,16 @@
       "path": "tests/unit/test_auth_session_master_token.py"
     },
     {
+      "attribute": "mint_oauth",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "owner": "notebooklm._auth.mint_service.MintService",
+      "owner_kind": "test",
+      "owner_qualname": "test_real_clients_allow_copied_tokens_without_web_bootstrap",
+      "package": "notebooklm._auth",
+      "path": "tests/server/test_profiles.py"
+    },
+    {
       "attribute": "read",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -1655,7 +1665,7 @@
     "assignments": 0,
     "helper_or_fixture": 23,
     "private": 34,
-    "total": 189
+    "total": 190
   },
   "version": 1
 }

@@ -16,29 +16,9 @@ from notebooklm._types.chat import AskResult  # noqa: E402
 from notebooklm.server._limits import LimitGroup, ServerLimiters  # noqa: E402
 from notebooklm.server.app import create_app  # noqa: E402
 
+from ._concurrency import ActiveHold  # noqa: E402
 from .conftest import TEST_TOKEN  # noqa: E402
 from .fakes import FakeClient  # noqa: E402
-
-
-class ActiveHold:
-    """Track concurrent fake-handler entries and hold them until released."""
-
-    def __init__(self) -> None:
-        self.entered = asyncio.Event()
-        self.release = asyncio.Event()
-        self.active = 0
-        self.max_active = 0
-        self._lock = asyncio.Lock()
-
-    async def enter(self) -> None:
-        async with self._lock:
-            self.active += 1
-            self.max_active = max(self.max_active, self.active)
-            self.entered.set()
-
-    async def leave(self) -> None:
-        async with self._lock:
-            self.active -= 1
 
 
 def _factory_for(fake_client: FakeClient) -> Any:

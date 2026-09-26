@@ -33,7 +33,7 @@ from ..._app.auth_check import AuthCheckPlan, run_auth_check
 from ..._app.master_token import inspect_master_token_status
 from ..._version_info import version_string
 from ...client import NotebookLMClient
-from ...exceptions import AuthError, NotebookLMError
+from ...exceptions import AuthError, NotebookLMError, ServerError
 from ...paths import get_storage_path, resolve_profile
 from .._context import get_client, get_client_error, get_state
 from .._errors import error_item
@@ -225,7 +225,11 @@ async def _android_info(request: Request, *, include_account: bool) -> dict[str,
         "ready": ready,
     }
     if state.client_error is not None:
-        auth["startup_error"] = error_item(state.client_error)
+        startup_error = state.client_error
+        if not isinstance(startup_error, AuthError):
+            startup_error = ServerError(str(startup_error), status_code=503)
+        auth["startup_error"] = error_item(startup_error)
+        auth["startup_error"]["code"] = "profile_unavailable"
     info: dict[str, Any] = {"server": SERVER_NAME, "version": version_string(), "auth": auth}
     if include_account:
         if state.client is None:

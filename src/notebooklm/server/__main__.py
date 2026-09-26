@@ -220,7 +220,7 @@ def main(argv: list[str] | None = None) -> None:
 
     raw_profiles = args.profiles
     if raw_profiles is None and args.profile is None:
-        raw_profiles = os.environ.get(PROFILES_ENV)
+        raw_profiles = os.environ.get(PROFILES_ENV) or None
     selected_profile = (
         args.profile if args.profile is not None else os.environ.get("NOTEBOOKLM_PROFILE")
     )

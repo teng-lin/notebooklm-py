@@ -212,6 +212,14 @@ def test_main_rejects_conflicting_selection_flags() -> None:
         launcher._build_parser().parse_args(["--profile", "work", "--profiles", "a,b"])
 
 
+def test_empty_profiles_environment_is_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_uvicorn_run(monkeypatch)
+    monkeypatch.setenv("NOTEBOOKLM_SERVER_PROFILES", "")
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "work")
+    launcher.main([])
+    launcher.create_app.assert_called_once_with(profile="work")  # type: ignore[attr-defined]
+
+
 def test_single_profile_env_still_precedes_process_active_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
