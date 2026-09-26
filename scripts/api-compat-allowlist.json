@@ -1,5 +1,11 @@
 {
-  "allowed_breaks": [],
+  "allowed_breaks": [
+    {
+      "code": "changed-constant-value",
+      "object": "notebooklm.auth.REQUIRED_COOKIE_DOMAINS",
+      "reason": "PR #2444 adds the bare and dotted notebook.cloud.google.com domains for the current Google-identity enterprise host. Existing domains remain accepted, and cookie domain/path routing is preserved; the non-.com third-party identity origin remains excluded."
+    }
+  ],
   "extra_public_names": {
     "notebooklm": [
       "configure_logging",
