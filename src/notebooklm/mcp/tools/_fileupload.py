@@ -474,11 +474,15 @@ async def _await_upload(
             expired_payload = cfg.signer.verify(token, op="ul", allow_expired=True)
         except FileLinkError:
             return invalid
+        if not cfg.matches_profile(expired_payload):
+            return invalid
         done = cfg.jti_store.completed(str(expired_payload.get("jti") or ""))
         if done is not None:
             if done.get("status") == "unconfirmed":
                 return done
             return {"status": "received", "source_id": done.get("source_id"), "file": done}
+        return invalid
+    if not cfg.matches_profile(payload):
         return invalid
     jti = str(payload.get("jti") or "")
     deadline = time.monotonic() + timeout_s

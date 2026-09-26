@@ -163,9 +163,9 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
         "loop; it is never retained by the reusable app across lifespan runs.",
     ),
     _AllowlistEntry(
-        "src/notebooklm/server/_profile_client.py",
+        "src/notebooklm/_app/profile_client.py",
         "ProfileClientOwner",
-        "Constructed per profile inside one FastAPI lifespan and never reused "
+        "Constructed per profile inside one REST or MCP lifespan and never reused "
         "across lifespans. open/close assert the constructor's running loop, "
         "and a closed owner cannot reopen; no reset/rebind protocol is needed.",
     ),

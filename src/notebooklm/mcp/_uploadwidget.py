@@ -102,6 +102,7 @@ _WIDGET_HTML = """<!doctype html>
  const CONFIRM_TOOL="await_upload";
  function confirmUpload(link){ if(!confirmSpec||confirmSpec.tool!==CONFIRM_TOOL||!link)return;
    const args={}; args[confirmSpec.arg||"upload_link"]=link;
+   if(typeof confirmSpec.profile==="string")args.profile=confirmSpec.profile;
    try{
      if(oai&&typeof oai.callTool==="function"){oai.callTool(CONFIRM_TOOL,args).catch(()=>{});return;}
      post({jsonrpc:"2.0",id:"cf"+(++cfSeq),method:"tools/call",params:{name:CONFIRM_TOOL,arguments:args}});
@@ -268,5 +269,10 @@ def register_upload_widget(mcp: FastMCP, config: FileTransferConfig | None) -> N
                 # mirrors ``upload_urls`` (one link per file). Purely additive: a host that does not
                 # run the widget-initiated call just leaves the model on the manual await_upload /
                 # source_list path (the docstring's fallback).
-                "confirm": {"tool": "await_upload", "arg": "upload_link", "values": urls},
+                "confirm": {
+                    "tool": "await_upload",
+                    "arg": "upload_link",
+                    "values": urls,
+                    **({"profile": cfg.profile} if cfg.profile is not None else {}),
+                },
             }

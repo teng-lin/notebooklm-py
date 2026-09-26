@@ -237,6 +237,8 @@ accepted for source compatibility but are ignored when Android is selected.
 | `NOTEBOOKLM_MCP_CHAT_CONCURRENCY` | Concurrent detached `chat_start` generations; later accepted jobs queue FIFO. Clamped to 1–16. | `3` |
 | `NOTEBOOKLM_MCP_CHAT_JOB_TIMEOUT` | Optional aggregate seconds from detached-chat acceptance through queue and generation. Unset keeps jobs unbounded. | - |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The REST server refuses to start without it. | - |
+| `NOTEBOOKLM_MCP_PROFILES` | Comma-separated MCP profiles. More than one requires Android and explicit `profile` on every tool call. | - |
+| `NOTEBOOKLM_MCP_PROFILE_STARTUP_TIMEOUT` | Positive finite seconds for each Android profile startup/recovery attempt. | `30` |
 | `NOTEBOOKLM_SERVER_PROFILES` | Comma-separated REST profiles. More than one requires Android and explicit `X-NotebookLM-Profile` routing. | - |
 | `NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT` | Complete startup/recovery timeout per Android REST profile, in positive finite seconds. | `30` |
 | `NOTEBOOKLM_SERVER_HOST` | REST server bind host; non-loopback refused unless `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND=1` | `127.0.0.1` |
@@ -377,6 +379,8 @@ be audited from one location.
 | `NOTEBOOKLM_MCP_CHAT_JOB_TIMEOUT` | Optional detached-chat aggregate deadline, anchored at registry acceptance and including queue time. | Positive finite seconds; unset/blank/invalid preserves unbounded behavior. | `mcp._chattasks._resolve_job_timeout` |
 | `NOTEBOOKLM_MCP_ALLOWED_ROOTS` | Directories stdio `source_add(source_type="file", path=...)` may read. OS pathsep-separated. Unset/empty disables host-path file-add. `$HOME`, NotebookLM home, and the filesystem root are dropped. Credential filenames and Playwright profile dirs are refused even inside a listed root. Remote HTTP never opens a server-host `path`. | Process env on each stdio host-path file-add → empty (off). | `mcp.tools._fileupload._spool_stdio_upload` / `_app.source_add.validate_upload_path` |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The server refuses to start when unset/empty. | `--token` flag → env var → startup failure | `server.__main__._check_token_configured` / `server._auth.require_auth` |
+| `NOTEBOOKLM_MCP_PROFILES` | Static MCP profiles; Android required for multiple entries. | `--profiles` → env; explicit `--profile` selects single mode. | `mcp.__main__.main` / `_app.profiles.configured_profiles` |
+| `NOTEBOOKLM_MCP_PROFILE_STARTUP_TIMEOUT` | Per-profile startup/recovery deadline. | Positive finite seconds; default `30`. | `_app.profiles.profile_startup_timeout` |
 | `NOTEBOOKLM_SERVER_PROFILES` | Static REST profiles; Android required for multiple entries. | `--profiles` → env; explicit `--profile` selects single mode. | `server.__main__.main` / `server._profiles.configured_profiles` |
 | `NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT` | Complete construction timeout for each multi-profile REST client, including credential inspection and readiness. Also applies to recovery attempts. | Env var → `30` seconds; blank uses default; invalid/nonpositive/nonfinite values fail configuration. Single-profile mode ignores it. | `server._profiles.profile_startup_timeout` |
 | `NOTEBOOKLM_SERVER_HOST` | REST server bind host. Non-loopback refused unless `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND=1`. | `--host` flag → env var → `127.0.0.1` | `server.__main__._build_parser` / `_serving.check_bind_allowed` |

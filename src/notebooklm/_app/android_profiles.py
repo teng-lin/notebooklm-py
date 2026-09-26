@@ -21,7 +21,7 @@ async def android_profile_client(storage_path: Path) -> AsyncIterator[NotebookLM
     """Open only Android auth; no Web storage, homepage, rotation, or persistence.
 
     The SDK's legacy ``from_storage`` still bootstraps its compatibility Web
-    sidecar. REST multi-profile clients never use that sidecar, so construct an
+    sidecar. REST and MCP multi-profile clients never use that sidecar, so construct an
     explicit empty Web seed and bind the Android durable-token reader by path.
     Distinct paths may contain identical master tokens: each client owns its
     bearer cache and retries. No account/token/session fingerprint is retained.

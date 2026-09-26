@@ -686,8 +686,10 @@ gate the destructive ones.
   is often *not* enough (some hosts, notably ChatGPT, keep the cached manifest across reconnects). The
   server's live manifest is correct; only *removed/renamed tools* ghost — newly-added *optional* parameters
   on existing tools forward through the stale schema and keep working. See [troubleshooting.md](troubleshooting.md#unknown-tool-from-an-mcp-host-claudeai-chatgpt--after-upgrading-the-server).
-- **Wrong account.** The server binds one profile per process. Start it with `--profile <name>`, or set
-  `NOTEBOOKLM_PROFILE`. See [configuration.md](configuration.md#multiple-accounts).
+- **Wrong account.** Single-profile mode uses `--profile <name>` or `NOTEBOOKLM_PROFILE`.
+  For several Android accounts, use `--backend android --profiles work,personal` and include
+  `profile` in every tool call. Reconnect or refresh the host manifest when changing modes.
+  See [multi-profile setup](installation.md#android-multi-profile-mcp).
 - **`RATE_LIMITED`.** NotebookLM enforces per-account quotas; the error is `retriable=true` — back off
   and retry.
 - **`CONNECT_TIMEOUT` / "connection timed out after 30000ms" on connect.** Fixed: the server used to
