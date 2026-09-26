@@ -52,6 +52,7 @@ from ._context import AppState, ProfileRegistry, get_state, require_profile
 from ._errors import http_error_response, install_exception_handlers
 from ._limits import ServerLimiters
 from ._pending import PendingRegistry
+from ._profile_client import ProfileClientOwner
 from ._profiles import PROFILE_HEADER, configured_profiles, profile_startup_timeout
 from .routes import artifacts, chat, meta, notebooks, notes, research, share, sources
 from .routes.sources import MAX_UPLOAD_BYTES
@@ -359,7 +360,7 @@ def create_app(
         raise ValueError("Use profile_client_factory for multi-profile clients")
     if not multi_profile and profile_client_factory is not None:
         raise ValueError("profile_client_factory requires multiple profiles")
-    startup_timeout = profile_startup_timeout() if multi_profile else None
+    startup_timeout = profile_startup_timeout() if multi_profile else 0.0
     factory = client_factory or (lambda: _default_factory(profile, backend))
 
     async def bind_state(
@@ -380,6 +381,9 @@ def create_app(
         client_lock = asyncio.Lock()
         last_load_error: AuthError | RuntimeError | None = None
         retry_not_before = 0.0
+        owner = ProfileClientOwner() if multi_profile else None
+        if owner is not None:
+            clients.push_async_callback(owner.close)
 
         async def load_client(
             observed_generation: int,
@@ -396,13 +400,11 @@ def create_app(
                 if last_load_error is not None and time.monotonic() < retry_not_before:
                     raise last_load_error.__class__(str(last_load_error)) from None
                 try:
-                    if multi_profile:
+                    if owner is not None:
                         # Bound local credential inspection and readiness as one
                         # attempt. Keep timeout errors inside the loader so they
                         # receive the same diagnostics, generation, and cooldown.
-                        client = await asyncio.wait_for(
-                            clients.enter_async_context(factory()), timeout=startup_timeout
-                        )
+                        client = await owner.open(factory, startup_timeout)
                     else:
                         client = await clients.enter_async_context(factory())
                 except Exception as exc:

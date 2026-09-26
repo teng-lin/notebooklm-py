@@ -10769,6 +10769,15 @@
     },
     {
       "kind": "from",
+      "lineno": 9,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.server._profile_client",
+      "target": "notebooklm.client",
+      "type_only": false
+    },
+    {
+      "kind": "from",
       "lineno": 10,
       "scope": null,
       "scope_kind": "module",
@@ -10823,7 +10832,7 @@
     },
     {
       "kind": "from",
-      "lineno": 285,
+      "lineno": 286,
       "scope": "_default_factory",
       "scope_kind": "function",
       "source": "notebooklm.server.app",
@@ -11450,8 +11459,8 @@
       "modules": 11
     },
     "server": {
-      "lines": 4186,
-      "modules": 20
+      "lines": 4265,
+      "modules": 21
     },
     "types": {
       "lines": 5707,
@@ -11463,13 +11472,13 @@
     }
   },
   "summary": {
-    "authored_lines": 151470,
-    "authored_modules": 482,
+    "authored_lines": 151549,
+    "authored_modules": 483,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1257,
+    "cross_subsystem_edges": 1258,
     "dynamic_import_calls": 10,
     "function_local_edges": 87,
-    "module_level_edges": 1170,
+    "module_level_edges": 1171,
     "type_only_edges": 133
   },
   "version": 1

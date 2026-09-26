@@ -327,6 +327,75 @@ def test_invalid_profile_startup_timeout_fails_before_startup(
         profile_app()
 
 
+@pytest.mark.parametrize("late_client", [False, True])
+async def test_stalled_cancellation_cleanup_cannot_block_siblings_or_publish_late_client(
+    monkeypatch: pytest.MonkeyPatch, late_client: bool
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT", "0.05")
+    cleanup_started = asyncio.Event()
+    release_cleanup = asyncio.Event()
+    cleanup_done = asyncio.Event()
+    attempts: Counter[str] = Counter()
+    closed: Counter[str] = Counter()
+
+    @asynccontextmanager
+    async def factory(name: str) -> Any:
+        attempts[name] += 1
+        first_work = name == "work" and attempts[name] == 1
+        try:
+            if first_work:
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cleanup_started.set()
+                    await release_cleanup.wait()
+                    if not late_client:
+                        raise
+            yield FakeClient()
+        finally:
+            closed[name] += 1
+            if first_work:
+                cleanup_done.set()
+
+    app = profile_app(profile_client_factory=factory)
+
+    async def exercise() -> None:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app, client=("127.0.0.1", 1)),
+                base_url="http://127.0.0.1",
+                headers=HEADERS,
+            ) as client,
+        ):
+            try:
+                await cleanup_started.wait()
+                assert (await client.get("/healthz")).status_code == 200
+                assert (
+                    await client.get("/v1/notebooks", headers={"X-NotebookLM-Profile": "personal"})
+                ).status_code == 200
+                headers = {"X-NotebookLM-Profile": "work"}
+                assert (await client.get("/v1/notebooks", headers=headers)).status_code == 503
+                assert attempts["work"] == 1  # Do not overlap quarantined cleanup.
+                release_cleanup.set()
+                await cleanup_done.wait()
+                assert app.state.notebooklm.profiles["work"].client is None
+                now = time.monotonic()
+                with pytest.MonkeyPatch.context() as patch:
+                    patch.setattr(time, "monotonic", lambda: now + 6)
+                    assert (await client.get("/v1/notebooks", headers=headers)).status_code == 200
+            finally:
+                release_cleanup.set()
+
+    try:
+        # The cooldown check advances monotonic time by six seconds.
+        await asyncio.wait_for(exercise(), 10)
+    finally:
+        release_cleanup.set()
+    assert attempts == {"work": 2, "personal": 1}
+    assert closed == {"work": 2, "personal": 1}
+
+
 async def test_cancelled_profile_startup_settles_before_closing_clients() -> None:
     opened = asyncio.Event()
     waiting = asyncio.Event()

@@ -2637,6 +2637,7 @@ src/notebooklm/
     ├── app.py                   # create_app(...) -> FastAPI; lifespan binds one client per configured profile; public /healthz; authenticated /v1 mount (docs/redoc/openapi disabled)
     ├── _context.py              # Per-profile AppState and ProfileRegistry + selected get_client / get_pending dependencies
     ├── _profiles.py             # Profile header, configuration validation, and canonical storage-path uniqueness
+    ├── _profile_client.py       # Per-profile client owner isolates timed-out cleanup and prevents overlapping attempts
     ├── _limits.py               # Lifespan-owned REST route-group concurrency limiters for expensive source/chat/research/artifact work
     ├── _auth.py                 # Bearer-token (constant-time, 401) + loopback-Host (DNS-rebinding guard, 403) dependency for /v1
     ├── _errors.py               # ErrorCategory -> HTTP status table + _redact + the classify-once exception handler emitting {error:{category,message}}
