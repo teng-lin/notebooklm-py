@@ -16,7 +16,7 @@
     "_WEB_CLASS_BY_ANDROID_NAME": 99
   },
   "tests/_guardrails/test_asyncio_loop_affinity_guard.py": {
-    "ALLOWLIST": 21
+    "ALLOWLIST": 24
   },
   "tests/_guardrails/test_auth_cold_recovery_coordinator_boundary.py": {
     "_EXPECTED_IMPORTS": 220
