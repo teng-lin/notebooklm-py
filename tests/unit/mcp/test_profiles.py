@@ -139,7 +139,9 @@ async def test_handshake_and_healthy_profile_ignore_stalled_profile(profiles, mo
 async def test_failure_cooldown_then_single_flight_recovery(monkeypatch):
     attempts = 0
     now = 10.0
-    monkeypatch.setattr("notebooklm.mcp._profiles.time", SimpleNamespace(monotonic=lambda: now))
+    from notebooklm.mcp import _profiles
+
+    monkeypatch.setattr(_profiles, "time", SimpleNamespace(monotonic=lambda: now))
     client = MagicMock()
 
     @asynccontextmanager
@@ -192,7 +194,9 @@ async def test_profile_state_isolates_jobs_and_research(profiles):
 async def test_android_diagnostics_never_probe_web(profiles, monkeypatch):
     clients, factory = profiles
     probe = AsyncMock(side_effect=AssertionError("Web auth probe must not run"))
-    monkeypatch.setattr("notebooklm.mcp.tools.meta.run_auth_check", probe)
+    from notebooklm.mcp.tools import meta
+
+    monkeypatch.setattr(meta, "run_auth_check", probe)
     server = create_server(
         profiles=list(clients), backend="android", profile_client_factory=factory
     )

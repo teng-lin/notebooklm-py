@@ -126,7 +126,8 @@ class ProfileTools:
         return getattr(self._server, name)
 
     def tool(self, *args: Any, **kwargs: Any) -> Any:
-        bare_fn = args[0] if args and callable(args[0]) else None
+        first = next(iter(args), None)
+        bare_fn = first if callable(first) else None
         decorator_args = args[1:] if bare_fn is not None else args
 
         def decorate(fn: Any) -> Any:
