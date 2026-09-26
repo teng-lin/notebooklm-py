@@ -274,9 +274,9 @@ notebooklm login --browser chrome --storage <path>
 
 ### Configuration Errors
 
-#### `ValueError: NOTEBOOKLM_BASE_URL must use https and one of: ...` lists a host that is not documented
+#### `ValueError: NOTEBOOKLM_BASE_URL must use https and one of: ...`
 
-**Cause:** The error message enumerates every host the base-URL validator currently accepts. That list is not the same as the list of *supported* values in [configuration.md](configuration.md) — it now also names the Gemini Notebook rebrand host, `notebook.google.com`.
+**Cause:** `NOTEBOOKLM_BASE_URL` does not match an accepted HTTPS app origin. The error lists the supported hosts documented in [configuration.md](configuration.md): `notebook.google.com` (default), `notebooklm.google.com` (legacy personal), and `notebooklm.cloud.google.com` (enterprise). Non-root paths, query strings, credentials, and explicit ports are rejected. The marketing hosts `notebook.google` and `notebooklm.google` are not authenticated app endpoints.
 
 **Status:** `notebook.google.com` is **the default** since #2067. A live probe on 2026-08-04 reached `batchexecute` on **both** personal hosts, so the endpoint is dual-served, not rebrand-host-only or legacy-only. The cassettes in `tests/cassettes/` now record requests against the rebrand host. The pre-rebrand host `notebooklm.google.com` remains a valid, still-served value and is the documented rollback lever; switching back is normally just the variable, with the caveats described below. See [ADR-0028](adr/0028-gemini-notebook-rename.md).
 

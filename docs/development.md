@@ -599,7 +599,7 @@ lock sibling and the two invocations never contend.
    ```
 
 3. **Create read-only test notebook** (required for E2E tests):
-   - Create notebook at [NotebookLM](https://notebooklm.google.com)
+   - Create notebook at [NotebookLM](https://notebook.google.com)
    - Add multiple sources (text, URL, etc.)
    - Generate artifacts (audio, quiz, etc.)
    - Set env var: `export NOTEBOOKLM_READ_ONLY_NOTEBOOK_ID="your-id"`

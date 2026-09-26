@@ -1405,9 +1405,68 @@ def test_rebrand_login_redirect_is_unauthenticated(location: str) -> None:
     ["https://notebook.google.com/app", "/app/notebook", "", None, "::not a url::"],
 )
 def test_rebrand_non_login_redirect_stays_absent(location: str | None) -> None:
-    """Only sign-in redirects are excused — everything else still answers ABSENT."""
+    """Redirects outside known sign-in/access-gate destinations still answer ABSENT."""
     verdict = check_rpc_health.classify_rebrand_status(302, location)
     assert verdict is not None and verdict[0] is RebrandProbeStatus.ABSENT
+
+
+@pytest.mark.parametrize("host", ["notebook.google", "notebooklm.google"])
+@pytest.mark.parametrize("path", ["/?location=unsupported", "/login"])
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_rebrand_access_gate_redirect_is_unknown(host: str, path: str, status: int) -> None:
+    """An access gate says nothing about endpoint availability or expired auth."""
+    verdict = check_rpc_health.classify_rebrand_status(status, f"https://{host}{path}")
+    assert verdict == (
+        RebrandProbeStatus.UNKNOWN,
+        f"HTTP {status} redirect to access gate — no conclusion drawn",
+    )
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://notebook.google.evil.example/",
+        "https://notebooklm.google.evil.example/",
+        "https://notnotebook.google/",
+        "https://notnotebooklm.google/",
+        "https://example.com/?continue=https://notebook.google/",
+        "https://notebook.google@example.com/",
+    ],
+)
+def test_rebrand_access_gate_lookalikes_stay_absent(location: str) -> None:
+    verdict = check_rpc_health.classify_rebrand_status(302, location)
+    assert verdict == (
+        RebrandProbeStatus.ABSENT,
+        "HTTP 302 (redirect, not an RPC response)",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host", ["notebook.google", "notebooklm.google"])
+@pytest.mark.parametrize("previous_status", ["PRESENT", "ABSENT"])
+async def test_rebrand_access_gate_preserves_recorded_capabilities(
+    host: str, previous_status: str
+) -> None:
+    """Both RPC probes must preserve the last observation through access gates."""
+    client = _ChatClient(
+        status=302,
+        text="",
+        response_headers={"Location": f"https://{host}/?location=unsupported"},
+    )
+    probes = [
+        await check_rpc_health.probe_rebrand_batchexecute(
+            client, _chat_auth(), "notebook.google.com"
+        ),
+        await check_rpc_health.probe_rebrand_chat(
+            client, _chat_auth(), "notebook.google.com", "nb_123"
+        ),
+    ]
+    previous = {"batchexecute": previous_status, "chat": previous_status}
+    state = check_rpc_health.build_rebrand_state("notebook.google.com", probes, previous)
+    assert state["observed"] == {"batchexecute": "UNKNOWN", "chat": "UNKNOWN"}
+    assert state["state"] == previous
+    assert state["transitions"] == []
+    assert state["changed"] is False
 
 
 def test_retarget_url_keeps_path_and_query() -> None:

@@ -64,7 +64,7 @@ graph is Android-selected.
 
 Best for quick investigation and bug reports.
 
-1. Open Chrome → Navigate to `https://notebooklm.google.com/`
+1. Open Chrome → Navigate to `https://notebook.google.com/`
 2. Open DevTools (`F12` or `Cmd+Option+I`)
 3. Go to **Network** tab
 4. Configure:
@@ -631,8 +631,11 @@ The same nightly run also probes the post-rebrand host — batchexecute and
   nothing.
 - On a change it opens its own issue, **"Rebrand host RPC availability
   changed"** (label `automated`), with its own dedup search.
-- `UNKNOWN` (transport failure, 429, 5xx) is never recorded: a flake carries the
-  previous state forward instead of manufacturing a transition.
+- `UNKNOWN` (transport failure, 429, 5xx, or a redirect to the known marketing/
+  access-gate hosts `notebook.google` and `notebooklm.google`) is never recorded:
+  an inconclusive response carries the previous state forward instead of
+  manufacturing a transition. Sign-in redirects are similarly preserved as
+  `UNAUTHENTICATED`; neither kind of redirect proves the endpoint is absent.
 - It runs **last** in the check and is paced like the method loop, so its two
   extra requests cannot push the account into a rate limit that would then be
   attributed to a main-lane probe.

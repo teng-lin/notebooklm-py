@@ -12,7 +12,7 @@ Example::
       --profile source-profile \
       --browser 'chromium::Profile 3' \
       --account maintainer@example.com \
-      --base-url https://notebooklm.google.com \
+      --base-url https://notebook.google.com \
       --output live-matrix.json
 
 Opt-in human-interaction cells (start a loopback CDP browser first)::

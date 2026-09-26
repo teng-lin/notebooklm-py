@@ -102,6 +102,7 @@ from notebooklm._env import (
     get_default_language,
 )
 from notebooklm._logging import scrub_secrets
+from notebooklm._url_utils import is_notebooklm_unavailable_redirect
 from notebooklm._web.params.artifacts import (
     build_customization_choices_params as _build_customization_choices_params,
 )
@@ -179,7 +180,8 @@ class RebrandProbeStatus(str, Enum):
     state change, and never suppress a real one later.
 
     ``UNKNOWN`` is server-side or transport noise (rate limit, 5xx, connection
-    failure). ``UNAUTHENTICATED`` is the answer "we were not signed in for that
+    failure), or a redirect to a known marketing/access gate.
+    ``UNAUTHENTICATED`` is the answer "we were not signed in for that
     request" — an HTTP 401/403 or a redirect into Google's sign-in flow. That
     is a statement about this run's credentials, NOT about the endpoint, so it
     must never overwrite a recorded PRESENT: measured 2026-08-04 across five
@@ -1383,8 +1385,9 @@ def classify_rebrand_status(
 ) -> tuple[RebrandProbeStatus, str] | None:
     """Map a non-200 HTTP status to a lane verdict, or None to keep inspecting.
 
-    Rate limits and 5xx are ``UNKNOWN`` (server-side noise — never a state
-    change). 401/403 and redirects into the sign-in flow are
+    Rate limits, 5xx, and redirects to marketing/access-gate hosts are
+    ``UNKNOWN`` (no endpoint availability evidence — never a state change).
+    401/403 and redirects into the sign-in flow are
     ``UNAUTHENTICATED``: they establish that *this request* was not
     authenticated, which is not evidence the endpoint is absent, so they must
     not overwrite a recorded PRESENT (#2062). Everything else non-200 is
@@ -1401,6 +1404,11 @@ def classify_rebrand_status(
             f"HTTP {status_code} (not authenticated for this host — no conclusion drawn)",
         )
     if 300 <= status_code < 400:
+        if location and is_notebooklm_unavailable_redirect(location):
+            return (
+                RebrandProbeStatus.UNKNOWN,
+                f"HTTP {status_code} redirect to access gate — no conclusion drawn",
+            )
         if is_login_redirect(location):
             return (
                 RebrandProbeStatus.UNAUTHENTICATED,
