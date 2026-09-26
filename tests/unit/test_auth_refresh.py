@@ -128,7 +128,8 @@ class TestFetchTokens:
         assert "Authentication expired" not in message
 
     @pytest.mark.asyncio
-    async def test_fetch_tokens_gate_wins_over_mismatch_hop(self, httpx_mock: HTTPXMock):
+    @pytest.mark.parametrize("host", ["notebooklm.google", "notebook.google"])
+    async def test_fetch_tokens_gate_wins_over_mismatch_hop(self, httpx_mock: HTTPXMock, host):
         """The #1630 region gate must outrank a cookie-mismatch hop HERE too.
 
         ``_extraction_failure`` gets this precedence right, and
@@ -146,10 +147,10 @@ class TestFetchTokens:
         httpx_mock.add_response(
             url="https://accounts.google.com/CookieMismatch",
             status_code=302,
-            headers={"Location": "https://notebooklm.google/?location=unsupported"},
+            headers={"Location": f"https://{host}/?location=unsupported"},
         )
         httpx_mock.add_response(
-            url="https://notebooklm.google/?location=unsupported",
+            url=f"https://{host}/?location=unsupported",
             content=b"<html>NotebookLM</html>",
         )
 
@@ -160,6 +161,36 @@ class TestFetchTokens:
         message = str(exc.value)
         assert "region / anti-abuse access gate" in message
         assert "CookieMismatch" not in message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("with_tokens", [False, True])
+    async def test_fetch_tokens_rebranded_marketing_redirect_chain(
+        self, httpx_mock: HTTPXMock, monkeypatch, with_tokens
+    ):
+        """The final marketing host must be rejected even if it has WIZ tokens (#2441)."""
+        monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com")
+        chain = [
+            "https://notebooklm.google.com/",
+            "https://notebooklm.google/",
+            "https://notebook.google/",
+        ]
+        for source, destination in zip(chain[:-1], chain[1:], strict=True):
+            httpx_mock.add_response(url=source, status_code=302, headers={"Location": destination})
+        html = '<html><a href="https://accounts.google.com/signin">Sign in</a>'
+        if with_tokens:
+            html += (
+                "<script>window.WIZ_global_data = "
+                '{"SNlM0e":"marketing_csrf","FdrFJe":"marketing_session"};</script>'
+            )
+        httpx_mock.add_response(url=chain[-1], text=html + "</html>")
+
+        with pytest.raises(ValueError, match="region / anti-abuse access gate"):
+            await fetch_tokens({"SID": "test_sid", "__Secure-1PSIDTS": "test_1psidts"})
+
+        requests = httpx_mock.get_requests(method="GET")
+        assert [str(request.url) for request in requests] == chain
+        # Google account credentials must remain scoped to .google.com app hosts.
+        assert all("cookie" not in request.headers for request in requests[1:])
 
     @pytest.mark.asyncio
     async def test_fetch_tokens_never_accepts_the_sign_in_pages_own_token(

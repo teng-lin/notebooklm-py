@@ -752,6 +752,23 @@ class TestUnavailableRedirectClassification:
         assert "region / anti-abuse access gate" in msg
         assert "page structure" not in msg
 
+    @pytest.mark.parametrize("extractor", [extract_csrf_from_html, extract_session_id_from_html])
+    @pytest.mark.parametrize("location", ["", "?location=unsupported"])
+    def test_rebranded_gate_has_actionable_diagnostic(self, extractor, location):
+        """The new marketing host has the same gate semantics as the old one (#2441)."""
+        from notebooklm._auth.refresh import _AUTH_ERROR_SIGNALS
+
+        with pytest.raises(ValueError) as exc:
+            extractor(self._GATE_HTML_WITH_SIGNIN, f"https://notebook.google/{location}")
+        message = str(exc.value)
+        assert "region / anti-abuse access gate" in message
+        assert "https://notebook.google/" in message
+        assert "token not found" not in message
+        assert "page structure" not in message
+        assert not any(signal in message.lower() for signal in _AUTH_ERROR_SIGNALS)
+        if location:
+            assert "location=unsupported" in message
+
     def test_app_host_drift_still_says_page_structure(self):
         # A token-less response from the real APP host (not the gate) keeps the
         # original "page structure" message — the gate branch must not capture it.
@@ -965,12 +982,13 @@ class TestExtractionFailureTaxonomy:
         assert isinstance(mismatch, ValueError)
         assert not isinstance(mismatch, extraction._LoginRedirectError)
 
-    def test_gate_still_wins_over_cookie_mismatch_ordering(self):
+    @pytest.mark.parametrize("host", ["notebooklm.google", "notebook.google"])
+    def test_gate_still_wins_over_cookie_mismatch_ordering(self, host):
         """#1630 must not regress: the region gate is classified first."""
         with pytest.raises(ValueError) as exc:
             extract_csrf_from_html(
                 self._HELP_HTML,
-                "https://notebooklm.google/?location=unsupported",
+                f"https://{host}/?location=unsupported",
                 redirect_urls=(self._MISMATCH_HOP,),
             )
         assert "region / anti-abuse access gate" in str(exc.value)

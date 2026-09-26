@@ -329,14 +329,15 @@ def test_capture_rpc_registry_sends_domain_scoped_cookie_jar(
     assert all("cookie" not in r.headers for r in cdn_requests)
 
 
+@pytest.mark.parametrize("host", ["notebooklm.google", "notebook.google"])
 def test_capture_rpc_registry_classifies_access_gate_as_auth_failure(
-    monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock
+    monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock, host: str
 ) -> None:
     """A #2175 access gate must stop before bundle parsing can allege RPC drift."""
     monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(_storage_state()))
 
     start_url = f"{get_base_url()}/?authuser=0"
-    gate_url = "https://notebooklm.google/?location=unsupported"
+    gate_url = f"https://{host}/?location=unsupported"
     fake_bundle_url = (
         f"https://www.gstatic.com/_/mss/{capture_rpc_registry._APP}/_/js/k=boq.en.fake.js"
     )
@@ -356,7 +357,8 @@ def test_capture_rpc_registry_classifies_access_gate_as_auth_failure(
     message = str(raised.value)
     assert "region / anti-abuse access gate" in message
     assert "location=unsupported" in message
-    assert "not a library bug or an expired login" in message
+    assert "marketing/landing page, not the authenticated app" in message
+    assert "redirect alone does not establish the cause" in message
     assert not any(request.url.host == "www.gstatic.com" for request in httpx_mock.get_requests())
 
 

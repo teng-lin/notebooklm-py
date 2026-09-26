@@ -83,6 +83,9 @@ def test_empty_base_url_env_falls_back_to_default(monkeypatch):
     [
         "http://notebooklm.google.com",
         "https://evil.example.com",
+        "https://notebooklm.google",
+        "https://notebook.google",
+        "https://www.notebook.google",
         "https://notebooklm.google.com:443",
         "https://user:notsecret@notebooklm.google.com",
         "https://notebooklm.google.com/path",

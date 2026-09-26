@@ -198,10 +198,10 @@ def _safe_url(url: str) -> str:
 
 
 def _unavailable_redirect_message(final_url: str) -> str:
-    """Build the access-gate message for a redirect to ``notebooklm.google``.
+    """Build the access-gate message for a redirect to a NotebookLM landing host.
 
-    The redirect is Google's region / anti-abuse gate (commonly
-    ``?location=unsupported``), not expired auth or a page-structure change. We
+    The landing page commonly represents Google's region / anti-abuse gate
+    (``?location=unsupported``), but does not establish the cause by itself. We
     surface the ``location`` parameter explicitly because :func:`_safe_url` drops
     the query — and that parameter is the actual diagnostic.
 
@@ -215,10 +215,12 @@ def _unavailable_redirect_message(final_url: str) -> str:
     target = f"{where} (location={location})" if location else where
     return (
         f"NotebookLM redirected this request to its region / anti-abuse access gate: "
-        f"{target}. This is not a library bug or an expired login. Likely a VPN/proxy "
-        f"or datacenter IP, or an IP/timezone/language mismatch. Verify by opening "
-        f"https://{get_base_host()} in a normal browser on the same network; if it "
-        f"redirects there too, use a residential connection in a supported region."
+        f"{target}. The response is a marketing/landing page, not the authenticated app. "
+        "Possible causes include a VPN/proxy or datacenter IP, or an IP/timezone/language "
+        "mismatch; the redirect alone does not establish the cause. Verify by opening "
+        f"https://{get_base_host()} in a normal browser, signed in to the same account, "
+        "on the same network; if it redirects there too, compare another connection "
+        "in a supported region."
     )
 
 
@@ -338,7 +340,7 @@ def _extraction_failure(what: str, final_url: str, redirect_urls: Sequence[str])
     Four outcomes, each with a different remediation, ordered so the strongest
     evidence wins:
 
-    1. **Region / anti-abuse gate** (``notebooklm.google``) — fix the network
+    1. **Region / anti-abuse gate** (``notebooklm.google`` / ``notebook.google``) — fix the network
        environment. Checked first because that gate page carries an
        ``accounts.google.com`` sign-in link (#1630).
     2. **Cookie mismatch** — fix cookie scoping. Checked before the auth branch

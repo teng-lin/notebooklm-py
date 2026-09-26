@@ -212,6 +212,11 @@ class TestIsNotebookLMUnavailableRedirect:
             "https://notebooklm.google/?location=unsupported",
             "https://www.notebooklm.google/?location=unsupported",
             "http://notebooklm.google",
+            "https://notebook.google",
+            "https://notebook.google/",
+            "https://notebook.google/?location=unsupported",
+            "https://www.notebook.google/?location=unsupported",
+            "https://NOTEBOOK.GOOGLE/",
         ],
     )
     def test_marketing_host_is_gate(self, url: str):
@@ -229,6 +234,12 @@ class TestIsNotebookLMUnavailableRedirect:
             "https://notebooklm.google.evil.com/",
             "https://evil.com/notebooklm.google",
             "https://fakenotebooklm.google/",
+            "https://notebook.google.com/",
+            "https://notebook.google.com/notebook/abc",
+            "https://notebook.google.evil.com/",
+            "https://evil.com/notebook.google",
+            "https://fakenotebook.google/",
+            "https://notebook.google@evil.com/",
             "",
         ],
     )
@@ -372,6 +383,7 @@ class TestIsNotebookLMAppHost:
             # The marketing/gate host is a DIFFERENT host (no ``.com``) — the
             # exact-match rule is what keeps #1630's gate out of the app set.
             "https://notebooklm.google/?location=unsupported",
+            "https://notebook.google/?location=unsupported",
             "https://support.google.com/accounts/answer/32050",
             "https://accounts.google.com/signin",
             # Subdomains do not serve the app shell.

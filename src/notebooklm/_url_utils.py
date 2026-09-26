@@ -16,14 +16,15 @@ _TITLE_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 # Upper bound on a URL-derived display title (a filename stem; 200 is generous).
 _MAX_URL_TITLE_LEN = 200
 
-# The NotebookLM marketing/landing host (note: no ``.com``). A request to the
+# The NotebookLM marketing/landing hosts (note: no ``.com``). A request to the
 # app host (either personal host) is redirected here — typically
 # ``notebooklm.google/?location=unsupported`` — when Google's region /
 # anti-abuse risk-control declines the request's *environment* (VPN/proxy or
 # datacenter IP, IP/timezone/language mismatch, non-browser access pattern).
+# The legacy landing host redirects to ``notebook.google`` after the rebrand (#2441).
 # This is distinct from the ``accounts.google.com`` login redirect (expired or
 # invalid auth) and from a genuine page-structure change.
-_NOTEBOOKLM_MARKETING_HOST = "notebooklm.google"
+_NOTEBOOKLM_MARKETING_HOSTS = frozenset({"notebooklm.google", "notebook.google"})
 
 # The NotebookLM *app* hosts — the hosts that can legitimately serve a page
 # carrying ``WIZ_global_data``. Landing anywhere else means the request never
@@ -179,8 +180,8 @@ def is_notebooklm_app_host(url: str) -> bool:
     alias (``notebook.google.com``), and the enterprise host
     (``notebooklm.cloud.google.com``) — the hosts that can serve a page
     containing ``WIZ_global_data``. Deliberately an exact-host match: the
-    marketing/gate host ``notebooklm.google`` is a different host (no ``.com``)
-    and must not qualify, and no subdomain of the app hosts serves the app
+    marketing/gate hosts ``notebooklm.google`` and ``notebook.google`` lack ``.com``
+    and must not qualify; no subdomain of the app hosts serves the app
     shell.
 
     Used to split a token-extraction failure into "the app's page shape changed"
@@ -250,7 +251,8 @@ def is_notebooklm_unavailable_redirect(url: str) -> bool:
     """Check if a URL is the NotebookLM marketing/landing host (an access gate).
 
     A request to an app host redirected to the bare
-    ``notebooklm.google`` host means Google's region / anti-abuse risk-control
+    ``notebooklm.google`` or ``notebook.google`` host indicates a landing page
+    rather than the app. This commonly means Google's region / anti-abuse risk-control
     declined the request's environment — *not* expired auth (that goes to
     ``accounts.google.com``) and *not* a page-structure change. The bare host is
     distinguished from the app host purely by the absent ``.com`` suffix, so an
@@ -261,12 +263,13 @@ def is_notebooklm_unavailable_redirect(url: str) -> bool:
         url: URL to check (typically ``response.url`` after redirects).
 
     Returns:
-        True if the URL is the ``notebooklm.google`` landing host.
+        True if the URL is either known NotebookLM landing host.
     """
     try:
         hostname = (urlparse(url).hostname or "").lower()
-        return hostname == _NOTEBOOKLM_MARKETING_HOST or hostname.endswith(
-            "." + _NOTEBOOKLM_MARKETING_HOST
+        return any(
+            hostname == host or hostname.endswith("." + host)
+            for host in _NOTEBOOKLM_MARKETING_HOSTS
         )
     except (AttributeError, TypeError, ValueError):
         return False
