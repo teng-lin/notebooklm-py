@@ -268,7 +268,9 @@ def _assert_library_traceback_is_secret_free(
         # does NOT help here, because it only treats "\\" as a separator when
         # the test itself runs on Windows.
         source_path = frame.f_code.co_filename.replace("\\", "/")
-        if "/src/notebooklm/" not in source_path:
+        if (
+            "/notebooklm/" not in source_path and "/src/notebooklm/" not in source_path
+        ) or "/tests/" in source_path:
             continue
         inspected.append(frame.f_code.co_name)
         locals_text = repr(frame.f_locals)

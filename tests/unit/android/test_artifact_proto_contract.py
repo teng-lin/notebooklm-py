@@ -836,7 +836,10 @@ def test_decode_failure_drops_raw_message_capability_and_exception_frames() -> N
     assert error.__context__ is None
     assert secret not in str(error)
     for frame, _line in traceback.walk_tb(error.__traceback__):
-        if "/src/notebooklm/" not in frame.f_code.co_filename:
+        source_path = frame.f_code.co_filename.replace("\\", "/")
+        if (
+            "/notebooklm/" not in source_path and "/src/notebooklm/" not in source_path
+        ) or "/tests/" in source_path:
             continue
         assert secret not in repr(frame.f_locals)
         assert raw not in frame.f_locals.values()

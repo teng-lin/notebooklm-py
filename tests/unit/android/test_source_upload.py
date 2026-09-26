@@ -737,7 +737,9 @@ def _assert_raw_upload_owners_absent_from_library_traceback(
     leaked: list[str] = []
     for frame, _line in traceback.walk_tb(error.__traceback__):
         source_path = frame.f_code.co_filename.replace("\\", "/")
-        if "/src/notebooklm/" not in source_path:
+        if (
+            "/notebooklm/" not in source_path and "/src/notebooklm/" not in source_path
+        ) or "/tests/" in source_path:
             continue
         inspected.append(frame.f_code.co_name)
         if any(raw is value for raw in raw_objects for value in frame.f_locals.values()):
@@ -1262,7 +1264,10 @@ async def test_hostile_session_capability_never_reaches_bearer_logs_exception_or
     )
     frame = error.__traceback__
     while frame is not None:
-        if "/src/notebooklm/" in frame.tb_frame.f_code.co_filename:
+        source_path = frame.tb_frame.f_code.co_filename.replace("\\", "/")
+        if (
+            "/notebooklm/" in source_path or "/src/notebooklm/" in source_path
+        ) and "/tests/" not in source_path:
             assert secret not in repr(frame.tb_frame.f_locals)
             assert "bearer-secret" not in repr(frame.tb_frame.f_locals)
         frame = frame.tb_next
@@ -1287,7 +1292,10 @@ async def test_drive_staging_auth_error_public_traceback_retains_no_bearer_owner
     assert error.__context__ is None
     frame = error.__traceback__
     while frame is not None:
-        if "/src/notebooklm/" in frame.tb_frame.f_code.co_filename:
+        source_path = frame.tb_frame.f_code.co_filename.replace("\\", "/")
+        if (
+            "/notebooklm/" in source_path or "/src/notebooklm/" in source_path
+        ) and "/tests/" not in source_path:
             values = tuple(frame.tb_frame.f_locals.values())
             assert api not in values
             assert pipeline not in values

@@ -375,7 +375,10 @@ async def test_drive_download_transport_failure_does_not_retain_bearer_request()
     traceback = caught.value.__traceback__
     while traceback is not None:
         frame = traceback.tb_frame
-        if "/src/notebooklm/" in frame.f_code.co_filename:
+        source_path = frame.f_code.co_filename.replace("\\", "/")
+        if (
+            "/notebooklm/" in source_path or "/src/notebooklm/" in source_path
+        ) and "/tests/" not in source_path:
             assert {
                 "bearer",
                 "client",

@@ -454,7 +454,10 @@ async def test_get_artifact_identity_failure_drops_capability_response_from_fram
     assert error.__context__ is None
     assert secret not in str(error)
     for frame, _line in traceback.walk_tb(error.__traceback__):
-        if "/src/notebooklm/" not in frame.f_code.co_filename:
+        source_path = frame.f_code.co_filename.replace("\\", "/")
+        if (
+            "/notebooklm/" not in source_path and "/src/notebooklm/" not in source_path
+        ) or "/tests/" in source_path:
             continue
         assert secret not in repr(frame.f_locals)
         assert raw_response not in frame.f_locals.values()
@@ -2292,7 +2295,10 @@ async def test_infographic_wraps_transfer_error_without_capability_or_cause() ->
     assert raised.value.__context__ is None
     assert secret_url not in str(raised.value)
     for frame, _line in traceback.walk_tb(raised.value.__traceback__):
-        if "/src/notebooklm/" not in frame.f_code.co_filename:
+        source_path = frame.f_code.co_filename.replace("\\", "/")
+        if (
+            "/notebooklm/" not in source_path and "/src/notebooklm/" not in source_path
+        ) or "/tests/" in source_path:
             continue
         assert secret_url not in repr(frame.f_locals)
         assert api not in frame.f_locals.values()
