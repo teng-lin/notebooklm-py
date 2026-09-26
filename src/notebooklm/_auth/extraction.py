@@ -340,8 +340,8 @@ def _extraction_failure(what: str, final_url: str, redirect_urls: Sequence[str])
     Four outcomes, each with a different remediation, ordered so the strongest
     evidence wins:
 
-    1. **Region / anti-abuse gate** (``notebooklm.google`` / ``notebook.google``) — fix the network
-       environment. Checked first because that gate page carries an
+    1. **Region / anti-abuse gate** (``notebooklm.google`` / ``notebook.google``) —
+       fix the network environment. Checked first because that gate page carries an
        ``accounts.google.com`` sign-in link (#1630).
     2. **Cookie mismatch** — fix cookie scoping. Checked before the auth branch
        because the interstitial lives on ``accounts.google.com`` and would
