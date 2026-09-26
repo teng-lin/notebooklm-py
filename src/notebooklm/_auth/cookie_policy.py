@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from notebooklm._env import (
+    ENTERPRISE_APP_HOSTS,
     PERSONAL_APP_HOSTS,
     PERSONAL_BASE_HOST,
     PERSONAL_LEGACY_HOST,
@@ -328,8 +329,8 @@ def app_host_scope_note() -> str:
 
     Returns:
         The note as plain text (no trailing newline), or ``""`` when the
-        configured host has no sibling — i.e. the enterprise host, which has no
-        alias, so there is no cross-host scope to warn about.
+        configured host is outside the personal app family. Enterprise hosts
+        do not use this personal-session recovery guidance.
     """
     base_host = get_base_host()
     siblings = sorted(PERSONAL_APP_HOSTS - {base_host})
@@ -492,8 +493,8 @@ REQUIRED_COOKIE_DOMAINS: frozenset[str] = frozenset(
         # not drop them at extraction / load time.
         f".{PERSONAL_BASE_HOST}",
         PERSONAL_BASE_HOST,
-        ".notebooklm.cloud.google.com",
-        "notebooklm.cloud.google.com",
+        *ENTERPRISE_APP_HOSTS,
+        *(f".{host}" for host in ENTERPRISE_APP_HOSTS),
         ".googleusercontent.com",
         "accounts.google.com",  # Required for token refresh + RotateCookies
         ".accounts.google.com",  # http.cookiejar may normalize Domain=accounts.google.com
@@ -806,8 +807,8 @@ def _auth_domain_priority(domain: str) -> int:
     wins, and reordering the file changes the result. The collisions are:
 
     - **tier 3** — ``.notebooklm.google.com``, ``.notebook.google.com``
-      (the Gemini Notebook rebrand host), ``.notebooklm.cloud.google.com``
-    - **tier 2** — the three bare (no leading dot) variants of the above
+      and both dotted enterprise hosts in ``ENTERPRISE_APP_HOSTS``
+    - **tier 2** — the four bare (no leading dot) variants of the above
     - **tier 0** — every allowlisted domain that is not a Google ccTLD:
       ``accounts.google.com``, ``drive.google.com``, ``.googleusercontent.com``,
       ``lh3.google.com``, bare ``google.com``, …
@@ -839,9 +840,9 @@ def _auth_domain_priority(domain: str) -> int:
         return 3
     if domain == PERSONAL_BASE_HOST:
         return 2
-    if domain == ".notebooklm.cloud.google.com":
+    if domain.startswith(".") and domain[1:] in ENTERPRISE_APP_HOSTS:
         return 3
-    if domain == "notebooklm.cloud.google.com":
+    if domain in ENTERPRISE_APP_HOSTS:
         return 2
     if _is_google_domain(domain):
         return 1

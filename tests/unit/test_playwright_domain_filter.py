@@ -66,7 +66,8 @@ def test_keeps_required_google_com_cookies() -> None:
     assert _names(out) == {"SID", "__Secure-1PSID", "OSID"}
 
 
-def test_keeps_notebooklm_host_cookies() -> None:
+@pytest.mark.parametrize("enterprise", ["notebook.cloud.google.com", "notebooklm.cloud.google.com"])
+def test_keeps_notebooklm_host_cookies(enterprise: str) -> None:
     state = _state(
         [
             {
@@ -78,7 +79,7 @@ def test_keeps_notebooklm_host_cookies() -> None:
             {
                 "name": "Secure-LM",
                 "value": "v2",
-                "domain": ".notebooklm.cloud.google.com",
+                "domain": f".{enterprise}",
                 "path": "/",
             },
         ]

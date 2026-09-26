@@ -319,7 +319,7 @@ def test_validate_resumable_upload_url_rejects_untrusted_shapes(url: str, match:
 # a constant personal-host set would let a response header redirect ENTERPRISE
 # file bytes to the consumer service.
 _PERSONAL_HOSTS = ("notebooklm.google.com", "notebook.google.com")
-_ENTERPRISE_HOST = "notebooklm.cloud.google.com"
+_ENTERPRISE_HOSTS = ("notebook.cloud.google.com", "notebooklm.cloud.google.com")
 
 
 @pytest.mark.parametrize("named_host", _PERSONAL_HOSTS)
@@ -334,17 +334,29 @@ def test_validate_resumable_upload_url_accepts_either_personal_host(
 
 
 @pytest.mark.parametrize("named_host", _PERSONAL_HOSTS)
+@pytest.mark.parametrize("configured_host", _ENTERPRISE_HOSTS)
 def test_validate_resumable_upload_url_pins_enterprise_to_its_own_host(
-    monkeypatch: pytest.MonkeyPatch, named_host: str
+    monkeypatch: pytest.MonkeyPatch, named_host: str, configured_host: str
 ) -> None:
     """An enterprise tenant must reject a consumer-host upload URL (data boundary)."""
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{_ENTERPRISE_HOST}")
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{configured_host}")
 
     with pytest.raises(ValidationError, match="host is not trusted"):
         _validate_resumable_upload_url(f"https://{named_host}/upload/_/?upload_id=session")
 
-    own_host_url = f"https://{_ENTERPRISE_HOST}/upload/_/?upload_id=session"
+    own_host_url = f"https://{configured_host}/upload/_/?upload_id=session"
     assert _validate_resumable_upload_url(own_host_url) == own_host_url
+
+
+@pytest.mark.parametrize("configured_host", _ENTERPRISE_HOSTS)
+def test_enterprise_upload_does_not_follow_alias_or_third_party_host(
+    monkeypatch: pytest.MonkeyPatch, configured_host: str
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{configured_host}")
+    for named_host in (*_ENTERPRISE_HOSTS, "notebook.cloud.google"):
+        if named_host != configured_host:
+            with pytest.raises(ValidationError, match="host is not trusted"):
+                _validate_resumable_upload_url(f"https://{named_host}/upload/_/?upload_id=session")
 
 
 @pytest.mark.parametrize(
@@ -357,7 +369,7 @@ def test_validate_resumable_upload_url_pins_enterprise_to_its_own_host(
         "storage.googleapis.com",
     ],
 )
-@pytest.mark.parametrize("configured_host", (*_PERSONAL_HOSTS, _ENTERPRISE_HOST))
+@pytest.mark.parametrize("configured_host", (*_PERSONAL_HOSTS, *_ENTERPRISE_HOSTS))
 def test_validate_resumable_upload_url_still_rejects_foreign_hosts(
     monkeypatch: pytest.MonkeyPatch, configured_host: str, named_host: str
 ) -> None:

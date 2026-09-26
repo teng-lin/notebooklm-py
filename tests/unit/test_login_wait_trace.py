@@ -131,10 +131,28 @@ def test_either_personal_host_accepts_both(monkeypatch: pytest.MonkeyPatch, sele
     assert not url_matches_base_host("https://notebooklm.cloud.google.com/")
 
 
-def test_enterprise_host_has_no_personal_alias(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+@pytest.mark.parametrize("host", ["notebook.cloud.google.com", "notebooklm.cloud.google.com"])
+def test_enterprise_host_accepts_only_enterprise_aliases(
+    monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{host}")
 
-    assert accepted_login_hosts() == ("notebooklm.cloud.google.com",)
+    assert set(accepted_login_hosts()) == {
+        "notebook.cloud.google.com",
+        "notebooklm.cloud.google.com",
+    }
+    assert accepted_login_hosts()[0] == host
+    for accepted in accepted_login_hosts():
+        assert url_matches_base_host(f"https://{accepted}/global/?project=123")
+    for rejected in (
+        "notebook.google.com",
+        "notebooklm.google.com",
+        "notebook.cloud.google",
+        "notebooklm.cloud.google",
+        "notebook.google",
+        "notebook.cloud.google.com.evil.test",
+    ):
+        assert not url_matches_base_host(f"https://{rejected}/")
 
 
 @pytest.mark.parametrize(

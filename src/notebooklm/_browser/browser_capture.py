@@ -59,7 +59,7 @@ from .._auth.storage import filter_storage_state_cookies_by_domain_policy
 # just to reach it here would add a public export for an internal host fact.
 # Importing ``_env`` directly is the established idiom (``_url_utils`` and
 # friends do the same).
-from .._env import PERSONAL_APP_HOSTS
+from .._env import ENTERPRISE_APP_HOSTS, PERSONAL_APP_HOSTS
 from ..config import get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError, LockUnavailableError
 
@@ -257,19 +257,19 @@ def accepted_login_hosts() -> tuple[str, ...]:
     Selecting *either* personal host accepts *both* of them. Google's login
     flow may land on either one regardless of which we navigated to, so keying
     the accept set on the selected host alone would reject a perfectly good
-    landing (and, on the alias, fail every login). Enterprise has no such
-    alias, so it accepts only itself.
+    landing (and, on the alias, fail every login). Enterprise accepts its
+    current and legacy Google-identity hosts, never a personal app host.
     """
     base_host = get_base_host().lower()
-    if base_host in PERSONAL_APP_HOSTS:
-        # Selected host first so the DEBUG line names the one we navigated to;
-        # the rest sorted so the message is stable across runs.
-        return (base_host, *sorted(PERSONAL_APP_HOSTS - {base_host}))
+    for hosts in (PERSONAL_APP_HOSTS, ENTERPRISE_APP_HOSTS):
+        if base_host in hosts:
+            # Selected host first; remaining aliases sorted for stable diagnostics.
+            return (base_host, *sorted(hosts - {base_host}))
     return (base_host,)
 
 
 def url_matches_base_host(url: str) -> bool:
-    """Return True when ``url`` is on the configured NotebookLM host or personal-app alias."""
+    """Return whether ``url`` is on a host in the configured app family."""
     current_host = (urlparse(url).hostname or "").lower()
     return current_host in accepted_login_hosts()
 

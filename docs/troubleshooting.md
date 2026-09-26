@@ -276,7 +276,7 @@ notebooklm login --browser chrome --storage <path>
 
 #### `ValueError: NOTEBOOKLM_BASE_URL must use https and one of: ...`
 
-**Cause:** `NOTEBOOKLM_BASE_URL` does not match an accepted HTTPS app origin. The error lists the supported hosts documented in [configuration.md](configuration.md): `notebook.google.com` (default), `notebooklm.google.com` (legacy personal), and `notebooklm.cloud.google.com` (enterprise). Non-root paths, query strings, credentials, and explicit ports are rejected. The marketing hosts `notebook.google` and `notebooklm.google` are not authenticated app endpoints.
+**Cause:** `NOTEBOOKLM_BASE_URL` does not match an accepted HTTPS app origin. The error lists the supported hosts documented in [configuration.md](configuration.md): `notebook.google.com` (default), `notebooklm.google.com` (legacy personal), `notebook.cloud.google.com` (enterprise), and `notebooklm.cloud.google.com` (legacy enterprise). Non-root paths, query strings, credentials, and explicit ports are rejected. The marketing hosts `notebook.google` and `notebooklm.google` are not authenticated app endpoints.
 
 **Status:** `notebook.google.com` is **the default** since #2067. A live probe on 2026-08-04 reached `batchexecute` on **both** personal hosts, so the endpoint is dual-served, not rebrand-host-only or legacy-only. The cassettes in `tests/cassettes/` now record requests against the rebrand host. The pre-rebrand host `notebooklm.google.com` remains a valid, still-served value and is the documented rollback lever; switching back is normally just the variable, with the caveats described below. See [ADR-0028](adr/0028-gemini-notebook-rename.md).
 
@@ -289,7 +289,10 @@ export NOTEBOOKLM_BASE_URL=https://notebook.google.com
 # Personal, pre-rebrand host (still served; rollback lever)
 export NOTEBOOKLM_BASE_URL=https://notebooklm.google.com
 
-# Enterprise
+# Enterprise (origin only; project/region routing is not configured here)
+export NOTEBOOKLM_BASE_URL=https://notebook.cloud.google.com
+
+# Legacy enterprise
 export NOTEBOOKLM_BASE_URL=https://notebooklm.cloud.google.com
 ```
 
@@ -357,9 +360,9 @@ from notebooklm import NotebookLMClient
 - The override is applied at BOTH the URL `rpcids=` query parameter AND the
   request body `f.req` payload, so the wire format stays consistent.
 - The override is gated on the configured base host being a known Google
-  NotebookLM endpoint (`notebook.google.com`, `notebooklm.google.com`, or
-  `notebooklm.cloud.google.com`). Overrides do NOT apply to non-Google
-  hosts, so this env var cannot be weaponised to leak custom RPC IDs to a
+  NotebookLM endpoint (`notebook.google.com`, `notebooklm.google.com`,
+  `notebook.cloud.google.com`, or `notebooklm.cloud.google.com`). Overrides do NOT
+  apply to non-Google hosts, so this env var cannot be weaponised to leak custom RPC IDs to a
   hostile endpoint.
 - Method names not listed in the override map continue to use the canonical
   IDs from `notebooklm.rpc.types.RPCMethod`.

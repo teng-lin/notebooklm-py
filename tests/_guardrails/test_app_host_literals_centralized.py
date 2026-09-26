@@ -1,37 +1,15 @@
-"""Guard that both personal app hosts live only in ``_env.py``.
+"""Keep current and legacy personal/enterprise app hosts centralized in ``_env``.
 
-Two independent notions of "which host is the app?" that disagree is exactly the
-shape that produced #2019: a valid session was reported as expired because one
-code path's idea of the app host did not match reality. #2038 gave the
-post-rebrand host a single home; #2067 made it the *default* and gave the
-pre-rebrand host one too (:data:`~notebooklm._env.PERSONAL_LEGACY_HOST`).
+Executable code must import the role constants or host sets instead of copying
+host literals. Independent accept sets caused the rebrand failures tracked in
+#2019, #2038, and #2067; enterprise aliases need the same protection.
 
-This lint keeps it that way: no module under ``src/notebooklm/`` may hardcode
-either host in executable code. Import the constant from ``_env`` instead, so
-the next move is one line rather than a grep.
+Docstrings, comments, and tests may name concrete hosts. Test expectations must
+remain independent of the production constants they verify. Constant values are
+read from ``_env.py`` via AST, without importing the application.
 
-**Why both hosts, now.** Until #2067 this lint policed only the rebrand host,
-on the reasoning that the legacy host appeared in "dozens of legitimate places"
-(cookie-domain tables, URL builders) and policing it would be an eager burndown.
-That is no longer true: the flip folded the last of those onto constants, and
-`_code_string_constants` measures **zero** bare literals for either host. Adding
-the second host therefore costs nothing today -- no allowlist, no burndown --
-while closing the asymmetry that would otherwise let the *now-non-default* host
-be re-copied freely, which is the precise mistake #2019 was made of.
-
-Scope stays narrow -- **only real code**. Docstrings and bare string
-expressions are skipped: prose that *mentions* a host is documentation, not a
-second source of truth. Test modules are out of scope on purpose; a test that
-spells a host literally is asserting against a concrete value, which is the
-point of the test.
-
-**Passive ratchet, not a burndown.** ``KNOWN_BARE_LITERALS`` allowlists sites that
-predate the constant. Entries should be deleted, never added -- adding one means
-a new copy of a domain fact was introduced, which is the thing this lint exists
-to prevent.
-
-Both host values are read from ``_env.py`` via AST so this lint cannot drift
-from the source of truth and pulls in no import side effects.
+``KNOWN_BARE_LITERALS`` is a deletion-only allowance for historical exceptions.
+It is empty today: adding new literals elsewhere is not permitted.
 """
 
 from __future__ import annotations
@@ -45,11 +23,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src" / "notebooklm"
 ENV_MODULE = SRC_ROOT / "_env.py"
 
-# The constants this lint protects, by *role* rather than by value: whichever
-# host is the default and whichever is the fallback both belong in ``_env.py``.
+# The constants this lint protects, by *role* rather than by value: current
+# and legacy hosts for each app family belong in ``_env.py``.
 # Read by name so the values can swap again (as #2067 swapped them) without
 # touching this file.
-HOST_CONSTANT_NAMES = ("PERSONAL_BASE_HOST", "PERSONAL_LEGACY_HOST")
+HOST_CONSTANT_NAMES = (
+    "PERSONAL_BASE_HOST",
+    "PERSONAL_LEGACY_HOST",
+    "ENTERPRISE_BASE_HOST",
+    "ENTERPRISE_LEGACY_HOST",
+)
 
 # Pre-existing bare literals, allowlisted so this ratchet lands without
 # cross-editing files another PR owns. **Empty, and it should stay that way** --

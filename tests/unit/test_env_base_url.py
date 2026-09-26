@@ -6,7 +6,9 @@ import pytest
 
 from notebooklm._env import (
     _ALLOWED_BASE_HOSTS,
+    ENTERPRISE_APP_HOSTS,
     ENTERPRISE_BASE_HOST,
+    ENTERPRISE_LEGACY_HOST,
     PERSONAL_APP_HOSTS,
     PERSONAL_BASE_HOST,
     PERSONAL_LEGACY_HOST,
@@ -23,6 +25,11 @@ from notebooklm.types import RpcTelemetryEvent, ShareStatus
 from tests._helpers.client_factory import build_client_shell_for_tests
 
 
+@pytest.fixture(params=["notebook.cloud.google.com", "notebooklm.cloud.google.com"])
+def enterprise_host(request):
+    return request.param
+
+
 def test_default_base_url_is_personal(monkeypatch):
     monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
 
@@ -30,11 +37,11 @@ def test_default_base_url_is_personal(monkeypatch):
     assert get_base_host() == "notebook.google.com"
 
 
-def test_enterprise_base_url_via_env(monkeypatch):
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com/")
+def test_enterprise_base_url_via_env(enterprise_host, monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{enterprise_host}/")
 
-    assert get_base_url() == "https://notebooklm.cloud.google.com"
-    assert get_base_host() == "notebooklm.cloud.google.com"
+    assert get_base_url() == f"https://{enterprise_host}"
+    assert get_base_host() == enterprise_host
 
 
 def test_rebrand_alias_base_url_via_env(monkeypatch):
@@ -61,15 +68,22 @@ def test_personal_app_hosts_holds_both_personal_hosts():
     assert ENTERPRISE_BASE_HOST not in PERSONAL_APP_HOSTS
 
 
+def test_enterprise_app_hosts_holds_current_and_legacy_hosts():
+    assert ENTERPRISE_BASE_HOST == "notebook.cloud.google.com"
+    assert ENTERPRISE_LEGACY_HOST == "notebooklm.cloud.google.com"
+    assert {ENTERPRISE_BASE_HOST, ENTERPRISE_LEGACY_HOST} == ENTERPRISE_APP_HOSTS
+    assert ENTERPRISE_APP_HOSTS.isdisjoint(PERSONAL_APP_HOSTS)
+
+
 def test_allowed_base_hosts_is_personal_app_hosts_plus_enterprise():
-    assert PERSONAL_APP_HOSTS | {ENTERPRISE_BASE_HOST} == _ALLOWED_BASE_HOSTS
+    assert PERSONAL_APP_HOSTS | ENTERPRISE_APP_HOSTS == _ALLOWED_BASE_HOSTS
     assert isinstance(_ALLOWED_BASE_HOSTS, frozenset)
 
 
-def test_base_url_normalizes_mixed_case_and_whitespace(monkeypatch):
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "  https://NotebookLM.Cloud.Google.com/  ")
+def test_base_url_normalizes_mixed_case_and_whitespace(enterprise_host, monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"  https://{enterprise_host.upper()}/  ")
 
-    assert get_base_url() == "https://notebooklm.cloud.google.com"
+    assert get_base_url() == f"https://{enterprise_host}"
 
 
 def test_empty_base_url_env_falls_back_to_default(monkeypatch):
@@ -111,19 +125,16 @@ def test_base_url_validation_rejects_unsafe_values(monkeypatch, value):
         get_base_url()
 
 
-def test_rpc_endpoint_helpers_are_lazy(monkeypatch):
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+def test_rpc_endpoint_helpers_are_lazy(enterprise_host, monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{enterprise_host}")
 
-    assert (
-        get_batchexecute_url()
-        == "https://notebooklm.cloud.google.com/_/LabsTailwindUi/data/batchexecute"
-    )
-    assert get_query_url().startswith("https://notebooklm.cloud.google.com/_/")
-    assert get_upload_url() == "https://notebooklm.cloud.google.com/upload/_/"
+    assert get_batchexecute_url() == f"https://{enterprise_host}/_/LabsTailwindUi/data/batchexecute"
+    assert get_query_url().startswith(f"https://{enterprise_host}/_/")
+    assert get_upload_url() == f"https://{enterprise_host}/upload/_/"
 
 
-def test_core_build_url_uses_enterprise_base_url(monkeypatch):
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+def test_core_build_url_uses_enterprise_base_url(enterprise_host, monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{enterprise_host}")
     core = build_client_shell_for_tests(AuthTokens(cookies={}, csrf_token="csrf", session_id="sid"))
 
     # ``RpcExecutor.build_url`` consumes an ``AuthSnapshot`` so direct callers
@@ -138,7 +149,7 @@ def test_core_build_url_uses_enterprise_base_url(monkeypatch):
     )
     url = core._web_runtime.executor.build_url(RPCMethod.LIST_NOTEBOOKS, snapshot)
 
-    assert url.startswith("https://notebooklm.cloud.google.com/_/LabsTailwindUi/data/")
+    assert url.startswith(f"https://{enterprise_host}/_/LabsTailwindUi/data/")
 
 
 @pytest.mark.asyncio
@@ -166,13 +177,15 @@ async def test_invalid_rpc_base_url_keeps_pre_chain_accounting(monkeypatch) -> N
 
 
 @pytest.mark.asyncio
-async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_mock):
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+async def test_upload_start_uses_enterprise_url_and_headers(
+    enterprise_host, monkeypatch, httpx_mock
+):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{enterprise_host}")
     auth = AuthTokens(cookies={"SID": "test"}, csrf_token="csrf", session_id="sid")
-    upload_url = "https://notebooklm.cloud.google.com/upload/_/?upload_id=test"
+    upload_url = f"https://{enterprise_host}/upload/_/?upload_id=test"
     httpx_mock.add_response(
         method="POST",
-        url="https://notebooklm.cloud.google.com/upload/_/?authuser=0",
+        url=f"https://{enterprise_host}/upload/_/?authuser=0",
         headers={"x-goog-upload-url": upload_url},
     )
 
@@ -207,16 +220,18 @@ async def test_upload_start_uses_enterprise_url_and_headers(monkeypatch, httpx_m
     request = httpx_mock.get_request()
     assert result == upload_url
     assert request is not None
-    assert str(request.url) == "https://notebooklm.cloud.google.com/upload/_/?authuser=0"
-    assert request.headers["origin"] == "https://notebooklm.cloud.google.com"
-    assert request.headers["referer"] == "https://notebooklm.cloud.google.com/"
+    assert str(request.url) == f"https://{enterprise_host}/upload/_/?authuser=0"
+    assert request.headers["origin"] == f"https://{enterprise_host}"
+    assert request.headers["referer"] == f"https://{enterprise_host}/"
 
 
 @pytest.mark.asyncio
-async def test_client_refresh_auth_uses_enterprise_base_url(monkeypatch, httpx_mock, tmp_path):
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+async def test_client_refresh_auth_uses_enterprise_base_url(
+    enterprise_host, monkeypatch, httpx_mock, tmp_path
+):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{enterprise_host}")
     httpx_mock.add_response(
-        url="https://notebooklm.cloud.google.com/",
+        url=f"https://{enterprise_host}/",
         text='{"SNlM0e":"fresh_csrf","FdrFJe":"fresh_sid"}',
     )
     auth = AuthTokens(cookies={"SID": "test"}, csrf_token="old", session_id="old_sid")
@@ -226,14 +241,42 @@ async def test_client_refresh_auth_uses_enterprise_base_url(monkeypatch, httpx_m
 
     request = httpx_mock.get_request()
     assert request is not None
-    assert str(request.url) == "https://notebooklm.cloud.google.com/"
+    assert str(request.url) == f"https://{enterprise_host}/"
     assert refreshed.csrf_token == "fresh_csrf"
     assert refreshed.session_id == "fresh_sid"
 
 
-def test_share_status_uses_enterprise_base_url(monkeypatch):
-    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.cloud.google.com")
+def test_share_status_uses_enterprise_base_url(enterprise_host, monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{enterprise_host}")
 
     status = decode_share_status(ShareStatus, [[["owner@example.com"]], [True], 1000], "nb_123")
 
-    assert status.share_url == "https://notebooklm.cloud.google.com/notebook/nb_123"
+    assert status.share_url == f"https://{enterprise_host}/notebook/nb_123"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "http://{host}",
+        "https://{host}:443",
+        "https://user:notsecret@{host}",
+        "https://{host}/us/",
+        "https://{host}/?project=123",
+        "https://{host}/us/?project=123",
+        "https://{host}/#fragment",
+        "https://{host}.evil.example.com",
+        "https://evil-{host}",
+    ],
+)
+def test_enterprise_base_url_rejects_unsupported_shapes(enterprise_host, monkeypatch, template):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", template.format(host=enterprise_host))
+
+    with pytest.raises(ValueError, match="NOTEBOOKLM_BASE_URL"):
+        get_base_url()
+
+
+def test_third_party_identity_enterprise_host_is_not_a_supported_base_url(monkeypatch):
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebook.cloud.google")
+
+    with pytest.raises(ValueError, match="NOTEBOOKLM_BASE_URL"):
+        get_base_url()

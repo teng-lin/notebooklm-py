@@ -19,7 +19,11 @@ from ._request_context import policy_env
 
 DEFAULT_BASE_URL = "https://notebook.google.com"
 PERSONAL_BASE_HOST = "notebook.google.com"
-ENTERPRISE_BASE_HOST = "notebooklm.cloud.google.com"
+# Google-identity enterprise UI hosts. Third-party identity uses a separate
+# non-.com origin and authentication flow; it is not an accepted base URL.
+ENTERPRISE_BASE_HOST = "notebook.cloud.google.com"
+ENTERPRISE_LEGACY_HOST = "notebooklm.cloud.google.com"
+ENTERPRISE_APP_HOSTS = frozenset({ENTERPRISE_BASE_HOST, ENTERPRISE_LEGACY_HOST})
 
 # The pre-rebrand personal host. Still served, still selectable via
 # ``NOTEBOOKLM_BASE_URL``, and documented as the rollback lever for the #2067
@@ -56,7 +60,7 @@ if len(PERSONAL_APP_HOSTS) != 2:  # pragma: no cover - import-time invariant
         "a one-element PERSONAL_APP_HOSTS silently breaks the login accept-set"
     )
 
-_ALLOWED_BASE_HOSTS = PERSONAL_APP_HOSTS | {ENTERPRISE_BASE_HOST}
+_ALLOWED_BASE_HOSTS = PERSONAL_APP_HOSTS | ENTERPRISE_APP_HOSTS
 
 
 def get_base_url() -> str:

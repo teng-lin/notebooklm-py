@@ -8,7 +8,7 @@ import re
 from collections.abc import Iterable
 from urllib.parse import parse_qs, unquote, urlparse
 
-from ._env import ENTERPRISE_BASE_HOST, PERSONAL_APP_HOSTS
+from ._env import ENTERPRISE_APP_HOSTS, PERSONAL_APP_HOSTS
 
 # Control characters (C0, DEL, C1) that ``unquote`` can reintroduce into a
 # derived display title — a NUL/newline must never reach a source title.
@@ -40,7 +40,7 @@ _NOTEBOOKLM_MARKETING_HOSTS = frozenset({"notebooklm.google", "notebook.google"}
 # the app?". Those can legitimately diverge again — an app host we are not
 # willing to send cookies to, or an accepted base URL that never serves the app
 # shell — so neither set should be redefined in terms of the other.
-_NOTEBOOKLM_APP_HOSTS: frozenset[str] = PERSONAL_APP_HOSTS | {ENTERPRISE_BASE_HOST}
+_NOTEBOOKLM_APP_HOSTS: frozenset[str] = PERSONAL_APP_HOSTS | ENTERPRISE_APP_HOSTS
 
 # Google's cookie-mismatch interstitial. Reaching it means Google rejected the
 # cookies as not matching the host they were presented to (a cookie *scoping*
@@ -177,8 +177,8 @@ def is_notebooklm_app_host(url: str) -> bool:
     """Check whether ``url`` is served by a NotebookLM *app* host.
 
     True for the consumer host (``notebooklm.google.com``), its post-rebrand
-    alias (``notebook.google.com``), and the enterprise host
-    (``notebooklm.cloud.google.com``) — the hosts that can serve a page
+    alias (``notebook.google.com``), and the enterprise hosts
+    (``notebook.cloud.google.com`` / ``notebooklm.cloud.google.com``) that can serve a page
     containing ``WIZ_global_data``. Deliberately an exact-host match: the
     marketing/gate hosts ``notebooklm.google`` and ``notebook.google`` lack ``.com``
     and must not qualify; no subdomain of the app hosts serves the app
