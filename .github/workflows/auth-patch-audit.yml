@@ -68,6 +68,10 @@ jobs:
             exit 1
           fi
           base=$(git rev-parse "$previous_tag^{commit}")
+          if ! git cat-file -e "$base:tests/fixtures/policies/auth_behavior_scenarios.json" 2>/dev/null; then
+            echo "Previous release tag $previous_tag predates auth behavior scenario policy; using HEAD as comparison base."
+            base=$current_sha
+          fi
         else
           base=$(git merge-base HEAD origin/main)
         fi
