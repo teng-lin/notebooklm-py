@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-09-25
+## [0.8.3] - 2026-09-25
 
 ### Added
 
@@ -2771,8 +2771,8 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.9.0...HEAD
-[0.9.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.2...v0.9.0
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/teng-lin/notebooklm-py/compare/v0.7.3...v0.8.0
