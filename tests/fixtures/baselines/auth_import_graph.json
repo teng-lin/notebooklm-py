@@ -688,7 +688,7 @@
       "path": "src/notebooklm/_auth/credential_io.py"
     },
     {
-      "lines": 453,
+      "lines": 455,
       "name": "extraction",
       "path": "src/notebooklm/_auth/extraction.py"
     },
@@ -796,7 +796,7 @@
     "function_local_edges": 12,
     "module_edges": 112,
     "modules": 33,
-    "total_lines": 13745,
+    "total_lines": 13747,
     "unique_edges": 124
   },
   "version": 1

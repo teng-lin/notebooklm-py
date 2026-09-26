@@ -11435,7 +11435,7 @@
       "modules": 41
     },
     "auth": {
-      "lines": 13745,
+      "lines": 13747,
       "modules": 33
     },
     "cli": {
@@ -11447,7 +11447,7 @@
       "modules": 40
     },
     "root": {
-      "lines": 27063,
+      "lines": 27066,
       "modules": 90
     },
     "rpc": {
@@ -11472,7 +11472,7 @@
     }
   },
   "summary": {
-    "authored_lines": 151556,
+    "authored_lines": 151561,
     "authored_modules": 483,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1258,
