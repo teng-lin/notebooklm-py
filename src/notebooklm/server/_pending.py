@@ -15,7 +15,7 @@ server* created. A poll consults it:
   ``REMOVED`` / ``FAILED``) is dropped — the resource is now listable (or gone),
   so subsequent polls resolve from the client directly.
 
-It is **process-lifetime** and **single-tenant**: a restart loses in-flight ids
+It is **process-lifetime** and **per-profile**: a restart loses in-flight ids
 (a later poll for a still-pending id falls to ``404`` rather than ``200``), which
 is acceptable for personal automation (the caller re-lists / re-polls). There is
 no ``/jobs`` resource and no persistence.

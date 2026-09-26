@@ -1,6 +1,6 @@
 """Route-group concurrency limiters for the REST server.
 
-The server is single-tenant but can receive many simultaneous local requests.
+The server can receive many simultaneous local requests across configured profiles.
 These semaphores bound expensive route groups without putting cheap reads or
 ``/healthz`` behind a process-wide lock.
 

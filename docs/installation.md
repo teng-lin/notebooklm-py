@@ -414,7 +414,7 @@ Source of truth: `pyproject.toml` `[project.optional-dependencies]`.
 
 > **⚠️ Experimental.** Like the MCP adapter, the REST server is experimental: the `/v1` surface and behavior may change in a minor release, and it is excluded from the public-API compatibility gate. Pin a version before relying on it for automation. The server also logs an experimental warning on every startup.
 
-A single-tenant, localhost REST API over the same transport-neutral core as the CLI — the natural shape for scripting and agent automation (feed a notebook, generate an artifact, pull it down) without spawning a CLI process per call.
+A local-first REST API over the same transport-neutral core as the CLI — the natural shape for scripting and agent automation (feed a notebook, generate an artifact, pull it down) without spawning a CLI process per call.
 
 The [REST subsystem diagram](https://teng-lin.github.io/notebooklm-py/diagrams/18-rest-server-subsystem.html) shows its
 lifespan-owned client, route guards, concurrency limits, and response projection.
@@ -435,11 +435,63 @@ export NOTEBOOKLM_SERVER_TOKEN="$(openssl rand -hex 32)"   # REQUIRED — the se
 notebooklm-server --host 127.0.0.1 --port 8000            # loopback-only by default
 ```
 
+### Android multi-profile mode
+
+To serve several already-provisioned profiles from one process:
+
+<!-- not mirrored: REST-server operator configuration, not a contributor install. -->
+```bash
+notebooklm-server --backend android --profiles work,personal
+# Or set NOTEBOOKLM_SERVER_PROFILES=work,personal and NOTEBOOKLM_BACKEND=android.
+curl -H "Authorization: Bearer $NOTEBOOKLM_SERVER_TOKEN" \
+     -H 'X-NotebookLM-Profile: work' http://127.0.0.1:8000/v1/notebooks
+```
+
+Every `/v1` request, including `/v1/server/info`, must select exactly one configured
+profile with `X-NotebookLM-Profile`. Missing selection returns `400 profile_required`,
+unknown selection `404 unknown_profile`, and multiple header values
+`400 invalid_profile` (codes are in `error.code`). There is no default account in
+multi-profile mode. Responses vary by this header and use `Cache-Control: no-store`;
+proxies and client retry/cache keys must preserve the selected profile.
+
+Each profile needs a valid `master_token.json`. Multi-profile startup does not load
+Web cookies, visit the Web homepage, rotate Web cookies, or persist a Web jar.
+It opens one Android client per profile and validates it with a read-only notebook
+list. Distinct profile paths may contain copies of the same master token; each
+client keeps its own bearer cache and retry state. Profiles for the same account
+still share Google's account quotas. This is not a universal guarantee about
+Google's credential-concurrency behavior.
+
+Duplicate names and canonical storage paths are rejected before opening clients.
+A failed profile stays unavailable (`503 profile_unavailable`) while healthy profiles
+serve requests. Its next client-dependent request attempts recovery; concurrent
+requests coalesce and failed retries have a five-second cooldown. Authenticated
+`/v1/server/info` reports the selected profile's Android credential presence, startup
+error, and `ready` state (whether a client was bound after its startup read, not a
+new upstream health probe). `?include_account=true` also attempts recovery and
+fetches account settings. Public `/healthz` remains minimal liveness.
+
+Pending resource IDs are isolated per profile. The route-group concurrency limits
+below are shared across the process; each client also has its own SDK RPC limit.
+The launcher pins one worker, including when `WEB_CONCURRENCY` is set. Multiple
+server processes do not share pending state or these limits. Profile selection is
+routing, not authorization: the server bearer token grants access to every
+configured profile. Dynamic profile changes, public multi-tenant hosting, Web
+multi-profile mode, and MCP multi-profile mode are outside this feature.
+
+With no profile list or a one-entry list, existing single-profile behavior remains:
+the selection header is ignored and the existing storage bootstrap is used.
+`--profile` and `--profiles` are mutually exclusive. Explicit `--profile` overrides
+`NOTEBOOKLM_SERVER_PROFILES`; a profile list overrides the implicit
+`NOTEBOOKLM_PROFILE`. Profile names in lists must be printable ASCII without spaces
+or commas so they can be selected unambiguously through HTTP headers.
+
 Configuration is read from `NOTEBOOKLM_SERVER_*` env vars (overridable by the matching flags):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `NOTEBOOKLM_SERVER_TOKEN` | *(unset)* | Bearer token every request must present. **Required** — fail-closed if unset. |
+| `NOTEBOOKLM_SERVER_PROFILES` | *(unset)* | Comma-separated explicit profiles; more than one requires Android. `--profiles` overrides this. |
 | `NOTEBOOKLM_SERVER_HOST` | `127.0.0.1` | Bind host. Non-loopback is refused unless the elevated-risk override below is set. |
 | `NOTEBOOKLM_SERVER_PORT` | `8000` | Bind port. |
 | `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND` | *(unset)* | ⚠️ Set to `1` to bind a non-loopback interface. Only behind a trusted reverse proxy — this exposes account-fronting credentials to the network. |

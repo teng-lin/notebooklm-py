@@ -48,6 +48,7 @@ from .._app.errors import (
 )
 from ..exceptions import NotebookLMError
 from ..outcomes import operation_metadata_payload
+from ._profiles import PROFILE_HEADER
 
 __all__ = [
     "CATEGORY_STATUS",
@@ -179,7 +180,15 @@ def _validation_summary(exc: RequestValidationError) -> str:
     return "; ".join(parts) or "invalid request body"
 
 
-def http_error_response(status: int, detail: object) -> JSONResponse:
+class ProfileHTTPError(StarletteHTTPException):
+    """A profile-routing failure with a stable machine-readable code."""
+
+    def __init__(self, status: int, code: str, detail: str) -> None:
+        super().__init__(status_code=status, detail=detail)
+        self.code = code
+
+
+def http_error_response(status: int, detail: object, *, code: str | None = None) -> JSONResponse:
     """Build the typed envelope for a hand-raised ``HTTPException``.
 
     Renders ``HTTPException``s (the auth dependency's 401/403, an artifact poll's
@@ -199,6 +208,8 @@ def http_error_response(status: int, detail: object) -> JSONResponse:
         "category": _http_category_label(status),
         "message": _redact(detail),
     }
+    if code is not None:
+        body["code"] = code
     category = _STATUS_CATEGORY.get(status)
     if category is not None:
         body["retriable"] = is_retriable(category)
@@ -298,7 +309,7 @@ def install_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(StarletteHTTPException)
     async def _handle_http(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        return http_error_response(exc.status_code, exc.detail)
+        return http_error_response(exc.status_code, exc.detail, code=getattr(exc, "code", None))
 
     @app.exception_handler(RequestValidationError)
     async def _handle_validation(_request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -310,4 +321,12 @@ def install_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _handle_unexpected(_request: Request, exc: Exception) -> JSONResponse:
-        return error_response(exc)
+        response = error_response(exc)
+        # ServerErrorMiddleware sits outside user middleware: its response does
+        # not pass back through the ordinary profile-header decorator.
+        state = getattr(_request.state, "notebooklm_profile_state", None)
+        if state is not None:
+            response.headers[PROFILE_HEADER] = state.profile
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Vary"] = PROFILE_HEADER
+        return response

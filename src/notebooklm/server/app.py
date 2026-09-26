@@ -1,9 +1,11 @@
-"""FastAPI application factory for the single-tenant REST server.
+"""FastAPI application factory for the local REST server.
 
 Design highlights:
 
-- **One client per process, attempted at lifespan.** The ASGI lifespan opens a
-  single :class:`~notebooklm.client.NotebookLMClient` via ``from_storage()``
+- **Single-profile default, optional Android profiles.** Multi-profile mode
+  binds one isolated client and pending registry per configured profile.
+  Route-group limiters remain shared by the process. The default mode opens
+  a single :class:`~notebooklm.client.NotebookLMClient` via ``from_storage()``
   inside the server loop (satisfies the ADR-0004 loop-affinity contract) and
   stows it on ``app.state`` for the process lifetime. Its 600-second keepalive
   rotates cookies while the server runs. If startup auth is stale, the app
@@ -27,25 +29,30 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 import re
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
+from starlette._utils import get_route_path
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .._adapter_support import DEFAULT_SERVER_KEEPALIVE_INTERVAL
+from .._app.android_profiles import android_profile_client
 from ..client import NotebookLMClient
 from ..exceptions import AuthError, NotebookLMError
 from ..paths import get_active_profile, resolve_profile, set_active_profile
 from ._auth import require_auth
-from ._context import AppState
+from ._context import AppState, ProfileRegistry, get_state, require_profile
 from ._errors import http_error_response, install_exception_handlers
 from ._limits import ServerLimiters
 from ._pending import PendingRegistry
+from ._profiles import PROFILE_HEADER, configured_profiles
 from .routes import artifacts, chat, meta, notebooks, notes, research, share, sources
 from .routes.sources import MAX_UPLOAD_BYTES
 
@@ -253,6 +260,8 @@ def _parse_content_length(value: str) -> int | None:
 #: factory binds ``NotebookLMClient.from_storage()``; tests inject a factory
 #: yielding a fake client so no real auth/network is needed.
 ClientFactory = Callable[[], AbstractAsyncContextManager[NotebookLMClient]]
+ProfileClientFactory = Callable[[str], AbstractAsyncContextManager[NotebookLMClient]]
+logger = logging.getLogger(__name__)
 
 _STALE_AUTH_STARTUP_MARKERS = (
     "authentication expired",
@@ -308,6 +317,8 @@ def _normalize_client_startup_error(exc: Exception) -> AuthError | None:
 def create_app(
     *,
     profile: str | None = None,
+    profiles: Sequence[str] | None = None,
+    profile_client_factory: ProfileClientFactory | None = None,
     backend: Literal["web", "android"] | None = None,
     client_factory: ClientFactory | None = None,
     _download_temp_factory: Callable[[], str] | None = None,
@@ -318,6 +329,10 @@ def create_app(
         profile: Auth profile bound by the default factory (``from_storage(profile=)``).
             ``None`` resolves the active profile. Also drives process-wide profile
             resolution for diagnostics such as ``/v1/server/info``.
+        profiles: Static explicit profile names. More than one requires Android
+            and the X-NotebookLM-Profile header on every /v1 request. Duplicate
+            canonical paths are refused; copied master-token credentials are allowed.
+        profile_client_factory: Multi-profile test seam, called with each name.
         backend: Preferred API backend for the default client factory. An explicit
             value takes precedence over ``NOTEBOOKLM_BACKEND``.
         client_factory: Test seam — a zero-arg callable returning an async
@@ -328,97 +343,137 @@ def create_app(
 
     Returns:
         A configured :class:`~fastapi.FastAPI` app whose lifespan binds exactly
-        one client, with the ``/v1`` resource routers (auth-gated) and a public
+        one client per selected profile, with the ``/v1`` resource routers (auth-gated) and a public
         ``/healthz`` mounted.
     """
+    if profiles is not None and profile is not None:
+        raise ValueError("profile and profiles are mutually exclusive")
+    profile_paths = configured_profiles(profiles) if profiles is not None else {}
+    multi_profile = len(profile_paths) > 1
+    if profile_paths and not multi_profile:
+        profile = next(iter(profile_paths))
+    selected_backend = backend or os.environ.get("NOTEBOOKLM_BACKEND", "web")
+    if multi_profile and selected_backend != "android":
+        raise ValueError("Multi-profile REST requires backend='android'")
+    if multi_profile and client_factory is not None:
+        raise ValueError("Use profile_client_factory for multi-profile clients")
+    if not multi_profile and profile_client_factory is not None:
+        raise ValueError("profile_client_factory requires multiple profiles")
     factory = client_factory or (lambda: _default_factory(profile, backend))
+
+    async def bind_state(
+        name: str,
+        factory: ClientFactory,
+        clients: AsyncExitStack,
+        limiters: ServerLimiters,
+    ) -> AppState:
+        state = AppState(
+            client=None,
+            pending=PendingRegistry(),
+            limiters=limiters,
+            profile=name,
+            backend=selected_backend,
+            isolated=multi_profile,
+            storage_path=profile_paths.get(name),
+        )
+        client_lock = asyncio.Lock()
+        last_load_error: AuthError | RuntimeError | None = None
+        retry_not_before = 0.0
+
+        async def load_client(
+            observed_generation: int,
+            *,
+            startup: bool = False,
+        ) -> NotebookLMClient:
+            """Bind once and coalesce concurrent attempts by generation."""
+            nonlocal last_load_error, retry_not_before
+            async with client_lock:
+                if state.client is not None:
+                    return state.client
+                if state.client_generation != observed_generation and last_load_error is not None:
+                    raise last_load_error.__class__(str(last_load_error)) from None
+                if last_load_error is not None and time.monotonic() < retry_not_before:
+                    raise last_load_error.__class__(str(last_load_error)) from None
+                try:
+                    client = await clients.enter_async_context(factory())
+                except Exception as exc:
+                    auth_error = _normalize_client_startup_error(exc)
+                    if auth_error is None:
+                        safe_error = RuntimeError(
+                            "Client startup failed "
+                            f"({type(exc).__name__}); retry temporarily rate-limited."
+                        )
+                        state.client_error = safe_error
+                        last_load_error = safe_error
+                        state.client_generation += 1
+                        retry_not_before = (
+                            0.0
+                            if startup
+                            else time.monotonic() + _SERVER_AUTH_RETRY_INTERVAL_SECONDS
+                        )
+                        raise
+                    state.client_error = auth_error
+                    last_load_error = auth_error
+                    state.client_generation += 1
+                    retry_not_before = (
+                        0.0 if startup else time.monotonic() + _SERVER_AUTH_RETRY_INTERVAL_SECONDS
+                    )
+                    raise AuthError(str(auth_error)) from None
+                state.client = client
+                state.client_error = None
+                last_load_error = None
+                retry_not_before = 0.0
+                state.client_generation += 1
+                return client
+
+        state.client_loader = load_client
+        try:
+            await load_client(state.client_generation, startup=True)
+        except AuthError:
+            pass
+        except Exception:
+            if not multi_profile:
+                raise
+            # A bad/missing profile must not prevent healthy siblings serving.
+            # The loader retains only a sanitized diagnostic and retry state.
+            logger.warning("Android profile %s is unavailable at startup", name)
+        return state
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         previous_profile = get_active_profile()
-        set_active_profile(resolve_profile(profile))
-        pending = PendingRegistry()
+        if not multi_profile:
+            set_active_profile(resolve_profile(profile))
         try:
+            # Route-group capacity is process-wide. Per-client RPC limits remain
+            # independent; adding profiles must not multiply upload/chat capacity.
             limiters = ServerLimiters.from_env()
             limiters.set_bound_loop(asyncio.get_running_loop())
             limiters.reset_after_open()
             async with AsyncExitStack() as clients:
-                state = AppState(
-                    client=None,
-                    pending=pending,
-                    limiters=limiters,
-                )
-                client_lock = asyncio.Lock()
-                last_load_error: AuthError | RuntimeError | None = None
-                retry_not_before = 0.0
-
-                async def load_client(
-                    observed_generation: int,
-                    *,
-                    startup: bool = False,
-                ) -> NotebookLMClient:
-                    """Bind once and coalesce concurrent attempts by generation."""
-                    nonlocal last_load_error, retry_not_before
-                    async with client_lock:
-                        if state.client is not None:
-                            return state.client
-                        if (
-                            state.client_generation != observed_generation
-                            and last_load_error is not None
-                        ):
-                            raise last_load_error.__class__(str(last_load_error)) from None
-                        if last_load_error is not None and time.monotonic() < retry_not_before:
-                            raise last_load_error.__class__(str(last_load_error)) from None
-                        try:
-                            client = await clients.enter_async_context(factory())
-                        except Exception as exc:
-                            auth_error = _normalize_client_startup_error(exc)
-                            if auth_error is None:
-                                safe_error = RuntimeError(
-                                    "Client startup failed "
-                                    f"({type(exc).__name__}); retry temporarily rate-limited."
-                                )
-                                state.client_error = safe_error
-                                last_load_error = safe_error
-                                state.client_generation += 1
-                                retry_not_before = (
-                                    0.0
-                                    if startup
-                                    else time.monotonic() + _SERVER_AUTH_RETRY_INTERVAL_SECONDS
-                                )
-                                raise
-                            state.client_error = auth_error
-                            last_load_error = auth_error
-                            state.client_generation += 1
-                            retry_not_before = (
-                                0.0
-                                if startup
-                                else time.monotonic() + _SERVER_AUTH_RETRY_INTERVAL_SECONDS
-                            )
-                            raise AuthError(str(auth_error)) from None
-                        state.client = client
-                        state.client_error = None
-                        last_load_error = None
-                        retry_not_before = 0.0
-                        state.client_generation += 1
-                        return client
-
-                state.client_loader = load_client
-                try:
-                    await load_client(state.client_generation, startup=True)
-                except AuthError:
-                    # Keep liveness and diagnostics available. The first
-                    # client-dependent request retries through ``load_client``;
-                    # a concurrent request joins the same lock and reuses the
-                    # successfully bound process-lifetime client.
-                    pass
-                app.state.notebooklm = state
+                if multi_profile:
+                    registry = ProfileRegistry({})
+                    for name, path in profile_paths.items():
+                        selected_factory = (
+                            (lambda name=name: profile_client_factory(name))
+                            if profile_client_factory is not None
+                            else (lambda path=path: android_profile_client(path))
+                        )
+                        registry.profiles[name] = await bind_state(
+                            name, selected_factory, clients, limiters
+                        )
+                    app.state.notebooklm = registry
+                else:
+                    app.state.notebooklm = await bind_state(
+                        resolve_profile(profile), factory, clients, limiters
+                    )
                 try:
                     yield
                 finally:
                     app.state.notebooklm = None
         finally:
-            set_active_profile(previous_profile)
+            if not multi_profile:
+                set_active_profile(previous_profile)
 
     app = FastAPI(
         title=SERVER_NAME,
@@ -438,15 +493,51 @@ def create_app(
     async def _limit_request_body(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        state: AppState | None = getattr(request.app.state, "notebooklm", None)
-        if state is not None and not hasattr(request.state, "notebooklm_client_generation"):
+        state: AppState | ProfileRegistry | None = getattr(request.app.state, "notebooklm", None)
+        if isinstance(state, AppState) and not hasattr(
+            request.state, "notebooklm_client_generation"
+        ):
             request.state.notebooklm_client_generation = state.client_generation
+        if isinstance(state, ProfileRegistry) and get_route_path(request.scope).startswith("/v1/"):
+            try:
+                await require_auth(request)
+                selected = get_state(request)
+            except StarletteHTTPException as exc:
+                rejection = http_error_response(
+                    exc.status_code, exc.detail, code=getattr(exc, "code", None)
+                )
+                rejection.headers["Cache-Control"] = "no-store"
+                rejection.headers["Vary"] = PROFILE_HEADER
+                return rejection
+            response = await _limit_profile_request(request, call_next, selected)
+            return response
+        return await _admit_body(request, call_next)
+
+    async def _limit_profile_request(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]], state: AppState
+    ) -> Response:
+        response = await _admit_body(request, call_next)
+        response.headers[PROFILE_HEADER] = state.profile or ""
+        response.headers["Cache-Control"] = "no-store"
+        vary = response.headers.get("Vary", "")
+        response.headers["Vary"] = f"{vary}, {PROFILE_HEADER}" if vary else PROFILE_HEADER
+        logger.info(
+            "REST profile=%s method=%s status=%s",
+            state.profile,
+            request.method,
+            response.status_code,
+        )
+        return response
+
+    async def _admit_body(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         # Reject oversized request bodies by declared Content-Length BEFORE the
         # route reads/parses them. Multipart keeps the large upload cap; JSON
         # mutation routes get much smaller route-specific caps so a caller cannot
         # allocate upload-sized Pydantic payloads.
         content_type = request.headers.get("content-type", "")
-        path = request.scope.get("path", request.url.path)
+        path = get_route_path(request.scope)
         content_length = request.headers.get("content-length")
         if _is_file_upload_route(request.method, path):
             # A chunked (no-Content-Length) upload request would otherwise let
@@ -463,8 +554,15 @@ def create_app(
             try:
                 await require_auth(request)
             except StarletteHTTPException as exc:
-                return http_error_response(exc.status_code, exc.detail)
-            state = getattr(request.app.state, "notebooklm", None)
+                return http_error_response(
+                    exc.status_code, exc.detail, code=getattr(exc, "code", None)
+                )
+            try:
+                state = get_state(request)
+            except StarletteHTTPException as exc:
+                return http_error_response(
+                    exc.status_code, exc.detail, code=getattr(exc, "code", None)
+                )
             if state is not None:
                 async with state.limiters.acquire("source_mutation"):
                     return await call_next(request)
@@ -491,7 +589,7 @@ def create_app(
         return {"ok": True}
 
     # Every /v1 route requires the bearer-token + loopback-Host dependency.
-    v1 = APIRouter(prefix="/v1", dependencies=[Depends(require_auth)])
+    v1 = APIRouter(prefix="/v1", dependencies=[Depends(require_auth), Depends(require_profile)])
     v1.include_router(notebooks.router)
     v1.include_router(sources.router)
     v1.include_router(notes.router)

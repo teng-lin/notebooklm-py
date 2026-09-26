@@ -106,12 +106,12 @@ def test_build_parser_flags_override_env(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_build_parser_profile_default_env_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Default is None (the parser reads NOTEBOOKLM_PROFILE, so clear it first).
+    # The parser keeps explicit profile selection distinct from environment defaults.
     monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
     assert launcher._build_parser().parse_args([]).profile is None
-    # Env supplies the default...
+    # The client resolves NOTEBOOKLM_PROFILE later; --profiles can override it.
     monkeypatch.setenv("NOTEBOOKLM_PROFILE", "envprof")
-    assert launcher._build_parser().parse_args([]).profile == "envprof"
+    assert launcher._build_parser().parse_args([]).profile is None
     # ...and the flag overrides the env.
     assert launcher._build_parser().parse_args(["--profile", "work"]).profile == "work"
 
@@ -179,6 +179,56 @@ def test_main_threads_profile_into_create_app(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
     launcher.main(["--host", "127.0.0.1", "--profile", "work"])
     launcher.create_app.assert_called_once_with(profile="work")  # type: ignore[attr-defined]
+
+
+def test_main_threads_profiles_and_pins_one_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = _stub_uvicorn_run(monkeypatch)
+    monkeypatch.setenv("NOTEBOOKLM_SERVER_PROFILES", "env,ignored")
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "also-ignored")
+    monkeypatch.setenv("WEB_CONCURRENCY", "8")
+    launcher.main(["--backend", "android", "--profiles", "work, personal"])
+    launcher.create_app.assert_called_once_with(  # type: ignore[attr-defined]
+        profiles=["work", "personal"], backend="android"
+    )
+    assert captured["workers"] == 1
+
+
+def test_main_profiles_environment_and_explicit_single_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_uvicorn_run(monkeypatch)
+    monkeypatch.setenv("NOTEBOOKLM_SERVER_PROFILES", "work,personal")
+    launcher.main(["--backend", "android"])
+    launcher.create_app.assert_called_once_with(  # type: ignore[attr-defined]
+        profiles=["work", "personal"], backend="android"
+    )
+    launcher.create_app.reset_mock()  # type: ignore[attr-defined]
+    launcher.main(["--profile", "single"])
+    launcher.create_app.assert_called_once_with(profile="single")  # type: ignore[attr-defined]
+
+
+def test_main_rejects_conflicting_selection_flags() -> None:
+    with pytest.raises(SystemExit):
+        launcher._build_parser().parse_args(["--profile", "work", "--profiles", "a,b"])
+
+
+def test_single_profile_env_still_precedes_process_active_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from notebooklm import paths
+
+    _stub_uvicorn_run(monkeypatch)
+    monkeypatch.delenv("NOTEBOOKLM_SERVER_PROFILES", raising=False)
+    monkeypatch.setenv("NOTEBOOKLM_PROFILE", "work")
+    monkeypatch.setattr(paths, "_active_profile", "personal")
+    launcher.main([])
+    launcher.create_app.assert_called_once_with(profile="work")  # type: ignore[attr-defined]
+
+
+def test_main_invalid_profiles_fail_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_BACKEND", raising=False)
+    with pytest.raises(SystemExit, match="requires backend"):
+        launcher.main(["--profiles", "work,personal"])
 
 
 def test_main_threads_backend_into_create_app(monkeypatch: pytest.MonkeyPatch) -> None:

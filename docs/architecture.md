@@ -1348,9 +1348,9 @@ application-core, client, and remote-transfer boundaries together.
 
 ## REST server (`server/`)
 
-The single-tenant REST server is the third adapter (ADR-0021), opt-in behind the
+The local REST server is the third adapter (ADR-0021), opt-in behind the
 `server` extra and **experimental**. A FastAPI app maps `/v1` routes onto the
-`_app/` cores and the public client namespaces, with one `NotebookLMClient` opened
+`_app/` cores and the public client namespaces, with one `NotebookLMClient` per configured profile opened
 once at the ASGI lifespan inside the server loop (honoring the ADR-0004 loop-
 affinity contract). Every `/v1` request requires a static bearer token
 (constant-time compare) plus a loopback `Host` literal (a DNS-rebinding guard);
@@ -1411,9 +1411,11 @@ adapter surface unless its manifest or route inventory changes.
 
 ### Hosting and persistence limits
 
-Both servers operate one selected NotebookLM account per process. They are single-tenant adapters,
-not multi-user credential routers. Restarting the process replaces the lifespan-owned client and
-loses ephemeral state.
+MCP operates one selected NotebookLM profile per process. REST defaults to the same model,
+with optional static Android profiles selected by an explicit request header. Each REST profile
+owns its client, recovery state, and pending registry; route-group capacity is shared across the
+process. The server token authorizes all configured profiles, so this is not per-user authorization.
+Restarting a process replaces its lifespan-owned clients and loses ephemeral state.
 
 MCP detached chat tasks are process-owned, bounded, and time-limited. `chat_start` keeps work alive
 past one transport request and `chat_status` reads the in-memory result, but a restart loses the

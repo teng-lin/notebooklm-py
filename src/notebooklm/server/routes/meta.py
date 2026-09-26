@@ -23,17 +23,19 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
 
 from ..._adapter_support import redact
 from ..._app.auth_check import AuthCheckPlan, run_auth_check
+from ..._app.master_token import inspect_master_token_status
 from ..._version_info import version_string
 from ...client import NotebookLMClient
 from ...exceptions import AuthError, NotebookLMError
 from ...paths import get_storage_path, resolve_profile
-from .._context import get_client, get_client_error
+from .._context import get_client, get_client_error, get_state
 from .._errors import error_item
 
 __all__ = ["router"]
@@ -126,8 +128,11 @@ async def server_info(
     """
     # Report the *resolved* profile (never ``None``): this names the profile the
     # auth probe actually ran against (#1790, #1791).
-    profile = resolve_profile()
-    storage_path = get_storage_path(profile)
+    state = get_state(request)
+    profile = state.profile or resolve_profile()
+    storage_path = state.storage_path or get_storage_path(profile)
+    if state.isolated:
+        return await _android_info(request, include_account=include_account)
     plan = AuthCheckPlan(
         storage_path=storage_path,
         profile=profile,
@@ -189,4 +194,46 @@ async def server_info(
             if account_client is None:  # pragma: no cover - guarded above
                 raise RuntimeError("account diagnostics require a bound client")
             info["account"] = await _account_block(account_client, authenticated=authenticated)
+    return info
+
+
+async def _android_info(request: Request, *, include_account: bool) -> dict[str, Any]:
+    """Diagnose the selected Android profile without probing Web credentials."""
+    state = get_state(request)
+    if include_account:
+        try:
+            await get_client(request)
+        except Exception:
+            if get_client_error(request) is None:
+                raise
+    status = None
+    if state.storage_path is not None:
+        try:
+            status = await asyncio.to_thread(
+                inspect_master_token_status, state.storage_path, has_env_auth=False
+            )
+        except (OSError, ValueError):
+            pass
+    valid = status is not None and status.present and status.unreadable_error_type is None
+    ready = state.client is not None and state.client_error is None
+    auth: dict[str, Any] = {
+        "backend": "android",
+        "profile": state.profile,
+        "master_token_present": status is not None and status.present,
+        "master_token_valid": valid,
+        "authenticated": ready and valid,
+        "ready": ready,
+    }
+    if state.client_error is not None:
+        auth["startup_error"] = error_item(state.client_error)
+    info: dict[str, Any] = {"server": SERVER_NAME, "version": version_string(), "auth": auth}
+    if include_account:
+        if state.client is None:
+            info["account"] = {
+                "available": False,
+                "email": status.account if status else None,
+                "reason": "Selected Android profile is unavailable",
+            }
+        else:
+            info["account"] = await _account_block(state.client, authenticated=ready)
     return info

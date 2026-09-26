@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .._adapter_support import check_bind_allowed, is_loopback
 from ._auth import ALLOW_EXTERNAL_BIND_ENV, SERVER_TOKEN_ENV, get_configured_token
+from ._profiles import PROFILES_ENV
 from .app import create_app
 
 __all__ = ["main"]
@@ -144,13 +145,19 @@ def _build_parser() -> argparse.ArgumentParser:
             f"supplied via ${SERVER_TOKEN_ENV}."
         ),
     )
-    parser.add_argument(
+    profile_group = parser.add_mutually_exclusive_group()
+    profile_group.add_argument(
         "--profile",
-        default=os.environ.get("NOTEBOOKLM_PROFILE"),
+        default=None,
         help=(
             "Auth profile to bind for this server process (default: "
             "$NOTEBOOKLM_PROFILE, else the active profile)."
         ),
+    )
+    profile_group.add_argument(
+        "--profiles",
+        default=None,
+        help=f"Comma-separated profiles (default: ${PROFILES_ENV}); multiple require Android.",
     )
     parser.add_argument(
         "--backend",
@@ -211,15 +218,31 @@ def main(argv: list[str] | None = None) -> None:
 
     import uvicorn
 
-    if args.backend is None:
-        app = create_app(profile=args.profile)
+    raw_profiles = args.profiles
+    if raw_profiles is None and args.profile is None:
+        raw_profiles = os.environ.get(PROFILES_ENV)
+    selected_profile = (
+        args.profile if args.profile is not None else os.environ.get("NOTEBOOKLM_PROFILE")
+    )
+    if raw_profiles is not None:
+        try:
+            app = create_app(
+                profiles=[name.strip() for name in raw_profiles.split(",")], backend=args.backend
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+    elif args.backend is None:
+        app = create_app(profile=selected_profile)
     else:
-        app = create_app(profile=args.profile, backend=args.backend)
+        app = create_app(profile=selected_profile, backend=args.backend)
     uvicorn.run(
         app,
         host=host,
         port=_resolve_port(args.port),
         log_level=args.log_level.lower(),
+        # State and pending operations belong to one process. Do not let
+        # Uvicorn's WEB_CONCURRENCY environment default silently multiply it.
+        workers=1,
         # In the default (loopback) mode the auth guard trusts ``request.client.host``
         # as the real socket peer, so uvicorn must NOT rewrite it from a spoofable
         # ``X-Forwarded-For`` header. Uvicorn enables ``--proxy-headers`` by default
