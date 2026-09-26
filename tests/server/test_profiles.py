@@ -378,6 +378,7 @@ async def test_chat_capacity_is_shared_across_profiles(monkeypatch: pytest.Monke
     [
         [],
         ["work", "work"],
+        ["work", "Work"],
         ["work", "../escape"],
         ["work", ""],
         ["work", " personal"],
@@ -395,6 +396,16 @@ def test_canonical_path_aliases_are_rejected(tmp_path: Path) -> None:
     (real.parent / "alias").symlink_to(real, target_is_directory=True)
     with pytest.raises(ValueError, match="canonical storage path"):
         create_app(profiles=["work", "alias"], backend="android")
+
+
+def test_case_only_symlink_target_aliases_are_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "profiles"
+    root.mkdir()
+    for name, target in (("first", "work"), ("second", "Work")):
+        (root / target).mkdir(exist_ok=True)
+        (root / name).symlink_to(root / target, target_is_directory=True)
+    with pytest.raises(ValueError, match="canonical storage path"):
+        create_app(profiles=["first", "second"], backend="android")
 
 
 def test_web_multi_profile_is_refused_and_single_entry_retains_behavior() -> None:

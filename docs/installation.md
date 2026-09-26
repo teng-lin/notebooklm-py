@@ -462,7 +462,9 @@ client keeps its own bearer cache and retry state. Profiles for the same account
 still share Google's account quotas. This is not a universal guarantee about
 Google's credential-concurrency behavior.
 
-Duplicate names and canonical storage paths are rejected before opening clients.
+Duplicate names and canonical storage paths are rejected before opening clients,
+including case-only aliases on all platforms. Request header values still select
+the exact configured spelling.
 A failed profile stays unavailable (`503 profile_unavailable`) while healthy profiles
 serve requests. Its next client-dependent request attempts recovery; concurrent
 requests coalesce and failed retries have a five-second cooldown. Authenticated
