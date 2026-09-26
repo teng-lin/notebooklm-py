@@ -27,7 +27,7 @@ on:
         default: ""
 
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.custom_branch || github.ref }}
+  group: auth-patch-audit-${{ inputs.custom_branch || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -96,7 +96,7 @@ jobs:
       run: |
         workspace="$RUNNER_TEMP/auth-patch-base"
         cd "$workspace"
-        uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra cookies
+        uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra cookies --extra mcp --extra server
         auth_tests=$(
           {
             find tests/unit -maxdepth 1 -type f \( \
@@ -124,7 +124,7 @@ jobs:
       run: |
         workspace="$RUNNER_TEMP/auth-patch-head"
         cd "$workspace"
-        uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra cookies
+        uv sync --frozen --extra browser --extra dev --extra markdown --extra impersonate --extra cookies --extra mcp --extra server
         auth_tests=$(
           {
             find tests/unit -maxdepth 1 -type f \( \
