@@ -761,8 +761,14 @@ class TestUnavailableRedirectClassification:
         with pytest.raises(ValueError) as exc:
             extractor(self._GATE_HTML_WITH_SIGNIN, f"https://notebook.google/{location}")
         message = str(exc.value)
-        assert "region / anti-abuse access gate" in message
-        assert "https://notebook.google/" in message
+        target = "https://notebook.google/"
+        if location:
+            target += " (location=unsupported)"
+        diagnostic, separator, _ = message.partition(". ")
+        assert separator
+        assert diagnostic == (
+            f"NotebookLM redirected this request to its region / anti-abuse access gate: {target}"
+        )
         assert "token not found" not in message
         assert "page structure" not in message
         assert not any(signal in message.lower() for signal in _AUTH_ERROR_SIGNALS)
