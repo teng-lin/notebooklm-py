@@ -20,16 +20,18 @@ auth-health probe that works even when unauthenticated.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastmcp import Context
 
 from ..._app.auth_check import AuthCheckPlan, run_auth_check
+from ..._app.master_token import inspect_master_token_status
 from ..._version_info import version_string
 from ...exceptions import NotebookLMError
 from ...paths import get_storage_path, resolve_profile
 from .._confirm import READ_ONLY
-from .._context import get_chat_tasks, get_client
+from .._context import get_chat_tasks, get_client, get_profile_state
 from .._errors import mcp_errors, redact, tool_error_payload
 from ..server import SERVER_NAME
 
@@ -125,6 +127,39 @@ async def _account_block(ctx: Context, *, authenticated: bool) -> dict[str, Any]
     }
 
 
+async def _android_info(ctx: Context, *, include_account: bool) -> dict[str, Any]:
+    state = get_profile_state(ctx)
+    status = None
+    if state.storage_path is not None:
+        try:
+            status = await asyncio.to_thread(
+                inspect_master_token_status, state.storage_path, has_env_auth=False
+            )
+        except (OSError, ValueError):
+            pass
+    valid = status is not None and status.present and status.unreadable_error_type is None
+    account = None
+    if include_account:
+        account = await _account_block(ctx, authenticated=valid)
+    ready = state.client_provider.is_open
+    info: dict[str, Any] = {
+        "server": SERVER_NAME,
+        "version": version_string(),
+        "auth": {
+            "backend": "android",
+            "profile": state.profile,
+            "master_token_present": status is not None and status.present,
+            "master_token_valid": valid,
+            "authenticated": ready and valid,
+            "ready": ready,
+        },
+        "chat_tasks": state.chat_tasks.counts(),
+    }
+    if include_account:
+        info["account"] = account
+    return info
+
+
 def register(mcp: Any) -> None:
     """Register the meta tool on ``mcp``."""
 
@@ -160,6 +195,8 @@ def register(mcp: Any) -> None:
         remote) caller, while telling the agent nothing it can act on.
         """
         with mcp_errors():
+            if get_profile_state(ctx).storage_path is not None:
+                return await _android_info(ctx, include_account=include_account)
             # Report the *resolved* profile (never ``None``): this names the
             # profile the auth probe actually ran against (#1790, #1791).
             profile = resolve_profile()

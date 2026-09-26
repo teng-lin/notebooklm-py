@@ -1,6 +1,6 @@
 """Per-request access to the lifespan-bound client.
 
-The server binds exactly one :class:`~notebooklm.client.NotebookLMClient` for the
+By default the server binds one :class:`~notebooklm.client.NotebookLMClient` for the
 process lifetime via the FastMCP lifespan (one client, bound to the server's
 event loop, satisfying the ADR-0004 loop-affinity contract). It is opened
 **lazily** behind a :class:`~notebooklm.mcp._clientprovider.ClientProvider` so
@@ -9,6 +9,7 @@ the MCP handshake is not gated on Google's auth round-trip (#2330) — which mak
 (or joins the lifespan's background warm-up) and any auth failure surfaces there
 as a categorized tool error. Tools reach it through the request context. Keeping
 this in one place means the tool modules never touch FastMCP internals directly.
+In multi-profile mode a request-local selection routes to an isolated AppState.
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -16,7 +17,9 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 from collections import OrderedDict
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from fastmcp import Context
@@ -111,6 +114,38 @@ class AppState:
     file_transfer: FileTransferConfig | None = None
     cancelled_research: CancelledResearchTracker = field(default_factory=CancelledResearchTracker)
     chat_tasks: ChatTaskRegistry = field(default_factory=ChatTaskRegistry)
+    profile: str | None = None
+    storage_path: Path | None = None
+
+
+@dataclass
+class ProfileRegistry:
+    """Isolated MCP state for every configured Android profile."""
+
+    profiles: dict[str, AppState]
+
+
+selected_profile: ContextVar[str | None] = ContextVar("mcp_selected_profile", default=None)
+
+
+def select_state(state: AppState | ProfileRegistry, profile: str | None) -> AppState:
+    """Require explicit routing; never fall back to another account."""
+    from ..exceptions import ValidationError
+
+    if isinstance(state, ProfileRegistry):
+        if not profile:
+            raise ValidationError("profile is required")
+        if profile not in state.profiles:
+            raise ValidationError("Unknown profile")
+        return state.profiles[profile]
+    if profile is not None and profile != state.profile:
+        raise ValidationError("Signed profile does not match the server profile")
+    return state
+
+
+def get_profile_state(ctx: Context) -> AppState:
+    """Expose the selected profile's diagnostics without opening a client."""
+    return _app_state(ctx)
 
 
 def _app_state(ctx: Context) -> AppState:
@@ -123,7 +158,9 @@ def _app_state(ctx: Context) -> AppState:
     request_context = ctx.request_context
     if request_context is None:  # pragma: no cover - always set during a tool call
         raise RuntimeError("no active MCP request context")
-    return cast("AppState", request_context.lifespan_context)
+    return select_state(
+        cast("AppState | ProfileRegistry", request_context.lifespan_context), selected_profile.get()
+    )
 
 
 async def get_client(ctx: Context) -> NotebookLMClient:
@@ -179,7 +216,7 @@ def get_file_transfer(ctx: Context) -> FileTransferConfig | None:
     return _app_state(ctx).file_transfer
 
 
-async def get_client_from_app(request: Request) -> NotebookLMClient:
+async def get_client_from_app(request: Request, *, profile: str | None = None) -> NotebookLMClient:
     """Return the lifespan-bound client from a bare Starlette ``Request``.
 
     The ``/files/*`` custom routes receive a Starlette :class:`Request`, not an
@@ -201,5 +238,5 @@ async def get_client_from_app(request: Request) -> NotebookLMClient:
     server = request.app.state.fastmcp_server
     if not getattr(server, "_lifespan_result_set", False):
         raise RuntimeError("MCP lifespan client is not bound")
-    state = cast("AppState", server._lifespan_result)
+    state = select_state(cast("AppState | ProfileRegistry", server._lifespan_result), profile)
     return await state.client_provider.get()

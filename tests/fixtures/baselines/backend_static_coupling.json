@@ -2588,6 +2588,24 @@
     },
     {
       "kind": "from",
+      "lineno": 10,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._app.profile_client",
+      "target": "notebooklm.client",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 10,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._app.profiles",
+      "target": "notebooklm.paths",
+      "type_only": false
+    },
+    {
+      "kind": "from",
       "lineno": 45,
       "scope": null,
       "scope_kind": "module",
@@ -9518,7 +9536,7 @@
     },
     {
       "kind": "from",
-      "lineno": 29,
+      "lineno": 30,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.__main__",
@@ -9599,12 +9617,21 @@
     },
     {
       "kind": "from",
-      "lineno": 30,
+      "lineno": 33,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp._context",
       "target": "notebooklm.client",
       "type_only": true
+    },
+    {
+      "kind": "from",
+      "lineno": 133,
+      "scope": "select_state",
+      "scope_kind": "function",
+      "source": "notebooklm.mcp._context",
+      "target": "notebooklm.exceptions",
+      "type_only": false
     },
     {
       "kind": "from",
@@ -9734,6 +9761,42 @@
     },
     {
       "kind": "from",
+      "lineno": 19,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.mcp._profiles",
+      "target": "notebooklm._app.android_profiles",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 20,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.mcp._profiles",
+      "target": "notebooklm._app.profile_client",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 21,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.mcp._profiles",
+      "target": "notebooklm.client",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 22,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.mcp._profiles",
+      "target": "notebooklm.exceptions",
+      "type_only": false
+    },
+    {
+      "kind": "from",
       "lineno": 51,
       "scope": null,
       "scope_kind": "module",
@@ -9770,7 +9833,7 @@
     },
     {
       "kind": "from",
-      "lineno": 32,
+      "lineno": 33,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.server",
@@ -9779,7 +9842,16 @@
     },
     {
       "kind": "from",
-      "lineno": 33,
+      "lineno": 34,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.mcp.server",
+      "target": "notebooklm._app.profiles",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 35,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.server",
@@ -9788,7 +9860,7 @@
     },
     {
       "kind": "from",
-      "lineno": 34,
+      "lineno": 36,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.server",
@@ -9797,7 +9869,7 @@
     },
     {
       "kind": "from",
-      "lineno": 164,
+      "lineno": 187,
       "scope": "create_server._default_factory",
       "scope_kind": "function",
       "source": "notebooklm.mcp.server",
@@ -10103,7 +10175,7 @@
     },
     {
       "kind": "from",
-      "lineno": 27,
+      "lineno": 28,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.meta",
@@ -10112,7 +10184,16 @@
     },
     {
       "kind": "from",
-      "lineno": 28,
+      "lineno": 29,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.mcp.tools.meta",
+      "target": "notebooklm._app.master_token",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 30,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.meta",
@@ -10121,7 +10202,7 @@
     },
     {
       "kind": "from",
-      "lineno": 29,
+      "lineno": 31,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.meta",
@@ -10130,7 +10211,7 @@
     },
     {
       "kind": "from",
-      "lineno": 30,
+      "lineno": 32,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.mcp.tools.meta",
@@ -10769,20 +10850,20 @@
     },
     {
       "kind": "from",
-      "lineno": 9,
+      "lineno": 3,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.server._profile_client",
-      "target": "notebooklm.client",
+      "target": "notebooklm._app.profile_client",
       "type_only": false
     },
     {
       "kind": "from",
-      "lineno": 10,
+      "lineno": 3,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.server._profiles",
-      "target": "notebooklm.paths",
+      "target": "notebooklm._app.profiles",
       "type_only": false
     },
     {
@@ -11431,8 +11512,8 @@
       "modules": 53
     },
     "app": {
-      "lines": 13291,
-      "modules": 41
+      "lines": 13446,
+      "modules": 43
     },
     "auth": {
       "lines": 13745,
@@ -11443,8 +11524,8 @@
       "modules": 76
     },
     "mcp": {
-      "lines": 11423,
-      "modules": 40
+      "lines": 11743,
+      "modules": 41
     },
     "root": {
       "lines": 27063,
@@ -11459,7 +11540,7 @@
       "modules": 11
     },
     "server": {
-      "lines": 4272,
+      "lines": 4154,
       "modules": 21
     },
     "types": {
@@ -11472,13 +11553,13 @@
     }
   },
   "summary": {
-    "authored_lines": 151556,
-    "authored_modules": 483,
+    "authored_lines": 151913,
+    "authored_modules": 486,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1258,
+    "cross_subsystem_edges": 1267,
     "dynamic_import_calls": 10,
-    "function_local_edges": 87,
-    "module_level_edges": 1171,
+    "function_local_edges": 88,
+    "module_level_edges": 1179,
     "type_only_edges": 133
   },
   "version": 1

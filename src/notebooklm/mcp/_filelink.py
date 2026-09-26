@@ -368,6 +368,7 @@ class FileTransferConfig:
 
     signer: FileLinkSigner
     base_url: str
+    profile: str | None = field(default=None, kw_only=True)
     #: In-process single-use tracker for ``ul`` tokens. ``compare=False`` keeps this
     #: frozen dataclass hashable/comparable by (signer, base_url) only — the store is a
     #: mutable, dict-bearing (unhashable) object, so including it in ``__eq__``/
@@ -389,7 +390,7 @@ class FileTransferConfig:
         (keyed to the token's ``exp``), and returns the short URL — the long ``/files/ul``
         URL a ``GET /u/<shortid>`` redirects to. Robust to mobile-chat corruption (see
         :class:`ShortLinkStore`)."""
-        token = self.signer.sign({**payload, "op": "ul"}, UPLOAD_TTL)
+        token = self.signer.sign(self._payload(payload, "ul"), UPLOAD_TTL)
         # ``sign`` stamped ``exp = now + UPLOAD_TTL``; recompute it directly rather than
         # re-verifying the token (a full HMAC+decode) just to read one field back. This
         # ``now`` is a hair later, so the store entry expires at-or-after the token — never
@@ -409,14 +410,24 @@ class FileTransferConfig:
         widget passes the longer :data:`WIDGET_UPLOAD_TTL` for its sequentially-uploaded
         token pool (ADR-0027). The route enforces single-use regardless of TTL.
         """
-        return self._build("ul", self.signer.sign({**payload, "op": "ul"}, ttl))
+        return self._build("ul", self.signer.sign(self._payload(payload, "ul"), ttl))
 
     def download_url(self, payload: dict[str, Any]) -> str:
         """Sign ``payload`` with the download TTL and build the ``/files/dl`` URL.
 
         The builder OWNS the ``op`` claim (stamps ``"dl"``) — see :meth:`upload_url`.
         """
-        return self._build("dl", self.signer.sign({**payload, "op": "dl"}, DOWNLOAD_TTL))
+        return self._build("dl", self.signer.sign(self._payload(payload, "dl"), DOWNLOAD_TTL))
+
+    def _payload(self, payload: dict[str, Any], op: str) -> dict[str, Any]:
+        claims = {**payload, "op": op}
+        if self.profile is not None:
+            claims["profile"] = self.profile
+        return claims
+
+    def matches_profile(self, payload: dict[str, Any]) -> bool:
+        """Prevent an upload receipt from being read through another profile."""
+        return payload.get("profile") == self.profile
 
     def _build(self, kind: str, token: str) -> str:
         return f"{self.base_url.rstrip('/')}/files/{kind}/{token}"

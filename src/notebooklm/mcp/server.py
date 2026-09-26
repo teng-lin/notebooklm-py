@@ -2,7 +2,7 @@
 
 Design highlights:
 
-- **One client per process, opened lazily.** The FastMCP lifespan binds a
+- **One client per configured profile, opened lazily.** The FastMCP lifespan binds a
   :class:`~notebooklm.mcp._clientprovider.ClientProvider` over
   ``from_storage(profile=..., keepalive=600.0)``, starts the open in the
   background, and yields *immediately* — the MCP ``initialize`` handshake is
@@ -21,7 +21,8 @@ Design highlights:
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+import os
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
 from typing import Literal, cast
@@ -30,11 +31,13 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider
 
 from .._adapter_support import DEFAULT_SERVER_KEEPALIVE_INTERVAL
+from .._app.profiles import configured_profiles, profile_startup_timeout
 from ..client import NotebookLMClient
 from ..paths import get_active_profile, resolve_profile, set_active_profile
 from ._clientprovider import ClientProvider
-from ._context import AppState
+from ._context import AppState, ProfileRegistry
 from ._filelink import FileTransferConfig
+from ._profiles import PROFILE_STARTUP_TIMEOUT_ENV, ProfileTools, profile_lifespan
 
 __all__ = ["SERVER_INSTRUCTIONS", "SERVER_NAME", "create_server", "register_all"]
 
@@ -125,6 +128,9 @@ async def _shutdown(
 def create_server(
     *,
     profile: str | None = None,
+    profiles: Sequence[str] | None = None,
+    profile_client_factory: Callable[[str], AbstractAsyncContextManager[NotebookLMClient]]
+    | None = None,
     backend: Literal["web", "android"] | None = None,
     client_factory: ClientFactory | None = None,
     auth: AuthProvider | None = None,
@@ -136,6 +142,9 @@ def create_server(
         profile: Auth profile bound for the whole process. Defaults to the active
             profile when ``None``. Also drives process-wide profile resolution
             for diagnostics such as the ``server_info`` tool.
+        profiles: Static profile allowlist. Multiple entries require Android and
+            a profile argument on every tool; one entry keeps single-profile behavior.
+        profile_client_factory: Test seam for per-profile async client contexts.
         backend: Preferred API backend for the default client factory. An explicit
             value takes precedence over ``NOTEBOOKLM_BACKEND``.
         client_factory: Test seam — a zero-arg callable returning an async context
@@ -155,8 +164,22 @@ def create_server(
 
     Returns:
         A configured :class:`~fastmcp.FastMCP` server whose lifespan binds one
-        client and which has every tool module registered.
+        client per configured profile and which has every tool module registered.
     """
+
+    if profiles is not None and profile is not None:
+        raise ValueError("profile and profiles are mutually exclusive")
+    paths = configured_profiles(profiles) if profiles is not None else {}
+    multi_profile = len(paths) > 1
+    if paths and not multi_profile:
+        profile = next(iter(paths))
+    if multi_profile and (backend or os.environ.get("NOTEBOOKLM_BACKEND", "web")) != "android":
+        raise ValueError("Multi-profile MCP requires backend='android'")
+    if multi_profile and client_factory is not None:
+        raise ValueError("Use profile_client_factory for multi-profile clients")
+    if not multi_profile and profile_client_factory is not None:
+        raise ValueError("profile_client_factory requires multiple profiles")
+    timeout = profile_startup_timeout(PROFILE_STARTUP_TIMEOUT_ENV) if multi_profile else 0.0
 
     def _default_factory() -> AbstractAsyncContextManager[NotebookLMClient]:
         # from_storage returns a dual awaitable/async-context-manager; we use only
@@ -176,12 +199,22 @@ def create_server(
     factory = client_factory or _default_factory
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[AppState]:
+    async def lifespan(_server: FastMCP) -> AsyncIterator[AppState | ProfileRegistry]:
+        if multi_profile:
+            async with profile_lifespan(
+                paths, profile_client_factory, timeout, file_transfer
+            ) as registry:
+                yield registry
+            return
         previous_profile = get_active_profile()
         set_active_profile(resolve_profile(profile))
         try:
             provider = ClientProvider(factory)
-            state = AppState(client_provider=provider, file_transfer=file_transfer)
+            state = AppState(
+                client_provider=provider,
+                file_transfer=file_transfer,
+                profile=resolve_profile(profile),
+            )
             state.chat_tasks.set_bound_loop(asyncio.get_running_loop())
             state.chat_tasks.reset_after_open()
             # Warm the client on the server loop WITHOUT awaiting it: the auth
@@ -203,8 +236,16 @@ def create_server(
         finally:
             set_active_profile(previous_profile)
 
-    mcp = FastMCP(name=SERVER_NAME, instructions=SERVER_INSTRUCTIONS, lifespan=lifespan, auth=auth)
-    register_all(mcp)
+    instructions = SERVER_INSTRUCTIONS
+    if multi_profile:
+        instructions += (
+            " Every tool call requires an explicit profile argument. Configured profiles: "
+            + ", ".join(paths)
+            + ". Profiles route accounts; the server credential grants access to all profiles."
+        )
+    mcp = FastMCP(name=SERVER_NAME, instructions=instructions, lifespan=lifespan, auth=auth)
+    registrar = cast(FastMCP, ProfileTools(mcp)) if multi_profile else mcp
+    register_all(registrar)
     if file_transfer is not None:
         # Import lazily so a build without file transfer never imports the route
         # module (and stdio stays untouched).
@@ -216,5 +257,5 @@ def create_server(
     # default path.
     from ._uploadwidget import register_upload_widget
 
-    register_upload_widget(mcp, file_transfer)
+    register_upload_widget(registrar, file_transfer)
     return mcp

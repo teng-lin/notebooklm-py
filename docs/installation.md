@@ -492,7 +492,8 @@ The launcher pins one worker, including when `WEB_CONCURRENCY` is set. Multiple
 server processes do not share pending state or these limits. Profile selection is
 routing, not authorization: the server bearer token grants access to every
 configured profile. Dynamic profile changes, public multi-tenant hosting, Web
-multi-profile mode, and MCP multi-profile mode are outside this feature.
+multi-profile mode is outside this feature. MCP supports the same Android profile
+isolation with per-tool selection; see below.
 
 With no profile list or a one-entry list, existing single-profile behavior remains:
 the selection header is ignored and the existing storage bootstrap is used.
@@ -609,6 +610,56 @@ notebooklm skill install               # writes ~/.claude/skills/notebooklm/, ~/
 ```
 
 Optional — only needed if your agent harness reads from those directories and the skill isn't already present.
+
+### Android multi-profile MCP
+
+MCP can serve several already-provisioned Android profiles over either stdio or HTTP:
+
+<!-- not mirrored: MCP operator configuration, not a contributor install. -->
+```bash
+uv tool install --force "notebooklm-py[mcp,android]"
+notebooklm-mcp --backend android --profiles work,personal
+# Or set NOTEBOOKLM_MCP_PROFILES=work,personal and NOTEBOOKLM_BACKEND=android.
+# Add --transport http to use the existing HTTP authentication and bind settings.
+```
+
+With two or more profiles, **every tool call requires a `profile` argument**:
+
+```json
+{"name": "notebook_list", "arguments": {"profile": "work"}}
+```
+
+This applies to diagnostics (`server_info`), confirmations, and subsequent task
+polls as well as notebook operations. `tools/list` advertises the required argument,
+and server instructions list the configured names. There is no session-wide active
+account and no fallback profile. Use the exact configured spelling; unknown names
+fail validation. A single entry in `--profiles` retains the existing single-profile
+behavior and tool schemas. `--profile` and `--profiles` are mutually exclusive;
+an explicit `--profile` overrides `NOTEBOOKLM_MCP_PROFILES`.
+
+As in REST multi-profile mode, each profile needs a valid `master_token.json`.
+Profile names and canonical storage paths must be distinct (including case aliases).
+Distinct paths may hold the same credentials, but still share upstream account quotas.
+Each profile owns an Android client, bearer/retry state, detached chat jobs, and
+research cancellation tracking. Chat job capacity and concurrency are per profile;
+signed file-transfer route limits remain process-wide. Web cookies are never loaded,
+rotated, or persisted by these clients. Web multi-profile serving is unsupported.
+
+Client warm-up runs in the background so `initialize` and tool discovery do not
+wait for upstream authentication. A healthy profile keeps serving when another
+fails. Client-dependent calls to an unavailable profile return a retriable `SERVER`
+error; failed attempts have a five-second recovery cooldown, and concurrent calls
+share one attempt. `NOTEBOOKLM_MCP_PROFILE_STARTUP_TIMEOUT` configures the positive,
+finite per-attempt deadline (default: 30 seconds, including the readiness read).
+Expired attempts cannot publish a client; retries wait for their cancellation
+cleanup to settle, and shutdown drains owned tasks after cancelling detached chats.
+`server_info(profile=...)` reports Android credential health and readiness without
+probing Web credentials.
+
+Signed upload/download URLs bind the issuing profile. Upload receipt polling and
+widget confirmation use that same profile. The HTTP bearer or OAuth credential
+authorizes **all** configured profiles; selection is routing, not per-account
+access control. Existing HTTP bind and authentication requirements still apply.
 
 ### Running the MCP server (`mcp` extra)
 

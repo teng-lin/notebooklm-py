@@ -303,7 +303,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
         if spec is None:  # pragma: no cover - tokens are minted only for known types
             return PlainTextResponse("Unknown artifact type.", status_code=400)
         try:
-            client = await get_client_from_app(request)
+            client = await get_client_from_app(request, profile=payload.get("profile"))
         except Exception:  # noqa: BLE001 - not-bound, shutting down, or a failed lazy open
             # The client is opened lazily (#2330), so this now also covers an
             # auth/network failure on the open. Never echo the cause: an auth error
@@ -538,7 +538,7 @@ def register_file_routes(mcp: FastMCP, config: FileTransferConfig) -> None:
             except ValueError:
                 pass
         try:
-            client = await get_client_from_app(request)
+            client = await get_client_from_app(request, profile=payload.get("profile"))
         except Exception:  # noqa: BLE001 - not-bound, shutting down, or a failed lazy open
             # Same widening as the download route (#2330), and it carries the CORS
             # header like every other /files/ul error response — a bare 500 would be
