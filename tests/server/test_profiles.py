@@ -252,6 +252,19 @@ async def test_profile_startup_overlaps_and_closes_all_clients() -> None:
     assert sorted(closed) == ["personal", "work"]
 
 
+def test_profile_client_owner_rejects_cross_loop_access() -> None:
+    from notebooklm.server._profile_client import ProfileClientOwner
+
+    async def build() -> ProfileClientOwner:
+        return ProfileClientOwner()
+
+    owner = asyncio.run(build())
+    with pytest.raises(RuntimeError, match="event loop"):
+        asyncio.run(owner.open(lambda: fake_factory("work"), 1))
+    with pytest.raises(RuntimeError, match="event loop"):
+        asyncio.run(owner.close())
+
+
 @pytest.mark.parametrize("stage", ["credential_thread", "readiness"])
 async def test_profile_deadline_isolates_stalls_and_bounds_recovery(
     monkeypatch: pytest.MonkeyPatch, stage: str

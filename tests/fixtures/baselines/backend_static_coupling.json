@@ -11459,7 +11459,7 @@
       "modules": 11
     },
     "server": {
-      "lines": 4265,
+      "lines": 4272,
       "modules": 21
     },
     "types": {
@@ -11472,7 +11472,7 @@
     }
   },
   "summary": {
-    "authored_lines": 151549,
+    "authored_lines": 151556,
     "authored_modules": 483,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1258,

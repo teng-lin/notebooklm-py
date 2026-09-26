@@ -162,6 +162,13 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
         "Lifespan-local lock created and discarded within one FastAPI event "
         "loop; it is never retained by the reusable app across lifespan runs.",
     ),
+    _AllowlistEntry(
+        "src/notebooklm/server/_profile_client.py",
+        "ProfileClientOwner",
+        "Constructed per profile inside one FastAPI lifespan and never reused "
+        "across lifespans. open/close assert the constructor's running loop, "
+        "and a closed owner cannot reopen; no reset/rebind protocol is needed.",
+    ),
     # Each close wave constructs its abort Event on the lifecycle's currently
     # asserted loop and discards the whole wave before a later reopen. The
     # primitive is neither cached nor reusable across generations/loops, so the

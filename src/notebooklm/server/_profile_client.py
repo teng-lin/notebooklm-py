@@ -17,16 +17,22 @@ class ProfileClientOwner:
     """
 
     def __init__(self) -> None:
+        self._loop = asyncio.get_running_loop()
         self._task: asyncio.Task[None] | None = None
         self._release = asyncio.Event()
         self._published = False
         self._closed = False
+
+    def _assert_loop(self) -> None:
+        if asyncio.get_running_loop() is not self._loop:
+            raise RuntimeError("Profile client must be used on its owning event loop")
 
     async def open(
         self,
         factory: Callable[[], AbstractAsyncContextManager[NotebookLMClient]],
         timeout: float,
     ) -> NotebookLMClient:
+        self._assert_loop()
         if self._closed:
             raise RuntimeError("Profile owner is closed")
         if self._task is not None and not self._task.done():
@@ -68,6 +74,7 @@ class ProfileClientOwner:
             raise
 
     async def close(self) -> None:
+        self._assert_loop()
         self._closed = True
         self._release.set()
         if self._task is not None:
