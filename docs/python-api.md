@@ -4199,8 +4199,10 @@ shapes return `None`. The backend may change or stop populating this field;
 applications must not treat its values as a stable public enum. The opt-in
 adapter URL fallback recognizes only value `1`; other values disable recovery.
 Both Web and Android decode this diagnostic. Android URL precondition failures
-retain the correlated tentative `source_id` on `SourceAddError`, so recovery can
-identify and optionally clean up an ERROR row even when it has no URL. See the
+preserve their original `ClientError`/`RPCError` and attach the correlated
+tentative `source_id` and `stage="source commit"` as operation metadata. Existing
+exception handlers keep working, and recovery can identify and optionally clean
+up an ERROR row even when it has no URL. See the
 [live backend evidence](android/source-url-recovery-evidence.md).
 
 `notebooklm.utils.html_to_markdown(html)` reuses the source HTML converter and

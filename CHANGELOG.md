@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content preserve provenance. Optional `cleanup_on_failure` removes only an
   attributable ERROR stub after replacement readiness; ambiguous rows remain.
   Requires the `impersonate` and `markdown` extras. Android URL commit failures
-  with code 9 now raise `SourceAddError` with the original RPC error as `cause`
-  and the correlated tentative `source_id`, matching the Web source-add contract.
+  with code 9 retain their original `ClientError`/`RPCError` type and carry the
+  correlated tentative `source_id` as operation metadata for recovery.
 
 - **Bulk note deletion (#1999).** `notes.delete(notebook_id, note_ids)` accepts a
   list and sends one delete request on Web and Android. MCP `studio_delete(items=...)`

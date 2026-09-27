@@ -929,7 +929,7 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 error = _unresolved_add_error(url, stage="tentative registration correlation")
                 raise attach_journal_entry(error, registration_entry, workflow=True)
 
-            with url_commit_scope(url, registration.source_id, commit_entry):
+            with url_commit_scope(registration.source_id, commit_entry):
                 proofs, _ = await self._commit_urls(
                     notebook_id,
                     [(url, registration.source_id)],

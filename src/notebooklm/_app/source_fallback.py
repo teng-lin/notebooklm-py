@@ -83,10 +83,16 @@ def _same_url(left: str | None, right: str | None) -> bool:
     ) == re.sub(r"%[0-9a-fA-F]{2}", lambda match: match.group(0).upper(), normalized_right)
 
 
-def _failed_url_import(exc: SourceAddError) -> bool:
+def _failed_url_import(exc: SourceAddError | RPCError) -> bool:
     # A network timeout, decoding fault, auth failure, or arbitrary source error
     # never authorizes another create. Code 9 alone still needs row evidence.
-    cause = exc.cause
+    if isinstance(exc, SourceAddError):
+        cause = exc.cause
+    else:
+        # Native RPC errors qualify only at the correlated URL commit boundary.
+        if not exc.source_id or exc.stage != "source commit":
+            return False
+        cause = exc
     if exc.commit_state in {CommitState.CONFIRMED, CommitState.NOT_SENT}:
         return False
     return (
@@ -146,7 +152,7 @@ async def _recovery_candidate(
 async def recover_url(
     client: NotebookLMClient,
     plan: SourceAddExecutionPlan,
-    original: SourceAddError,
+    original: SourceAddError | RPCError,
     before: set[str],
 ) -> SourceAddResult | None:
     if not _failed_url_import(original):

@@ -100,7 +100,7 @@ def known_registration_error(subject: str, *, kind: str = "URL") -> SourceAddErr
 
 
 @contextmanager
-def url_commit_scope(url: str, source_id: str, entry: JournalEntry) -> Iterator[None]:
+def url_commit_scope(source_id: str, entry: JournalEntry) -> Iterator[None]:
     """Retain a positively correlated tentative id on URL precondition failures."""
     with bind_operation_journal_entries(entry):
         try:
@@ -108,11 +108,11 @@ def url_commit_scope(url: str, source_id: str, entry: JournalEntry) -> Iterator[
         except RPCError as exc:
             if type(exc) not in (RPCError, ClientError) or exc.rpc_code != 9:
                 raise
-            failure = SourceAddError(url, cause=exc)
-            attach_journal_entry(failure, entry, workflow=True)
-            failure.source_id = source_id
-            failure.stage = "source commit"
-            raise failure from exc
+            # Preserve the native exception contract; recovery consumes metadata.
+            entry.source_id = source_id
+            entry.stage = "source commit"
+            attach_journal_entry(exc, entry, workflow=True)
+            raise
 
 
 def unresolved_add_error(

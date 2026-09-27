@@ -7,7 +7,8 @@ that were deleted after each probe.
 
 Adding `https://issue-2110-unresolvable.invalid/` fails with RPC code 9 and leaves
 an ERROR source. Web reports `SourceAddError` with an `RPCError` cause; native
-Android reports `ClientError` before the source workflow wraps it.
+Android reports `ClientError`. The source workflow preserves that native error
+and attaches the correlated `source_id` and commit stage as operation metadata.
 
 The Web SourceSettings capture is:
 

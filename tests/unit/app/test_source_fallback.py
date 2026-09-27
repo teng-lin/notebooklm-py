@@ -11,9 +11,11 @@ from notebooklm._app import source_fallback as fallback
 from notebooklm._app.source_add import SourceAddExecutionPlan, SourceAddPlan, execute_source_add
 from notebooklm._app.source_fetch import FetchedSource
 from notebooklm.exceptions import (
+    AuthError,
     ClientError,
     DecodingError,
     RPCError,
+    ServerError,
     SourceAddError,
     ValidationError,
 )
@@ -365,9 +367,11 @@ async def test_disappeared_ghost_does_not_delete_anything(setup):
 
 @pytest.mark.asyncio
 async def test_android_receipt_recovers_url_less_ghost_and_cleans_after_ready(setup):
-    client, original, fetch = setup
-    original.cause = ClientError("failed precondition", rpc_code=9)
+    client, _, fetch = setup
+    original = ClientError("failed precondition", rpc_code=9)
     original.source_id = "ghost"
+    original.stage = "source commit"
+    client.sources.add_url.side_effect = original
     row = Source("ghost", status=SourceStatus.ERROR, experimental_failure_code=1)
     client.sources.list.side_effect = [[], [row], [row]]
     client.sources.get_or_none.return_value = row
@@ -589,3 +593,65 @@ async def test_equivalent_url_candidates_remain_ambiguous(setup):
         await execute_source_add(client, plan(fallback_fetch=True))
     assert caught.value is original
     fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RPCError, ClientError])
+@pytest.mark.parametrize("phase", ["disabled", "baseline", "readback", "fetch"])
+async def test_native_failure_preserves_identity_and_metadata_when_not_recovered(
+    setup, error_type, phase
+):
+    client, _, fetch = setup
+    original = error_type("failed precondition", method_id="AddSources", rpc_code=9)
+    original.source_id = "ghost"
+    original.stage = "source commit"
+    metadata = original.operation_metadata
+    client.sources.add_url.side_effect = original
+    if phase == "baseline":
+        client.sources.list.side_effect = RPCError("baseline unavailable")
+    elif phase == "readback":
+        client.sources.list.side_effect = [[], RPCError("readback unavailable")]
+    elif phase == "fetch":
+        fetch.side_effect = ValueError("fetch failed")
+    with pytest.raises(error_type) as caught:
+        await execute_source_add(client, plan(fallback_fetch=phase != "disabled"))
+    assert caught.value is original
+    assert original.operation_metadata is metadata
+    assert original.method_id == "AddSources"
+    assert original.rpc_code == 9
+    assert str(original) == "failed precondition"
+    client.sources.add_text.assert_not_called()
+    client.sources.delete_many_with_outcomes.assert_not_called()
+    if phase == "disabled":
+        client.sources.list.assert_not_called()
+    if phase != "fetch":
+        fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_type", "code", "source_id", "stage"),
+    [
+        (ClientError, 9, None, "source commit"),
+        (ClientError, 9, "ghost", None),
+        (ClientError, 9, "ghost", "register"),
+        (ClientError, 3, "ghost", "source commit"),
+        (RPCError, None, "ghost", "source commit"),
+        (AuthError, 9, "ghost", "source commit"),
+        (ServerError, 9, "ghost", "source commit"),
+    ],
+)
+async def test_unrelated_native_errors_never_reconcile_or_fetch(
+    setup, error_type, code, source_id, stage
+):
+    client, _, fetch = setup
+    original = error_type("failure", rpc_code=code)
+    original.source_id = source_id
+    original.stage = stage
+    client.sources.add_url.side_effect = original
+    with pytest.raises(error_type) as caught:
+        await execute_source_add(client, plan(fallback_fetch=True))
+    assert caught.value is original
+    assert client.sources.list.await_count == 1
+    fetch.assert_not_called()
+    client.sources.add_text.assert_not_called()
