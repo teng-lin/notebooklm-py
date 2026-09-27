@@ -540,6 +540,13 @@ class Source:
     #: field 19; ``None`` for every other source (#2292).
     expert_intelligence: ExpertIntelligenceSourceMetadata | None = None
 
+    experimental_failure_code: int | None = field(default=None, repr=False, kw_only=True)
+    """Unstable fetch diagnostic under SourceSettings tag 3; unknown shapes yield None.
+
+    This is not a SourceStatus or a quota signal. The backend may stop emitting
+    it or change its meaning. Only ERROR rows may supply this diagnostic.
+    """
+
     @property
     def kind(self) -> SourceType:
         """Get source type as SourceType enum."""

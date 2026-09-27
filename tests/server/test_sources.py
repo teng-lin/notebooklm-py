@@ -43,6 +43,33 @@ def test_add_text_returns_source(authed_client: TestClient) -> None:
     assert resp.json()["title"] == "Note"
 
 
+def test_url_fallback_options_and_provenance(authed_client: TestClient, monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    from notebooklm._app import source_add
+    from notebooklm._app.source_fallback import FallbackProvenance, RecoveredSourceAddResult
+
+    result = RecoveredSourceAddResult(
+        Source("copy", title="Article"),
+        FallbackProvenance("https://example.com", "https://example.com/", "2026-09-27"),
+    )
+    execute = AsyncMock(return_value=result)
+    monkeypatch.setattr(source_add, "execute_source_add", execute)
+    response = authed_client.post(
+        "/v1/notebooks/nb-1/sources/url",
+        json={
+            "url": "https://example.com",
+            "fallback_fetch": True,
+            "cleanup_on_failure": True,
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["fallback"]["refreshable"] is False
+    assert response.json()["id"] == "copy"
+    plan = execute.call_args.args[1]
+    assert plan.fallback_fetch and plan.cleanup_on_failure
+
+
 def test_add_private_url_is_4xx_not_500(authed_client: TestClient) -> None:
     resp = authed_client.post(
         "/v1/notebooks/nb-1/sources/url", json={"url": "http://127.0.0.1:9/secret"}

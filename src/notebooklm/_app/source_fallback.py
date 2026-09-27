@@ -1,0 +1,165 @@
+"""Opt-in recovery of a conclusively failed URL import as static text."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+from ..exceptions import ClientError, RPCError, SourceAddError, ValidationError
+from ..outcomes import CommitState
+from ..types import SourceStatus
+from ..urls import is_youtube_url
+from .source_add import SourceAddResult
+from .source_fetch import fetch_source, public_fetch_url, require_fetch_dependencies
+
+if TYPE_CHECKING:
+    from ..client import NotebookLMClient
+    from ..types import Source
+    from .source_add import SourceAddExecutionPlan
+
+
+@dataclass(frozen=True)
+class FallbackProvenance:
+    original_url: str
+    final_url: str
+    fetched_at: str
+    method: str = "curl_cffi"
+    refreshable: bool = False
+    ghost_candidates: tuple[str, ...] = ()
+    cleanup: str = "not_requested"
+    warning: str = "Imported as static text; URL refresh is unavailable."
+
+
+@dataclass(frozen=True)
+class RecoveredSourceAddResult(SourceAddResult):
+    fallback: FallbackProvenance
+
+
+def validate_fallback(plan: SourceAddExecutionPlan) -> None:
+    if plan.cleanup_on_failure and not plan.fallback_fetch:
+        raise ValidationError("cleanup_on_failure requires fallback_fetch")
+    if not plan.fallback_fetch:
+        return
+    if plan.plan.detected_type != "url":
+        raise ValidationError("Fallback is supported only for single web-page URLs")
+    try:
+        public_fetch_url(plan.plan.content)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    if is_youtube_url(plan.plan.content):
+        raise ValidationError("Fallback is supported only for single web-page URLs")
+    require_fetch_dependencies()
+
+
+def _failed_url_import(exc: SourceAddError) -> bool:
+    # A network timeout, decoding fault, auth failure, or arbitrary source error
+    # never authorizes another create. Code 9 alone still needs row evidence.
+    cause = exc.cause
+    if exc.commit_state in {CommitState.CONFIRMED, CommitState.NOT_SENT}:
+        return False
+    return (
+        isinstance(cause, RPCError)
+        and type(cause) in (RPCError, ClientError)
+        and cause.rpc_code in (9, "9")
+    )
+
+
+async def recover_url(
+    client: NotebookLMClient,
+    plan: SourceAddExecutionPlan,
+    original: SourceAddError,
+    before: set[str],
+) -> SourceAddResult | None:
+    if not _failed_url_import(original):
+        return None
+    try:
+        # Strict full-roster read: an ERROR-only baseline misses old PROCESSING
+        # rows that fail during this call, and a filtered after-read hides a
+        # concurrent successful import of the same URL.
+        after = await client.sources.list(plan.notebook_id, strict=True)
+    except Exception:
+        return None  # Retain the original failure and all of its write evidence.
+    owned_id = getattr(original, "source_id", None)
+    # Android's failed tentative row may have no URL. Its registration receipt
+    # identifies the row; a conflicting URL still fails closed.
+    matches = [
+        s
+        for s in after
+        if s.id not in before
+        and (
+            s.id == owned_id and s.url in (None, plan.plan.content)
+            if owned_id is not None
+            else s.url == plan.plan.content
+        )
+    ]
+    if len(matches) != 1:
+        return None
+    ghost = matches[0]
+    if (
+        ghost.status != SourceStatus.ERROR
+        or type(ghost.experimental_failure_code) is not int
+        or ghost.experimental_failure_code != 1
+    ):
+        return None
+    try:
+        fetched = await fetch_source(plan.plan.content)
+    except Exception:
+        return None
+
+    # Only this second mutation's own receipt can describe its outcome. A lost
+    # add_text response must escape unchanged; never retry it or delete the stub.
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    content = (
+        f"Static web copy (URL refresh unavailable)\nOriginal URL: {plan.plan.content}\n"
+        f"Fetched URL: {fetched.final_url}\nFetched at: {fetched_at}\n\n{fetched.content}"
+    )
+    replacement = await client.sources.add_text(
+        plan.notebook_id,
+        plan.plan.title or fetched.title or "Imported web page (static text)",
+        content,
+    )
+    cleanup = "not_requested"
+    warning = "Imported as static text; URL refresh is unavailable."
+    if plan.cleanup_on_failure:
+        # A URL/time diff is diagnostic, not proof of ownership. Only an exact
+        # source_id attached by the creating workflow can authorize deletion.
+        if owned_id != ghost.id:
+            cleanup = "skipped_unattributed"
+            warning += " Ghost retained because this operation cannot prove ownership."
+        else:
+            cleanup = await _cleanup(client, plan.notebook_id, ghost, replacement)
+            if cleanup not in {"deleted", "already_absent"}:
+                warning += " Replacement retained; ghost cleanup was not confirmed."
+
+    return RecoveredSourceAddResult(
+        source=replacement,
+        fallback=FallbackProvenance(
+            original_url=plan.plan.content,
+            final_url=fetched.final_url,
+            fetched_at=fetched_at,
+            ghost_candidates=(ghost.id,),
+            cleanup=cleanup,
+            warning=warning,
+        ),
+    )
+
+
+async def _cleanup(
+    client: NotebookLMClient, notebook_id: str, ghost: Source, replacement: Source
+) -> str:
+    try:
+        ready = await client.sources.wait_until_ready(notebook_id, replacement.id)
+        if not ready.is_ready:
+            return "replacement_not_ready"
+        current = await client.sources.get_or_none(notebook_id, ghost.id)
+        if current is None:
+            return "already_absent"
+        if current.status != SourceStatus.ERROR or current.url != ghost.url:
+            return "skipped_changed"
+        outcomes = await client.sources.delete_many_with_outcomes(notebook_id, [ghost.id])
+        if len(outcomes) == 1 and outcomes[0].outcome.commit_state is CommitState.CONFIRMED:
+            return "deleted"
+        return "unconfirmed"
+    except Exception:
+        return "unconfirmed"

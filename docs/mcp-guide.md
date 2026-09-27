@@ -750,3 +750,17 @@ been sent.
 - [`desktop-extension/README.md`](../desktop-extension/README.md) — one-click Claude Desktop `.mcpb` bundle (prebuilt, attached to each stable release)
 - [configuration.md](configuration.md) — profiles, multi-account, storage
 - [cli-reference.md](cli-reference.md) — the equivalent CLI commands
+
+### URL fallback fetching
+
+`source_add(source_type="url", url="https://example.com/article", fallback_fetch=True)`
+opts into the [static-text recovery workflow](cli-reference.md#opt-in-url-recovery).
+Install the `impersonate` and `markdown` extras on the MCP host. Optional
+`cleanup_on_failure=True` requests attributable-stub cleanup after replacement
+readiness. Both options are single-web-URL only; they cannot be used with `urls`.
+The response includes `fallback` provenance when recovery ran, including with
+`wait=True`. Private destinations remain prohibited regardless of `allow_internal`.
+
+REST exposes the same booleans on `POST /v1/notebooks/{id}/sources/url`; its returned
+source gains a `fallback` object only after recovery. Defaults retain existing
+behavior. Low-level SDK `sources.add_url()` remains a direct backend operation.

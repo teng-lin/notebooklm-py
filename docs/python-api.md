@@ -4189,3 +4189,19 @@ class NotebookSourceIdProvider(Protocol):
     async def get_source_ids(self, notebook_id: str) -> list[str]:
         """Return source IDs for a notebook."""
 ```
+
+### Experimental source failure diagnostics
+
+`Source.experimental_failure_code` exposes a provisional fetch-error scalar under
+SourceSettings tags 3 → 7 → 1 on ERROR rows only. It is separate from `Source.status` and
+is not a quota indicator. Missing fields, healthy rows and unrecognized wire
+shapes return `None`. The backend may change or stop populating this field;
+applications must not treat its values as a stable public enum. The opt-in
+adapter URL fallback recognizes only value `1`; other values disable recovery.
+Both Web and Android decode this diagnostic. Android URL precondition failures
+retain the correlated tentative `source_id` on `SourceAddError`, so recovery can
+identify and optionally clean up an ERROR row even when it has no URL. See the
+[live backend evidence](android/source-url-recovery-evidence.md).
+
+`notebooklm.utils.html_to_markdown(html)` reuses the source HTML converter and
+preserves supported math notation. It requires the `markdown` extra.

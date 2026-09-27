@@ -334,6 +334,7 @@
     "is_youtube_url"
   ],
   "notebooklm.utils": [
-    "resolve_chat_reference_passage"
+    "resolve_chat_reference_passage",
+    "html_to_markdown"
   ]
 }

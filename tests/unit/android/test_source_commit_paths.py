@@ -47,6 +47,7 @@ from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm.exceptions import (
     AuthError,
+    ClientError,
     ConfigurationError,
     DecodingError,
     NetworkError,
@@ -181,6 +182,24 @@ def _registration_handler(ids: list[str]) -> Handler:
         )
 
     return _handle
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RPCError, ClientError])
+async def test_url_precondition_failure_retains_correlated_registration_id(error_type) -> None:
+    transport = FakeTransport()
+    cause = error_type("failed precondition", rpc_code=9)
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
+    transport.handlers[ADD_SOURCES_METHOD] = cause
+    with pytest.raises(SourceAddError) as caught:
+        await _api(transport).add_url(NOTEBOOK_ID, URL_A)
+    assert caught.value.source_id == SOURCE_A
+    assert caught.value.cause is cause
+    assert caught.value.stage == "source commit"
+    assert [method for method, _, _ in transport.calls] == [
+        ADD_TENTATIVE_SOURCES_METHOD,
+        ADD_SOURCES_METHOD,
+    ]
 
 
 class _UnreadableRow:

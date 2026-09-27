@@ -652,7 +652,13 @@ def source_add_payload(result: SourceAddResult) -> dict[str, Any]:
     the neutral ``source_summary_payload`` shape. Built in the CLI render layer
     (§11) so the ``_app`` result dataclass stays typed-fields-only.
     """
-    return {"source": source_summary_payload(result.source)}
+    from .._app.serialize import to_jsonable
+
+    payload = {"source": source_summary_payload(result.source)}
+    fallback = getattr(result, "fallback", None)
+    if fallback is not None:
+        payload["fallback"] = to_jsonable(fallback)
+    return payload
 
 
 def _render_play_books_result(

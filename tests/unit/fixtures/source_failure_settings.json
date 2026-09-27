@@ -1,0 +1,5 @@
+{
+  "captured_at": "2026-09-27",
+  "scenario": "ADD_SOURCE for https://issue-2110-unresolvable.invalid/ returned code 9; GET_NOTEBOOK settings below",
+  "settings": [null, 3, [null, null, null, null, null, null, [1]]]
+}

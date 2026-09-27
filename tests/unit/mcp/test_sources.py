@@ -45,6 +45,37 @@ from notebooklm.types import Label, Source  # noqa: E402 - after importorskip gu
 from .conftest import AsyncMock  # noqa: E402 - after importorskip guard
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wait", [False, True])
+async def test_url_fallback_provenance_survives_wait(mcp_call, mock_client, monkeypatch, wait):
+    from notebooklm._app import source_add
+    from notebooklm._app.source_fallback import FallbackProvenance, RecoveredSourceAddResult
+
+    source = Source(SRC_ID, title="Article", _type_code=4)
+    execute = AsyncMock(
+        return_value=RecoveredSourceAddResult(
+            source, FallbackProvenance("https://example.com", "https://example.com/", "2026-09-27")
+        )
+    )
+    monkeypatch.setattr(source_add, "execute_source_add", execute)
+    mock_client.sources.get_or_none = AsyncMock(return_value=source)
+    mock_client.sources.wait_until_ready = AsyncMock(return_value=source)
+    result = await mcp_call(
+        "source_add",
+        {
+            "notebook": NB_ID,
+            "source_type": "url",
+            "url": "https://example.com",
+            "fallback_fetch": True,
+            "cleanup_on_failure": True,
+            "wait": wait,
+        },
+    )
+    assert result.structured_content["fallback"]["refreshable"] is False
+    assert execute.call_args.args[1].fallback_fetch
+    assert execute.call_args.args[1].cleanup_on_failure
+
+
 @dataclass
 class FakeSource:
     id: str

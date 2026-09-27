@@ -95,6 +95,45 @@ def mock_auth():
 # =============================================================================
 
 
+def test_source_add_fallback_flags_and_json(runner, monkeypatch):
+    from notebooklm._app.source_fallback import FallbackProvenance, RecoveredSourceAddResult
+
+    command = importlib.import_module("notebooklm.cli.source_cmd")
+    execute = AsyncMock(
+        return_value=RecoveredSourceAddResult(
+            Source("copy", title="Article"),
+            FallbackProvenance("https://example.com", "https://example.com/", "2026-09-27"),
+        )
+    )
+    monkeypatch.setattr(command, "execute_source_add", execute)
+    mock_client = create_mock_client()
+    monkeypatch.setattr(
+        helpers_module,
+        "get_auth_tokens",
+        lambda _ctx: auth_module.AuthTokens(cookies={}, csrf_token="csrf", session_id="session"),
+    )
+    result = runner.invoke(
+        cli,
+        [
+            "source",
+            "add",
+            "https://example.com",
+            "-n",
+            "nb_123",
+            "--fallback-fetch",
+            "--cleanup-on-failure",
+            "--json",
+        ],
+        obj=inject_client(mock_client),
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["source"]["id"] == "copy"
+    assert payload["fallback"]["refreshable"] is False
+    assert execute.call_args.args[1].fallback_fetch
+    assert execute.call_args.args[1].cleanup_on_failure
+
+
 class TestSourceList:
     def test_source_list_composes_cli_service_and_client_boundary(self, runner, mock_auth):
         """The CLI list path reaches the client-backed source-list service.

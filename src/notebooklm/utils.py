@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from .client import NotebookLMClient
     from .types import ChatReference, StructuredDocument
 
-__all__ = ["resolve_chat_reference_passage"]
+__all__ = ["resolve_chat_reference_passage", "html_to_markdown"]
 
 
 #: How much of ``cited_text`` to cross-check against the range it declares.
@@ -286,3 +286,10 @@ async def resolve_chat_reference_passage(
         "may have been re-indexed since the citation was emitted, or the cited "
         "span may have been transformed during chunking."
     )
+
+
+def html_to_markdown(html: str) -> str:
+    """Convert HTML to Markdown, preserving math. Requires the ``markdown`` extra."""
+    from ._source.markdown import html_to_markdown as convert
+
+    return convert(html)
