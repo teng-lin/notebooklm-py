@@ -2166,6 +2166,9 @@ src/notebooklm/
 │   ├── session.py               # Click-free session-context core: `use` verify_and_set_notebook (injected resolve_notebook_id) + `status` read_status(StatusInputs) read+project -> StatusReport + `auth logout` execute_logout(LogoutInputs) filesystem-teardown -> typed LogoutOutcome (path/context/clear_context helpers injected via bundles; CLI owns Rich render + exit codes)
 │   ├── sharing.py               # Click-free sharing core: status/set_public/set_view_level/add_user/update_user/remove_user (injected resolve_notebook_id; permission/view-level display + str→enum parse stay in cli/share_cmd.py)
 │   ├── skill.py                 # Click-free skill-install core: TARGETS/SCOPES catalog + path/version helpers + classify_target (create/up_to_date/overwrite) + report_mixed_no_clobber_up_to_date (CLI owns the atomic write + packaged-source loader)
+│   ├── content_sanity.py        # Pure thin-text/error/challenge detection shared by recovery and MCP advisories
+│   ├── source_fallback.py       # Opt-in URL recovery, static-copy provenance, and attributed ghost cleanup
+│   ├── source_fetch.py          # Credential-free curl fetch with public DNS pinning and bounded redirects/body/time
 │   ├── source_add.py            # Click-free `source add` core: input detection + URL SSRF/upload-path validation + add workflow (SourceAddPlan/Result; CLI builds the --json source-summary from the typed result via the neutral serialize.source_summary helper)
 │   ├── source_batch.py          # Transport-neutral source-batch limit plus typed local-validation/remapping helpers; continuation comes from public commit-state evidence, never HTTP/category policy
 │   ├── source_clean.py          # Click-free `source clean` core: junk-source classification + batched-deletion orchestration (SourceCleanResult; injected list/delete/confirm callables)
@@ -2193,6 +2196,7 @@ src/notebooklm/
 │   │   ├── notes.py             # Note request builders and projection
 │   │   ├── sharing.py           # Public-link sharing projection
 │   │   ├── notebooks.py         # Project and notebook-guide decoding
+│   │   ├── source_failure.py    # Experimental SourceSettings failure diagnostic through unknown protobuf fields
 │   │   ├── sources.py           # Source projection and enum mapping
 │   │   ├── artifacts.py         # Ledgered artifact/representation projection
 │   │   ├── organization.py      # Heterogeneous organization member decoding

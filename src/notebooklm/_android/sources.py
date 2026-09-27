@@ -69,6 +69,7 @@ from .source_transfers import (
     DriveDownload,
     new_source_send_entries,
     source_wait_recovery_action,
+    url_commit_scope,
 )
 from .source_transfers import (
     correlation_name as _correlation_name,
@@ -895,9 +896,7 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
         wait_timeout: float = 120.0,
         title: str | None = None,
     ) -> Source:
-        requested_title = title.strip() if title is not None else None
-        if not requested_title:
-            requested_title = None
+        requested_title = (title or "").strip() or None
         correlation = _correlation_name()
         registrations, commits = new_source_send_entries("sources.add_url")
         (registration_entry,), (commit_entry,) = registrations, commits
@@ -930,7 +929,7 @@ class AndroidSourcesAPI(AndroidSourceBatchMixin, AndroidSourceTransferMixin, Sou
                 error = _unresolved_add_error(url, stage="tentative registration correlation")
                 raise attach_journal_entry(error, registration_entry, workflow=True)
 
-            with bind_operation_journal_entries(commit_entry):
+            with url_commit_scope(registration.source_id, commit_entry):
                 proofs, _ = await self._commit_urls(
                     notebook_id,
                     [(url, registration.source_id)],

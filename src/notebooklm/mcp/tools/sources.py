@@ -631,10 +631,12 @@ def register(mcp: Any) -> None:
         timeout: float = 120.0,
         interval: float = 1.0,
         urls: list[str] | None = None,
+        fallback_fetch: bool = False,
+        cleanup_on_failure: bool = False,
     ) -> dict[str, Any] | ToolResult:
-        """Add a source to a notebook — single, batch, or in-channel bytes. Accepts a notebook name or ID.
+        """Add sources by notebook name or ID: single, batch, or in-channel bytes.
 
-        Call in exactly ONE of two modes:
+        Choose ONE mode:
 
         **Single mode** — pass ``source_type``; it selects the required input:
 
@@ -672,16 +674,14 @@ def register(mcp: Any) -> None:
         (``status_label="error"`` + a ``warning``); ``source_wait`` also flags a READY web
         page with suspiciously thin text (dead link/soft-404/paywall).
 
-        **Batch mode** — pass ``urls`` (a list of **http/https URLs**, YouTube links
-        included) to add many in one call instead of one round-trip each. Each entry is
-        validated and added independently; the response is an explicit per-item list so
-        partial failure is never hidden::
+        Single web URLs support ``fallback_fetch=True``: eligible connection failures
+        become static text with ``fallback`` provenance (impersonate + markdown extras).
+        ``cleanup_on_failure=True`` additionally deletes the attributable failed stub
+        once its replacement is ready. Private fetch destinations are blocked.
 
-            {"notebook_id": …, "added": <int>, "failed": <int>,
-             "results": [{"input": "<url>", "status": "added", "source_id": …,
-                          "title": …, "status_label": …, "warning"?: …},
-                         {"input": "<url>", "status": "error",
-                          "error": {"code": …, "message": …, "retriable": …, "hint"?: …}}]}
+        **Batch mode** — pass ``urls`` (http/https, including YouTube). Returns
+        ``notebook_id``, ``added``/``failed`` counts and per-input ``results`` with
+        ``input``, ``status`` (added/error), source fields or an ``error`` object.
 
         ``results[i]`` corresponds to ``urls[i]`` and includes ``commit_state``
         (confirmed/rejected/unknown/not_sent). Batch is URL-only; invalid entries are
@@ -690,6 +690,12 @@ def register(mcp: Any) -> None:
         applies to every entry.
         """
         with mcp_errors(), ExitStack() as upload_files:
+            if (fallback_fetch or cleanup_on_failure) and (
+                source_type != "url" or urls is not None
+            ):
+                raise ValidationError("Fallback options require a single web-page URL")
+            if cleanup_on_failure and not fallback_fetch:
+                raise ValidationError("cleanup_on_failure requires fallback_fetch")
             # Mode selection (fail-closed) BEFORE any notebook I/O, so a malformed
             # call never reaches notebooks.list. Exactly one of source_type / urls.
             if urls is not None and source_type is not None:
@@ -866,6 +872,16 @@ def register(mcp: Any) -> None:
 
             if content is None:  # pragma: no cover - raw/drive/remote branches returned above
                 raise ValidationError("internal error: source content unexpectedly missing")
+            fallback_metadata: dict[str, Any] = {}
+            fallback_options: dict[str, Any] = (
+                {
+                    "fallback_fetch": True,
+                    "cleanup_on_failure": cleanup_on_failure,
+                    "fallback_metadata": fallback_metadata,
+                }
+                if fallback_fetch
+                else {}
+            )
             src = await _add_one(
                 client,
                 nb_id,
@@ -874,6 +890,7 @@ def register(mcp: Any) -> None:
                 title=title,
                 mime_type=mime_type,
                 allow_internal=allow_internal,
+                **fallback_options,
             )
             if wait:
                 return await _wait_after_add(
@@ -886,15 +903,19 @@ def register(mcp: Any) -> None:
                     # Same gating as the immediate tail below, so the two paths
                     # cannot disagree about which types can miss (#1989).
                     requested_title=title if source_type in ("url", "youtube") else None,
+                    fallback=fallback_metadata or None,
                 )
             # url/youtube re-derive the title server-side; surface a rename miss
             # (#1960). ``text`` honors ``title`` directly so it never mismatches.
-            return _add_result_payload(
+            payload = _add_result_payload(
                 src,
                 to_jsonable(add_core.SourceAddResult(source=src)),
                 notebook_id=nb_id,
                 requested_title=title if source_type in ("url", "youtube") else None,
             )
+            if fallback_metadata:
+                payload["fallback"] = fallback_metadata
+            return payload
 
 
 def _is_http_transport() -> bool:
@@ -1162,6 +1183,7 @@ async def _wait_after_add(
     timeout: float,
     interval: float,
     requested_title: str | None = None,
+    fallback: dict[str, Any] | None = None,
 ) -> ToolResult:
     """Block on a freshly-added source and return the ``source_wait`` aggregate.
 
@@ -1203,6 +1225,8 @@ async def _wait_after_add(
                 f"Requested title {requested!r} was not applied; the source is ready "
                 f"with title {outcome.source.title!r}. Retry with source_rename."
             )
+    if fallback is not None:
+        result["fallback"] = fallback
     return _json_tool_result(result)
 
 

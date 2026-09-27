@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   responses include decoded media duration, slide count, and source count;
   unavailable metadata stays `null`. MCP errors preserve known retry delays as
   `retry_after_seconds` in both structured results and tool-error messages.
+- **Opt-in URL recovery (#2110).** CLI `source add --fallback-fetch` and
+  MCP/REST `fallback_fetch` can import eligible failed web pages as static text,
+  using a bounded, public-address-only browser-impersonating fetch. Results and
+  content preserve provenance. Optional `cleanup_on_failure` removes only an
+  attributable ERROR stub after replacement readiness; ambiguous rows remain.
+  Requires the `impersonate` and `markdown` extras. Android URL commit failures
+  with code 9 retain their original `ClientError`/`RPCError` type and carry the
+  correlated tentative `source_id` as operation metadata for recovery.
+
 - **Bulk note deletion (#1999).** `notes.delete(notebook_id, note_ids)` accepts a
   list and sends one delete request on Web and Android. MCP `studio_delete(items=...)`
   previews an explicit subset, batches text notes, routes artifacts and mind maps

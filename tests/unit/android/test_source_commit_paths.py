@@ -47,6 +47,7 @@ from notebooklm._android.upload import AndroidUploadPipeline
 from notebooklm._idempotency import bound_operation_journal_entries
 from notebooklm.exceptions import (
     AuthError,
+    ClientError,
     ConfigurationError,
     DecodingError,
     NetworkError,
@@ -57,6 +58,7 @@ from notebooklm.exceptions import (
     SourceNotFoundError,
     SourceTimeoutError,
 )
+from notebooklm.outcomes import CommitState
 from notebooklm.types import SourceStatus
 
 NOTEBOOK_ID = "00000000-0000-4000-8000-000000000100"
@@ -181,6 +183,57 @@ def _registration_handler(ids: list[str]) -> Handler:
         )
 
     return _handle
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [RPCError, ClientError])
+async def test_url_precondition_failure_retains_correlated_registration_id(error_type) -> None:
+    transport = FakeTransport()
+    cause = error_type("failed precondition", method_id=ADD_SOURCES_METHOD, rpc_code=9)
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
+    transport.handlers[ADD_SOURCES_METHOD] = cause
+    with pytest.raises(error_type) as caught:
+        await _api(transport).add_url(NOTEBOOK_ID, URL_A)
+    assert caught.value is cause
+    assert type(caught.value) is error_type
+    assert str(caught.value) == "failed precondition"
+    assert caught.value.method_id == ADD_SOURCES_METHOD
+    assert caught.value.rpc_code == 9
+    assert caught.value.__cause__ is None
+    assert caught.value.source_id == SOURCE_A
+    assert caught.value.stage == "source commit"
+    assert caught.value.commit_state is CommitState.UNKNOWN
+    entries = caught.value.operation_metadata.entries
+    assert [entry.method for entry in entries] == [
+        ADD_TENTATIVE_SOURCES_METHOD,
+        ADD_SOURCES_METHOD,
+    ]
+    assert entries[-1].source_id == SOURCE_A
+    assert entries[-1].stage == "source commit"
+    assert [method for method, _, _ in transport.calls] == [
+        ADD_TENTATIVE_SOURCES_METHOD,
+        ADD_SOURCES_METHOD,
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        ClientError("invalid argument", rpc_code=3),
+        AuthError("auth", rpc_code=9),
+        asyncio.CancelledError(),
+    ],
+)
+async def test_url_commit_other_errors_escape_without_recovery_metadata(error) -> None:
+    transport = FakeTransport()
+    transport.handlers[ADD_TENTATIVE_SOURCES_METHOD] = _registration_handler([SOURCE_A])
+    transport.handlers[ADD_SOURCES_METHOD] = error
+    with pytest.raises(type(error)) as caught:
+        await _api(transport).add_url(NOTEBOOK_ID, URL_A)
+    assert caught.value is error
+    assert getattr(error, "source_id", None) is None
+    assert getattr(error, "stage", None) is None
 
 
 class _UnreadableRow:

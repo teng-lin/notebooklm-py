@@ -176,6 +176,8 @@ def _decode_source(
                 DriveSourceStatus.UNKNOWN,
             )
 
+    from .source_failure import experimental_failure_code
+
     return Source(
         id=source_id,
         title=source.title,
@@ -183,6 +185,9 @@ def _decode_source(
         _type_code=type_code,
         created_at=created_at,
         status=status,
+        experimental_failure_code=(
+            experimental_failure_code(source.settings) if source.HasField("settings") else None
+        ),
         drive_document_id=drive_document_id,
         drive_status=drive_status,
         download_url=None,

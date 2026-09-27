@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from markdownify import MarkdownConverter
@@ -10,12 +11,38 @@ from markdownify import MarkdownConverter
 # Keep inline and display math out of markdownify's normal escaping. The
 # whitespace guards distinguish math from common currency such as "$5 and
 # $10". An escaped dollar is ordinary source text, not a math delimiter.
-_MATH_SPAN = re.compile(
-    r"(?<!\\)(?P<delimiter>\$\$|\$)(?!\s)"
-    r"(?P<body>.*?)"
-    r"(?<![\\\s])(?P=delimiter)",
-    re.DOTALL,
-)
+_MATH_START = re.compile(r"(?<!\\)\$(?!\s)")
+_MATH_END = {width: re.compile(r"(?<![\\\s])" + r"\$" * width) for width in (1, 2)}
+
+
+def _math_spans(text: str) -> Iterator[tuple[int, int, int]]:
+    """Yield (start, end, delimiter width) without rescanning unmatched suffixes.
+
+    Prefer display delimiters, as before. Cache each delimiter's next closing
+    position so many unmatched dollar signs cannot cause quadratic backtracking.
+    """
+    missing = len(text) + 1
+    closing = {1: -1, 2: -1}
+    consumed = 0
+    for opening in _MATH_START.finditer(text):
+        start = opening.start()
+        if start < consumed:
+            continue
+        for width in (2, 1):
+            body_start = start + width
+            if width == 2 and (
+                not text.startswith("$$", start)
+                or (body_start < len(text) and text[body_start].isspace())
+            ):
+                continue
+            if closing[width] < body_start:
+                match = _MATH_END[width].search(text, body_start)
+                closing[width] = match.start() if match else missing
+            if closing[width] != missing:
+                consumed = closing[width] + width
+                yield start, consumed, width
+                break
+
 
 # NotebookLM can put Markdown emphasis tags across a math span. Once
 # markdownify has converted those tags, the resulting delimiters can straddle
@@ -58,13 +85,13 @@ class _SourceHtmlConverter(MarkdownConverter):
 
         parts: list[str] = []
         end = 0
-        for match in _MATH_SPAN.finditer(text):
-            parts.append(self._escape_plain(text[end : match.start()], parent_tags))
-            if _has_math_signal(match.group("body")):
-                parts.append(match.group(0))
+        for start, stop, width in _math_spans(text):
+            parts.append(self._escape_plain(text[end:start], parent_tags))
+            if _has_math_signal(text[start + width : stop - width]):
+                parts.append(text[start:stop])
             else:
-                parts.append(self._escape_plain(match.group(0), parent_tags))
-            end = match.end()
+                parts.append(self._escape_plain(text[start:stop], parent_tags))
+            end = stop
         parts.append(self._escape_plain(text[end:], parent_tags))
         return "".join(parts)
 

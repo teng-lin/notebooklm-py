@@ -1134,6 +1134,26 @@ class SourceRow:
             return SourceStatus.UNKNOWN
 
     @property
+    def experimental_failure_code(self) -> int | None:
+        """Read the provisional fetch diagnostic at ``source[3][2][6][0]``.
+
+        Live-captured for a DNS failure on 2026-09-27: SourceSettings tag 3
+        contains a message, whose tag 7 contains the scalar at tag 1. Healthy
+        sources also carry tag 3, so its presence alone is never an error.
+        """
+        settings = self._settings_block()
+        if self.status != SourceStatus.ERROR or settings is None or len(settings) <= 2:
+            return None
+        details = settings[2]
+        if not isinstance(details, list) or len(details) <= 6:
+            return None
+        fetch_error = details[6]
+        if not isinstance(fetch_error, list) or not fetch_error:
+            return None
+        code = fetch_error[0]
+        return code if type(code) is int and code > 0 else None
+
+    @property
     def drive_status(self) -> DriveSourceStatus | None:
         """Drive-side health from ``self._raw[3][3]`` — ``None`` when absent.
 

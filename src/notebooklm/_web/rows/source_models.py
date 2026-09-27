@@ -27,6 +27,7 @@ def source_from_row(cls: type[Source], row: SourceRow) -> Source:
         _type_code=type_code,
         created_at=row.created_at,
         status=row.status,
+        experimental_failure_code=row.experimental_failure_code,
         drive_document_id=row.drive_document_id,
         drive_status=row.drive_status,
         download_url=row.download_url,

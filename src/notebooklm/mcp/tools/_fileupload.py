@@ -344,6 +344,9 @@ async def _add_one(
     title: str | None,
     mime_type: str | None,
     allow_internal: bool,
+    fallback_fetch: bool = False,
+    cleanup_on_failure: bool = False,
+    fallback_metadata: dict[str, Any] | None = None,
 ) -> Source:
     """Build the source-add plan + execute it, returning the created ``Source``.
 
@@ -368,8 +371,18 @@ async def _add_one(
     )
     result = await add_core.execute_source_add(
         client,
-        add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan),
+        add_core.SourceAddExecutionPlan(
+            notebook_id=notebook_id,
+            plan=plan,
+            fallback_fetch=fallback_fetch,
+            cleanup_on_failure=cleanup_on_failure,
+        ),
     )
+    fallback = getattr(result, "fallback", None)
+    if fallback is not None and fallback_metadata is not None:
+        from ..._app.serialize import to_jsonable
+
+        fallback_metadata.update(to_jsonable(fallback))
     return result.source
 
 

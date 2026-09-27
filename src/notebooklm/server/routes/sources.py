@@ -127,6 +127,8 @@ class SourceAddUrl(BaseModel):
 
     url: str
     allow_internal: bool = False
+    fallback_fetch: bool = False
+    cleanup_on_failure: bool = False
 
 
 class SourceAddText(BaseModel):
@@ -215,6 +217,8 @@ async def _add_source(
     title: str | None,
     mime_type: str | None = None,
     allow_internal: bool = False,
+    fallback_fetch: bool = False,
+    cleanup_on_failure: bool = False,
 ) -> dict[str, Any]:
     """Build + execute a source-add, then record the new id and project it.
 
@@ -234,14 +238,26 @@ async def _add_source(
         allow_internal=allow_internal,
     )
     result = await add_core.execute_source_add(
-        client, add_core.SourceAddExecutionPlan(notebook_id=notebook_id, plan=plan)
+        client,
+        add_core.SourceAddExecutionPlan(
+            notebook_id=notebook_id,
+            plan=plan,
+            fallback_fetch=fallback_fetch,
+            cleanup_on_failure=cleanup_on_failure,
+        ),
     )
     pending.record(notebook_id, result.source.id)
     # Project with the shared enriched view (string ``kind`` / ``status_label`` /
     # ``drive_status_label`` alongside the raw codes) so the create path matches
     # ``GET`` — a raw ``to_jsonable`` here would leak bare ``status`` /
     # ``_type_code`` integers.
-    return source_view(result.source)
+    payload = source_view(result.source)
+    fallback = getattr(result, "fallback", None)
+    if fallback is not None:
+        from ..._app.serialize import to_jsonable
+
+        payload["fallback"] = to_jsonable(fallback)
+    return payload
 
 
 @router.get("")
@@ -303,6 +319,8 @@ async def add_url(
         source_type="url",
         title=None,
         allow_internal=body.allow_internal,
+        fallback_fetch=body.fallback_fetch,
+        cleanup_on_failure=body.cleanup_on_failure,
     )
 
 

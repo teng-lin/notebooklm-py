@@ -223,7 +223,7 @@ Supported source types: URLs, YouTube videos, files (PDF, text, Markdown, Word, 
 |---------|-----------|---------|---------|
 | `list` | - | `--json`, `--limit N`, `--no-truncate`, `--label`, `--status` | `source list --limit 20 --no-truncate` |
 | `search <query>` | Passage-search query | `-s/--source ID` (repeatable), `--limit N`, `--json` | `source search "revenue growth" --limit 5` |
-| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal` (URL sources only), `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
+| `add <content>` | URL/file/text (use `-` for stdin) | `--title`, `--type`, `--timeout`, `--follow-symlinks`, `--allow-internal` (URL sources only), `--fallback-fetch`, `--cleanup-on-failure`, `--json` (file-source `--mime-type` overrides extension inference — see [detailed section](#source-add-mime-type-file-sources)) | `source add "https://..." --timeout 90` |
 | `add-drive <id> <title>` | Drive file ID, title | `--mime-type [google-doc\|google-slides\|google-sheets\|pdf]`, `--json` | `source add-drive abc123 "Doc" --mime-type google-slides` |
 | `add-drive-file <id>` | Drive file ID or share URL | `--title`, `--wait`, `--json` | `source add-drive-file abc123 --title "Notes" --wait` |
 | `books` | - | `--json` | `source books` |
@@ -2157,3 +2157,42 @@ When using this CLI programmatically:
 9. **Deep research**: Use `--no-wait` with `source add-research --mode deep` to avoid blocking. Then use `research wait --import-all` in a subagent to wait for completion.
 
 10. **Shell completion**: `notebooklm completion <bash|zsh|fish>` prints a completion script that enables ID-aware tab completion for `-n/--notebook`, `-s/--source`, and `-a/--artifact` from your active profile's live IDs. See the [`completion`](#session-completion) section for install snippets.
+
+### Opt-in URL recovery
+
+Install `notebooklm-py[impersonate,markdown]`, then opt in for a single web page:
+
+```bash
+notebooklm source add "https://example.com/article" -n NOTEBOOK_ID --fallback-fetch --json
+```
+
+A best-effort snapshot precedes the normal NotebookLM import. If that snapshot
+fails, the import still runs but recovery is unavailable for that attempt.
+Recovery requires a failed-precondition
+response plus one newly observed matching ERROR row with experimental failure
+code 1. Matching tolerates equivalent URL spellings (host case, default ports,
+IPv6 compression, empty paths and percent-escape case), preserving distinct path
+and query values. Android correlates by its tentative source ID, since failed rows can
+lack a URL. Missing/unknown diagnostics, quota-shaped failures, other error buckets,
+ambiguous rows and network timeouts do not trigger recovery. Only public HTTP(S)
+HTML/plain-text/Markdown responses are accepted. PDFs, images, YouTube and batches
+are outside this fallback. `--allow-internal` never relaxes fallback networking.
+HTTPS redirects cannot downgrade to HTTP. Recovery rechecks the failed source
+after fetching, before creating the text replacement.
+When recovery is skipped, a warning logs a bounded reason code while the original
+exception and mutation evidence are preserved; fetch failures log only their
+exception class, never the fetched body.
+
+Recovered sources are static text, with no URL refresh capability. The JSON
+`fallback` object includes the original/final URLs, fetch time and cleanup result;
+the text itself retains those URLs and the fetch time. Content checks reject thin
+bodies and recognized error/challenge pages, but are heuristic.
+
+Add `--cleanup-on-failure` only with `--fallback-fetch` to request cleanup after
+recovery. A matching row is not necessarily owned by this operation: cleanup
+requires a source ID returned by the creating workflow (available for correlated
+Android tentative registrations). Web ghosts normally remain and are reported
+as candidates. Cleanup waits for the replacement to become READY and rechecks the
+stub; cleanup failure retains the replacement and reports a warning. The backend
+has no conditional-delete primitive, so the final check and deletion are not
+atomic against other writers.

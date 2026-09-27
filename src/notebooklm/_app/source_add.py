@@ -575,6 +575,8 @@ class SourceAddExecutionPlan:
 
     notebook_id: str
     plan: SourceAddPlan
+    fallback_fetch: bool = False
+    cleanup_on_failure: bool = False
 
 
 @dataclass(frozen=True)
@@ -600,12 +602,24 @@ async def execute_source_add(
     messages belong to the command layer. The command wraps this awaitable
     with the desired status context so the spinner still spans the real I/O.
     """
+    from ..exceptions import RPCError, SourceAddError
+    from .source_fallback import capture_recovery_baseline, recover_url, validate_fallback
+
+    validate_fallback(plan)
     async with client.operation(timeout=USE_DEFAULT):
-        src = await add_source(
-            client.sources,
-            notebook_id=plan.notebook_id,
-            plan=plan.plan,
+        before = (
+            await capture_recovery_baseline(client, plan.notebook_id)
+            if plan.fallback_fetch
+            else None
         )
+        try:
+            src = await add_source(client.sources, notebook_id=plan.notebook_id, plan=plan.plan)
+        except (SourceAddError, RPCError) as exc:
+            if before is not None:
+                recovered = await recover_url(client, plan, exc, before)
+                if recovered is not None:
+                    return recovered
+            raise
         return SourceAddResult(source=src)
 
 

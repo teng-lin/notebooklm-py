@@ -158,6 +158,7 @@
     "revision_id": null,
     "revision_timestamp": null,
     "last_modified_at": null,
-    "expert_intelligence": null
+    "expert_intelligence": null,
+    "experimental_failure_code": null
   }
 }

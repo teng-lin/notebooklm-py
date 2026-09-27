@@ -341,6 +341,10 @@ def source_search(ctx, query, notebook_id, source_ids, limit, json_output, clien
         "are rejected even with this flag."
     ),
 )
+@click.option("--fallback-fetch", is_flag=True, help="Recover failed web URLs as static text.")
+@click.option(
+    "--cleanup-on-failure", is_flag=True, help="Remove attributable ghosts after recovery."
+)
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @with_client
 def source_add(
@@ -353,6 +357,8 @@ def source_add(
     timeout,
     follow_symlinks,
     allow_internal,
+    fallback_fetch,
+    cleanup_on_failure,
     json_output,
     client_auth,
 ):
@@ -416,7 +422,12 @@ def source_add(
     async def _run():
         async with resolve_client_factory(ctx)(client_auth, **client_kwargs) as client:
             nb_id_resolved = await resolve_notebook_id(client, nb_id, json_output=json_output)
-            execution_plan = SourceAddExecutionPlan(notebook_id=nb_id_resolved, plan=plan)
+            execution_plan = SourceAddExecutionPlan(
+                notebook_id=nb_id_resolved,
+                plan=plan,
+                fallback_fetch=fallback_fetch,
+                cleanup_on_failure=cleanup_on_failure,
+            )
             if json_output:
                 result = await execute_source_add(client, execution_plan)
                 json_output_response(source_add_payload(result))
@@ -425,6 +436,9 @@ def source_add(
             with cli_status(f"Adding {plan.detected_type} source...", ctx=ctx):
                 result = await execute_source_add(client, execution_plan)
             cli_print(f"[green]Added source:[/green] {result.source.id}", ctx=ctx)
+            fallback = getattr(result, "fallback", None)
+            if fallback is not None:
+                click.echo(fallback.warning, err=True)
 
     return _run()
 

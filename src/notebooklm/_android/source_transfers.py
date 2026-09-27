@@ -15,8 +15,8 @@ from __future__ import annotations
 import builtins
 import logging
 import uuid
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Callable, Iterator
+from contextlib import AbstractAsyncContextManager, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -24,6 +24,8 @@ from typing import Any, Protocol, cast
 from .._idempotency import (
     JournalEntry,
     OperationJournal,
+    attach_journal_entry,
+    bind_operation_journal_entries,
     call_unconfirmed_on_transport_loss,
     mark_unconfirmed,
     unresolved_commit_error,
@@ -31,6 +33,7 @@ from .._idempotency import (
 from .._sources import _TransferResult
 from .._url_utils import is_youtube_url
 from ..exceptions import (
+    ClientError,
     NetworkError,
     RPCError,
     SourceAddError,
@@ -94,6 +97,22 @@ def known_registration_error(subject: str, *, kind: str = "URL") -> SourceAddErr
     )
     error.stage = "register"
     return error
+
+
+@contextmanager
+def url_commit_scope(source_id: str, entry: JournalEntry) -> Iterator[None]:
+    """Retain a positively correlated tentative id on URL precondition failures."""
+    with bind_operation_journal_entries(entry):
+        try:
+            yield
+        except RPCError as exc:
+            if type(exc) not in (RPCError, ClientError) or exc.rpc_code != 9:
+                raise
+            # Preserve the native exception contract; recovery consumes metadata.
+            entry.source_id = source_id
+            entry.stage = "source commit"
+            attach_journal_entry(exc, entry, workflow=True)
+            raise
 
 
 def unresolved_add_error(
