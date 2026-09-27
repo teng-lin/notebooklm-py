@@ -610,6 +610,7 @@ async def test_studio_list_inspection_uses_decoded_metadata(
 async def test_studio_list_absent_metadata_is_unknown(
     mcp_call, mock_client, type_code: ArtifactTypeCode, status: ArtifactStatus
 ) -> None:
+    """Missing listing metadata remains null for pending and completed artifacts."""
     art = Artifact(id="art1", title="Missing metadata", _artifact_type=type_code, status=status)
     mock_client.notes.list = AsyncMock(return_value=[])
     mock_client.artifacts.list = AsyncMock(return_value=[art])

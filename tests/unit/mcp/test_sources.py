@@ -2412,6 +2412,7 @@ async def test_source_add_batch_uses_typed_unknown_without_category_oracle(
 
 
 async def test_e9_mcp_batch_error_preserves_committed_sibling_id(mcp_call, mock_client) -> None:
+    """A batch retains its committed sibling and the unresolved item's retry delay."""
     from notebooklm._idempotency import mark_unconfirmed
     from notebooklm._web.sources.batch import SourceUrlBatchItem
     from notebooklm.exceptions import RateLimitError
