@@ -2173,6 +2173,8 @@ lack a URL. Missing/unknown diagnostics, quota-shaped failures, other error buck
 ambiguous rows and network timeouts do not trigger recovery. Only public HTTP(S)
 HTML/plain-text/Markdown responses are accepted. PDFs, images, YouTube and batches
 are outside this fallback. `--allow-internal` never relaxes fallback networking.
+HTTPS redirects cannot downgrade to HTTP. Recovery rechecks the failed source
+after fetching, before creating the text replacement.
 When recovery is skipped, a warning logs a bounded reason code while the original
 exception and mutation evidence are preserved; fetch failures log only their
 exception class, never the fetched body.
@@ -2187,4 +2189,6 @@ recovery. A matching row is not necessarily owned by this operation: cleanup
 requires a source ID returned by the creating workflow (available for correlated
 Android tentative registrations). Web ghosts normally remain and are reported
 as candidates. Cleanup waits for the replacement to become READY and rechecks the
-stub; cleanup failure retains the replacement and reports a warning.
+stub; cleanup failure retains the replacement and reports a warning. The backend
+has no conditional-delete primitive, so the final check and deletion are not
+atomic against other writers.

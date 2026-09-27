@@ -38,7 +38,7 @@ def ghost(source_id="ghost", *, code=1, status=SourceStatus.ERROR):
 def setup(monkeypatch):
     original = SourceAddError(URL, cause=RPCError("rejected", rpc_code=9))
     sources = SimpleNamespace(
-        list=AsyncMock(side_effect=[[], [ghost()]]),
+        list=AsyncMock(side_effect=[[], [ghost()], [ghost()]]),
         add_url=AsyncMock(side_effect=original),
         add_text=AsyncMock(return_value=Source("replacement", _type_code=4)),
         wait_until_ready=AsyncMock(return_value=Source("replacement")),
@@ -261,7 +261,9 @@ async def test_options_validated_before_source_mutations(setup):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("phase", ["baseline", "readback", "fetch", "text", "wait", "delete"])
+@pytest.mark.parametrize(
+    "phase", ["baseline", "readback", "fetch", "revalidation", "text", "wait", "delete"]
+)
 async def test_cancellation_propagates_without_replaying_writes(setup, phase):
     client, original, fetch = setup
     original.source_id = "ghost"
@@ -272,6 +274,8 @@ async def test_cancellation_propagates_without_replaying_writes(setup, phase):
         client.sources.list.side_effect = [[], error]
     elif phase == "fetch":
         fetch.side_effect = error
+    elif phase == "revalidation":
+        client.sources.list.side_effect = [[], [ghost()], error]
     elif phase == "text":
         client.sources.add_text.side_effect = error
     elif phase == "wait":
@@ -359,7 +363,7 @@ async def test_android_receipt_recovers_url_less_ghost_and_cleans_after_ready(se
     original.cause = ClientError("failed precondition", rpc_code=9)
     original.source_id = "ghost"
     row = Source("ghost", status=SourceStatus.ERROR, experimental_failure_code=1)
-    client.sources.list.side_effect = [[], [row]]
+    client.sources.list.side_effect = [[], [row], [row]]
     client.sources.get_or_none.return_value = row
     result = await execute_source_add(client, plan(fallback_fetch=True, cleanup_on_failure=True))
     assert result.source.id == "replacement"
@@ -384,3 +388,72 @@ async def test_missing_attribution_or_conflicting_url_is_not_recovered(setup, ow
     with pytest.raises(SourceAddError):
         await execute_source_add(client, plan(fallback_fetch=True))
     fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("after_fetch", "reason"),
+    [
+        ([ghost(status=SourceStatus.READY)], "nonconnection_diagnostic"),
+        ([], "candidate_missing"),
+        ([ghost(code=3)], "nonconnection_diagnostic"),
+        ([ghost(), ghost("other")], "candidate_ambiguous"),
+        ([ghost("other")], "candidate_changed"),
+        (RPCError("private readback details"), "readback_failed"),
+    ],
+)
+async def test_changed_roster_during_fetch_preserves_original_failure(
+    setup, caplog, after_fetch, reason
+):
+    from notebooklm._idempotency import mark_commit_state
+
+    client, original, fetch = setup
+    mark_commit_state(original, CommitState.UNKNOWN, operation="sources.add_url", stage="commit")
+    attributes = original.__dict__.copy()
+    metadata = original.operation_metadata
+    client.sources.list.side_effect = [[], [ghost()], after_fetch]
+    with (
+        caplog.at_level("WARNING", logger=fallback.__name__),
+        pytest.raises(SourceAddError) as caught,
+    ):
+        await execute_source_add(client, plan(fallback_fetch=True, cleanup_on_failure=True))
+    assert caught.value is original
+    assert original.__dict__ == attributes
+    assert original.operation_metadata is metadata
+    assert caplog.messages == [f"URL fallback skipped: reason={reason}"]
+    fetch.assert_awaited_once_with(URL)
+    assert client.sources.list.await_count == 3
+    assert all(call.kwargs == {"strict": True} for call in client.sources.list.await_args_list)
+    client.sources.add_text.assert_not_called()
+    client.sources.delete_many_with_outcomes.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [None, True, 3])
+async def test_cleanup_retains_ghost_if_connection_diagnostic_changed(setup, code):
+    client, original, _ = setup
+    original.source_id = "ghost"
+    client.sources.get_or_none.return_value = ghost(code=code)
+    result = await execute_source_add(client, plan(fallback_fetch=True, cleanup_on_failure=True))
+    assert result.source.id == "replacement"
+    assert result.fallback.cleanup == "skipped_changed"
+    client.sources.delete_many_with_outcomes.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_android_candidate_acquiring_conflicting_url_during_fetch_is_not_recovered(setup):
+    client, original, fetch = setup
+    original.source_id = "ghost"
+    initial = Source("ghost", status=SourceStatus.ERROR, experimental_failure_code=1)
+    changed = Source(
+        "ghost",
+        url="https://different.example/",
+        status=SourceStatus.ERROR,
+        experimental_failure_code=1,
+    )
+    client.sources.list.side_effect = [[], [initial], [changed]]
+    with pytest.raises(SourceAddError) as caught:
+        await execute_source_add(client, plan(fallback_fetch=True))
+    assert caught.value is original
+    fetch.assert_awaited_once_with(URL)
+    client.sources.add_text.assert_not_called()

@@ -68,15 +68,20 @@ def _failed_url_import(exc: SourceAddError) -> bool:
     )
 
 
-async def recover_url(
+def _connection_failure(source: Source) -> bool:
+    return (
+        source.status == SourceStatus.ERROR
+        and type(source.experimental_failure_code) is int
+        and source.experimental_failure_code == 1
+    )
+
+
+async def _recovery_candidate(
     client: NotebookLMClient,
     plan: SourceAddExecutionPlan,
-    original: SourceAddError,
     before: set[str],
-) -> SourceAddResult | None:
-    if not _failed_url_import(original):
-        logger.warning("URL fallback skipped: reason=import_not_eligible")
-        return None
+    owned_id: str | None,
+) -> Source | None:
     try:
         # Strict full-roster read: an ERROR-only baseline misses old PROCESSING
         # rows that fail during this call, and a filtered after-read hides a
@@ -85,7 +90,6 @@ async def recover_url(
     except Exception:
         logger.warning("URL fallback skipped: reason=readback_failed")
         return None  # Retain the original failure and all of its write evidence.
-    owned_id = getattr(original, "source_id", None)
     # Android's failed tentative row may have no URL. Its registration receipt
     # identifies the row; a conflicting URL still fails closed.
     matches = [
@@ -105,12 +109,24 @@ async def recover_url(
         )
         return None
     ghost = matches[0]
-    if (
-        ghost.status != SourceStatus.ERROR
-        or type(ghost.experimental_failure_code) is not int
-        or ghost.experimental_failure_code != 1
-    ):
+    if not _connection_failure(ghost):
         logger.warning("URL fallback skipped: reason=nonconnection_diagnostic")
+        return None
+    return ghost
+
+
+async def recover_url(
+    client: NotebookLMClient,
+    plan: SourceAddExecutionPlan,
+    original: SourceAddError,
+    before: set[str],
+) -> SourceAddResult | None:
+    if not _failed_url_import(original):
+        logger.warning("URL fallback skipped: reason=import_not_eligible")
+        return None
+    owned_id = getattr(original, "source_id", None)
+    ghost = await _recovery_candidate(client, plan, before, owned_id)
+    if ghost is None:
         return None
     try:
         fetched = await fetch_source(plan.plan.content)
@@ -121,6 +137,18 @@ async def recover_url(
             "URL fallback skipped: reason=fetch_failed error_type=%s", type(exc).__name__
         )
         return None
+
+    # Fetching can take long enough for the roster to change. Require the same
+    # eligible row immediately before the replacement write. The backend has no
+    # conditional create/delete, so a concurrent change after this read remains
+    # possible; this read cannot provide transactional isolation.
+    current = await _recovery_candidate(client, plan, before, owned_id)
+    if current is None:
+        return None
+    if current.id != ghost.id:
+        logger.warning("URL fallback skipped: reason=candidate_changed")
+        return None
+    ghost = current
 
     # Only this second mutation's own receipt can describe its outcome. A lost
     # add_text response must escape unchanged; never retry it or delete the stub.
@@ -170,8 +198,10 @@ async def _cleanup(
         current = await client.sources.get_or_none(notebook_id, ghost.id)
         if current is None:
             return "already_absent"
-        if current.status != SourceStatus.ERROR or current.url != ghost.url:
+        if not _connection_failure(current) or current.url != ghost.url:
             return "skipped_changed"
+        # No conditional delete is available; the final read narrows, but cannot
+        # eliminate, the race with a concurrent change to this exact source.
         outcomes = await client.sources.delete_many_with_outcomes(notebook_id, [ghost.id])
         if len(outcomes) == 1 and outcomes[0].outcome.commit_state is CommitState.CONFIRMED:
             return "deleted"

@@ -762,5 +762,5 @@ The response includes `fallback` provenance when recovery ran, including with
 `wait=True`. Private destinations remain prohibited regardless of `allow_internal`.
 
 REST exposes the same booleans on `POST /v1/notebooks/{id}/sources/url`; its returned
-source gains a `fallback` object only after recovery. Defaults retain existing
-behavior. Low-level SDK `sources.add_url()` remains a direct backend operation.
+source gains a `fallback` object only after recovery. Both options default to
+`False`. Low-level SDK `sources.add_url()` remains a direct backend operation.

@@ -27,6 +27,13 @@ _EMBEDDED_IPV4_NETWORKS = (
     ipaddress.IPv6Network("64:ff9b::/96"),
     ipaddress.IPv6Network("::/96"),
 )
+# These translation/tunneling ranges can reach destinations whose scope is not
+# represented by the outer address. Classifications also vary across Python releases.
+_UNSAFE_IPV6_NETWORKS = (
+    ipaddress.IPv6Network("2002::/16"),
+    ipaddress.IPv6Network("2001::/32"),
+    ipaddress.IPv6Network("64:ff9b:1::/48"),
+)
 
 
 @dataclass(frozen=True)
@@ -80,6 +87,10 @@ async def _public_addresses(host: str, port: int) -> tuple[str, ...]:
     approved: list[str] = []
     for _family, _type, _proto, _canon, address in addresses:
         ip = ipaddress.ip_address(address[0])
+        if isinstance(ip, ipaddress.IPv6Address) and any(
+            ip in network for network in _UNSAFE_IPV6_NETWORKS
+        ):
+            raise ValueError("Fallback requires public unicast addresses on every hop")
         checked = getattr(ip, "ipv4_mapped", None) or ip
         if isinstance(ip, ipaddress.IPv6Address) and any(
             ip in network for network in _EMBEDDED_IPV4_NETWORKS
@@ -170,7 +181,10 @@ async def _fetch(url: str) -> FetchedSource:
             location = response.headers.get("location")
             if not location or hop == MAX_REDIRECTS:
                 raise ValueError("Invalid or excessive fallback redirects")
-            url = urljoin(url, location)
+            redirected, _, _ = public_fetch_url(urljoin(url, location))
+            if urlsplit(url).scheme == "https" and urlsplit(redirected).scheme == "http":
+                raise ValueError("Fallback redirects cannot downgrade HTTPS to HTTP")
+            url = redirected
             continue
         if not 200 <= response.status_code < 300:
             raise ValueError("Fallback server returned a non-success status")

@@ -68,6 +68,9 @@ def test_hostname_normalization_preserves_modern_idna_and_ipv6(url, expected_hos
         "64:ff9b::127.0.0.1",
         "64:ff9b::169.254.169.254",
         "::127.0.0.1",
+        "2002:0808:0808::1",
+        "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+        "64:ff9b:1::808:808",
         "fc00::1",
         "ff02::1",
     ],
@@ -175,7 +178,7 @@ async def test_pins_all_validated_addresses_in_one_resolve_entry(sessions, monke
 @pytest.mark.asyncio
 async def test_private_redirect_rejected_before_second_request(sessions, monkeypatch):
     responses, opened, _, _ = sessions
-    responses.append((302, {"location": "http://internal.example/"}, []))
+    responses.append((302, {"location": "https://internal.example/"}, []))
     monkeypatch.setattr(
         fetch,
         "_public_addresses",
@@ -184,6 +187,31 @@ async def test_private_redirect_rejected_before_second_request(sessions, monkeyp
     with pytest.raises(ValueError, match="nonpublic"):
         await fetch.fetch_source("https://example.com/")
     assert len(opened) == 1
+
+
+@pytest.mark.asyncio
+async def test_https_redirect_cannot_downgrade_to_http(sessions):
+    responses, opened, calls, _ = sessions
+    responses.append((302, {"location": "http://example.com/article"}, []))
+    with pytest.raises(ValueError, match="downgrade"):
+        await fetch.fetch_source("https://example.com/")
+    assert len(opened) == len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("redirect_scheme", ["http", "https"])
+async def test_explicit_http_url_can_be_fetched_and_redirected(sessions, redirect_scheme):
+    responses, _, calls, _ = sessions
+    responses.extend(
+        [
+            (302, {"location": f"{redirect_scheme}://other.example/article"}, []),
+            (200, {"content-type": "text/plain"}, [b"A useful article. " * 20]),
+        ]
+    )
+    result = await fetch.fetch_source("http://example.com/")
+    assert result.content.startswith("A useful article.")
+    assert result.final_url.startswith(f"{redirect_scheme}://other.example:")
+    assert len(calls) == 2
 
 
 @pytest.mark.asyncio
