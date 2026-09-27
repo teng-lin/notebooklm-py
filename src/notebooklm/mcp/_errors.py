@@ -154,8 +154,8 @@ def to_tool_error(exc: BaseException) -> ToolError:
     structured consumers.
 
     Known ``retry_after_seconds`` and ``unconfirmed=true`` are flattened into
-    that same parenthesis (#1925, #2220). Only
-    the *batch* result shapes carry the payload dict to the wire; a single tool
+    that same parenthesis (#1925, #2220). Only the *batch* result shapes carry
+    the payload dict to the wire; a single tool
     call is serialized through this ``ToolError`` message alone, so a marker
     left in the dict would never reach the client for the ordinary
     notebook/source create — exactly the caller most at risk of retrying a write
