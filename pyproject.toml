@@ -31,7 +31,7 @@ dependencies = [
     "idna>=3.6,<4",
     "click>=8.0.0,<9",
     "rich>=13.0.0,<16",
-    "filelock>=3.13,<4",
+    "filelock>=3.13,<5",
 ]
 
 [project.urls]
