@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP inspection and retry metadata (#1925).** Studio summary and single-item
+  responses include decoded media duration, slide count, and source count;
+  unavailable metadata stays `null`. MCP errors preserve known retry delays as
+  `retry_after_seconds` in both structured results and tool-error messages.
 - **Bulk note deletion (#1999).** `notes.delete(notebook_id, note_ids)` accepts a
   list and sends one delete request on Web and Android. MCP `studio_delete(items=...)`
   previews an explicit subset, batches text notes, routes artifacts and mind maps

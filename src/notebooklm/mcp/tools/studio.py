@@ -150,13 +150,13 @@ def register(mcp: Any) -> None:
 
         * ``detail`` ladder (NOTE bodies only; read a report/data-table body via
           ``studio_download``): ``summary`` (default) gives each note a bounded
-          ``content_preview`` + ``char_count`` (artifacts add ``created_at`` +
-          ``generation_prompt``, the free-text prompt the artifact was generated from,
-          ``null`` when it records none); ``full`` = whole ``content``; ``compact`` = a
+          ``content_preview`` + ``char_count``. Artifacts add ``created_at``,
+          ``generation_prompt``, ``duration_seconds``, ``slide_count``, ``source_count``
+          (unknown metadata/counts are ``null``). ``full`` = whole ``content``; ``compact`` = a
           ``id``/``title``/``type``/``status_label``/``created_at`` roster.
         * ``kind`` filters to one ``type``.
         * ``item`` (name or id) fetches just that item as a 1-element list with the
-          note's FULL ``content`` (an artifact also carries its ``generation_prompt``);
+          note's FULL ``content`` or the artifact's summary metadata;
           no match is NOT_FOUND. ``limit`` / ``offset`` / ``detail`` are ignored with
           ``item``; ``kind`` scopes resolution.
         """

@@ -46,6 +46,7 @@ from notebooklm.types import (  # noqa: E402
     Artifact,
     ArtifactLookup,
     ArtifactLookupStatus,
+    ArtifactSlide,
     ArtifactType,
     GenerationState,
     Note,
@@ -503,6 +504,9 @@ async def test_studio_items_artifact_meta_opt_in() -> None:
     art_row = next(it for it in default if it["type"] == "audio")
     assert "generation_prompt" not in art_row
     assert "created_at" not in art_row
+    assert "duration_seconds" not in art_row
+    assert "slide_count" not in art_row
+    assert "source_count" not in art_row
 
     enriched = await studio_items(client, NB_ID, include_artifact_meta=True)
     art_row = next(it for it in enriched if it["type"] == "audio")
@@ -512,6 +516,9 @@ async def test_studio_items_artifact_meta_opt_in() -> None:
     note_row = next(it for it in enriched if it["type"] == "note")
     assert "generation_prompt" not in note_row
     assert "created_at" not in note_row
+    assert "duration_seconds" not in note_row
+    assert "slide_count" not in note_row
+    assert "source_count" not in note_row
 
 
 async def test_studio_list_summary_artifact_carries_created_at_and_prompt(
@@ -536,6 +543,84 @@ async def test_studio_list_summary_artifact_carries_created_at_and_prompt(
     assert row["generation_prompt"] == "Summarize the intro"
 
 
+@pytest.mark.parametrize("single_item", [False, True], ids=["summary", "item"])
+async def test_studio_list_inspection_uses_decoded_metadata(
+    mcp_call, mock_client, single_item: bool
+) -> None:
+    """Inspection projects listing metadata without a download or per-item fetch."""
+    slide = ArtifactSlide(None, None, None, "diagram", "slide text")
+    artifacts = [
+        Artifact(
+            id="audio-id",
+            title="Podcast",
+            _artifact_type=ArtifactTypeCode.AUDIO.value,
+            status=int(ArtifactStatus.COMPLETED),
+            duration_seconds=872.489796,
+            source_ids=("source-a", "source-b"),
+        ),
+        Artifact(
+            id="video-id",
+            title="Video",
+            _artifact_type=ArtifactTypeCode.VIDEO.value,
+            status=int(ArtifactStatus.COMPLETED),
+            duration_seconds=0.0,
+        ),
+        Artifact(
+            id="slides-id",
+            title="Deck",
+            _artifact_type=ArtifactTypeCode.SLIDE_DECK.value,
+            status=int(ArtifactStatus.COMPLETED),
+            slides=(slide, slide, slide),
+            source_ids=("source-a",),
+        ),
+    ]
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=artifacts)
+    rows = []
+    if single_item:
+        for art in artifacts:
+            result = await mcp_call(
+                "studio_list", {"notebook": NB_ID, "item": art.title, "detail": "compact"}
+            )
+            rows.extend(result.structured_content["items"])
+    else:
+        result = await mcp_call("studio_list", {"notebook": NB_ID})
+        rows = result.structured_content["items"]
+
+    assert [row["duration_seconds"] for row in rows] == [872.489796, 0.0, None]
+    assert [row["slide_count"] for row in rows] == [None, None, 3]
+    assert [row["source_count"] for row in rows] == [2, None, 1]
+    assert mock_client.artifacts.list.await_count == (3 if single_item else 1)
+    assert mock_client.notes.list.await_count == (3 if single_item else 1)
+    for row in rows:
+        assert "slides" not in row  # Keep rendered text/images out of the summary.
+        assert "question_count" not in row  # Unobserved metadata stays unimplemented.
+        assert "generation_duration" not in row
+        assert "generator_version" not in row
+
+
+@pytest.mark.parametrize(
+    "type_code, status",
+    [
+        (ArtifactTypeCode.AUDIO, ArtifactStatus.PROCESSING),
+        (ArtifactTypeCode.SLIDE_DECK, ArtifactStatus.COMPLETED),
+        (ArtifactTypeCode.MIND_MAP, ArtifactStatus.COMPLETED),
+    ],
+)
+async def test_studio_list_absent_metadata_is_unknown(
+    mcp_call, mock_client, type_code: ArtifactTypeCode, status: ArtifactStatus
+) -> None:
+    art = Artifact(id="art1", title="Missing metadata", _artifact_type=type_code, status=status)
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[art])
+
+    result = await mcp_call("studio_list", {"notebook": NB_ID})
+    row = result.structured_content["items"][0]
+    assert row["duration_seconds"] is None
+    assert row["slide_count"] is None
+    assert row["source_count"] is None
+
+
 async def test_studio_list_full_artifact_omits_prompt(mcp_call, mock_client) -> None:
     """``detail="full"`` leaves the artifact projection untouched — no ``generation_prompt``
     (the enrichment is scoped to summary mode)."""
@@ -545,6 +630,9 @@ async def test_studio_list_full_artifact_omits_prompt(mcp_call, mock_client) -> 
     result = await mcp_call("studio_list", {"notebook": NB_ID, "detail": "full"})
     row = result.structured_content["items"][0]
     assert "generation_prompt" not in row
+    assert "duration_seconds" not in row
+    assert "slide_count" not in row
+    assert "source_count" not in row
 
 
 # ---------------------------------------------------------------------------

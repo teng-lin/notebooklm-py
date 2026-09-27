@@ -126,10 +126,12 @@ async def studio_items(
     default list paths stay byte-identical.
 
     When ``include_artifact_meta`` is set, each ARTIFACT item additionally carries
-    ``created_at`` and ``generation_prompt`` (both already decoded on the ``Artifact``)
-    — used by ``studio_list(detail="summary")`` to give artifacts the same richer
-    projection notes get. Notes are untouched by this flag. It defaults off so the
-    by-ref resolver and the default list paths stay byte-identical.
+    ``created_at``, ``generation_prompt``, ``duration_seconds``, ``slide_count``,
+    and ``source_count`` from the already-decoded ``Artifact``. Counts describe
+    populated decoded collections; empty collections yield ``None`` because the
+    model also uses them for absent wire fields. Used by summary and single-item
+    inspection. Notes are untouched by this flag. It defaults off for mutation
+    resolution and the full/compact list projections.
 
     When ``require_complete`` is set, incomplete artifact reads raise before
     resolution can mistake an unavailable backing for a missing item.
@@ -180,6 +182,13 @@ async def studio_items(
             # (``getattr`` guards a minimal fake that predates it); ``None`` for a
             # note-backed mind map or a prompt-less type (#1925).
             art_item["generation_prompt"] = getattr(art, "generation_prompt", None)
+            art_item["duration_seconds"] = getattr(art, "duration_seconds", None)
+            # Empty tuples also represent absent metadata in the public model;
+            # do not invent a confirmed zero count for those rows (#1925).
+            slides = getattr(art, "slides", ())
+            source_ids = getattr(art, "source_ids", ())
+            art_item["slide_count"] = len(slides) if slides else None
+            art_item["source_count"] = len(source_ids) if source_ids else None
         items[art_id] = art_item
     return list(items.values())
 

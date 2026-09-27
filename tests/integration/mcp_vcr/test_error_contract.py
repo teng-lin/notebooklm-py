@@ -62,3 +62,9 @@ async def test_mcp_rpc_error_projects_structured_code_over_vcr(
     # are back-off (retriable) categories.
     assert message.startswith(f"{expected_code}:"), message
     assert "retriable=true" in message, message
+    if expected_code == "RATE_LIMITED":
+        # The recorded HTTP response carries Retry-After: 1. It must survive
+        # transport decoding, exception mapping, and FastMCP serialization.
+        assert "retry_after_seconds=1" in message, message
+    else:
+        assert "retry_after_seconds" not in message

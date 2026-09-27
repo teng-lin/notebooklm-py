@@ -178,6 +178,34 @@ def test_to_tool_error_returns_tool_error_with_payload() -> None:
     assert "RATE_LIMITED" in str(err)
 
 
+@pytest.mark.parametrize("retry_after", [0, 300])
+def test_rate_limit_delay_reaches_structured_and_flat_errors(retry_after: int) -> None:
+    error = exc.RateLimitError("slow down", retry_after=retry_after)
+
+    payload = tool_error_payload(error)
+    assert payload["retry_after_seconds"] == retry_after
+    assert payload["retriable"] is True
+    assert f"retry_after_seconds={retry_after}" in str(to_tool_error(error))
+
+
+@pytest.mark.parametrize("error", [exc.RateLimitError("unknown delay"), exc.ServerError("busy")])
+def test_unknown_retry_delay_is_omitted(error: Exception) -> None:
+    assert "retry_after_seconds" not in tool_error_payload(error)
+    assert "retry_after_seconds" not in str(to_tool_error(error))
+
+
+def test_retry_delay_does_not_make_unconfirmed_mutation_retriable() -> None:
+    from notebooklm._idempotency import mark_unconfirmed
+
+    error = mark_unconfirmed(exc.RateLimitError("commit unknown", retry_after=300))
+    payload = tool_error_payload(error)
+    assert payload["retry_after_seconds"] == 300
+    assert payload["retriable"] is False
+    assert payload["unconfirmed"] is True
+    wire = str(to_tool_error(error))
+    assert "retriable=false unconfirmed=true retry_after_seconds=300" in wire
+
+
 def test_not_found_candidates_surface_in_payload_and_did_you_mean_hint() -> None:
     """Near-miss candidates (issue #1787) appear structurally and swap the hint."""
     err = exc.NotebookNotFoundError("Scientific")

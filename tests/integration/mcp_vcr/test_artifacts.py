@@ -173,6 +173,12 @@ async def test_mcp_studio_list_over_vcr() -> None:
     assert any(isinstance(p, str) and p for p in prompts), (
         f"expected at least one non-empty generation_prompt; got {prompts}"
     )
+    # Both recorded LIST_ARTIFACTS rows reference one source. This pins the
+    # full wire -> SDK -> MCP path, including unknown rather than zero counts.
+    table = next(it for it in items if it["id"] == STUDIO_LIST_PROMPTED_ARTIFACT_ID)
+    assert table["source_count"] == 1
+    assert table["duration_seconds"] is None
+    assert table["slide_count"] is None
 
 
 #: mind_maps_interactive.yaml — the completed data-table artifact whose recorded

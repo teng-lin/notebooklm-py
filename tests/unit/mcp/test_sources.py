@@ -2416,7 +2416,7 @@ async def test_e9_mcp_batch_error_preserves_committed_sibling_id(mcp_call, mock_
     from notebooklm._web.sources.batch import SourceUrlBatchItem
     from notebooklm.exceptions import RateLimitError
 
-    unresolved = RateLimitError("batch response left another member unresolved")
+    unresolved = RateLimitError("batch response left another member unresolved", retry_after=300)
     mark_unconfirmed(unresolved)
     mock_client.sources.add_urls_batch = AsyncMock(
         return_value=[
@@ -2438,6 +2438,9 @@ async def test_e9_mcp_batch_error_preserves_committed_sibling_id(mcp_call, mock_
 
     assert result.structured_content["results"][0]["source_id"] == "committed-before-failure"
     assert result.structured_content["results"][1]["commit_state"] == "unknown"
+    error = result.structured_content["results"][1]["error"]
+    assert error["retry_after_seconds"] == 300
+    assert error["retriable"] is False
 
 
 async def test_source_add_batch_projects_all_four_public_commit_states(
