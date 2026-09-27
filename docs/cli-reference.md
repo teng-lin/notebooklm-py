@@ -2173,6 +2173,9 @@ lack a URL. Missing/unknown diagnostics, quota-shaped failures, other error buck
 ambiguous rows and network timeouts do not trigger recovery. Only public HTTP(S)
 HTML/plain-text/Markdown responses are accepted. PDFs, images, YouTube and batches
 are outside this fallback. `--allow-internal` never relaxes fallback networking.
+When recovery is skipped, a warning logs a bounded reason code while the original
+exception and mutation evidence are preserved; fetch failures log only their
+exception class, never the fetched body.
 
 Recovered sources are static text, with no URL refresh capability. The JSON
 `fallback` object includes the original/final URLs, fetch time and cleanup result;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
     from ..client import NotebookLMClient
     from ..types import Source
     from .source_add import SourceAddExecutionPlan
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ async def recover_url(
     before: set[str],
 ) -> SourceAddResult | None:
     if not _failed_url_import(original):
+        logger.warning("URL fallback skipped: reason=import_not_eligible")
         return None
     try:
         # Strict full-roster read: an ERROR-only baseline misses old PROCESSING
@@ -79,6 +83,7 @@ async def recover_url(
         # concurrent successful import of the same URL.
         after = await client.sources.list(plan.notebook_id, strict=True)
     except Exception:
+        logger.warning("URL fallback skipped: reason=readback_failed")
         return None  # Retain the original failure and all of its write evidence.
     owned_id = getattr(original, "source_id", None)
     # Android's failed tentative row may have no URL. Its registration receipt
@@ -94,6 +99,10 @@ async def recover_url(
         )
     ]
     if len(matches) != 1:
+        logger.warning(
+            "URL fallback skipped: reason=%s",
+            "candidate_missing" if not matches else "candidate_ambiguous",
+        )
         return None
     ghost = matches[0]
     if (
@@ -101,10 +110,16 @@ async def recover_url(
         or type(ghost.experimental_failure_code) is not int
         or ghost.experimental_failure_code != 1
     ):
+        logger.warning("URL fallback skipped: reason=nonconnection_diagnostic")
         return None
     try:
         fetched = await fetch_source(plan.plan.content)
-    except Exception:
+    except Exception as exc:
+        # Exceptions can contain URLs, credentials or response bodies. Report
+        # only the class and keep the original source error entirely unchanged.
+        logger.warning(
+            "URL fallback skipped: reason=fetch_failed error_type=%s", type(exc).__name__
+        )
         return None
 
     # Only this second mutation's own receipt can describe its outcome. A lost

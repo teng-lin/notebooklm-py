@@ -9,6 +9,7 @@ pytest.importorskip("markdownify")
 from markdownify import MarkdownConverter  # noqa: E402
 
 from notebooklm._source.markdown import (  # noqa: E402
+    _math_spans,
     _repair_mangled_math,
     _SourceHtmlConverter,
     _SourceMarkdownConverter,
@@ -159,3 +160,54 @@ def test_a_dollar_span_without_math_signal_is_escaped_like_prose() -> None:
     output = html_to_markdown("<p>Between $a$ and $b$ there is a_gap.</p>")
 
     assert r"a\_gap" in output
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (r"$x_1 $$ y_2$", r"$x_1 $$ y\_2$"),
+        (r"$$x_1$ y_2$", r"$$x\_1$ y\_2$"),
+        (r"$$x_1$ y_2$$", r"$$x_1$ y_2$$"),
+        (r"\$x_1$ and $y_2$", r"\$x\_1$ and $y_2$"),
+    ],
+)
+def test_dollar_delimiter_precedence_and_escaped_openers(text: str, expected: str) -> None:
+    assert _SourceHtmlConverter().escape(text) == expected
+
+
+def test_math_scanner_preserves_previous_regex_semantics() -> None:
+    import itertools
+    import re
+
+    previous = re.compile(
+        r"(?<!\\)(?P<delimiter>\$\$|\$)(?!\s)(?P<body>.*?)"
+        r"(?<![\\\s])(?P=delimiter)",
+        re.DOTALL,
+    )
+    for size in range(7):
+        for characters in itertools.product("$ \\x", repeat=size):
+            text = "".join(characters)
+            expected = [
+                (match.start(), match.end(), len(match["delimiter"]))
+                for match in previous.finditer(text)
+            ]
+            assert list(_math_spans(text)) == expected, repr(text)
+
+
+def test_unmatched_dollar_page_has_bounded_conversion_time() -> None:
+    """Repeated unmatched starts previously rescanned the whole suffix each time."""
+    import subprocess
+    import sys
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from notebooklm._source.markdown import html_to_markdown; "
+            "text = '$a ' * 100_000; "
+            "assert html_to_markdown('<p>' + text + '</p>') == text.rstrip()",
+        ],
+        check=True,
+        timeout=10,
+        capture_output=True,
+    )

@@ -139,6 +139,61 @@ async def test_recovery_failure_keeps_original_exception(setup, phase):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("phase", "reason"),
+    [
+        ("ineligible", "import_not_eligible"),
+        ("readback", "readback_failed"),
+        ("missing", "candidate_missing"),
+        ("ambiguous", "candidate_ambiguous"),
+        ("diagnostic", "nonconnection_diagnostic"),
+        ("healthy", "nonconnection_diagnostic"),
+        ("fetch", "fetch_failed error_type=ValueError"),
+    ],
+)
+async def test_skip_logs_safe_reason_and_preserves_original_error(setup, caplog, phase, reason):
+    from notebooklm._idempotency import mark_commit_state
+
+    client, original, fetch = setup
+    secret = "private-response-body https://user:secret@example.com/"
+    if phase == "ineligible":
+        original.cause = RPCError(secret, rpc_code=13)
+    elif phase == "readback":
+        client.sources.list.side_effect = [[], RPCError(secret)]
+    elif phase == "missing":
+        client.sources.list.side_effect = [[], []]
+    elif phase == "ambiguous":
+        client.sources.list.side_effect = [[], [ghost(), ghost("other")]]
+    elif phase == "diagnostic":
+        client.sources.list.side_effect = [[], [ghost(code=3)]]
+    elif phase == "healthy":
+        client.sources.list.side_effect = [[], [ghost(status=SourceStatus.READY)]]
+    else:
+        fetch.side_effect = ValueError(secret)
+    mark_commit_state(original, CommitState.UNKNOWN, operation="sources.add_url", stage="commit")
+    cause = original.cause
+    metadata = original.operation_metadata
+    attributes = original.__dict__.copy()
+    args = original.args
+
+    with (
+        caplog.at_level("WARNING", logger=fallback.__name__),
+        pytest.raises(SourceAddError) as caught,
+    ):
+        await execute_source_add(client, plan(fallback_fetch=True))
+
+    assert caught.value is original
+    assert original.cause is cause
+    assert original.operation_metadata is metadata
+    assert original.__dict__ == attributes
+    assert original.args == args
+    assert caplog.messages == [f"URL fallback skipped: reason={reason}"]
+    assert secret not in caplog.text
+    assert URL not in caplog.text
+    client.sources.add_text.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_recovery_reports_static_provenance_but_does_not_claim_ghost(setup):
     client, _, fetch = setup
     result = await execute_source_add(client, plan(fallback_fetch=True, cleanup_on_failure=True))

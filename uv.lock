@@ -1437,6 +1437,7 @@ dependencies = [
     { name = "click" },
     { name = "filelock" },
     { name = "httpx" },
+    { name = "idna" },
     { name = "rich" },
 ]
 
@@ -1530,6 +1531,7 @@ requires-dist = [
     { name = "grpcio", marker = "extra == 'dev'", specifier = "==1.76.0" },
     { name = "grpcio-tools", marker = "extra == 'dev'", specifier = "==1.76.0" },
     { name = "httpx", specifier = ">=0.27.0,<0.29" },
+    { name = "idna", specifier = ">=3.6,<4" },
     { name = "markdownify", marker = "extra == 'markdown'", specifier = ">=0.14.1,<2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0,<3" },
     { name = "notebooklm-py", extras = ["browser", "dev", "headless", "markdown", "mcp", "server"], marker = "extra == 'all'" },

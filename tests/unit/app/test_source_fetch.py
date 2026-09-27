@@ -38,6 +38,21 @@ def test_normalizes_hostname_and_strips_fragment():
     )
 
 
+@pytest.mark.parametrize(
+    ("url", "expected_host"),
+    [
+        ("https://faß.de/", "xn--fa-hia.de"),
+        ("https://[2606:4700:4700::1111]/", "2606:4700:4700::1111"),
+    ],
+)
+def test_hostname_normalization_preserves_modern_idna_and_ipv6(url, expected_host):
+    normalized, host, port = fetch.public_fetch_url(url)
+    assert host == expected_host
+    assert port == 443
+    authority = f"[{host}]" if ":" in host else host
+    assert normalized == f"https://{authority}:443/"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "ip",
@@ -50,6 +65,9 @@ def test_normalizes_hostname_and_strips_fragment():
         "0.0.0.0",
         "::1",
         "::ffff:127.0.0.1",
+        "64:ff9b::127.0.0.1",
+        "64:ff9b::169.254.169.254",
+        "::127.0.0.1",
         "fc00::1",
         "ff02::1",
     ],
@@ -63,7 +81,23 @@ async def test_rejects_nonpublic_addresses_even_in_mixed_dns_answers(monkeypatch
     )
     monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolver)
     with pytest.raises(ValueError, match="public unicast"):
-        await fetch._public_address("example.com", 443)
+        await fetch._public_addresses("example.com", 443)
+
+
+@pytest.mark.asyncio
+async def test_retains_all_public_addresses_without_duplicates(monkeypatch):
+    resolver = AsyncMock(
+        return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2606:4700:4700::1111", 443, 0, 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
+        ]
+    )
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", resolver)
+    assert await fetch._public_addresses("example.com", 443) == (
+        "8.8.8.8",
+        "2606:4700:4700::1111",
+    )
 
 
 @pytest.fixture
@@ -93,7 +127,7 @@ def sessions(monkeypatch):
             return SimpleNamespace(status_code=status, headers=headers)
 
     monkeypatch.setattr(requests, "AsyncSession", FetchSession)
-    monkeypatch.setattr(fetch, "_public_address", AsyncMock(return_value="8.8.8.8"))
+    monkeypatch.setattr(fetch, "_public_addresses", AsyncMock(return_value=("8.8.8.8",)))
     return responses, opened, calls, closed
 
 
@@ -122,13 +156,30 @@ async def test_pins_each_hop_without_credentials_or_environment_proxy(sessions):
 
 
 @pytest.mark.asyncio
+async def test_pins_all_validated_addresses_in_one_resolve_entry(sessions, monkeypatch):
+    from curl_cffi import CurlOpt
+
+    responses, opened, _, _ = sessions
+    responses.append((200, {"content-type": "text/plain"}, [b"Useful article. " * 20]))
+    monkeypatch.setattr(
+        fetch,
+        "_public_addresses",
+        AsyncMock(return_value=("8.8.8.8", "2606:4700:4700::1111")),
+    )
+    await fetch.fetch_source("https://example.com/")
+    assert opened[0]["curl_options"][CurlOpt.RESOLVE] == [
+        "example.com:443:8.8.8.8,[2606:4700:4700::1111]"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_private_redirect_rejected_before_second_request(sessions, monkeypatch):
     responses, opened, _, _ = sessions
     responses.append((302, {"location": "http://internal.example/"}, []))
     monkeypatch.setattr(
         fetch,
-        "_public_address",
-        AsyncMock(side_effect=["8.8.8.8", ValueError("nonpublic destination")]),
+        "_public_addresses",
+        AsyncMock(side_effect=[("8.8.8.8",), ValueError("nonpublic destination")]),
     )
     with pytest.raises(ValueError, match="nonpublic"):
         await fetch.fetch_source("https://example.com/")
@@ -143,6 +194,51 @@ async def test_byte_limit_aborts_callback_and_closes_session(sessions, monkeypat
     with pytest.raises(ValueError, match="byte limit"):
         await fetch.fetch_source("https://example.com/")
     assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_real_curl_byte_limit_stops_downloading_response(monkeypatch):
+    pytest.importorskip("curl_cffi")
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Event, Thread
+
+    finished = Event()
+    sent = []
+    chunk = b"a" * 65536
+    response_bytes = 64 * 1024 * 1024
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(response_bytes))
+            self.end_headers()
+            try:
+                for _ in range(response_bytes // len(chunk)):
+                    self.wfile.write(chunk)
+                    sent.append(len(chunk))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                finished.set()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setattr(fetch, "_public_addresses", AsyncMock(return_value=("127.0.0.1",)))
+    monkeypatch.setattr(fetch, "MAX_FETCH_BYTES", 20000)
+    try:
+        with pytest.raises(ValueError, match="byte limit"):
+            await fetch.fetch_source(f"http://limit-test.invalid:{server.server_port}/")
+        assert await asyncio.to_thread(finished.wait, 5)
+        assert sum(sent) < response_bytes
+    finally:
+        await asyncio.to_thread(server.shutdown)
+        server.server_close()
+        thread.join(timeout=1)
 
 
 @pytest.mark.asyncio
@@ -200,14 +296,26 @@ async def test_dns_resolution_is_inside_total_deadline(monkeypatch):
     async def resolve(*args):
         await asyncio.Event().wait()
 
-    monkeypatch.setattr(fetch, "_public_address", resolve)
+    monkeypatch.setattr(fetch, "_public_addresses", resolve)
     monkeypatch.setattr(fetch, "FETCH_TIMEOUT", 0.01)
     with pytest.raises(asyncio.TimeoutError):
         await fetch.fetch_source("https://example.com/")
 
 
 @pytest.mark.asyncio
-async def test_real_curl_uses_pinned_address_and_ignores_proxy(monkeypatch):
+@pytest.mark.parametrize(
+    ("family", "addresses", "hostname"),
+    [
+        (socket.AF_INET, ("127.0.0.1",), "pin-test.invalid"),
+        (socket.AF_INET, ("127.0.0.2", "127.0.0.1"), "pin-test.invalid"),
+        (socket.AF_INET6, ("::1",), "pin-test.invalid"),
+        (socket.AF_INET6, ("::1",), "[::1]"),
+    ],
+    ids=["ipv4", "ipv4-failover", "ipv6-address", "ipv6-host"],
+)
+async def test_real_curl_uses_pinned_address_and_ignores_proxy(
+    monkeypatch, family, addresses, hostname
+):
     """Exercise actual libcurl options against a local fault-server, without DNS."""
     pytest.importorskip("curl_cffi")
     pytest.importorskip("markdownify")
@@ -228,18 +336,26 @@ async def test_real_curl_uses_pinned_address_and_ignores_proxy(monkeypatch):
         def log_message(self, *args):
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    class PinnedHTTPServer(ThreadingHTTPServer):
+        address_family = family
+
+    try:
+        server = PinnedHTTPServer((addresses[-1], 0), Handler)
+    except OSError:
+        if family == socket.AF_INET6:
+            pytest.skip("IPv6 loopback is unavailable")
+        raise
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     # Only the policy seam is bypassed for this local transport check; the
     # nonpublic-address rejection is tested separately above.
-    monkeypatch.setattr(fetch, "_public_address", AsyncMock(return_value="127.0.0.1"))
+    monkeypatch.setattr(fetch, "_public_addresses", AsyncMock(return_value=addresses))
     monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
     monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:1")
     try:
-        result = await fetch.fetch_source(f"http://pin-test.invalid:{server.server_port}/article")
+        result = await fetch.fetch_source(f"http://{hostname}:{server.server_port}/article")
         assert result.content.startswith("A locally served useful article.")
-        assert seen[0]["Host"] == f"pin-test.invalid:{server.server_port}"
+        assert seen[0]["Host"] == f"{hostname}:{server.server_port}"
         assert "Cookie" not in seen[0]
         assert "Authorization" not in seen[0]
     finally:
@@ -252,9 +368,30 @@ async def test_real_curl_uses_pinned_address_and_ignores_proxy(monkeypatch):
 async def test_empty_dns_answer_does_not_make_request(monkeypatch):
     monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", AsyncMock(return_value=[]))
     with pytest.raises(ValueError, match="no addresses"):
-        await fetch._public_address("missing.example", 443)
+        await fetch._public_addresses("missing.example", 443)
 
 
 def test_binary_body_mislabeled_as_text_is_rejected():
     with pytest.raises(ValueError, match="binary"):
         fetch._decode_content(b"\x00" * 200, "text/plain", "https://example.com/")
+
+
+@pytest.mark.asyncio
+async def test_conversion_does_not_block_fetch_deadline(sessions, monkeypatch):
+    from threading import Event
+
+    responses, _, _, _ = sessions
+    responses.append((200, {"content-type": "text/html"}, [b"<p>Article</p>"]))
+    release = Event()
+
+    def slow_decode(*args):
+        release.wait(timeout=2)
+        return fetch.FetchedSource("https://example.com/", "Article", "content")
+
+    monkeypatch.setattr(fetch, "_decode_content", slow_decode)
+    monkeypatch.setattr(fetch, "FETCH_TIMEOUT", 0.05)
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await fetch.fetch_source("https://example.com/")
+    finally:
+        release.set()

@@ -1,6 +1,6 @@
 """Bounded, credential-free fetching for opt-in URL recovery.
 
-Every hop uses a fresh session pinned to an already validated public address.
+Every hop uses a fresh session pinned to already validated public addresses.
 This is deliberately separate from the authenticated NotebookLM transport.
 """
 
@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from email.message import Message
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
+import idna
+
 from ..exceptions import ValidationError
 from ..utils import html_to_markdown
 from .content_sanity import text_content_warning
@@ -21,6 +23,10 @@ MAX_FETCH_BYTES = 2_000_000
 FETCH_TIMEOUT = 30.0
 MAX_REDIRECTS = 5
 _TEXT_TYPES = {"text/html", "application/xhtml+xml", "text/plain", "text/markdown"}
+_EMBEDDED_IPV4_NETWORKS = (
+    ipaddress.IPv6Network("64:ff9b::/96"),
+    ipaddress.IPv6Network("::/96"),
+)
 
 
 @dataclass(frozen=True)
@@ -50,7 +56,11 @@ def public_fetch_url(url: str) -> tuple[str, str, int]:
         raise ValueError("Fallback requires an HTTP(S) URL")
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("Fallback URLs cannot contain credentials")
-    host = parsed.hostname.rstrip(".").encode("idna").decode("ascii")
+    host = parsed.hostname.rstrip(".")
+    try:
+        host = str(ipaddress.ip_address(host))
+    except ValueError:
+        host = idna.encode(host, uts46=True, transitional=False).decode("ascii")
     if not host or "%" in host:
         raise ValueError("Invalid fallback hostname")
     port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
@@ -63,7 +73,7 @@ def public_fetch_url(url: str) -> tuple[str, str, int]:
     return normalized, host, port
 
 
-async def _public_address(host: str, port: int) -> str:
+async def _public_addresses(host: str, port: int) -> tuple[str, ...]:
     addresses = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
     if not addresses:
         raise ValueError("Fallback hostname has no addresses")
@@ -71,10 +81,14 @@ async def _public_address(host: str, port: int) -> str:
     for _family, _type, _proto, _canon, address in addresses:
         ip = ipaddress.ip_address(address[0])
         checked = getattr(ip, "ipv4_mapped", None) or ip
+        if isinstance(ip, ipaddress.IPv6Address) and any(
+            ip in network for network in _EMBEDDED_IPV4_NETWORKS
+        ):
+            checked = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
         if not checked.is_global or checked.is_multicast:
             raise ValueError("Fallback requires public unicast addresses on every hop")
         approved.append(str(ip))
-    return approved[0]
+    return tuple(dict.fromkeys(approved))
 
 
 def _decode_content(body: bytes, content_type: str, final_url: str) -> FetchedSource:
@@ -105,12 +119,13 @@ def _decode_content(body: bytes, content_type: str, final_url: str) -> FetchedSo
 
 async def _fetch(url: str) -> FetchedSource:
     from curl_cffi import CurlOpt
+    from curl_cffi.curl import CURL_WRITEFUNC_ERROR
     from curl_cffi.requests import AsyncSession
 
     for hop in range(MAX_REDIRECTS + 1):
         url, host, port = public_fetch_url(url)
-        address = await _public_address(host, port)
-        pinned = f"[{address}]" if ":" in address else address
+        addresses = await _public_addresses(host, port)
+        pinned = ",".join(f"[{address}]" if ":" in address else address for address in addresses)
         resolve_host = f"[{host}]" if ":" in host else host
         body = bytearray()
         oversized = False
@@ -119,12 +134,15 @@ async def _fetch(url: str) -> FetchedSource:
             nonlocal oversized
             if len(buffer) + len(chunk) > MAX_FETCH_BYTES:
                 oversized = True
-                return 0  # Abort libcurl before retaining an oversized/decompressed body.
+                # curl_cffi treats ordinary short returns as successful writes.
+                # Its explicit error sentinel is required to abort libcurl.
+                return CURL_WRITEFUNC_ERROR
             buffer.extend(chunk)
             return len(chunk)
 
         # New cookie jar, no auth headers, no environment proxy, no connection
-        # reuse across origins. RESOLVE preserves Host and TLS SNI/verification.
+        # reuse across origins. RESOLVE preserves Host and TLS SNI/verification,
+        # and permits failover among only the addresses validated above.
         async with AsyncSession(
             impersonate="chrome",
             trust_env=False,
@@ -156,7 +174,11 @@ async def _fetch(url: str) -> FetchedSource:
             continue
         if not 200 <= response.status_code < 300:
             raise ValueError("Fallback server returned a non-success status")
-        return _decode_content(bytes(body), response.headers.get("content-type", ""), url)
+        # Parsing/conversion can be CPU-heavy for untrusted HTML. Keep it off the
+        # event loop so the caller's deadline and other requests remain responsive.
+        return await asyncio.to_thread(
+            _decode_content, bytes(body), response.headers.get("content-type", ""), url
+        )
     raise AssertionError("unreachable")
 
 

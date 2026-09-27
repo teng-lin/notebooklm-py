@@ -2858,20 +2858,11 @@
     },
     {
       "kind": "from",
-      "lineno": 9,
-      "scope": null,
-      "scope_kind": "module",
-      "source": "notebooklm._app.source_fallback",
-      "target": "notebooklm.exceptions",
-      "type_only": false
-    },
-    {
-      "kind": "from",
       "lineno": 10,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.source_fallback",
-      "target": "notebooklm.outcomes",
+      "target": "notebooklm.exceptions",
       "type_only": false
     },
     {
@@ -2880,7 +2871,7 @@
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.source_fallback",
-      "target": "notebooklm.types",
+      "target": "notebooklm.outcomes",
       "type_only": false
     },
     {
@@ -2889,12 +2880,21 @@
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.source_fallback",
+      "target": "notebooklm.types",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 13,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._app.source_fallback",
       "target": "notebooklm.urls",
       "type_only": false
     },
     {
       "kind": "from",
-      "lineno": 17,
+      "lineno": 18,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.source_fallback",
@@ -2903,7 +2903,7 @@
     },
     {
       "kind": "from",
-      "lineno": 18,
+      "lineno": 19,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.source_fallback",
@@ -2912,7 +2912,7 @@
     },
     {
       "kind": "from",
-      "lineno": 16,
+      "lineno": 18,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.source_fetch",
@@ -2921,7 +2921,7 @@
     },
     {
       "kind": "from",
-      "lineno": 17,
+      "lineno": 19,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.source_fetch",
@@ -11701,7 +11701,7 @@
       "modules": 54
     },
     "app": {
-      "lines": 13905,
+      "lines": 13942,
       "modules": 46
     },
     "auth": {
@@ -11717,7 +11717,7 @@
       "modules": 42
     },
     "root": {
-      "lines": 27094,
+      "lines": 27121,
       "modules": 90
     },
     "rpc": {
@@ -11742,7 +11742,7 @@
     }
   },
   "summary": {
-    "authored_lines": 152808,
+    "authored_lines": 152872,
     "authored_modules": 491,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1288,
