@@ -2166,9 +2166,13 @@ Install `notebooklm-py[impersonate,markdown]`, then opt in for a single web page
 notebooklm source add "https://example.com/article" -n NOTEBOOK_ID --fallback-fetch --json
 ```
 
-The normal NotebookLM import runs first. Recovery requires a failed-precondition
+A best-effort snapshot precedes the normal NotebookLM import. If that snapshot
+fails, the import still runs but recovery is unavailable for that attempt.
+Recovery requires a failed-precondition
 response plus one newly observed matching ERROR row with experimental failure
-code 1. Android correlates by its tentative source ID, since failed rows can
+code 1. Matching tolerates equivalent URL spellings (host case, default ports,
+IPv6 compression, empty paths and percent-escape case), preserving distinct path
+and query values. Android correlates by its tentative source ID, since failed rows can
 lack a URL. Missing/unknown diagnostics, quota-shaped failures, other error buckets,
 ambiguous rows and network timeouts do not trigger recovery. Only public HTTP(S)
 HTML/plain-text/Markdown responses are accepted. PDFs, images, YouTube and batches

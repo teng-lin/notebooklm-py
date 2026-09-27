@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -55,6 +56,33 @@ def validate_fallback(plan: SourceAddExecutionPlan) -> None:
     require_fetch_dependencies()
 
 
+async def capture_recovery_baseline(client: NotebookLMClient, notebook_id: str) -> set[str] | None:
+    """Capture recovery evidence without making it a prerequisite for importing."""
+    try:
+        return {source.id for source in await client.sources.list(notebook_id, strict=True)}
+    except Exception:
+        logger.warning("URL fallback unavailable: reason=baseline_failed")
+        return None
+
+
+def _same_url(left: str | None, right: str | None) -> bool:
+    """Match equivalent URL spellings without decoding paths or reordering queries."""
+    if left is None or right is None:
+        return left is right
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    try:
+        normalized_left, _, _ = public_fetch_url(left)
+        normalized_right, _, _ = public_fetch_url(right)
+    except ValueError:
+        return False
+    # Hex digit case is insignificant in escapes; decoding escapes themselves
+    # would merge distinct paths (e.g. %2F versus /) and is deliberately avoided.
+    return re.sub(
+        r"%[0-9a-fA-F]{2}", lambda match: match.group(0).upper(), normalized_left
+    ) == re.sub(r"%[0-9a-fA-F]{2}", lambda match: match.group(0).upper(), normalized_right)
+
+
 def _failed_url_import(exc: SourceAddError) -> bool:
     # A network timeout, decoding fault, auth failure, or arbitrary source error
     # never authorizes another create. Code 9 alone still needs row evidence.
@@ -97,9 +125,9 @@ async def _recovery_candidate(
         for s in after
         if s.id not in before
         and (
-            s.id == owned_id and s.url in (None, plan.plan.content)
+            s.id == owned_id and (s.url is None or _same_url(s.url, plan.plan.content))
             if owned_id is not None
-            else s.url == plan.plan.content
+            else _same_url(s.url, plan.plan.content)
         )
     ]
     if len(matches) != 1:
@@ -198,7 +226,7 @@ async def _cleanup(
         current = await client.sources.get_or_none(notebook_id, ghost.id)
         if current is None:
             return "already_absent"
-        if not _connection_failure(current) or current.url != ghost.url:
+        if not _connection_failure(current) or not _same_url(current.url, ghost.url):
             return "skipped_changed"
         # No conditional delete is available; the final read narrows, but cannot
         # eliminate, the race with a concurrent change to this exact source.

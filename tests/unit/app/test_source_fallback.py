@@ -10,7 +10,13 @@ import pytest
 from notebooklm._app import source_fallback as fallback
 from notebooklm._app.source_add import SourceAddExecutionPlan, SourceAddPlan, execute_source_add
 from notebooklm._app.source_fetch import FetchedSource
-from notebooklm.exceptions import ClientError, RPCError, SourceAddError, ValidationError
+from notebooklm.exceptions import (
+    ClientError,
+    DecodingError,
+    RPCError,
+    SourceAddError,
+    ValidationError,
+)
 from notebooklm.outcomes import CommitState
 from notebooklm.types import Source, SourceStatus
 
@@ -457,3 +463,129 @@ async def test_android_candidate_acquiring_conflicting_url_during_fetch_is_not_r
     assert caught.value is original
     fetch.assert_awaited_once_with(URL)
     client.sources.add_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("add_succeeds", [True, False])
+@pytest.mark.parametrize("baseline_error", [RPCError("transient read"), DecodingError("bad row")])
+async def test_unavailable_baseline_never_blocks_normal_add(
+    setup, caplog, add_succeeds, baseline_error
+):
+    """A failed optional snapshot disables recovery, not the original import."""
+    client, original, fetch = setup
+    client.sources.list.side_effect = baseline_error
+    metadata = original.operation_metadata
+    cause = original.cause
+    if add_succeeds:
+        client.sources.add_url.side_effect = None
+        client.sources.add_url.return_value = Source("web")
+        result = await execute_source_add(
+            client, plan(fallback_fetch=True, cleanup_on_failure=True)
+        )
+        assert result.source.id == "web"
+        assert not hasattr(result, "fallback")
+    else:
+        with pytest.raises(SourceAddError) as caught:
+            await execute_source_add(client, plan(fallback_fetch=True, cleanup_on_failure=True))
+        assert caught.value is original
+        assert original.operation_metadata is metadata
+        assert original.cause is cause
+    client.sources.add_url.assert_awaited_once_with("nb", URL)
+    client.sources.list.assert_awaited_once_with("nb", strict=True)
+    fetch.assert_not_called()
+    client.sources.add_text.assert_not_called()
+    client.sources.delete_many_with_outcomes.assert_not_called()
+    assert caplog.messages == ["URL fallback unavailable: reason=baseline_failed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owned", [True, False])
+@pytest.mark.parametrize(
+    ("requested", "reported"),
+    [
+        ("https://EXAMPLE.com:443", "https://example.com/"),
+        ("http://example.com:80/article", "http://EXAMPLE.com/article"),
+        ("https://[2001:4860:4860:0:0:0:0:8888]/", "https://[2001:4860:4860::8888]/"),
+        ("https://example.com/a%2fb?q=%3a#section", "https://example.com/a%2Fb?q=%3A"),
+        ("https://faß.de/", "https://xn--fa-hia.de/"),
+    ],
+)
+async def test_canonical_url_spellings_recover_and_cleanup(setup, owned, requested, reported):
+    """Matching and both rechecks tolerate equivalent backend URL spellings."""
+    client, original, fetch = setup
+    if owned:
+        original.source_id = "ghost"
+    row = Source("ghost", url=reported, status=SourceStatus.ERROR, experimental_failure_code=1)
+    client.sources.list.side_effect = [[], [row], [row]]
+    client.sources.get_or_none.return_value = Source(
+        "ghost", url=requested, status=SourceStatus.ERROR, experimental_failure_code=1
+    )
+    execution = SourceAddExecutionPlan(
+        "nb",
+        SourceAddPlan(content=requested, detected_type="url", title=None, upload_path=None),
+        fallback_fetch=True,
+        cleanup_on_failure=True,
+    )
+    result = await execute_source_add(client, execution)
+    assert result.source.id == "replacement"
+    assert result.fallback.original_url == requested
+    assert result.fallback.cleanup == ("deleted" if owned else "skipped_unattributed")
+    fetch.assert_awaited_once_with(requested)
+    if owned:
+        client.sources.delete_many_with_outcomes.assert_awaited_once_with("nb", ["ghost"])
+    else:
+        client.sources.delete_many_with_outcomes.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owned", [True, False])
+@pytest.mark.parametrize(
+    "reported",
+    [
+        "http://example.com/a%2Fb?x=1&y=2",  # Scheme is significant.
+        "https://example.com:444/a%2Fb?x=1&y=2",  # Non-default ports differ.
+        "https://other.example/a%2Fb?x=1&y=2",
+        "https://example.com/a/b?x=1&y=2",  # Never decode path delimiters.
+        "https://example.com/a%2Fb?y=2&x=1",  # Query order may be significant.
+        "https://example.com/A%2Fb?x=1&y=2",  # Path case is significant.
+        "https://example.com:bad/a%2Fb?x=1&y=2",
+        "https://user@example.com/a%2Fb?x=1&y=2",
+    ],
+)
+async def test_different_or_malformed_urls_do_not_authorize_recovery(setup, owned, reported):
+    """URL normalization never widens matching to different resources."""
+    client, original, fetch = setup
+    if owned:
+        original.source_id = "ghost"
+    requested = "https://example.com/a%2Fb?x=1&y=2"
+    client.sources.list.side_effect = [
+        [],
+        [Source("ghost", url=reported, status=SourceStatus.ERROR, experimental_failure_code=1)],
+    ]
+    execution = SourceAddExecutionPlan(
+        "nb",
+        SourceAddPlan(content=requested, detected_type="url", title=None, upload_path=None),
+        fallback_fetch=True,
+    )
+    with pytest.raises(SourceAddError) as caught:
+        await execute_source_add(client, execution)
+    assert caught.value is original
+    fetch.assert_not_called()
+    client.sources.add_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_equivalent_url_candidates_remain_ambiguous(setup):
+    """Canonicalization must count all equivalent rows, never pick one arbitrarily."""
+    client, original, fetch = setup
+    other = Source(
+        "other",
+        url="https://EXAMPLE.com:443/article",
+        status=SourceStatus.ERROR,
+        experimental_failure_code=1,
+    )
+    client.sources.list.side_effect = [[], [ghost(), other]]
+    with pytest.raises(SourceAddError) as caught:
+        await execute_source_add(client, plan(fallback_fetch=True))
+    assert caught.value is original
+    fetch.assert_not_called()

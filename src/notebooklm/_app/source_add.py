@@ -603,19 +603,19 @@ async def execute_source_add(
     with the desired status context so the spinner still spans the real I/O.
     """
     from ..exceptions import SourceAddError
-    from .source_fallback import recover_url, validate_fallback
+    from .source_fallback import capture_recovery_baseline, recover_url, validate_fallback
 
     validate_fallback(plan)
     async with client.operation(timeout=USE_DEFAULT):
         before = (
-            {s.id for s in await client.sources.list(plan.notebook_id, strict=True)}
+            await capture_recovery_baseline(client, plan.notebook_id)
             if plan.fallback_fetch
-            else set()
+            else None
         )
         try:
             src = await add_source(client.sources, notebook_id=plan.notebook_id, plan=plan.plan)
         except SourceAddError as exc:
-            if plan.fallback_fetch:
+            if before is not None:
                 recovered = await recover_url(client, plan, exc, before)
                 if recovered is not None:
                     return recovered
