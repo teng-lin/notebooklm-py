@@ -1262,6 +1262,21 @@
       "ceiling": 1
     },
     {
+      "attribute": "_load_stored_auth",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "tokens",
+      "owner_kind": "test",
+      "owner_qualname": "test_real_clients_allow_copied_tokens_without_web_bootstrap",
+      "package": "notebooklm._auth",
+      "path": "tests/server/test_profiles.py",
+      "category": "compat_adapter",
+      "owner": "authentication compatibility maintainers",
+      "reason": "Characterizes the documented call-time compatibility seam notebooklm._auth.tokens._load_stored_auth.",
+      "removal_trigger": "Remove with the adapter at the next-major compatibility decision, or replace with an equivalent direct-owner contract.",
+      "ceiling": 1
+    },
+    {
       "attribute": "ensure_playwright_available",
       "count": 1,
       "idiom": "monkeypatch.setattr",

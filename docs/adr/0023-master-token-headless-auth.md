@@ -63,10 +63,10 @@ Implement **Option A**; defer Option B.
   errors; third-party urllib3/requests DEBUG bodies suppressed around gpsoauth),
   prominent doc warnings. The flow uses Google's unofficial Android auth path
   (`gpsoauth`) and is ToS-grey like the rest of the client.
-- **Single-consumer per account:** each re-mint creates a new session, so N
-  concurrent workers re-minting the same account can invalidate each other's
-  `SID`. In-process re-mint is coalesced; cross-process callers should treat one
-  account as single-consumer.
+- **Independent sessions per re-mint:** each re-mint creates a new session.
+  In-process re-mint is coalesced. The original concern that concurrent workers
+  re-minting one account invalidate each other's `SID` was not borne out by
+  live testing; see the 2026-09-29 amendment below.
 - **Risks / open items:** DBSC could one day reject server-minted cookies
   (re-mint is the mitigation while it isn't enforced); `gpsoauth.exchange_token`
   is the fragile call (pinned `>=1.1.0`, no `<2` cap so the 2.0.0 `ServiceDisabled`
@@ -185,3 +185,21 @@ master-token bootstrap. That adapter calls the coarse
 crosses the facade. Both wrapper frames delete the browser choice, CDP endpoint,
 and timeout locals on failure so a retained traceback cannot retain an
 account-equivalent endpoint. See ADR-0036.
+
+## Amendment (2026-09-29): re-minted sessions are independent
+
+The original Consequences section called master-token re-minting
+"single-consumer per account", on the reasoning that concurrent re-mints could
+invalidate each other's `SID`. That was a design-time caution, not a measured
+result. Live testing for
+[#1901](https://github.com/teng-lin/notebooklm-py/issues/1901) ran two
+processes, each holding a copy of one `master_token.json` and minting its own
+Web session, with production keepalive enabled. Neither process invalidated the
+other's session, including when extra mints were made during the run.
+
+What must not be shared is a single cookie session. Profiles that hold copies of
+one `storage_state.json` can sign each other out, so each consumer needs its own
+minted or logged-in session. A re-mint replaces its profile's stored session,
+so direct or manual re-mints against one profile path should still be
+serialized. Workers on one account continue to share that account's usage
+limits.
