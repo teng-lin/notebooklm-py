@@ -270,7 +270,9 @@ async def _web_profile_info(request: Request, *, include_account: bool) -> dict[
         "sid_cookie": health.sid_cookie,
         "master_token_present": health.master_token_present,
         "session_conflict": health.session_conflict,
-        "authenticated": ready and health.local_checks_passed and not health.session_conflict,
+        # A serving client owns its session; ``session_conflict`` reflects today's
+        # files (what a reopen would find) and is reported separately.
+        "authenticated": ready and health.local_checks_passed,
         "ready": ready,
     }
     if state.client_error is not None:
@@ -278,9 +280,7 @@ async def _web_profile_info(request: Request, *, include_account: bool) -> dict[
         if not isinstance(startup_error, AuthError):
             startup_error = ServerError(str(startup_error), status_code=503)
         auth["startup_error"] = error_item(startup_error)
-        auth["startup_error"]["code"] = (
-            "session_conflict" if health.session_conflict else "profile_unavailable"
-        )
+        auth["startup_error"]["code"] = state.client_error_code or "profile_unavailable"
     info: dict[str, Any] = {"server": SERVER_NAME, "version": version_string(), "auth": auth}
     if include_account:
         if state.client is None:

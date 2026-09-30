@@ -246,6 +246,22 @@ async def test_web_server_info_block(open_seam: OpenSeam, monkeypatch: pytest.Mo
         probe.assert_not_called()
 
 
+async def test_copy_made_after_serving_is_advisory_for_the_serving_profile(
+    open_seam: OpenSeam,
+) -> None:
+    write_session("work", "psid-work")
+    write_session("personal", "psid-personal")
+    server = create_server(profiles=["work", "personal"], backend="web")
+    async with Client(server) as session:
+        await session.call_tool("notebook_list", {"profile": "work"})
+        write_session("personal", "psid-work")  # a copy appears after work serves
+        result = await session.call_tool("server_info", {"profile": "work"})
+        auth = result.structured_content["auth"]
+        assert auth["session_conflict"] is True  # what a reopen would find
+        assert auth["ready"] is True
+        assert auth["authenticated"] is True  # still serving its own session
+
+
 async def test_initialize_is_not_blocked_by_stalled_web_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

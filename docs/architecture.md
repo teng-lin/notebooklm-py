@@ -1352,7 +1352,7 @@ unfinished cancellation cleanup; `_app/profiles.py` validates unique names/paths
 Web profiles go through `_app/web_profiles.py`: one lifespan-owned `WebProfileSet`
 serializes open attempts (outside each attempt's deadline), refuses a profile whose
 `storage_state.json` session is a copy of a sibling's (keyed `__Secure-1PSID`
-digest, never logged), mints missing sessions from `master_token.json`, and opens
+or `SID` digest, never logged), mints missing sessions from `master_token.json`, and opens
 each client by explicit path. Signed file URLs carry the issuing profile. HTTP auth
 grants access to all configured profiles. See
 [multi-profile MCP setup](./installation.md#android-multi-profile-mcp) and
@@ -2141,7 +2141,7 @@ src/notebooklm/
 ├── _redact.py                   # Transport-neutral secret/home-path/file-link scrubber (redact(msg, max_length)); shared chokepoint under both mcp/_errors.py and server/_errors.py
 ├── _app/                        # Transport-neutral business-logic layer (CLI/MCP/HTTP adapters share it)
 │   ├── android_profiles.py      # Cookie-free Android client construction for isolated profile adapters
-│   ├── web_profiles.py          # Web multi-profile WebProfileSet: env refusals, file-only admission (READY/BOOTSTRAP), copied-session refusal via salted __Secure-1PSID digest, serialized open turn, explicit-path from_storage, file-only health
+│   ├── web_profiles.py          # Web multi-profile WebProfileSet: env refusals, file-only admission (READY/BOOTSTRAP), copied-session refusal via salted __Secure-1PSID/SID digest, serialized open turn, explicit-path from_storage, file-only health
 │   ├── profiles.py              # Shared multi-profile name/path uniqueness validation and per-adapter startup deadlines
 │   ├── profile_client.py        # Loop-bound profile client owner: deadlines, isolated cancellation cleanup, exception forwarding
 │   ├── __init__.py              # Re-exports the neutral primitives

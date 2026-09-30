@@ -250,6 +250,8 @@ def test_main_web_profiles_refuse_inline_auth_cleanly(monkeypatch: pytest.Monkey
 def test_main_accepts_web_profiles(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_uvicorn_run(monkeypatch)
     monkeypatch.delenv("NOTEBOOKLM_BACKEND", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL", raising=False)
     launcher.main(["--profiles", "work,personal"])
     launcher.create_app.assert_called_once_with(  # type: ignore[attr-defined]
         profiles=["work", "personal"], backend=None

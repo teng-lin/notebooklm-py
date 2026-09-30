@@ -52,7 +52,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .._adapter_support import DEFAULT_SERVER_KEEPALIVE_INTERVAL
 from .._app.android_profiles import android_profile_client
-from .._app.web_profiles import WebProfileSet, refuse_web_multi_profile_environment
+from .._app.web_profiles import (
+    WebProfileSet,
+    WebSessionConflict,
+    refuse_web_multi_profile_environment,
+)
 from ..client import NotebookLMClient
 from ..exceptions import AuthError, NotebookLMError
 from ..paths import get_active_profile, resolve_profile, set_active_profile
@@ -431,6 +435,9 @@ def create_app(
                     else:
                         client = await clients.enter_async_context(factory())
                 except Exception as exc:
+                    state.client_error_code = (
+                        "session_conflict" if isinstance(exc, WebSessionConflict) else None
+                    )
                     auth_error = _normalize_client_startup_error(exc)
                     if auth_error is None:
                         safe_error = RuntimeError(
@@ -455,6 +462,7 @@ def create_app(
                     raise AuthError(str(auth_error)) from None
                 state.client = client
                 state.client_error = None
+                state.client_error_code = None
                 last_load_error = None
                 retry_not_before = 0.0
                 state.client_generation += 1

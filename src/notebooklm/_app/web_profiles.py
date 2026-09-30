@@ -5,7 +5,8 @@ owns its own Google Web session. Profiles may hold copies of one
 ``master_token.json`` (each mints its own session), but two profiles holding
 copies of one ``storage_state.json`` would drive a single cookie session from
 two independent clients, each rotating and persisting it. Admission therefore
-refuses a profile whose ``__Secure-1PSID`` matches a sibling's.
+refuses a profile whose session cookie (``__Secure-1PSID``, else ``SID``)
+matches a sibling's.
 
 Session identity is compared through a keyed digest under a per-process random
 salt, so neither the cookie value nor its digest is logged, persisted, or
@@ -61,6 +62,9 @@ logger = logging.getLogger(__name__)
 AUTH_JSON_ENV = "NOTEBOOKLM_AUTH_JSON"
 HEADLESS_REAUTH_CDP_URL_ENV = "NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL"
 _SESSION_COOKIE = "__Secure-1PSID"
+# The library's minimum cookie set requires only ``SID``; key on it when a file
+# lacks ``__Secure-1PSID`` rather than refusing a profile single-profile accepts.
+_FALLBACK_SESSION_COOKIE = "SID"
 _SESSION_COOKIE_DOMAIN = ".google.com"
 # Per-process: digests are comparable only within one server process and are
 # useless as an offline oracle for the cookie value.
@@ -108,39 +112,61 @@ def web_session_key(storage_path: Path) -> str | None:
 
     Returns:
         ``None`` when the storage file does not exist, else a keyed digest of
-        the ``__Secure-1PSID`` cookie (the ``.google.com`` row when several
-        exist). Never the cookie value.
+        the ``__Secure-1PSID`` cookie, or of ``SID`` when that is absent (the
+        ``.google.com`` row when several exist). Never the cookie value.
 
     Raises:
         WebProfileUnavailable: The file is unreadable, is not a JSON object, or
-            carries no ``__Secure-1PSID`` cookie.
+            carries neither session cookie. Raised outside the failing
+            ``except`` block so no decoder error (which can hold the file's
+            bytes) is chained onto it.
     """
+    failure: str | None = None
     try:
         raw = storage_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return None
     except (OSError, UnicodeDecodeError):
-        raise WebProfileUnavailable("Web profile storage is unreadable") from None
+        failure = "Web profile storage is unreadable"
+    if failure is not None:
+        raise WebProfileUnavailable(failure)
+    state: object = None
     try:
         state = json.loads(raw)
-    except json.JSONDecodeError:
-        raise WebProfileUnavailable("Web profile storage is not valid JSON") from None
+    except (ValueError, RecursionError):
+        failure = "Web profile storage is not valid JSON"
+    del raw
+    if failure is not None:
+        raise WebProfileUnavailable(failure)
     if not isinstance(state, dict):
         raise WebProfileUnavailable("Web profile storage is not a JSON object")
-    fallback: str | None = None
-    preferred: str | None = None
-    for entry in auth._sanitized_auth_entries(state):
-        value = entry["value"]
-        if entry["name"] != _SESSION_COOKIE or not isinstance(value, str) or not value:
-            continue
-        if entry["domain"] == _SESSION_COOKIE_DOMAIN and preferred is None:
-            preferred = value
-        elif fallback is None:
-            fallback = value
-    selected = preferred if preferred is not None else fallback
+    selected = _session_cookie_value(auth._sanitized_auth_entries(state))
     if selected is None:
-        raise WebProfileUnavailable(f"Web profile storage has no {_SESSION_COOKIE} cookie")
-    return hmac.new(_SESSION_KEY_SALT, selected.encode("utf-8"), hashlib.sha256).hexdigest()
+        raise WebProfileUnavailable(
+            f"Web profile storage has no {_SESSION_COOKIE} or {_FALLBACK_SESSION_COOKIE} cookie"
+        )
+    name, value = selected
+    # ``surrogatepass``: a lone surrogate survives JSON decoding and must hash,
+    # not raise an encode error that would carry the cookie value.
+    material = f"{name}\0{value}".encode("utf-8", "surrogatepass")
+    return hmac.new(_SESSION_KEY_SALT, material, hashlib.sha256).hexdigest()
+
+
+def _session_cookie_value(entries: list[dict[str, Any]]) -> tuple[str, str] | None:
+    """Pick the session cookie to key on: ``__Secure-1PSID``, else ``SID``."""
+    for name in (_SESSION_COOKIE, _FALLBACK_SESSION_COOKIE):
+        fallback: str | None = None
+        for entry in entries:
+            value = entry["value"]
+            if entry["name"] != name or not isinstance(value, str) or not value:
+                continue
+            if entry["domain"] == _SESSION_COOKIE_DOMAIN:
+                return name, value
+            if fallback is None:
+                fallback = value
+        if fallback is not None:
+            return name, fallback
+    return None
 
 
 def _open_web_client(

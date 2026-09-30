@@ -525,7 +525,8 @@ server then mints a fresh Web session for it before opening. Several profiles ma
 hold copies of one account's `master_token.json`; each mints its own session.
 Copying one `storage_state.json` between profiles is **not** supported, because two
 clients would share and rotate a single cookie session. A profile whose
-`__Secure-1PSID` cookie matches another configured profile's is refused with
+session cookie (`__Secure-1PSID`, or `SID` when that is absent) matches another
+configured profile's is refused with
 `503 profile_unavailable`, and a warning names the profiles involved (never cookie
 values). To fix it, log the profile in separately (`notebooklm -p <name> login`), or
 delete the copied `storage_state.json` and keep `master_token.json` so a fresh
@@ -554,8 +555,10 @@ Web multi-profile mode refuses to start when:
 
 Authenticated `/v1/server/info` reports `backend: "web"` and the selected profile's
 file-only health: `storage_exists`, `json_valid`, `cookies_present`, `sid_cookie`,
-`master_token_present`, `session_conflict`, `ready`, and `authenticated`. When the
-profile could not open, `startup_error.code` is `session_conflict` or
+`master_token_present`, `session_conflict`, `ready`, and `authenticated`.
+`session_conflict` reflects the files as they are now, which is what a reopen would
+find; a profile that is already serving stays `authenticated`. When the profile could
+not open, `startup_error.code` records why that open failed: `session_conflict` or
 `profile_unavailable`. Public `/healthz` remains minimal liveness. Profiles for the
 same account still share Google's account quotas.
 

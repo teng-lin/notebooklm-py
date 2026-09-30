@@ -289,6 +289,36 @@ def test_copied_sessions_are_refused_while_sibling_serves(
         assert key not in text
 
 
+def test_copy_made_after_serving_is_advisory_for_the_serving_profile(
+    open_seam: OpenSeam, no_bootstrap: list[Path]
+) -> None:
+    write_session("work", "psid-work")
+    write_session("personal", "psid-personal")
+    with TestClient(web_app(), headers=HEADERS, client=("127.0.0.1", 1)) as client:
+        assert client.get("/v1/notebooks", headers=select("work")).status_code == 200
+        write_session("personal", "psid-work")  # a copy appears after work serves
+        auth = client.get("/v1/server/info", headers=select("work")).json()["auth"]
+        assert auth["session_conflict"] is True  # current files: reopening would refuse
+        assert auth["ready"] is True
+        assert auth["authenticated"] is True  # still serving its own session
+        assert "startup_error" not in auth
+
+
+def test_startup_error_code_reflects_the_recorded_failure(
+    open_seam: OpenSeam, no_bootstrap: list[Path]
+) -> None:
+    paths.get_storage_path("work").parent.mkdir(parents=True, exist_ok=True)
+    paths.get_storage_path("work").write_text("not JSON", encoding="utf-8")
+    write_session("personal", "psid-personal")
+    with TestClient(web_app(), headers=HEADERS, client=("127.0.0.1", 1)) as client:
+        write_session("work", "psid-personal")  # a conflicting copy appears later
+        auth = client.get("/v1/server/info", headers=select("work")).json()["auth"]
+        assert auth["session_conflict"] is True
+        assert auth["ready"] is False
+        # The open failed on unreadable storage, not on a shared session.
+        assert auth["startup_error"]["code"] == "profile_unavailable"
+
+
 def test_same_account_with_distinct_sessions_both_serve(
     open_seam: OpenSeam, no_bootstrap: list[Path]
 ) -> None:
@@ -343,7 +373,7 @@ def test_bootstrap_runs_once_per_profile_one_at_a_time(
 
 @pytest.mark.parametrize(
     "breakage",
-    ["malformed_json", "not_object", "missing_psid", "nothing", "bad_master_token"],
+    ["malformed_json", "not_object", "no_session_cookie", "nothing", "bad_master_token"],
 )
 def test_unusable_files_make_only_that_profile_unavailable(
     open_seam: OpenSeam, no_bootstrap: list[Path], breakage: str
@@ -354,8 +384,8 @@ def test_unusable_files_make_only_that_profile_unavailable(
         storage.write_text("not JSON", encoding="utf-8")
     elif breakage == "not_object":
         storage.write_text("[]", encoding="utf-8")
-    elif breakage == "missing_psid":
-        storage.write_text(json.dumps({"cookies": [_cookie("SID", "sid")]}), encoding="utf-8")
+    elif breakage == "no_session_cookie":
+        storage.write_text(json.dumps({"cookies": [_cookie("HSID", "hsid")]}), encoding="utf-8")
     elif breakage == "bad_master_token":
         storage.with_name("master_token.json").write_text("not JSON", encoding="utf-8")
     write_session("personal", "psid-personal")

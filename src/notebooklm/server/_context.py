@@ -60,13 +60,16 @@ class AppState:
     process refreshes the selected profile.
 
     ``web_profiles`` is set only for Web multi-profile states; it serves the
-    selected profile's file-only diagnostics.
+    selected profile's file-only diagnostics. ``client_error_code`` records why
+    the last open failed (``"session_conflict"`` for a refused copied session),
+    so diagnostics report the recorded failure rather than today's files.
     """
 
     client: NotebookLMClient | None
     pending: PendingRegistry
     limiters: ServerLimiters
     client_error: BaseException | None = None
+    client_error_code: str | None = None
     client_loader: Callable[[int], Awaitable[NotebookLMClient]] | None = None
     client_generation: int = 0
     profile: str | None = None

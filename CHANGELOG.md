@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   degradation, and recovery cooldown as Android multi-profile mode. Each profile
   opens its own `storage_state.json` by explicit path; a profile with only a
   `master_token.json` mints its own session first. A profile whose
-  `__Secure-1PSID` session is a copy of another configured profile's is refused
+  session cookie (`__Secure-1PSID`, else `SID`) is a copy of another configured profile's is refused
   (siblings keep serving); diagnostics report `session_conflict`. Web profile opens
   take turns, and waiting for a turn does not count against the startup timeout. Web
   multi-profile mode refuses `NOTEBOOKLM_AUTH_JSON` and a non-blank

@@ -132,14 +132,49 @@ def test_session_key_missing_file_is_none(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "content",
-    ["not JSON", "[]", json.dumps({"cookies": [_cookie("SID", "only-sid")]})],
-    ids=["malformed", "not-object", "missing-psid"],
+    [
+        "not JSON",
+        "[]",
+        json.dumps({"cookies": [_cookie("HSID", "not-a-session-cookie")]}),
+        "[" * 100_000 + "]" * 100_000,
+    ],
+    ids=["malformed", "not-object", "missing-session-cookie", "deeply-nested"],
 )
 def test_session_key_unusable_storage_is_unavailable(tmp_path: Path, content: str) -> None:
     path = tmp_path / "storage_state.json"
     path.write_text(content, encoding="utf-8")
-    with pytest.raises(WebProfileUnavailable):
+    with pytest.raises(WebProfileUnavailable) as info:
         web_session_key(path)
+    # No chained parser/decoder error: it could carry the file's cookie bytes.
+    assert info.value.__context__ is None and info.value.__cause__ is None
+
+
+def test_session_key_undecodable_file_chains_no_file_bytes(tmp_path: Path) -> None:
+    path = tmp_path / "storage_state.json"
+    path.write_bytes(b'{"cookies": [{"name": "SID", "value": "secret-\xff"}]}')
+    with pytest.raises(WebProfileUnavailable) as info:
+        web_session_key(path)
+    assert info.value.__context__ is None and info.value.__cause__ is None
+
+
+def test_session_key_hashes_unencodable_cookie_value(tmp_path: Path) -> None:
+    # A lone surrogate survives JSON decoding; hashing must not raise on it.
+    path = tmp_path / "storage_state.json"
+    path.write_text(
+        '{"cookies": [{"name": "__Secure-1PSID", "value": "\\ud800", '
+        '"domain": ".google.com", "path": "/"}]}',
+        encoding="utf-8",
+    )
+    assert web_session_key(path) is not None
+
+
+def test_session_key_falls_back_to_sid(tmp_path: Path) -> None:
+    only_sid = _write_state(tmp_path / "a" / "storage_state.json", [_cookie("SID", "sid-a")])
+    copy = _write_state(tmp_path / "b" / "storage_state.json", [_cookie("SID", "sid-a")])
+    other = _write_state(tmp_path / "c" / "storage_state.json", [_cookie("SID", "sid-c")])
+    assert web_session_key(only_sid) is not None
+    assert web_session_key(only_sid) == web_session_key(copy)
+    assert web_session_key(only_sid) != web_session_key(other)
 
 
 def test_session_key_does_not_require_psidts(tmp_path: Path) -> None:
@@ -223,6 +258,26 @@ async def test_admit_ignores_broken_sibling(profile_paths: dict[str, Path]) -> N
     profile_paths["personal"].parent.mkdir(parents=True)
     profile_paths["personal"].write_text("not JSON", encoding="utf-8")
     assert WebProfileSet(profile_paths, keepalive=None).admit("work") == "ready"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[" * 100_000 + "]" * 100_000,
+        '{"cookies": [{"name": "__Secure-1PSID", "value": "\\ud800", '
+        '"domain": ".google.com", "path": "/"}]}',
+    ],
+    ids=["deeply-nested", "unencodable-value"],
+)
+async def test_hostile_sibling_does_not_block_admission_or_health(
+    profile_paths: dict[str, Path], content: str
+) -> None:
+    _session(profile_paths["work"], "psid-work")
+    profile_paths["personal"].parent.mkdir(parents=True)
+    profile_paths["personal"].write_text(content, encoding="utf-8")
+    profiles = WebProfileSet(profile_paths, keepalive=None)
+    assert profiles.admit("work") == "ready"
+    assert (await profiles.health("work")).session_conflict is False
 
 
 # --- factory -----------------------------------------------------------------

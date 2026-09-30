@@ -3083,7 +3083,7 @@
     },
     {
       "kind": "from",
-      "lineno": 40,
+      "lineno": 41,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.web_profiles",
@@ -3092,7 +3092,7 @@
     },
     {
       "kind": "from",
-      "lineno": 41,
+      "lineno": 42,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.web_profiles",
@@ -3101,7 +3101,7 @@
     },
     {
       "kind": "from",
-      "lineno": 42,
+      "lineno": 43,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._app.web_profiles",
@@ -11138,7 +11138,7 @@
     },
     {
       "kind": "from",
-      "lineno": 56,
+      "lineno": 60,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.server.app",
@@ -11147,7 +11147,7 @@
     },
     {
       "kind": "from",
-      "lineno": 57,
+      "lineno": 61,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.server.app",
@@ -11156,7 +11156,7 @@
     },
     {
       "kind": "from",
-      "lineno": 58,
+      "lineno": 62,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.server.app",
@@ -11165,7 +11165,7 @@
     },
     {
       "kind": "from",
-      "lineno": 295,
+      "lineno": 299,
       "scope": "_default_factory",
       "scope_kind": "function",
       "source": "notebooklm.server.app",
@@ -11773,7 +11773,7 @@
       "modules": 54
     },
     "app": {
-      "lines": 14330,
+      "lines": 14356,
       "modules": 47
     },
     "auth": {
@@ -11785,7 +11785,7 @@
       "modules": 76
     },
     "mcp": {
-      "lines": 12016,
+      "lines": 12018,
       "modules": 42
     },
     "root": {
@@ -11801,7 +11801,7 @@
       "modules": 11
     },
     "server": {
-      "lines": 4270,
+      "lines": 4281,
       "modules": 21
     },
     "types": {
@@ -11814,7 +11814,7 @@
     }
   },
   "summary": {
-    "authored_lines": 153492,
+    "authored_lines": 153531,
     "authored_modules": 492,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1296,

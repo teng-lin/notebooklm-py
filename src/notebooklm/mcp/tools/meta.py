@@ -168,7 +168,9 @@ async def _web_info(ctx: Context, *, include_account: bool) -> dict[str, Any]:
     if web_profiles is None or state.profile is None:  # pragma: no cover - dispatch guard
         raise RuntimeError("Web profile diagnostics require a configured Web profile")
     health = await web_profiles.health(state.profile)
-    usable = health.local_checks_passed and not health.session_conflict
+    # ``session_conflict`` reflects today's files (what a reopen would find); a
+    # client already serving owns its session, so it does not veto either field.
+    usable = health.local_checks_passed
     account = None
     if include_account:
         account = await _account_block(ctx, authenticated=usable)
