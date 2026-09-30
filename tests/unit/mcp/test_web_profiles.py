@@ -20,7 +20,7 @@ from fastmcp.exceptions import ToolError  # noqa: E402
 
 from notebooklm import paths  # noqa: E402
 from notebooklm._app import web_profiles  # noqa: E402
-from notebooklm._app.web_profiles import web_session_key  # noqa: E402
+from notebooklm._app.web_profiles import web_session_keys  # noqa: E402
 from notebooklm.exceptions import NotebookLMError  # noqa: E402
 from notebooklm.mcp.server import create_server  # noqa: E402
 
@@ -68,7 +68,7 @@ def write_session(name: str, psid: str) -> Path:
     path = paths.get_storage_path(name)
     path.parent.mkdir(parents=True, exist_ok=True)
     cookies = [
-        _cookie("SID", "same-account-sid"),
+        _cookie("SID", f"sid-{psid}"),
         _cookie("__Secure-1PSID", psid),
         _cookie("__Secure-1PSIDTS", f"ts-{psid}"),
     ]
@@ -192,8 +192,8 @@ async def test_copied_session_fails_only_that_profile(
     write_session("work", "copied-psid-secret")
     write_session("personal", "copied-psid-secret")
     write_session("third", "distinct-psid-secret")
-    key = web_session_key(paths.get_storage_path("work"))
-    assert key is not None
+    keys = web_session_keys(paths.get_storage_path("work"))
+    assert keys
     server = create_server(profiles=["work", "personal", "third"], backend="web")
     texts: list[str] = []
     with caplog.at_level(logging.DEBUG):
@@ -217,7 +217,7 @@ async def test_copied_session_fails_only_that_profile(
     for text in [*texts, caplog.text]:
         assert "copied-psid-secret" not in text
         assert "distinct-psid-secret" not in text
-        assert key not in text
+        assert all(key not in text for key in keys)
 
 
 async def test_web_server_info_block(open_seam: OpenSeam, monkeypatch: pytest.MonkeyPatch) -> None:

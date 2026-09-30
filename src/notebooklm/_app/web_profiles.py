@@ -5,8 +5,8 @@ owns its own Google Web session. Profiles may hold copies of one
 ``master_token.json`` (each mints its own session), but two profiles holding
 copies of one ``storage_state.json`` would drive a single cookie session from
 two independent clients, each rotating and persisting it. Admission therefore
-refuses a profile whose session cookie (``__Secure-1PSID``, else ``SID``)
-matches a sibling's.
+refuses a profile that shares either session cookie (``__Secure-1PSID`` or
+``SID``) with a sibling.
 
 Session identity is compared through a keyed digest under a per-process random
 salt, so neither the cookie value nor its digest is logged, persisted, or
@@ -54,7 +54,7 @@ __all__ = [
     "WebProfileUnavailable",
     "WebSessionConflict",
     "refuse_web_multi_profile_environment",
-    "web_session_key",
+    "web_session_keys",
 ]
 
 logger = logging.getLogger(__name__)
@@ -104,16 +104,18 @@ def refuse_web_multi_profile_environment() -> None:
         )
 
 
-def web_session_key(storage_path: Path) -> str | None:
-    """Return an opaque, process-local identity for a profile's Web session.
+def web_session_keys(storage_path: Path) -> frozenset[str] | None:
+    """Return opaque, process-local identities for a profile's Web session.
 
     Reads ``storage_state.json`` only. ``__Secure-1PSIDTS`` is deliberately not
-    required: the normal load path repairs it.
+    required: the normal load path repairs it. Two profiles hold the same session
+    when their key sets intersect, so a copy that kept only one of the session
+    cookies is still caught.
 
     Returns:
-        ``None`` when the storage file does not exist, else a keyed digest of
-        the ``__Secure-1PSID`` cookie, or of ``SID`` when that is absent (the
-        ``.google.com`` row when several exist). Never the cookie value.
+        ``None`` when the storage file does not exist, else one keyed digest per
+        session cookie present (``__Secure-1PSID`` and ``SID``; the
+        ``.google.com`` row when several exist). Never a cookie value.
 
     Raises:
         WebProfileUnavailable: The file is unreadable, is not a JSON object, or
@@ -140,33 +142,40 @@ def web_session_key(storage_path: Path) -> str | None:
         raise WebProfileUnavailable(failure)
     if not isinstance(state, dict):
         raise WebProfileUnavailable("Web profile storage is not a JSON object")
-    selected = _session_cookie_value(auth._sanitized_auth_entries(state))
-    if selected is None:
+    entries = auth._sanitized_auth_entries(state)
+    keys: set[str] = set()
+    for name in (_SESSION_COOKIE, _FALLBACK_SESSION_COOKIE):
+        value = _session_cookie_value(entries, name)
+        if value is None:
+            continue
+        # ``surrogatepass``: a lone surrogate survives JSON decoding and must
+        # hash, not raise an encode error that would carry the cookie value.
+        material = f"{name}\0{value}".encode("utf-8", "surrogatepass")
+        keys.add(hmac.new(_SESSION_KEY_SALT, material, hashlib.sha256).hexdigest())
+    if not keys:
         raise WebProfileUnavailable(
             f"Web profile storage has no {_SESSION_COOKIE} or {_FALLBACK_SESSION_COOKIE} cookie"
         )
-    name, value = selected
-    # ``surrogatepass``: a lone surrogate survives JSON decoding and must hash,
-    # not raise an encode error that would carry the cookie value.
-    material = f"{name}\0{value}".encode("utf-8", "surrogatepass")
-    return hmac.new(_SESSION_KEY_SALT, material, hashlib.sha256).hexdigest()
+    return frozenset(keys)
 
 
-def _session_cookie_value(entries: list[dict[str, Any]]) -> tuple[str, str] | None:
-    """Pick the session cookie to key on: ``__Secure-1PSID``, else ``SID``."""
-    for name in (_SESSION_COOKIE, _FALLBACK_SESSION_COOKIE):
-        fallback: str | None = None
-        for entry in entries:
-            value = entry["value"]
-            if entry["name"] != name or not isinstance(value, str) or not value:
-                continue
-            if entry["domain"] == _SESSION_COOKIE_DOMAIN:
-                return name, value
-            if fallback is None:
-                fallback = value
-        if fallback is not None:
-            return name, fallback
-    return None
+def _session_cookie_value(entries: list[dict[str, Any]], name: str) -> str | None:
+    """Return ``name``'s value, preferring the ``.google.com`` row."""
+    fallback: str | None = None
+    for entry in entries:
+        value = entry["value"]
+        if entry["name"] != name or not isinstance(value, str) or not value:
+            continue
+        if entry["domain"] == _SESSION_COOKIE_DOMAIN:
+            return value
+        if fallback is None:
+            fallback = value
+    return fallback
+
+
+def _any_shared(first: frozenset[str], second: frozenset[str]) -> bool:
+    """Constant-time-per-pair check that two key sets share an identity."""
+    return any(hmac.compare_digest(a, b) for a in first for b in second)
 
 
 def _open_web_client(
@@ -231,18 +240,18 @@ class WebProfileSet:
         async with self._open_lock:
             yield
 
-    def _sharing_profiles(self, name: str, key: str) -> list[str]:
+    def _sharing_profiles(self, name: str, keys: frozenset[str]) -> list[str]:
         shared: list[str] = []
         for other, path in self._paths.items():
             if other == name:
                 continue
             try:
-                other_key = web_session_key(path)
+                other_keys = web_session_keys(path)
             except WebProfileUnavailable:
                 # A broken sibling cannot share a readable session; it is
                 # diagnosed when that sibling itself opens.
                 continue
-            if other_key is not None and hmac.compare_digest(other_key, key):
+            if other_keys is not None and _any_shared(keys, other_keys):
                 shared.append(other)
         return shared
 
@@ -260,15 +269,15 @@ class WebProfileSet:
             WebSessionConflict: A sibling holds the same Web session.
         """
         path = self._paths[name]
-        key = web_session_key(path)
-        if key is None:
+        keys = web_session_keys(path)
+        if keys is None:
             status = inspect_master_token_status(path, has_env_auth=False)
             if not status.present or status.unreadable_error_type is not None:
                 raise WebProfileUnavailable(
                     "Web profile requires storage_state.json or a readable master_token.json"
                 )
             return "bootstrap"
-        shared = self._sharing_profiles(name, key)
+        shared = self._sharing_profiles(name, keys)
         if shared:
             message = (
                 f"Web profile {name!r} shares a Web session with configured profile(s) "
@@ -300,10 +309,10 @@ class WebProfileSet:
 
     def _session_conflict(self, name: str) -> bool:
         try:
-            key = web_session_key(self._paths[name])
+            keys = web_session_keys(self._paths[name])
         except WebProfileUnavailable:
             return False
-        return key is not None and bool(self._sharing_profiles(name, key))
+        return keys is not None and bool(self._sharing_profiles(name, keys))
 
     async def health(self, name: str) -> WebProfileHealth:
         """Report file-only diagnostics for ``name`` without opening a client."""

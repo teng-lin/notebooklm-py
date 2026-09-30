@@ -11773,7 +11773,7 @@
       "modules": 54
     },
     "app": {
-      "lines": 14356,
+      "lines": 14365,
       "modules": 47
     },
     "auth": {
@@ -11814,7 +11814,7 @@
     }
   },
   "summary": {
-    "authored_lines": 153531,
+    "authored_lines": 153540,
     "authored_modules": 492,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1296,

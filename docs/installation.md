@@ -524,9 +524,9 @@ by explicit path with its own keepalive. A profile can open when its
 server then mints a fresh Web session for it before opening. Several profiles may
 hold copies of one account's `master_token.json`; each mints its own session.
 Copying one `storage_state.json` between profiles is **not** supported, because two
-clients would share and rotate a single cookie session. A profile whose
-session cookie (`__Secure-1PSID`, or `SID` when that is absent) matches another
-configured profile's is refused with
+clients would share and rotate a single cookie session. A profile that
+shares either session cookie (`__Secure-1PSID` or `SID`) with another configured
+profile is refused with
 `503 profile_unavailable`, and a warning names the profiles involved (never cookie
 values). To fix it, log the profile in separately (`notebooklm -p <name> login`), or
 delete the copied `storage_state.json` and keep `master_token.json` so a fresh

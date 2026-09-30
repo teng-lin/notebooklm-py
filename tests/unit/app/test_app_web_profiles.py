@@ -18,7 +18,7 @@ from notebooklm._app.web_profiles import (
     WebProfileUnavailable,
     WebSessionConflict,
     refuse_web_multi_profile_environment,
-    web_session_key,
+    web_session_keys,
 )
 
 
@@ -41,7 +41,9 @@ def _write_state(path: Path, cookies: list[dict[str, Any]]) -> Path:
     return path
 
 
-def _session(path: Path, psid: str, *, sid: str = "same-account-sid") -> Path:
+def _session(path: Path, psid: str, *, sid: str | None = None) -> Path:
+    # Distinct sessions carry distinct SIDs; SID identifies a session, not an account.
+    sid = sid if sid is not None else f"sid-{psid}"
     return _write_state(
         path,
         [
@@ -84,10 +86,10 @@ def profile_paths(tmp_path: Path) -> dict[str, Path]:
     }
 
 
-# --- web_session_key ---------------------------------------------------------
+# --- web_session_keys ---------------------------------------------------------
 
 
-def test_session_key_depends_only_on_psid(tmp_path: Path) -> None:
+def test_session_keys_match_when_any_session_cookie_matches(tmp_path: Path) -> None:
     first = _session(tmp_path / "a" / "storage_state.json", "psid-value", sid="sid-a")
     second = _write_state(
         tmp_path / "b" / "storage_state.json",
@@ -97,19 +99,30 @@ def test_session_key_depends_only_on_psid(tmp_path: Path) -> None:
             _cookie("__Secure-1PSID", "psid-value"),
         ],
     )
-    assert web_session_key(first) == web_session_key(second)
+    first_keys, second_keys = web_session_keys(first), web_session_keys(second)
+    assert first_keys and second_keys
+    assert first_keys & second_keys
+
+
+def test_session_keys_catch_a_copy_that_kept_only_sid(tmp_path: Path) -> None:
+    both = _session(tmp_path / "a" / "storage_state.json", "psid-a", sid="shared-sid")
+    sid_only = _write_state(tmp_path / "b" / "storage_state.json", [_cookie("SID", "shared-sid")])
+    both_keys, sid_keys = web_session_keys(both), web_session_keys(sid_only)
+    assert both_keys and sid_keys
+    assert both_keys & sid_keys
 
 
 def test_session_key_distinguishes_values_and_never_contains_them(tmp_path: Path) -> None:
     first = _session(tmp_path / "a" / "storage_state.json", "psid-secret-one")
     second = _session(tmp_path / "b" / "storage_state.json", "psid-secret-two")
-    first_key = web_session_key(first)
-    second_key = web_session_key(second)
-    assert first_key is not None and second_key is not None
-    assert first_key != second_key
-    for key, value in ((first_key, "psid-secret-one"), (second_key, "psid-secret-two")):
-        assert value not in key
-        assert "psid" not in key
+    first_keys = web_session_keys(first)
+    second_keys = web_session_keys(second)
+    assert first_keys and second_keys
+    assert not first_keys & second_keys
+    for keys, value in ((first_keys, "psid-secret-one"), (second_keys, "psid-secret-two")):
+        for key in keys:
+            assert value not in key
+            assert "psid" not in key and "sid-" not in key
 
 
 def test_session_key_prefers_google_com_row(tmp_path: Path) -> None:
@@ -123,11 +136,11 @@ def test_session_key_prefers_google_com_row(tmp_path: Path) -> None:
     base_only = _write_state(
         tmp_path / "base" / "storage_state.json", [_cookie("__Secure-1PSID", "base")]
     )
-    assert web_session_key(path) == web_session_key(base_only)
+    assert web_session_keys(path) == web_session_keys(base_only)
 
 
 def test_session_key_missing_file_is_none(tmp_path: Path) -> None:
-    assert web_session_key(tmp_path / "absent" / "storage_state.json") is None
+    assert web_session_keys(tmp_path / "absent" / "storage_state.json") is None
 
 
 @pytest.mark.parametrize(
@@ -144,7 +157,7 @@ def test_session_key_unusable_storage_is_unavailable(tmp_path: Path, content: st
     path = tmp_path / "storage_state.json"
     path.write_text(content, encoding="utf-8")
     with pytest.raises(WebProfileUnavailable) as info:
-        web_session_key(path)
+        web_session_keys(path)
     # No chained parser/decoder error: it could carry the file's cookie bytes.
     assert info.value.__context__ is None and info.value.__cause__ is None
 
@@ -153,7 +166,7 @@ def test_session_key_undecodable_file_chains_no_file_bytes(tmp_path: Path) -> No
     path = tmp_path / "storage_state.json"
     path.write_bytes(b'{"cookies": [{"name": "SID", "value": "secret-\xff"}]}')
     with pytest.raises(WebProfileUnavailable) as info:
-        web_session_key(path)
+        web_session_keys(path)
     assert info.value.__context__ is None and info.value.__cause__ is None
 
 
@@ -165,21 +178,21 @@ def test_session_key_hashes_unencodable_cookie_value(tmp_path: Path) -> None:
         '"domain": ".google.com", "path": "/"}]}',
         encoding="utf-8",
     )
-    assert web_session_key(path) is not None
+    assert web_session_keys(path) is not None
 
 
 def test_session_key_falls_back_to_sid(tmp_path: Path) -> None:
     only_sid = _write_state(tmp_path / "a" / "storage_state.json", [_cookie("SID", "sid-a")])
     copy = _write_state(tmp_path / "b" / "storage_state.json", [_cookie("SID", "sid-a")])
     other = _write_state(tmp_path / "c" / "storage_state.json", [_cookie("SID", "sid-c")])
-    assert web_session_key(only_sid) is not None
-    assert web_session_key(only_sid) == web_session_key(copy)
-    assert web_session_key(only_sid) != web_session_key(other)
+    assert web_session_keys(only_sid) is not None
+    assert web_session_keys(only_sid) == web_session_keys(copy)
+    assert web_session_keys(only_sid) != web_session_keys(other)
 
 
 def test_session_key_does_not_require_psidts(tmp_path: Path) -> None:
     path = _write_state(tmp_path / "storage_state.json", [_cookie("__Secure-1PSID", "psid")])
-    assert web_session_key(path) is not None
+    assert web_session_keys(path) is not None
 
 
 # --- environment refusals ----------------------------------------------------
@@ -233,8 +246,8 @@ async def test_admit_refuses_copied_session_naming_profiles_only(
     _session(profile_paths["personal"], "copied-psid-secret")
     _session(profile_paths["other"], "distinct-psid-secret")
     profiles = WebProfileSet(profile_paths, keepalive=None)
-    key = web_session_key(profile_paths["work"])
-    assert key is not None
+    keys = web_session_keys(profile_paths["work"])
+    assert keys
     with (
         caplog.at_level(logging.WARNING, logger=web_profiles.__name__),
         pytest.raises(WebSessionConflict) as caught,
@@ -247,10 +260,19 @@ async def test_admit_refuses_copied_session_naming_profiles_only(
         "to mint a fresh session."
     )
     assert str(caught.value) in caplog.text
-    for secret in ("copied-psid-secret", key):
+    for secret in ("copied-psid-secret", *keys):
         assert secret not in str(caught.value)
         assert secret not in caplog.text
     assert profiles.admit("other") == "ready"
+
+
+async def test_admit_refuses_copy_that_kept_only_sid(profile_paths: dict[str, Path]) -> None:
+    _session(profile_paths["work"], "psid-work", sid="shared-sid")
+    _write_state(profile_paths["personal"], [_cookie("SID", "shared-sid")])
+    profiles = WebProfileSet(profile_paths, keepalive=None)
+    for name in ("work", "personal"):
+        with pytest.raises(WebSessionConflict):
+            profiles.admit(name)
 
 
 async def test_admit_ignores_broken_sibling(profile_paths: dict[str, Path]) -> None:

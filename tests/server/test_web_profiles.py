@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from notebooklm import paths
 from notebooklm._app import web_profiles
-from notebooklm._app.web_profiles import web_session_key
+from notebooklm._app.web_profiles import web_session_keys
 from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import AuthError
 from notebooklm.server import app as app_module
@@ -69,7 +69,9 @@ def _cookie(name: str, value: str) -> dict[str, Any]:
     }
 
 
-def write_session(name: str, psid: str, *, sid: str = "same-account-sid") -> Path:
+def write_session(name: str, psid: str, *, sid: str | None = None) -> Path:
+    # Distinct sessions carry distinct SIDs; SID identifies a session, not an account.
+    sid = sid if sid is not None else f"sid-{psid}"
     path = paths.get_storage_path(name)
     path.parent.mkdir(parents=True, exist_ok=True)
     cookies = [
@@ -242,8 +244,8 @@ def test_copied_sessions_are_refused_while_sibling_serves(
     write_session("work", "copied-psid-secret")
     write_session("personal", "copied-psid-secret")
     write_session("third", "distinct-psid-secret")
-    key = web_session_key(paths.get_storage_path("work"))
-    assert key is not None
+    keys = web_session_keys(paths.get_storage_path("work"))
+    assert keys
     app = web_app(("work", "personal", "third"))
     bodies: list[str] = []
     with (
@@ -286,7 +288,7 @@ def test_copied_sessions_are_refused_while_sibling_serves(
     for text in [*bodies, caplog.text]:
         assert "copied-psid-secret" not in text
         assert "distinct-psid-secret" not in text
-        assert key not in text
+        assert all(key not in text for key in keys)
 
 
 def test_copy_made_after_serving_is_advisory_for_the_serving_profile(
@@ -322,9 +324,9 @@ def test_startup_error_code_reflects_the_recorded_failure(
 def test_same_account_with_distinct_sessions_both_serve(
     open_seam: OpenSeam, no_bootstrap: list[Path]
 ) -> None:
-    # Same account (identical SID and master token), separately minted sessions.
+    # Same account (one master token), separately minted sessions.
     for name, psid in (("work", "psid-a"), ("personal", "psid-b")):
-        write_session(name, psid, sid="same-account-sid")
+        write_session(name, psid)
         write_master_token(name)
     app = web_app()
     with TestClient(app, headers=HEADERS, client=("127.0.0.1", 1)) as client:
