@@ -36,11 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **Master-token re-mint guidance (#1901).** ADR-0023 and the auth cookie
-  lifecycle guide no longer call Web re-minting "single-consumer per account".
-  Live testing found that sessions minted from copies of one master token stay
-  independent. The guidance now warns against sharing one cookie session between
-  consumers instead.
+- **Master-token re-mint guidance (#1901).** The auth cookie lifecycle guide no
+  longer calls Web re-minting "single-consumer per account", and ADR-0023 gains
+  an amendment recording why. Live testing found that sessions minted from copies
+  of one master token stay independent. The guidance now warns against two
+  consumers actively using the same cookie session at once instead.
 
 ## [0.8.3] - 2026-09-25
 

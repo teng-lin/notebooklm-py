@@ -597,7 +597,6 @@ def test_real_clients_allow_copied_tokens_without_web_bootstrap(
     pytest.importorskip("gpsoauth")
     from notebooklm._android.proto.google.internal.labs.tailwind.orchestration.v1 import read_pb2
     from notebooklm._android.session import AndroidSession
-    from notebooklm._auth import tokens
     from notebooklm._auth.mint_service import MintedOAuthToken, MintService
 
     record = MasterToken(
@@ -607,14 +606,14 @@ def test_real_clients_allow_copied_tokens_without_web_bootstrap(
         path = paths.get_storage_path(name)
         ProfileStore(path).write_master_token(record)
         path.write_text("not valid Web auth JSON")
+    # Web-auth tripwires without patching ``notebooklm._auth``: any Web load of
+    # the profile file or of inline env auth would fail on invalid JSON and
+    # leave that profile unavailable, and the files must stay untouched.
     monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "also not valid Web auth")
     mints: list[MasterToken] = []
     wire_bearers: list[str] = []
     initial_bearers: dict[str, str] = {}
     reject_work = False
-
-    async def no_web(*args: Any, **kwargs: Any) -> Any:
-        pytest.fail("Android multi-profile must not bootstrap Web auth")
 
     async def mint(self: Any, token: MasterToken, spec: Any) -> MintedOAuthToken:
         mints.append(token)
@@ -632,7 +631,6 @@ def test_real_clients_allow_copied_tokens_without_web_bootstrap(
 
         return send
 
-    monkeypatch.setattr(tokens, "_load_stored_auth", no_web)
     monkeypatch.setattr(MintService, "mint_oauth", mint)
     monkeypatch.setattr(AndroidSession, "_unary_callable", callable_)
     app = profile_app()

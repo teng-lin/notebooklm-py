@@ -13,10 +13,6 @@
       "path": "tests/integration/concurrency/test_upload_timeout_config.py"
     },
     {
-      "count": 1,
-      "path": "tests/server/test_profiles.py"
-    },
-    {
       "count": 6,
       "path": "tests/unit/cli/test_login.py"
     },
@@ -960,16 +956,6 @@
       "idiom": "monkeypatch.setattr",
       "module": "tokens",
       "owner_kind": "test",
-      "owner_qualname": "test_real_clients_allow_copied_tokens_without_web_bootstrap",
-      "package": "notebooklm._auth",
-      "path": "tests/server/test_profiles.py"
-    },
-    {
-      "attribute": "_load_stored_auth",
-      "count": 1,
-      "idiom": "monkeypatch.setattr",
-      "module": "tokens",
-      "owner_kind": "test",
       "owner_qualname": "test_inherited_from_storage_constructs_runtime_subclass_exactly_once",
       "package": "notebooklm._auth",
       "path": "tests/unit/test_auth_stored_auth.py"
@@ -1003,12 +989,6 @@
       "owner_kind": "test",
       "owner_qualname": "test_from_storage_accepts_upload_timeout",
       "path": "tests/integration/concurrency/test_upload_timeout_config.py"
-    },
-    {
-      "count": 1,
-      "owner_kind": "test",
-      "owner_qualname": "test_real_clients_allow_copied_tokens_without_web_bootstrap",
-      "path": "tests/server/test_profiles.py"
     },
     {
       "count": 1,
@@ -1681,16 +1661,16 @@
     },
     {
       "attribute": "_load_stored_auth",
-      "count": 5,
+      "count": 4,
       "idiom": "monkeypatch.setattr",
       "module": "tokens"
     }
   ],
   "summary": {
     "TOTAL": {
-      "private": 51,
+      "private": 50,
       "public": 35,
-      "total": 86
+      "total": 85
     },
     "account": {
       "private": 0,
@@ -1768,9 +1748,9 @@
       "total": 1
     },
     "tokens": {
-      "private": 5,
+      "private": 4,
       "public": 0,
-      "total": 5
+      "total": 4
     }
   },
   "version": 2
