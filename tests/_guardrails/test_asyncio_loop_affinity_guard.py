@@ -169,6 +169,13 @@ ALLOWLIST: tuple[_AllowlistEntry, ...] = (
         "across lifespans. open/close assert the constructor's running loop, "
         "and a closed owner cannot reopen; no reset/rebind protocol is needed.",
     ),
+    _AllowlistEntry(
+        "src/notebooklm/_app/web_profiles.py",
+        "WebProfileSet",
+        "Constructed once inside one REST or MCP Web multi-profile lifespan and "
+        "discarded with it. open_turn asserts the constructor's running loop "
+        "before touching the open lock; no reset/rebind protocol is needed.",
+    ),
     # Each close wave constructs its abort Event on the lifecycle's currently
     # asserted loop and discards the whole wave before a later reopen. The
     # primitive is neither cached nor reusable across generations/loops, so the

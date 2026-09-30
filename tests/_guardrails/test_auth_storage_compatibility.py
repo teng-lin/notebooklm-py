@@ -1198,6 +1198,7 @@ EXPECTED_ALIAS_CALLERS = {
     "_sanitized_auth_entries": [
         "src/notebooklm/_app/auth_check.py",
         "src/notebooklm/_app/login_cookie.py",
+        "src/notebooklm/_app/web_profiles.py",
     ],
     "_storage_entry_to_cookie": [
         "src/notebooklm/_app/auth_check.py",
@@ -2208,9 +2209,9 @@ def test_first_party_facade_callers_are_frozen_in_both_import_idioms() -> None:
     assert len(direct) == 18
     assert sum(map(len, direct.values())) == 46
     assert len(aliases) == 28
-    assert sum(map(len, aliases.values())) == 33
+    assert sum(map(len, aliases.values())) == 34
     assert len({name for name, _path in union}) == 42
-    assert len(union) == 79
+    assert len(union) == 80
 
 
 @pytest.mark.skipif(not hasattr(ast, "TryStar"), reason="exception-group AST requires 3.11+")

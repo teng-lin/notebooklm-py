@@ -2,9 +2,11 @@
 
 Design highlights:
 
-- **Single-profile default, optional Android profiles.** Multi-profile mode
-  binds one isolated client and pending registry per configured profile.
-  Route-group limiters remain shared by the process. The default mode opens
+- **Single-profile default, optional Web or Android profiles.** Multi-profile
+  mode binds one isolated client and pending registry per configured profile.
+  Web profile opens are serialized and refuse copied cookie sessions (see
+  :mod:`notebooklm._app.web_profiles`). Route-group limiters remain shared by
+  the process. The default mode opens
   a single :class:`~notebooklm.client.NotebookLMClient` via ``from_storage()``
   inside the server loop (satisfies the ADR-0004 loop-affinity contract) and
   stows it on ``app.state`` for the process lifetime. Its 600-second keepalive
@@ -34,8 +36,14 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from contextlib import (
+    AbstractAsyncContextManager,
+    AsyncExitStack,
+    asynccontextmanager,
+    nullcontext,
+)
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, FastAPI, Request, Response
@@ -44,6 +52,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .._adapter_support import DEFAULT_SERVER_KEEPALIVE_INTERVAL
 from .._app.android_profiles import android_profile_client
+from .._app.web_profiles import WebProfileSet, refuse_web_multi_profile_environment
 from ..client import NotebookLMClient
 from ..exceptions import AuthError, NotebookLMError
 from ..paths import get_active_profile, resolve_profile, set_active_profile
@@ -330,9 +339,12 @@ def create_app(
         profile: Auth profile bound by the default factory (``from_storage(profile=)``).
             ``None`` resolves the active profile. Also drives process-wide profile
             resolution for diagnostics such as ``/v1/server/info``.
-        profiles: Static explicit profile names. More than one requires Android
-            and the X-NotebookLM-Profile header on every /v1 request. Duplicate
+        profiles: Static explicit profile names. More than one requires the
+            X-NotebookLM-Profile header on every /v1 request. Duplicate
             canonical paths are refused; copied master-token credentials are allowed.
+            Web profiles that share a copied cookie session are refused per
+            profile, and Web mode refuses process-wide inline auth or a shared
+            headless re-auth browser.
         profile_client_factory: Multi-profile test seam, called with each name.
         backend: Preferred API backend for the default client factory. An explicit
             value takes precedence over ``NOTEBOOKLM_BACKEND``.
@@ -354,8 +366,11 @@ def create_app(
     if profile_paths and not multi_profile:
         profile = next(iter(profile_paths))
     selected_backend = backend or os.environ.get("NOTEBOOKLM_BACKEND", "web")
-    if multi_profile and selected_backend != "android":
-        raise ValueError("Multi-profile REST requires backend='android'")
+    if multi_profile and selected_backend not in ("web", "android"):
+        raise ValueError("Multi-profile REST requires backend='web' or 'android'")
+    if multi_profile and selected_backend == "web":
+        refuse_web_multi_profile_environment()
+    backend_label = "Web" if selected_backend == "web" else "Android"
     if multi_profile and client_factory is not None:
         raise ValueError("Use profile_client_factory for multi-profile clients")
     if not multi_profile and profile_client_factory is not None:
@@ -368,6 +383,7 @@ def create_app(
         factory: ClientFactory,
         clients: AsyncExitStack,
         limiters: ServerLimiters,
+        web_profiles: WebProfileSet | None = None,
     ) -> AppState:
         state = AppState(
             client=None,
@@ -377,6 +393,7 @@ def create_app(
             backend=selected_backend,
             isolated=multi_profile,
             storage_path=profile_paths.get(name),
+            web_profiles=web_profiles,
         )
         client_lock = asyncio.Lock()
         last_load_error: AuthError | RuntimeError | None = None
@@ -404,7 +421,13 @@ def create_app(
                         # Bound local credential inspection and readiness as one
                         # attempt. Keep timeout errors inside the loader so they
                         # receive the same diagnostics, generation, and cooldown.
-                        client = await owner.open(factory, startup_timeout)
+                        # Web opens take turns; waiting for a turn is not part
+                        # of this profile's deadline.
+                        turn = (
+                            web_profiles.open_turn() if web_profiles is not None else nullcontext()
+                        )
+                        async with turn:
+                            client = await owner.open(factory, startup_timeout)
                     else:
                         client = await clients.enter_async_context(factory())
                 except Exception as exc:
@@ -447,8 +470,16 @@ def create_app(
                 raise
             # A bad/missing profile must not prevent healthy siblings serving.
             # The loader retains only a sanitized diagnostic and retry state.
-            logger.warning("Android profile %s is unavailable at startup", name)
+            logger.warning("%s profile %s is unavailable at startup", backend_label, name)
         return state
+
+    def profile_factory(name: str, path: Path, web_profiles: WebProfileSet | None) -> ClientFactory:
+        injected = profile_client_factory
+        if injected is not None:
+            return lambda: injected(name)
+        if web_profiles is not None:
+            return lambda: web_profiles.factory(name)
+        return lambda: android_profile_client(path)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -464,16 +495,18 @@ def create_app(
             async with AsyncExitStack() as clients:
                 if multi_profile:
                     registry = ProfileRegistry({})
+                    # One per lifespan: its open lock is bound to this loop.
+                    web_profiles = (
+                        WebProfileSet(profile_paths, keepalive=DEFAULT_SERVER_KEEPALIVE_INTERVAL)
+                        if selected_backend == "web"
+                        else None
+                    )
                     bindings = []
                     for name, path in profile_paths.items():
-                        selected_factory = (
-                            (lambda name=name: profile_client_factory(name))
-                            if profile_client_factory is not None
-                            else (lambda path=path: android_profile_client(path))
-                        )
+                        selected_factory = profile_factory(name, path, web_profiles)
                         bindings.append(
                             asyncio.create_task(
-                                bind_state(name, selected_factory, clients, limiters)
+                                bind_state(name, selected_factory, clients, limiters, web_profiles)
                             )
                         )
                     try:

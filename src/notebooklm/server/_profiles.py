@@ -1,4 +1,4 @@
-"""REST configuration for shared Android profile support."""
+"""REST configuration for multi-profile (Web or Android) serving."""
 
 from .._app.profiles import configured_profiles as configured_profiles
 from .._app.profiles import profile_startup_timeout as _profile_startup_timeout

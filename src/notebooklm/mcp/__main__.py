@@ -15,7 +15,7 @@ Two transports are supported:
   are **env-only** (never CLI flags, so they cannot leak via ``ps aux``).
 
 The auth profile is bound at startup via ``--profile`` / ``NOTEBOOKLM_PROFILE``.
-Android multi-profile mode uses ``--profiles`` / ``NOTEBOOKLM_MCP_PROFILES``
+Multi-profile mode (Web or Android) uses ``--profiles`` / ``NOTEBOOKLM_MCP_PROFILES``
 and requires explicit selection on every tool call. This module imports NO ``click`` / ``rich`` / ``cli``.
 """
 
@@ -192,7 +192,10 @@ def _build_parser() -> argparse.ArgumentParser:
     profile_group.add_argument(
         "--profiles",
         default=None,
-        help=f"Comma-separated profiles (default: ${PROFILES_ENV}); multiple require Android.",
+        help=(
+            f"Comma-separated profiles (default: ${PROFILES_ENV}); with more than one, "
+            "every tool call requires a profile argument (Web or Android)."
+        ),
     )
     parser.add_argument(
         "--backend",

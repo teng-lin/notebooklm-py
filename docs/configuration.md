@@ -1,7 +1,7 @@
 # Configuration
 
 **Status:** Active
-**Last Updated:** 2026-09-06
+**Last Updated:** 2026-09-29
 
 This guide covers storage locations, environment settings, and configuration options for `notebooklm-py`.
 
@@ -237,10 +237,10 @@ accepted for source compatibility but are ignored when Android is selected.
 | `NOTEBOOKLM_MCP_CHAT_CONCURRENCY` | Concurrent detached `chat_start` generations; later accepted jobs queue FIFO. Clamped to 1–16. | `3` |
 | `NOTEBOOKLM_MCP_CHAT_JOB_TIMEOUT` | Optional aggregate seconds from detached-chat acceptance through queue and generation. Unset keeps jobs unbounded. | - |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The REST server refuses to start without it. | - |
-| `NOTEBOOKLM_MCP_PROFILES` | Comma-separated MCP profiles. More than one requires Android and explicit `profile` on every tool call. | - |
-| `NOTEBOOKLM_MCP_PROFILE_STARTUP_TIMEOUT` | Positive finite seconds for each Android profile startup/recovery attempt. | `30` |
-| `NOTEBOOKLM_SERVER_PROFILES` | Comma-separated REST profiles. More than one requires Android and explicit `X-NotebookLM-Profile` routing. | - |
-| `NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT` | Complete startup/recovery timeout per Android REST profile, in positive finite seconds. | `30` |
+| `NOTEBOOKLM_MCP_PROFILES` | Comma-separated MCP profiles. More than one (Web or Android) requires an explicit `profile` on every tool call; Web profiles must each own a distinct Web session. | - |
+| `NOTEBOOKLM_MCP_PROFILE_STARTUP_TIMEOUT` | Positive finite seconds for each multi-profile startup/recovery attempt. Waiting for another Web profile's open does not count. | `30` |
+| `NOTEBOOKLM_SERVER_PROFILES` | Comma-separated REST profiles. More than one (Web or Android) requires explicit `X-NotebookLM-Profile` routing; Web profiles must each own a distinct Web session. | - |
+| `NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT` | Complete startup/recovery timeout per multi-profile REST client, in positive finite seconds. Waiting for another Web profile's open does not count. | `30` |
 | `NOTEBOOKLM_SERVER_HOST` | REST server bind host; non-loopback refused unless `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND=1` | `127.0.0.1` |
 | `NOTEBOOKLM_SERVER_PORT` | REST server bind port | `8000` |
 | `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND` | Allow REST server to bind a non-loopback host. Use only behind a trusted proxy. | `0` |
@@ -357,7 +357,7 @@ be audited from one location.
 | Variable | Purpose | Resolution order (highest → lowest) | Resolved by |
 |----------|---------|-------------------------------------|-------------|
 | `NOTEBOOKLM_PROFILE` | Active profile name. Selects which `~/.notebooklm/profiles/<name>/` directory backs storage and context. | `-p/--profile` flag → `NOTEBOOKLM_PROFILE` → `default_profile` from `~/.notebooklm/config.json` → `default` | `paths.resolve_profile` |
-| `NOTEBOOKLM_AUTH_JSON` | Inline `storage_state.json` payload for CI/CD; bypasses on-disk profile storage entirely. | `--storage` flag → `NOTEBOOKLM_AUTH_JSON` → profile-aware `storage_state.json` → legacy fallback | `auth.load_auth_from_storage` |
+| `NOTEBOOKLM_AUTH_JSON` | Inline `storage_state.json` payload for CI/CD; bypasses on-disk profile storage entirely. Its presence makes REST/MCP Web multi-profile serving refuse to start. | `--storage` flag → `NOTEBOOKLM_AUTH_JSON` → profile-aware `storage_state.json` → legacy fallback | `auth.load_auth_from_storage` |
 | `NOTEBOOKLM_HOME` | Base directory for all per-profile files. | `NOTEBOOKLM_HOME` → `~/.notebooklm` | `paths.get_home_dir` |
 | `NOTEBOOKLM_HL` | Default interface/output language for `generate <kind>` and the `hl` query parameter on every batchexecute RPC. | `--language` flag → `NOTEBOOKLM_HL` → `language` value from **global** `~/.notebooklm/config.json` (NOT per-profile) → `en` | `language.resolve_hl` |
 | `NOTEBOOKLM_LOG_LEVEL` | `DEBUG`/`INFO`/`WARNING`/`ERROR` floor for the `notebooklm` package logger. | `--quiet` flag (forces `ERROR`) → `-v/-vv` flags (force `INFO`/`DEBUG`) → `NOTEBOOKLM_DEBUG_RPC=1` (forces `DEBUG`) → `NOTEBOOKLM_LOG_LEVEL` → `WARNING` | `_logging.configure_logging` + `notebooklm_cli.cli` |
@@ -379,7 +379,7 @@ be audited from one location.
 | `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE` | When `1`, disable the proactive `accounts.google.com/RotateCookies` poke that refreshes `__Secure-1PSIDTS` ahead of expiry. Useful when running behind a proxy that rejects the extra request, or in offline test fixtures. | Process env on every keepalive check. | `auth` keepalive guards (constant `NOTEBOOKLM_DISABLE_KEEPALIVE_POKE_ENV` in `notebooklm.auth`) |
 | `NOTEBOOKLM_PROMOTION_EXIT_TIMEOUT` | Seconds the process waits at exit for an in-flight one-time migration of a pre-`v0.x` `context.json` account into `storage_state.json`. A ceiling shared by all outstanding writers, not a delay — a finished migration exits immediately. `0` never waits. Unset, empty, or whitespace-only falls back to the default; non-numeric, negative, and non-finite (`inf`/`nan`) values are refused with a `WARNING` and the default is used; a finite value above `threading.TIMEOUT_MAX` is clamped. An incomplete wait is always reported at `WARNING` (so `--quiet`, which forces `ERROR`, suppresses it). | Process env, read once per process at exit → `30.0` | `_auth.profile_migration._promotion_exit_timeout` |
 | `NOTEBOOKLM_HEADLESS_REAUTH` | Opt in to layer-3 headless re-auth for cold construction and automatic refresh paths. Explicit Python/CLI `allow_headless` flags do not require the env var. | Literal `1` enables; all other values disabled. | `_browser.headless_reauth.headless_reauth_env_enabled` |
-| `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional Chrome DevTools Protocol endpoint for layer-3 headless re-auth. Must be loopback (`127.0.0.1`, `::1`, or `localhost`); remote endpoints are ignored because CDP is account-equivalent. | Explicit function argument → env var → no CDP arm. | `_browser.headless_reauth.resolve_cdp_url` |
+| `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` | Optional Chrome DevTools Protocol endpoint for layer-3 headless re-auth. Must be loopback (`127.0.0.1`, `::1`, or `localhost`); remote endpoints are ignored because CDP is account-equivalent. A non-blank value makes REST/MCP Web multi-profile serving refuse to start. | Explicit function argument → env var → no CDP arm. | `_browser.headless_reauth.resolve_cdp_url` |
 | `NOTEBOOKLM_MCP_TRANSPORT` | Default transport for `notebooklm-mcp`: `stdio` or `http`. CLI `--transport` wins. | `--transport` flag → env var → `stdio` | `mcp.__main__._build_parser` |
 | `NOTEBOOKLM_MCP_HOST` | HTTP bind host for `notebooklm-mcp --transport http`. Non-loopback refused unless `NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND=1`. | `--host` flag → env var → `127.0.0.1` | `mcp.__main__._build_parser` / `_serving.check_bind_allowed` |
 | `NOTEBOOKLM_MCP_PORT` | HTTP bind port for `notebooklm-mcp --transport http`. | `--port` flag → env var → `9420` | `mcp.__main__._build_parser` / `_resolve_port` |
@@ -390,10 +390,10 @@ be audited from one location.
 | `NOTEBOOKLM_MCP_CHAT_JOB_TIMEOUT` | Optional detached-chat aggregate deadline, anchored at registry acceptance and including queue time. | Positive finite seconds; unset/blank/invalid preserves unbounded behavior. | `mcp._chattasks._resolve_job_timeout` |
 | `NOTEBOOKLM_MCP_ALLOWED_ROOTS` | Directories stdio `source_add(source_type="file", path=...)` may read. OS pathsep-separated. Unset/empty disables host-path file-add. `$HOME`, NotebookLM home, and the filesystem root are dropped. Credential filenames and Playwright profile dirs are refused even inside a listed root. Remote HTTP never opens a server-host `path`. | Process env on each stdio host-path file-add → empty (off). | `mcp.tools._fileupload._spool_stdio_upload` / `_app.source_add.validate_upload_path` |
 | `NOTEBOOKLM_SERVER_TOKEN` | Bearer token required by every REST `/v1` request. The server refuses to start when unset/empty. | `--token` flag → env var → startup failure | `server.__main__._check_token_configured` / `server._auth.require_auth` |
-| `NOTEBOOKLM_MCP_PROFILES` | Static MCP profiles; Android required for multiple entries. | `--profiles` → env; explicit `--profile` selects single mode. | `mcp.__main__.main` / `_app.profiles.configured_profiles` |
+| `NOTEBOOKLM_MCP_PROFILES` | Static MCP profiles (Web or Android). Web mode refuses copied `storage_state.json` sessions per profile and refuses inline auth or a shared CDP re-auth browser at startup. | `--profiles` → env; explicit `--profile` selects single mode. | `mcp.__main__.main` / `_app.profiles.configured_profiles` / `_app.web_profiles.WebProfileSet` |
 | `NOTEBOOKLM_MCP_PROFILE_STARTUP_TIMEOUT` | Per-profile startup/recovery deadline. | Positive finite seconds; default `30`. | `_app.profiles.profile_startup_timeout` |
-| `NOTEBOOKLM_SERVER_PROFILES` | Static REST profiles; Android required for multiple entries. | `--profiles` → env; explicit `--profile` selects single mode. | `server.__main__.main` / `server._profiles.configured_profiles` |
-| `NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT` | Complete construction timeout for each multi-profile REST client, including credential inspection and readiness. Also applies to recovery attempts. | Env var → `30` seconds; blank uses default; invalid/nonpositive/nonfinite values fail configuration. Single-profile mode ignores it. | `server._profiles.profile_startup_timeout` |
+| `NOTEBOOKLM_SERVER_PROFILES` | Static REST profiles (Web or Android). Web mode refuses copied `storage_state.json` sessions per profile and refuses inline auth or a shared CDP re-auth browser at startup. | `--profiles` → env; explicit `--profile` selects single mode. | `server.__main__.main` / `server._profiles.configured_profiles` / `_app.web_profiles.WebProfileSet` |
+| `NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT` | Complete construction timeout for each multi-profile REST client, including credential inspection and readiness. Also applies to recovery attempts. Web profiles open one at a time; the wait for a turn is excluded. | Env var → `30` seconds; blank uses default; invalid/nonpositive/nonfinite values fail configuration. Single-profile mode ignores it. | `server._profiles.profile_startup_timeout` |
 | `NOTEBOOKLM_SERVER_HOST` | REST server bind host. Non-loopback refused unless `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND=1`. | `--host` flag → env var → `127.0.0.1` | `server.__main__._build_parser` / `_serving.check_bind_allowed` |
 | `NOTEBOOKLM_SERVER_PORT` | REST server bind port. | `--port` flag → env var → `8000` | `server.__main__._build_parser` / `_resolve_port` |
 | `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND` | Allow REST server to bind a non-loopback host. Use only behind a trusted proxy. | Literal `1` enables; all other values disabled. | `server.__main__._check_bind_allowed` → `_serving.check_bind_allowed` |
@@ -478,6 +478,8 @@ notebooklm list  # Works without any file on disk
 5. `~/.notebooklm/storage_state.json` (legacy fallback)
 
 **Note:** Cannot run `notebooklm login` when `NOTEBOOKLM_AUTH_JSON` is set.
+REST and MCP Web multi-profile serving refuses to start while it is set (even
+empty), because inline auth would bypass every profile's own storage.
 
 ### `NOTEBOOKLM_REFRESH_CMD`
 

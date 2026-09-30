@@ -32,6 +32,7 @@ from fastmcp.server.auth import AuthProvider
 
 from .._adapter_support import DEFAULT_SERVER_KEEPALIVE_INTERVAL
 from .._app.profiles import configured_profiles, profile_startup_timeout
+from .._app.web_profiles import refuse_web_multi_profile_environment
 from ..client import NotebookLMClient
 from ..paths import get_active_profile, resolve_profile, set_active_profile
 from ._clientprovider import ClientProvider
@@ -142,8 +143,11 @@ def create_server(
         profile: Auth profile bound for the whole process. Defaults to the active
             profile when ``None``. Also drives process-wide profile resolution
             for diagnostics such as the ``server_info`` tool.
-        profiles: Static profile allowlist. Multiple entries require Android and
-            a profile argument on every tool; one entry keeps single-profile behavior.
+        profiles: Static profile allowlist. Multiple entries require a profile
+            argument on every tool (Web or Android backend); one entry keeps
+            single-profile behavior. Web profiles sharing a copied cookie session
+            are refused per profile, and Web mode refuses process-wide inline
+            auth or a shared headless re-auth browser.
         profile_client_factory: Test seam for per-profile async client contexts.
         backend: Preferred API backend for the default client factory. An explicit
             value takes precedence over ``NOTEBOOKLM_BACKEND``.
@@ -173,8 +177,12 @@ def create_server(
     multi_profile = len(paths) > 1
     if paths and not multi_profile:
         profile = next(iter(paths))
-    if multi_profile and (backend or os.environ.get("NOTEBOOKLM_BACKEND", "web")) != "android":
-        raise ValueError("Multi-profile MCP requires backend='android'")
+    selected_backend = backend or os.environ.get("NOTEBOOKLM_BACKEND", "web")
+    if multi_profile and selected_backend not in ("web", "android"):
+        raise ValueError("Multi-profile MCP requires backend='web' or 'android'")
+    if multi_profile and selected_backend == "web":
+        refuse_web_multi_profile_environment()
+    profile_backend: Literal["web", "android"] = "web" if selected_backend == "web" else "android"
     if multi_profile and client_factory is not None:
         raise ValueError("Use profile_client_factory for multi-profile clients")
     if not multi_profile and profile_client_factory is not None:
@@ -202,7 +210,12 @@ def create_server(
     async def lifespan(_server: FastMCP) -> AsyncIterator[AppState | ProfileRegistry]:
         if multi_profile:
             async with profile_lifespan(
-                paths, profile_client_factory, timeout, file_transfer
+                paths,
+                profile_client_factory,
+                timeout,
+                file_transfer,
+                backend=profile_backend,
+                keepalive=DEFAULT_SERVER_KEEPALIVE_INTERVAL,
             ) as registry:
                 yield registry
             return

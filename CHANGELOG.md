@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Web multi-profile REST and MCP serving (#1901).** `notebooklm-server --profiles
+  work,personal` and `notebooklm-mcp --profiles work,personal` now serve several
+  profiles on the default Web backend, with the same `X-NotebookLM-Profile` /
+  per-tool `profile` routing, per-profile isolation, `503 profile_unavailable`
+  degradation, and recovery cooldown as Android multi-profile mode. Each profile
+  opens its own `storage_state.json` by explicit path; a profile with only a
+  `master_token.json` mints its own session first. A profile whose
+  `__Secure-1PSID` session is a copy of another configured profile's is refused
+  (siblings keep serving); diagnostics report `session_conflict`. Web profile opens
+  take turns, and waiting for a turn does not count against the startup timeout. Web
+  multi-profile mode refuses `NOTEBOOKLM_AUTH_JSON` and a non-blank
+  `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL`. Copies made after both profiles are serving
+  are detected only when one reopens. Single-profile and Android behavior are
+  unchanged.
 - **MCP inspection and retry metadata (#1925).** Studio summary and single-item
   responses include decoded media duration, slide count, and source count;
   unavailable metadata stays `null`. MCP errors preserve known retry delays as

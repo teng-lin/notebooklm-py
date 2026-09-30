@@ -1,6 +1,6 @@
 # Installation
 
-**Last Updated:** 2026-09-02
+**Last Updated:** 2026-09-29
 
 This is the canonical installation guide for `notebooklm-py`. The README has a quickstart; everything else lives here.
 
@@ -491,9 +491,75 @@ below are shared across the process; each client also has its own SDK RPC limit.
 The launcher pins one worker, including when `WEB_CONCURRENCY` is set. Multiple
 server processes do not share pending state or these limits. Profile selection is
 routing, not authorization: the server bearer token grants access to every
-configured profile. Dynamic profile changes, public multi-tenant hosting, Web
-multi-profile mode is outside this feature. MCP supports the same Android profile
+configured profile. Dynamic profile changes and public multi-tenant hosting are
+outside this feature. The default Web backend can serve several profiles too; see
+[Web multi-profile mode](#web-multi-profile-mode). MCP supports the same profile
 isolation with per-tool selection; see below.
+
+### Web multi-profile mode
+
+The default Web backend also serves several profiles from one process, as long as
+each profile owns its own Web session:
+
+<!-- not mirrored: REST-server operator configuration, not a contributor install. -->
+```bash
+notebooklm -p work login
+notebooklm -p personal login
+notebooklm-server --profiles work,personal
+# Or set NOTEBOOKLM_SERVER_PROFILES=work,personal (NOTEBOOKLM_BACKEND unset or web).
+curl -H "Authorization: Bearer $NOTEBOOKLM_SERVER_TOKEN" \
+     -H 'X-NotebookLM-Profile: work' http://127.0.0.1:8000/v1/notebooks
+```
+
+Header selection and its error codes, `Cache-Control`/`Vary` handling, per-profile
+pending state, shared route limits, the per-attempt startup timeout, and the
+five-second recovery cooldown behave as in
+[Android multi-profile mode](#android-multi-profile-mode). An unavailable Web
+profile returns `503 profile_unavailable` (`Selected Web profile is unavailable`)
+while healthy profiles keep serving.
+
+Each profile loads, rotates, and persists only its own `storage_state.json`, opened
+by explicit path with its own keepalive. A profile can open when its
+`storage_state.json` exists, or when it has only a readable `master_token.json`: the
+server then mints a fresh Web session for it before opening. Several profiles may
+hold copies of one account's `master_token.json`; each mints its own session.
+Copying one `storage_state.json` between profiles is **not** supported, because two
+clients would share and rotate a single cookie session. A profile whose
+`__Secure-1PSID` cookie matches another configured profile's is refused with
+`503 profile_unavailable`, and a warning names the profiles involved (never cookie
+values). To fix it, log the profile in separately (`notebooklm -p <name> login`), or
+delete the copied `storage_state.json` and keep `master_token.json` so a fresh
+session is minted.
+
+This check reads local files only and runs whenever a profile's client opens, at
+startup and on each recovery attempt. A copy made after both profiles are already
+serving is not detected until one of them opens again (for example after a restart).
+
+Web profile opens (the check, any master-token bootstrap, and the session load) take
+turns: one profile at a time. Waiting for another profile's turn does not count
+against `NOTEBOOKLM_SERVER_PROFILE_STARTUP_TIMEOUT`, so startup takes roughly the sum
+of the profiles' opens, and a request that must reopen a profile can wait behind
+other profiles' queued attempts (at most one timeout each). An attempt that times out
+releases its turn at once; cancellation cannot stop work already running in a thread
+(such as a master-token mint or headless re-auth), which may finish during the next
+profile's turn.
+
+Web multi-profile mode refuses to start when:
+
+- `NOTEBOOKLM_AUTH_JSON` is set, even to an empty value. Inline auth is process-wide
+  and bypasses per-profile storage.
+- `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` is non-blank. One attached Chrome would
+  re-authenticate every profile into the same browser session.
+  `NOTEBOOKLM_HEADLESS_REAUTH=1` without it uses each profile's own browser directory.
+
+Authenticated `/v1/server/info` reports `backend: "web"` and the selected profile's
+file-only health: `storage_exists`, `json_valid`, `cookies_present`, `sid_cookie`,
+`master_token_present`, `session_conflict`, `ready`, and `authenticated`. When the
+profile could not open, `startup_error.code` is `session_conflict` or
+`profile_unavailable`. Public `/healthz` remains minimal liveness. Profiles for the
+same account still share Google's account quotas.
+
+### Profile selection and server configuration
 
 With no profile list or a one-entry list, existing single-profile behavior remains:
 the selection header is ignored and the existing storage bootstrap is used.
@@ -507,7 +573,7 @@ Configuration is read from `NOTEBOOKLM_SERVER_*` env vars (overridable by the ma
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `NOTEBOOKLM_SERVER_TOKEN` | *(unset)* | Bearer token every request must present. **Required** — fail-closed if unset. |
-| `NOTEBOOKLM_SERVER_PROFILES` | *(unset)* | Comma-separated explicit profiles; more than one requires Android. `--profiles` overrides this. |
+| `NOTEBOOKLM_SERVER_PROFILES` | *(unset)* | Comma-separated explicit profiles; more than one requires `X-NotebookLM-Profile` on every `/v1` request (Web or Android). `--profiles` overrides this. |
 | `NOTEBOOKLM_SERVER_HOST` | `127.0.0.1` | Bind host. Non-loopback is refused unless the elevated-risk override below is set. |
 | `NOTEBOOKLM_SERVER_PORT` | `8000` | Bind port. |
 | `NOTEBOOKLM_SERVER_ALLOW_EXTERNAL_BIND` | *(unset)* | ⚠️ Set to `1` to bind a non-loopback interface. Only behind a trusted reverse proxy — this exposes account-fronting credentials to the network. |
@@ -643,7 +709,8 @@ Distinct paths may hold the same credentials, but still share upstream account q
 Each profile owns an Android client, bearer/retry state, detached chat jobs, and
 research cancellation tracking. Chat job capacity and concurrency are per profile;
 signed file-transfer route limits remain process-wide. Web cookies are never loaded,
-rotated, or persisted by these clients. Web multi-profile serving is unsupported.
+rotated, or persisted by these clients. For Web profiles, see
+[Web multi-profile MCP](#web-multi-profile-mcp).
 
 Client warm-up runs in the background so `initialize` and tool discovery do not
 wait for upstream authentication. A healthy profile keeps serving when another
@@ -660,6 +727,30 @@ Signed upload/download URLs bind the issuing profile. Upload receipt polling and
 widget confirmation use that same profile. The HTTP bearer or OAuth credential
 authorizes **all** configured profiles; selection is routing, not per-account
 access control. Existing HTTP bind and authentication requirements still apply.
+
+### Web multi-profile MCP
+
+The default Web backend serves several profiles the same way:
+
+<!-- not mirrored: MCP operator configuration, not a contributor install. -->
+```bash
+notebooklm-mcp --profiles work,personal
+# Or set NOTEBOOKLM_MCP_PROFILES=work,personal (NOTEBOOKLM_BACKEND unset or web).
+```
+
+The required `profile` argument, per-profile state, background warm-up, recovery
+cooldown, `NOTEBOOKLM_MCP_PROFILE_STARTUP_TIMEOUT`, and signed file links behave as
+in Android mode above. Web profile requirements match
+[REST Web multi-profile mode](#web-multi-profile-mode): each profile needs its own
+`storage_state.json` or a readable `master_token.json`; a profile holding a copy of
+another configured profile's Web session is refused, and its tool calls fail with
+the retriable `SERVER: Selected Web profile is unavailable`; `NOTEBOOKLM_AUTH_JSON`
+and a non-blank `NOTEBOOKLM_HEADLESS_REAUTH_CDP_URL` are refused at startup. Profile
+opens take turns in the background, so `initialize` and tool discovery never wait
+for them, and the wait does not count against the startup timeout. A first or
+recovering tool call for a profile can wait behind other profiles' queued attempts.
+`server_info(profile=...)` reports `backend: "web"` with the same file-only health
+fields as REST, including `session_conflict`.
 
 ### Running the MCP server (`mcp` extra)
 

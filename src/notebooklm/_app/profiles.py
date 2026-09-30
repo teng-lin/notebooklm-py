@@ -1,4 +1,4 @@
-"""Static Android profile configuration and cookie-free client construction."""
+"""Static multi-profile configuration shared by the REST and MCP adapters."""
 
 from __future__ import annotations
 

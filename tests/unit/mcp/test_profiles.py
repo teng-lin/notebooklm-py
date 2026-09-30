@@ -236,7 +236,7 @@ async def test_signed_links_bind_profile_and_route_client(profiles):
     "kwargs, message",
     [
         ({"profile": "work", "profiles": ["work", "personal"]}, "mutually exclusive"),
-        ({"profiles": ["work", "personal"], "backend": "web"}, "requires backend"),
+        ({"profiles": ["work", "personal"], "backend": "auto"}, "requires backend"),
         ({"profiles": ["work", "WORK"], "backend": "android"}, "Duplicate profile"),
         ({"profiles": [], "backend": "android"}, "non-empty"),
         ({"profiles": ["../escape", "work"], "backend": "android"}, "profile"),

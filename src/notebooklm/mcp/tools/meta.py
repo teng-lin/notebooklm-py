@@ -21,6 +21,7 @@ auth-health probe that works even when unauthenticated.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 from fastmcp import Context
@@ -160,6 +161,40 @@ async def _android_info(ctx: Context, *, include_account: bool) -> dict[str, Any
     return info
 
 
+async def _web_info(ctx: Context, *, include_account: bool) -> dict[str, Any]:
+    """Diagnose the selected Web profile from local files; never return values."""
+    state = get_profile_state(ctx)
+    web_profiles = state.web_profiles
+    if web_profiles is None or state.profile is None:  # pragma: no cover - dispatch guard
+        raise RuntimeError("Web profile diagnostics require a configured Web profile")
+    health = await web_profiles.health(state.profile)
+    usable = health.local_checks_passed and not health.session_conflict
+    account = None
+    if include_account:
+        account = await _account_block(ctx, authenticated=usable)
+    ready = state.client_provider.is_open
+    info: dict[str, Any] = {
+        "server": SERVER_NAME,
+        "version": version_string(),
+        "auth": {
+            "backend": "web",
+            "profile": state.profile,
+            "storage_exists": health.storage_exists,
+            "json_valid": health.json_valid,
+            "cookies_present": health.cookies_present,
+            "sid_cookie": health.sid_cookie,
+            "master_token_present": health.master_token_present,
+            "session_conflict": health.session_conflict,
+            "authenticated": ready and usable,
+            "ready": ready,
+        },
+        "chat_tasks": state.chat_tasks.counts(),
+    }
+    if include_account:
+        info["account"] = account
+    return info
+
+
 def register(mcp: Any) -> None:
     """Register the meta tool on ``mcp``."""
 
@@ -195,7 +230,16 @@ def register(mcp: Any) -> None:
         remote) caller, while telling the agent nothing it can act on.
         """
         with mcp_errors():
-            if get_profile_state(ctx).storage_path is not None:
+            state = get_profile_state(ctx)
+            if state.web_profiles is not None:
+                if include_account:
+                    # Open (or join the warm-up) before the file probe so it
+                    # describes a session this open minted; a failure is then
+                    # reported by the account block.
+                    with contextlib.suppress(Exception):
+                        await get_client(ctx)
+                return await _web_info(ctx, include_account=include_account)
+            if state.storage_path is not None:
                 return await _android_info(ctx, include_account=include_account)
             # Report the *resolved* profile (never ``None``): this names the
             # profile the auth probe actually ran against (#1790, #1791).

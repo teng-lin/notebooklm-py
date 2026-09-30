@@ -30,6 +30,7 @@ from ._clientprovider import ClientProvider
 if TYPE_CHECKING:
     from starlette.requests import Request
 
+    from .._app.web_profiles import WebProfileSet
     from ..client import NotebookLMClient
     from ._filelink import FileTransferConfig
 
@@ -108,6 +109,11 @@ class AppState:
 
     ``client_provider`` owns the lazily-opened client (#2330); read it through
     :func:`get_client`, never by touching the provider from a tool.
+
+    ``backend`` names the multi-profile backend (``"web"`` / ``"android"``); it
+    stays ``None`` in single-profile mode, where the client factory resolves it.
+    ``web_profiles`` is set only for Web multi-profile states and serves their
+    file-only diagnostics.
     """
 
     client_provider: ClientProvider
@@ -116,11 +122,13 @@ class AppState:
     chat_tasks: ChatTaskRegistry = field(default_factory=ChatTaskRegistry)
     profile: str | None = None
     storage_path: Path | None = None
+    backend: str | None = None
+    web_profiles: WebProfileSet | None = None
 
 
 @dataclass
 class ProfileRegistry:
-    """Isolated MCP state for every configured Android profile."""
+    """Isolated MCP state for every configured Web or Android profile."""
 
     profiles: dict[str, AppState]
 

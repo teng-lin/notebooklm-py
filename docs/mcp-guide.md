@@ -1,6 +1,6 @@
 # MCP server guide
 
-**Last Updated:** 2026-09-06
+**Last Updated:** 2026-09-29
 
 > **Experimental / preview.** The MCP server ships behind the optional `mcp` extra. Its
 > tool surface (names, parameters, output shapes) is **not** covered by the library's semver
@@ -741,9 +741,18 @@ been sent.
   server's live manifest is correct; only *removed/renamed tools* ghost — newly-added *optional* parameters
   on existing tools forward through the stale schema and keep working. See [troubleshooting.md](troubleshooting.md#unknown-tool-from-an-mcp-host-claudeai-chatgpt--after-upgrading-the-server).
 - **Wrong account.** Single-profile mode uses `--profile <name>` or `NOTEBOOKLM_PROFILE`.
-  For several Android accounts, use `--backend android --profiles work,personal` and include
-  `profile` in every tool call. Reconnect or refresh the host manifest when changing modes.
-  See [multi-profile setup](installation.md#android-multi-profile-mcp).
+  For several accounts, use `--profiles work,personal` (Web) or
+  `--backend android --profiles work,personal` and include `profile` in every tool call.
+  Reconnect or refresh the host manifest when changing modes.
+  See [multi-profile setup](installation.md#android-multi-profile-mcp) and
+  [Web multi-profile MCP](installation.md#web-multi-profile-mcp).
+- **`Selected Web profile is unavailable` for one profile.** In Web multi-profile mode,
+  check `server_info(profile=...)`. `session_conflict: true` means that profile's
+  `storage_state.json` is a copy of another configured profile's session: log it in
+  separately (`notebooklm -p <name> login`), or delete the copy and keep
+  `master_token.json` so a fresh session is minted. Otherwise check `storage_exists` /
+  `master_token_present` (neither file usable), then the server log for an expired
+  session, startup timeout, or network failure. Other profiles keep serving.
 - **`RATE_LIMITED`.** NotebookLM enforces per-account quotas; the error is `retriable=true` — back off
   and retry, honoring `retry_after_seconds` when present. Its absence means the delay is unknown.
 - **`CONNECT_TIMEOUT` / "connection timed out after 30000ms" on connect.** Fixed: the server used to

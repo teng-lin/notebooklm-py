@@ -16,7 +16,7 @@
     "_WEB_CLASS_BY_ANDROID_NAME": 99
   },
   "tests/_guardrails/test_asyncio_loop_affinity_guard.py": {
-    "ALLOWLIST": 24
+    "ALLOWLIST": 27
   },
   "tests/_guardrails/test_auth_cold_recovery_coordinator_boundary.py": {
     "_EXPECTED_IMPORTS": 220
@@ -56,7 +56,7 @@
     "_NATIVE_REPLACE_CALLER_TESTS": 33
   },
   "tests/_guardrails/test_auth_storage_compatibility.py": {
-    "EXPECTED_ALIAS_CALLERS": 61,
+    "EXPECTED_ALIAS_CALLERS": 62,
     "EXPECTED_DIRECT_CALLERS": 64,
     "EXPECTED_SIGNATURES": 564,
     "FACADE_INVENTORY_IDENTITIES": 23,

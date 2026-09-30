@@ -157,7 +157,10 @@ def _build_parser() -> argparse.ArgumentParser:
     profile_group.add_argument(
         "--profiles",
         default=None,
-        help=f"Comma-separated profiles (default: ${PROFILES_ENV}); multiple require Android.",
+        help=(
+            f"Comma-separated profiles (default: ${PROFILES_ENV}); with more than one, "
+            "every /v1 request selects one via X-NotebookLM-Profile (Web or Android)."
+        ),
     )
     parser.add_argument(
         "--backend",

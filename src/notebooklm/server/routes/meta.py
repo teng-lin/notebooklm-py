@@ -15,8 +15,10 @@ than failing the whole call).
 
 The absolute on-disk storage path is deliberately **not** returned — it leaks the
 server-host OS username / filesystem layout to the caller while telling it nothing
-actionable (the MCP surface scrubs it identically). This is a single-tenant
-server, so the info reflects the one lifespan client/startup state.
+actionable (the MCP surface scrubs it identically). In single-profile mode the
+info reflects the one lifespan client/startup state; in multi-profile mode it
+reflects the profile selected by ``X-NotebookLM-Profile`` (Android credential
+health, or Web file-only health including ``session_conflict``).
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -131,6 +133,8 @@ async def server_info(
     state = get_state(request)
     profile = state.profile or resolve_profile()
     storage_path = state.storage_path or get_storage_path(profile)
+    if state.web_profiles is not None:
+        return await _web_profile_info(request, include_account=include_account)
     if state.isolated:
         return await _android_info(request, include_account=include_account)
     plan = AuthCheckPlan(
@@ -237,6 +241,53 @@ async def _android_info(request: Request, *, include_account: bool) -> dict[str,
                 "available": False,
                 "email": status.account if status else None,
                 "reason": "Selected Android profile is unavailable",
+            }
+        else:
+            info["account"] = await _account_block(state.client, authenticated=ready)
+    return info
+
+
+async def _web_profile_info(request: Request, *, include_account: bool) -> dict[str, Any]:
+    """Diagnose the selected Web profile from local files; never return values."""
+    state = get_state(request)
+    web_profiles = state.web_profiles
+    if web_profiles is None or state.profile is None:  # pragma: no cover - dispatch guard
+        raise RuntimeError("Web profile diagnostics require a configured Web profile")
+    if include_account:
+        try:
+            await get_client(request)
+        except Exception:
+            if get_client_error(request) is None:
+                raise
+    health = await web_profiles.health(state.profile)
+    ready = state.client is not None and state.client_error is None
+    auth: dict[str, Any] = {
+        "backend": "web",
+        "profile": state.profile,
+        "storage_exists": health.storage_exists,
+        "json_valid": health.json_valid,
+        "cookies_present": health.cookies_present,
+        "sid_cookie": health.sid_cookie,
+        "master_token_present": health.master_token_present,
+        "session_conflict": health.session_conflict,
+        "authenticated": ready and health.local_checks_passed and not health.session_conflict,
+        "ready": ready,
+    }
+    if state.client_error is not None:
+        startup_error = state.client_error
+        if not isinstance(startup_error, AuthError):
+            startup_error = ServerError(str(startup_error), status_code=503)
+        auth["startup_error"] = error_item(startup_error)
+        auth["startup_error"]["code"] = (
+            "session_conflict" if health.session_conflict else "profile_unavailable"
+        )
+    info: dict[str, Any] = {"server": SERVER_NAME, "version": version_string(), "auth": auth}
+    if include_account:
+        if state.client is None:
+            info["account"] = {
+                **_persisted_account_identity(health.account),
+                "available": False,
+                "reason": "Selected Web profile is unavailable",
             }
         else:
             info["account"] = await _account_block(state.client, authenticated=ready)

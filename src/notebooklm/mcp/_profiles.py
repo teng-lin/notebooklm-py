@@ -1,4 +1,4 @@
-"""Android profile lifecycle and explicit, transport-neutral tool routing."""
+"""Multi-profile (Web or Android) lifecycle and explicit tool routing."""
 
 from __future__ import annotations
 
@@ -7,17 +7,23 @@ import inspect
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from contextlib import (
+    AbstractAsyncContextManager,
+    AsyncExitStack,
+    asynccontextmanager,
+    nullcontext,
+)
 from dataclasses import replace
 from functools import wraps
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal
 
 from fastmcp import FastMCP
 
 from .._app.android_profiles import android_profile_client
 from .._app.profile_client import ProfileClientOwner
+from .._app.web_profiles import WebProfileSet
 from ..client import NotebookLMClient
 from ..exceptions import ServerError
 from ._clientprovider import ClientFactory, ClientProvider
@@ -31,14 +37,31 @@ _RETRY_INTERVAL = 5.0
 logger = logging.getLogger(__name__)
 
 
-class ProfileClientProvider(ClientProvider):
-    """Lazy single-flight client with a deadline and isolated, owned cleanup."""
+OpenTurn = Callable[[], AbstractAsyncContextManager[None]]
 
-    def __init__(self, factory: ClientFactory, timeout: float) -> None:
+
+class ProfileClientProvider(ClientProvider):
+    """Lazy single-flight client with a deadline and isolated, owned cleanup.
+
+    ``open_turn`` optionally serializes opens across profiles; waiting for a
+    turn happens before, and never counts against, the per-attempt deadline.
+    """
+
+    def __init__(
+        self,
+        factory: ClientFactory,
+        timeout: float,
+        *,
+        backend_label: str = "Android",
+        open_turn: OpenTurn | None = None,
+    ) -> None:
         super().__init__(factory)
         self._owner = ProfileClientOwner()
         self._timeout = timeout
         self._retry_not_before = 0.0
+        self._backend_label = backend_label
+        self._unavailable = f"Selected {backend_label} profile is unavailable"
+        self._open_turn = open_turn
 
     def start(self) -> None:
         self._owner._assert_loop()
@@ -50,13 +73,15 @@ class ProfileClientProvider(ClientProvider):
 
     async def _open(self) -> NotebookLMClient:
         if time.monotonic() < self._retry_not_before:
-            raise ServerError("Selected Android profile is unavailable", status_code=503)
+            raise ServerError(self._unavailable, status_code=503)
         try:
-            client = await self._owner.open(self._factory, self._timeout)
+            turn = self._open_turn() if self._open_turn is not None else nullcontext()
+            async with turn:
+                client = await self._owner.open(self._factory, self._timeout)
         except Exception as exc:
-            logger.warning("Android profile open failed (%s)", type(exc).__name__)
+            logger.warning("%s profile open failed (%s)", self._backend_label, type(exc).__name__)
             self._retry_not_before = time.monotonic() + _RETRY_INTERVAL
-            raise ServerError("Selected Android profile is unavailable", status_code=503) from None
+            raise ServerError(self._unavailable, status_code=503) from None
         self._client = client
         return client
 
@@ -74,23 +99,45 @@ class ProfileClientProvider(ClientProvider):
         return suppressed
 
 
+def _profile_factory(
+    name: str,
+    path: Path,
+    factory: Callable[[str], AbstractAsyncContextManager[NotebookLMClient]] | None,
+    web_profiles: WebProfileSet | None,
+) -> ClientFactory:
+    if factory is not None:
+        return lambda: factory(name)
+    if web_profiles is not None:
+        return lambda: web_profiles.factory(name)
+    return lambda: android_profile_client(path)
+
+
 @asynccontextmanager
 async def profile_lifespan(
     paths: dict[str, Path],
     factory: Callable[[str], AbstractAsyncContextManager[NotebookLMClient]] | None,
     timeout: float,
     file_transfer: FileTransferConfig | None,
+    *,
+    backend: Literal["web", "android"] = "android",
+    keepalive: float | None = None,
 ) -> AsyncIterator[ProfileRegistry]:
-    """Warm profiles independently without delaying MCP initialize."""
+    """Warm profiles independently without delaying MCP initialize.
+
+    Web profiles share one :class:`WebProfileSet` whose open turn serializes
+    admission and opens; warm-ups queue in the background.
+    """
     registry = ProfileRegistry({})
+    # One per lifespan: its open lock is bound to this loop.
+    web_profiles = WebProfileSet(paths, keepalive=keepalive) if backend == "web" else None
     async with AsyncExitStack() as stack:
         for name, path in paths.items():
-            client_factory = (
-                (lambda name=name: factory(name))
-                if factory is not None
-                else (lambda path=path: android_profile_client(path))
+            provider = ProfileClientProvider(
+                _profile_factory(name, path, factory, web_profiles),
+                timeout,
+                backend_label="Web" if web_profiles is not None else "Android",
+                open_turn=web_profiles.open_turn if web_profiles is not None else None,
             )
-            provider = ProfileClientProvider(client_factory, timeout)
             state = AppState(
                 client_provider=provider,
                 profile=name,
@@ -98,6 +145,8 @@ async def profile_lifespan(
                 file_transfer=(
                     replace(file_transfer, profile=name) if file_transfer is not None else None
                 ),
+                backend=backend,
+                web_profiles=web_profiles,
             )
             registry.profiles[name] = state
             # LIFO: detached work stops before its client closes. Register every
