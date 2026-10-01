@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-10-01
+
 ### Added
+
+- **Android multi-profile REST and MCP serving (#1901).** Serve several Android
+  accounts with `--profiles`, route each request by profile, and isolate profile
+  startup failures and recovery.
 
 - **Web multi-profile REST and MCP serving (#1901).** `notebooklm-server --profiles
   work,personal` and `notebooklm-mcp --profiles work,personal` now serve several
@@ -48,6 +54,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings apply to the whole batch. Together with the existing
   `sources.add_urls_batch()` / `source_add(urls=...)` support (#1998), these expose
   the verified batch-capable operations without adding MCP tools.
+
+### Fixed
+
+- **Authentication across rebranded hosts (#2443, #2444).** Recognize
+  `notebook.google` landing redirects and enterprise hosts, and report access
+  gates without misclassifying them as expired sessions.
+- **Mutation rejection handling (#2446).** Note deletion and sharing reject
+  explicit backend failures instead of reporting success.
+
+- **Android RPC health baseline.** Add the missing reviewed schema baseline,
+  using matching fingerprints from three consecutive protected-main runs, so
+  the canary can enforce drift checks after its bootstrap grace period.
+
+### Changed
+
+- Allow FileLock 4.x (#2450). Keep FastMCP pinned to the validated 3.4.2 release;
+  the 4.0.9 upgrade (#2451) is deferred because it breaks MCP imports and types.
 
 ### Documentation
 
@@ -2821,7 +2844,8 @@ This is the initial public release of `notebooklm-py`. While core functionality 
 - **Authentication expiry**: CSRF tokens expire after some time. Re-run `notebooklm login` if you encounter auth errors.
 - **Large file uploads**: Files over 50MB may fail or timeout. Split large documents if needed.
 
-[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.4...HEAD
+[0.8.4]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/teng-lin/notebooklm-py/compare/v0.8.0...v0.8.1

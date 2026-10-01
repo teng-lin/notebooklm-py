@@ -1,6 +1,6 @@
 # Installation
 
-**Last Updated:** 2026-09-29
+**Last Updated:** 2026-10-01
 
 This is the canonical installation guide for `notebooklm-py`. The README has a quickstart; everything else lives here.
 

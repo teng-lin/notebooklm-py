@@ -81,6 +81,11 @@ These combine ordinary library primitives — see the [CLI Reference](docs/cli-r
 | **REST Server** | Local automation over guarded HTTP routes without spawning a CLI process per call |
 | **Agent Integration** | Claude Code, Codex, LLM agents, natural language automation |
 
+REST and MCP servers support multiple profiles on either backend with `--profiles`
+(see the [MCP guide](docs/mcp-guide.md)). URL ingestion can optionally recover
+failed web pages with `source add --fallback-fetch`; install the `impersonate` and
+`markdown` extras and see the [CLI reference](docs/cli-reference.md#opt-in-url-recovery).
+
 ### API backends
 
 The default backend is the established Web (`batchexecute`) transport. This

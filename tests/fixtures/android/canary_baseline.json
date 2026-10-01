@@ -1,0 +1,10 @@
+{
+  "GetProject": {
+    "shape": "367f83fb36bb3bc67b174baad75bebad298e40319e27ea03afed1cf91e1cda37",
+    "unknown_fields": 143
+  },
+  "ListChatSessions": {
+    "shape": "e6d6424e0fbcb1e967dba83ed719abf94fb78007b4d58dbc86c2b5c88756bc98",
+    "unknown_fields": 2
+  }
+}

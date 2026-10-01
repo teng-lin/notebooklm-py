@@ -92,6 +92,9 @@ _AUTH_AUDIT_POLICY_FILES = frozenset(
     }
 )
 _OWNER_QUALNAME_LINE = re.compile(r'^\s*(?:\{\s*)?"owner_qualname"\s*:')
+# The reviewed canary fingerprints are SHA-256 digests, not opaque credentials.
+_ANDROID_CANARY_BASELINE = (_REPO_ROOT / "tests/fixtures/android/canary_baseline.json").resolve()
+_CANARY_SHAPE_LINE = re.compile(r'^\s*"shape"\s*:\s*"[0-9a-f]{64}"\s*,?\s*$')
 _ANDROID_GRPC_FORMAT = "notebooklm.android.grpc-cassette"
 _ANDROID_SAFE_METADATA_KEYS = frozenset(
     {
@@ -395,7 +398,10 @@ def _scan_file(path: Path, secrets_only: bool = False) -> list[tuple[int, str]]:
                         and path.name in _AUTH_AUDIT_BASELINES
                         and _OWNER_QUALNAME_LINE.match(line)
                     ) or (resolved in _AUTH_AUDIT_POLICY_FILES and _OWNER_QUALNAME_LINE.match(line))
-                    if structural_auth_identifier:
+                    structural_canary_hash = (
+                        resolved == _ANDROID_CANARY_BASELINE and _CANARY_SHAPE_LINE.fullmatch(line)
+                    )
+                    if structural_auth_identifier or structural_canary_hash:
                         line_leaks = [
                             leak
                             for leak in line_leaks

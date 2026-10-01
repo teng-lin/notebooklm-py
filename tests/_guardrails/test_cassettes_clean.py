@@ -212,6 +212,18 @@ def test_auth_policy_identifier_entropy_exception_requires_canonical_path(tmp_pa
     assert "high-entropy token" in result.stdout
 
 
+def test_canary_hash_entropy_exception_requires_canonical_path(tmp_path: Path) -> None:
+    canonical = FIXTURES_DIR / "android" / "canary_baseline.json"
+    clean = _run_guard("--secrets-only", "--strict", str(canonical))
+    assert clean.returncode == 0, clean.stdout
+
+    lookalike = tmp_path / "canary_baseline.json"
+    lookalike.write_bytes(canonical.read_bytes())
+    result = _run_guard("--secrets-only", "--strict", str(lookalike))
+    assert result.returncode == 1
+    assert "high-entropy token" in result.stdout
+
+
 # --- Signed blob-capability URLs (#2120 / #2215) ---------------------------
 # These must be caught in BOTH scan modes. ``--secrets-only`` reaches the
 # detector via ``_CREDENTIAL_DETECTORS``; the full cassette scan routes through

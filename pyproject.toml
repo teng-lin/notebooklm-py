@@ -1,6 +1,6 @@
 [project]
 name = "notebooklm-py"
-version = "0.8.3"
+version = "0.8.4"
 description = "Unofficial Python library for automating Google NotebookLM"
 dynamic = ["readme"]
 requires-python = ">=3.10"
@@ -62,7 +62,7 @@ android = ["grpcio==1.76.0", "protobuf==6.33.5", "gpsoauth>=1.1.0"]
 # route (/.well-known/oauth-protected-resource/mcp → 404), which dead-ends
 # claude.ai's remote-connector OAuth discovery ("Couldn't connect to the
 # server"). 3.4.2 is the last-good; lift the pin once a fixed release ships.
-mcp = ["fastmcp==4.0.9"]
+mcp = ["fastmcp==3.4.2"]
 # Optional single-tenant REST server (the third _app adapter, after cli/ and
 # mcp/). EXPERIMENTAL: the /v1 surface may change in a minor release; it is
 # excluded from the public-API compatibility gate. python-multipart is REQUIRED
