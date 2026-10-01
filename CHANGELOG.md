@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow FileLock 4.x (#2450). Keep FastMCP pinned to the validated 3.4.2 release;
   the 4.0.9 upgrade (#2451) is deferred because it breaks MCP imports and types.
 
+### Security
+
+- Update locked urllib3 to 2.8.0 and virtualenv to 21.7.13, resolving the
+  advisories reported by the release dependency audit.
+
 ### Documentation
 
 - **Master-token re-mint guidance (#1901).** The auth cookie lifecycle guide no

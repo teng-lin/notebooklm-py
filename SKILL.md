@@ -135,7 +135,7 @@ Common operations:
 | Check compute usage | `notebooklm usage --json`; `notebooklm usage --categories` for category availability and estimated costs |
 | List or create notebooks | `notebooklm list --json`; `notebooklm create "Title" --json` |
 | Add and wait for a source | `notebooklm source add <input> -n <nb> --json`; `notebooklm source wait <src> -n <nb>` |
-| URL recovery | `source add <url> --fallback-fetch` (see CLI help) |
+| URL recovery | `notebooklm source add <url> --fallback-fetch` |
 | Chat | `notebooklm ask "question" -n <nb> --json` |
 | Research | `notebooklm source add-research "query" -n <nb> --mode fast --json` (`deep` is also supported) |
 | List or wait for artifacts | `notebooklm artifact list -n <nb> --json`; `notebooklm artifact wait <id> -n <nb>` |
