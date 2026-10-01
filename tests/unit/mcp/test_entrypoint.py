@@ -104,6 +104,7 @@ def test_defaults_wire_stdio_transport(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_backend_flag_threads_to_stdio_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
     fake_server = MagicMock()
     captured: dict[str, object] = {}
 
