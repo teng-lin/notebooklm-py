@@ -1,24 +1,74 @@
 name: Publish to PyPI
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to publish after a workflow-only recovery."
+        required: true
+        type: string
   push:
     tags:
       - "v*"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  resolve-release:
+    name: Resolve immutable release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_tag: ${{ steps.target.outputs.release_tag }}
+      sha: ${{ steps.target.outputs.sha }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Validate release target
+      id: target
+      env:
+        REQUESTED_TAG: ${{ inputs.release_tag }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+          test "$GITHUB_REF" = refs/heads/main
+          release_tag="$REQUESTED_TAG"
+        else
+          test "$GITHUB_REF_TYPE" = tag
+          release_tag="$GITHUB_REF_NAME"
+        fi
+        if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
+          echo "Invalid release tag" >&2
+          exit 1
+        fi
+        sha=$(git rev-parse "refs/tags/$release_tag^{commit}")
+        if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+          git merge-base --is-ancestor "$sha" origin/main
+        else
+          test "$sha" = "$(git rev-parse "$GITHUB_SHA^{commit}")"
+        fi
+        echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
   auth-patch-audit:
     name: Auth patch audit
+    needs: resolve-release
     permissions:
       contents: read
     uses: ./.github/workflows/auth-patch-audit.yml
+    with:
+      custom_branch: ${{ needs.resolve-release.outputs.sha }}
+      release_audit: true
 
   build-and-test:
     name: Build candidate artifacts
-    needs: auth-patch-audit
+    needs: [resolve-release, auth-patch-audit]
     runs-on: ubuntu-latest
     # Smoke install pulls `[browser,dev,markdown]` extras (pytest, playwright,
     # mypy, ruff, markdownify, transitive deps). A compromised dep here is a
@@ -30,16 +80,19 @@ jobs:
       contents: read
     outputs:
       candidate_sha: ${{ steps.candidate.outputs.sha }}
+    env:
+      RELEASE_TAG: ${{ needs.resolve-release.outputs.release_tag }}
 
     steps:
     - uses: actions/checkout@v7
       with:
+        ref: ${{ needs.resolve-release.outputs.sha }}
         fetch-depth: 0
         persist-credentials: false
 
     - name: Resolve candidate commit
       id: candidate
-      run: echo "sha=$(git rev-parse "${GITHUB_SHA}^{commit}")" >> "$GITHUB_OUTPUT"
+      run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
     - name: Set up Python 3.12
       uses: actions/setup-python@v7
@@ -51,7 +104,7 @@ jobs:
 
     - name: Validate tag matches version
       run: |
-        TAG_VERSION=${GITHUB_REF#refs/tags/v}
+        TAG_VERSION=${RELEASE_TAG#v}
         TOML_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
         if [ "$TAG_VERSION" != "$TOML_VERSION" ]; then
           echo "Error: Tag version ($TAG_VERSION) doesn't match pyproject.toml ($TOML_VERSION)"
@@ -63,7 +116,7 @@ jobs:
       id: baseline
       run: |
         set -euo pipefail
-        current_tag="${GITHUB_REF_NAME}"
+        current_tag="$RELEASE_TAG"
         current_sha=$(git rev-list -n 1 "$current_tag")
         previous_tag=""
         while IFS= read -r tag; do
@@ -161,18 +214,20 @@ jobs:
 
   prune-api-compat:
     name: Open post-tag API allowlist prune PR
-    needs: publish
+    needs: [resolve-release, publish]
     runs-on: ubuntu-latest
     # This job uses its repository-write permission only for the generated
     # automation branch; the script never pushes main directly.
     permissions:
       contents: write
       pull-requests: write
+    env:
+      RELEASE_TAG: ${{ needs.resolve-release.outputs.release_tag }}
 
     steps:
     - uses: actions/checkout@v7
       with:
-        ref: ${{ github.ref }}
+        ref: ${{ needs.resolve-release.outputs.sha }}
         fetch-depth: 0
         persist-credentials: false
 
@@ -188,7 +243,7 @@ jobs:
       id: baseline
       run: |
         set -euo pipefail
-        current_tag="${GITHUB_REF_NAME}"
+        current_tag="$RELEASE_TAG"
         current_sha=$(git rev-list -n 1 "$current_tag")
         previous_tag=""
         while IFS= read -r tag; do
@@ -219,7 +274,7 @@ jobs:
     - name: Create or safely reuse automation branch and PR
       env:
         GH_TOKEN: ${{ github.token }}
-        AUTOMATION_BRANCH: automation/api-compat-prune-${{ github.ref_name }}
+        AUTOMATION_BRANCH: automation/api-compat-prune-${{ needs.resolve-release.outputs.release_tag }}
       run: |
         set -euo pipefail
         if git diff --quiet -- scripts/api-compat-allowlist.json; then
@@ -276,5 +331,5 @@ jobs:
           --repo "$GITHUB_REPOSITORY" \
           --head "$AUTOMATION_BRANCH" \
           --base main \
-          --title "chore(api): prune stale compatibility allowances for $GITHUB_REF_NAME" \
-          --body "Automated post-tag cleanup for $GITHUB_REF_NAME. This PR removes only allowlist entries that are stale against the immutable release tag; review and merge it before the next release."
+          --title "chore(api): prune stale compatibility allowances for $RELEASE_TAG" \
+          --body "Automated post-tag cleanup for $RELEASE_TAG. This PR removes only allowlist entries that are stale against the immutable release tag; review and merge it before the next release."

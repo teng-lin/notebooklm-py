@@ -389,6 +389,14 @@ The `Publish to PyPI` step in `publish.yml` also opts into **PEP 740 attestation
 - [ ] Wait for **publish.yml** to complete
 - [ ] Verify on PyPI: https://pypi.org/project/notebooklm-py/
 
+If a tag-triggered publish fails because of workflow tooling, fix the workflow
+through a PR and dispatch `publish.yml` from `main` with `release_tag=vX.Y.Z`.
+Recovery resolves the existing tag to an immutable commit, repeats the auth/API
+audits and wheel qualification, and publishes artifacts built from that commit.
+Do not move a published tag to incorporate a workflow-only fix. Release auth
+coverage compares against the previous stable release with **no coverage-loss
+allowances**; PR migration allowances do not apply to that comparison.
+
 ### PyPI Verification
 
 - [ ] Go to **Actions** → **Verify Package**
