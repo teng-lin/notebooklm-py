@@ -391,6 +391,7 @@ def test_auth_patch_coverage_delta_is_release_gated_and_manually_dispatchable() 
         "custom_branch",
         "base_ref",
         "release_audit",
+        "release_allowances_json",
     }
     assert set(triggers["workflow_dispatch"]["inputs"]) == {"custom_branch", "base_ref"}
     for trigger in triggers.values():

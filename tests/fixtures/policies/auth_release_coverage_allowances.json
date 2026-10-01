@@ -1,0 +1,134 @@
+{
+  "v0.8.4": {
+    "version": 1,
+    "allowances": [
+      {
+        "base_coordinate": 842,
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "statement",
+        "path": "src/notebooklm/_auth/cookie_policy.py",
+        "id": "v084-enterprise-host-1",
+        "scenario_id": "scenario-auth-cookie-validation-healing",
+        "rationale": "PR #2444 replaces literal enterprise-host conditions with ENTERPRISE_APP_HOSTS membership. Replacement branches and return paths are covered in the captured head coverage; domain-priority and browser-login host tests preserve legacy behavior and add the rebranded host.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      },
+      {
+        "base_coordinate": 844,
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "statement",
+        "path": "src/notebooklm/_auth/cookie_policy.py",
+        "id": "v084-enterprise-host-2",
+        "scenario_id": "scenario-auth-cookie-validation-healing",
+        "rationale": "PR #2444 replaces literal enterprise-host conditions with ENTERPRISE_APP_HOSTS membership. Replacement branches and return paths are covered in the captured head coverage; domain-priority and browser-login host tests preserve legacy behavior and add the rebranded host.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      },
+      {
+        "base_coordinate": [
+          840,
+          842
+        ],
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "branch",
+        "path": "src/notebooklm/_auth/cookie_policy.py",
+        "id": "v084-enterprise-host-3",
+        "scenario_id": "scenario-auth-cookie-validation-healing",
+        "rationale": "PR #2444 replaces literal enterprise-host conditions with ENTERPRISE_APP_HOSTS membership. Replacement branches and return paths are covered in the captured head coverage; domain-priority and browser-login host tests preserve legacy behavior and add the rebranded host.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      },
+      {
+        "base_coordinate": [
+          842,
+          843
+        ],
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "branch",
+        "path": "src/notebooklm/_auth/cookie_policy.py",
+        "id": "v084-enterprise-host-4",
+        "scenario_id": "scenario-auth-cookie-validation-healing",
+        "rationale": "PR #2444 replaces literal enterprise-host conditions with ENTERPRISE_APP_HOSTS membership. Replacement branches and return paths are covered in the captured head coverage; domain-priority and browser-login host tests preserve legacy behavior and add the rebranded host.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      },
+      {
+        "base_coordinate": [
+          842,
+          844
+        ],
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "branch",
+        "path": "src/notebooklm/_auth/cookie_policy.py",
+        "id": "v084-enterprise-host-5",
+        "scenario_id": "scenario-auth-cookie-validation-healing",
+        "rationale": "PR #2444 replaces literal enterprise-host conditions with ENTERPRISE_APP_HOSTS membership. Replacement branches and return paths are covered in the captured head coverage; domain-priority and browser-login host tests preserve legacy behavior and add the rebranded host.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      },
+      {
+        "base_coordinate": [
+          844,
+          845
+        ],
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "branch",
+        "path": "src/notebooklm/_auth/cookie_policy.py",
+        "id": "v084-enterprise-host-6",
+        "scenario_id": "scenario-auth-cookie-validation-healing",
+        "rationale": "PR #2444 replaces literal enterprise-host conditions with ENTERPRISE_APP_HOSTS membership. Replacement branches and return paths are covered in the captured head coverage; domain-priority and browser-login host tests preserve legacy behavior and add the rebranded host.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      },
+      {
+        "base_coordinate": [
+          844,
+          846
+        ],
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "branch",
+        "path": "src/notebooklm/_auth/cookie_policy.py",
+        "id": "v084-enterprise-host-7",
+        "scenario_id": "scenario-auth-cookie-validation-healing",
+        "rationale": "PR #2444 replaces literal enterprise-host conditions with ENTERPRISE_APP_HOSTS membership. Replacement branches and return paths are covered in the captured head coverage; domain-priority and browser-login host tests preserve legacy behavior and add the rebranded host.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      },
+      {
+        "base_coordinate": 62,
+        "disposition": "removed",
+        "head_coordinate": null,
+        "kind": "statement",
+        "path": "src/notebooklm/_browser/browser_capture.py",
+        "id": "v084-enterprise-host-8",
+        "scenario_id": "scenario-cli-repair-rendering",
+        "rationale": "PR #2444 expands the covered PERSONAL_APP_HOSTS import to include ENTERPRISE_APP_HOSTS. The replacement import is executed in head coverage, and login host-family tests cover both personal and enterprise aliases.",
+        "owner": "auth maintainers",
+        "valid_for_base_sha": "53fc7c50acc22f94729e5b067075640d8ddf7496",
+        "authored_on": "2026-10-01",
+        "expires_on": "2026-10-15"
+      }
+    ]
+  }
+}

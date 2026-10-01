@@ -4,10 +4,15 @@ on:
   workflow_call:
     inputs:
       release_audit:
-        description: "Compare a release against the previous stable tag without PR-only allowances."
+        description: "Compare a release against the previous stable tag with release-scoped allowances."
         required: false
         type: boolean
         default: false
+      release_allowances_json:
+        description: "Reviewed release coverage allowances; PR migration allowances never apply."
+        required: false
+        type: string
+        default: '{"version":1,"allowances":[]}'
       custom_branch:
         description: "Branch/ref to audit; defaults to the release tag."
         required: false
@@ -167,13 +172,14 @@ jobs:
       shell: bash
       env:
         RELEASE_AUDIT: ${{ inputs.release_audit }}
+        RELEASE_ALLOWANCES_JSON: ${{ inputs.release_allowances_json }}
       run: |
         allowance_policy=tests/fixtures/policies/auth_coverage_allowances.json
         if [ "$RELEASE_AUDIT" = "true" ]; then
-          # Migration allowances are tied to one PR base and expire. A release
-          # comparison permits no coverage losses, even if old rows remain.
+          # PR migration allowances belong to a different base. Release rows
+          # must match this exact stable baseline and still pass strict validation.
           allowance_policy="$RUNNER_TEMP/release-auth-coverage-allowances.json"
-          printf '{"version":1,"allowances":[]}\n' > "$allowance_policy"
+          printf '%s\n' "$RELEASE_ALLOWANCES_JSON" > "$allowance_policy"
         fi
         uv --project "$RUNNER_TEMP/auth-patch-head" run pytest -q \
           "$RUNNER_TEMP/auth-patch-head/tests/unit/test_audit_auth_patch_sites.py" \
