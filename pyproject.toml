@@ -145,6 +145,10 @@ replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/A
 pattern = '\]\(CONTRIBUTING\.md\)'
 replacement = '](https://github.com/teng-lin/notebooklm-py/blob/v$HFPR_VERSION/CONTRIBUTING.md)'
 
+[tool.hatch.build]
+# Keep repository-only assets out of both release distributions.
+exclude = ["/tests", "/examples", "/desktop-extension", "/deploy"]
+
 # Bakes the build commit into _commit.py (see hatch_build.py). Registered on both
 # targets so the commit survives `python -m build` (wheel is built from the sdist).
 [tool.hatch.build.targets.sdist.hooks.custom]
