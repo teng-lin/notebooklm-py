@@ -3519,12 +3519,21 @@
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._auth.refresh",
+      "target": "notebooklm.exceptions",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 22,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._auth.refresh",
       "target": "notebooklm.paths",
       "type_only": false
     },
     {
       "kind": "from",
-      "lineno": 972,
+      "lineno": 980,
       "scope": "_fetch_tokens_with_jar",
       "scope_kind": "function",
       "source": "notebooklm._auth.refresh",
@@ -3569,7 +3578,7 @@
     },
     {
       "kind": "from",
-      "lineno": 831,
+      "lineno": 832,
       "scope": "StoredAuthLoader._resolve_source",
       "scope_kind": "function",
       "source": "notebooklm._auth.tokens",
@@ -9176,6 +9185,15 @@
     },
     {
       "kind": "from",
+      "lineno": 43,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.cli.services.login.cookie_writes",
+      "target": "notebooklm.exceptions",
+      "type_only": false
+    },
+    {
+      "kind": "from",
       "lineno": 5,
       "scope": null,
       "scope_kind": "module",
@@ -9225,12 +9243,21 @@
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm.cli.services.login.refresh",
+      "target": "notebooklm.exceptions",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 44,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm.cli.services.login.refresh",
       "target": "notebooklm.paths",
       "type_only": false
     },
     {
       "kind": "from",
-      "lineno": 83,
+      "lineno": 84,
       "scope": "_list_profiles",
       "scope_kind": "function",
       "source": "notebooklm.cli.services.login.refresh",
@@ -9239,7 +9266,7 @@
     },
     {
       "kind": "from",
-      "lineno": 561,
+      "lineno": 562,
       "scope": "_sync_server_language_to_config._fetch",
       "scope_kind": "function",
       "source": "notebooklm.cli.services.login.refresh",
@@ -11777,11 +11804,11 @@
       "modules": 47
     },
     "auth": {
-      "lines": 13748,
+      "lines": 13762,
       "modules": 33
     },
     "cli": {
-      "lines": 22815,
+      "lines": 22817,
       "modules": 76
     },
     "mcp": {
@@ -11789,7 +11816,7 @@
       "modules": 42
     },
     "root": {
-      "lines": 27121,
+      "lines": 27125,
       "modules": 90
     },
     "rpc": {
@@ -11814,13 +11841,13 @@
     }
   },
   "summary": {
-    "authored_lines": 153540,
+    "authored_lines": 153560,
     "authored_modules": 492,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1296,
+    "cross_subsystem_edges": 1299,
     "dynamic_import_calls": 10,
     "function_local_edges": 92,
-    "module_level_edges": 1204,
+    "module_level_edges": 1207,
     "type_only_edges": 138
   },
   "version": 1
