@@ -24,6 +24,7 @@ from pytest_httpx import HTTPXMock
 from notebooklm._auth import cookies, refresh, tokens
 from notebooklm._env import get_base_url
 from notebooklm.cli.services.auth_source import AuthSource
+from notebooklm.exceptions import AuthError
 
 _ENV = "NOTEBOOKLM_AUTH_JSON"
 
@@ -203,7 +204,7 @@ async def test_refresh_cmd_does_not_run_or_touch_a_profile_under_env_auth(
         content=b"<html>Login</html>",
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(AuthError):
         await refresh.fetch_tokens_with_domains(None, "work")
 
     assert not marker.exists(), "the refresh command must not run for env-only auth"

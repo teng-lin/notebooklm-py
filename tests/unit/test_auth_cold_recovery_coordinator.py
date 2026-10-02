@@ -18,6 +18,7 @@ from notebooklm._auth.cookies import _clone_cookie_jar, _LoadedCookiePair
 from notebooklm._auth.extraction import _LoginRedirectError
 from notebooklm._auth.storage import CookieSnapshot
 from notebooklm._env import get_base_url
+from notebooklm.exceptions import AuthError
 
 _CALLBACK_FIELDS = (
     "_should_try_refresh",
@@ -564,7 +565,7 @@ async def test_original_error_traceback_projection_is_exact(
     monkeypatch.setenv("NOTEBOOKLM_DISABLE_KEEPALIVE_POKE", "1")
     _stub_login_redirect(httpx_mock)
 
-    with pytest.raises(_LoginRedirectError) as raised:
+    with pytest.raises(AuthError) as raised:
         if wrapper == "public":
             await refresh._fetch_tokens_with_refresh(httpx.Cookies())
         else:
@@ -581,8 +582,9 @@ async def test_original_error_traceback_projection_is_exact(
     outer = (
         "_fetch_tokens_with_refresh" if wrapper == "public" else "_fetch_tokens_with_exact_baseline"
     )
-    assert _trace_projection(raised.value) == [
-        outer,
+    assert _trace_projection(raised.value) == [outer, "_fetch_tokens_with_refresh_core"]
+    assert isinstance(raised.value.__cause__, _LoginRedirectError)
+    assert _trace_projection(raised.value.__cause__) == [
         "_fetch_tokens_with_refresh_core",
         "_cold_fallbacks",
         "_fetch_tokens_with_refresh_core",

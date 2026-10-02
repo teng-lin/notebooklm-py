@@ -18,6 +18,7 @@ import httpx
 
 from .._env import get_base_url
 from .._request_context import has_bound_policy, policy_child_environment, policy_env, policy_key
+from ..exceptions import AuthError
 from ..paths import get_storage_path, resolve_profile
 from . import cookies as _auth_cookies
 from . import extraction as _auth_extraction
@@ -813,18 +814,25 @@ async def _fetch_tokens_with_refresh_core(
         )
         return csrf, session_id, False, None, initial_baseline
     except ValueError as err:
-        return await _cold_fallbacks(
-            err,
-            cookie_jar,
-            storage_path,
-            profile,
-            env_auth=env_auth,
-            allow_headless=allow_headless,
-            resolve_route=resolve_route,
-            load_replacement=load_replacement,
-            baseline=initial_baseline,
-            deps=deps,
-        )
+        try:
+            return await _cold_fallbacks(
+                err,
+                cookie_jar,
+                storage_path,
+                profile,
+                env_auth=env_auth,
+                allow_headless=allow_headless,
+                resolve_route=resolve_route,
+                load_replacement=load_replacement,
+                baseline=initial_baseline,
+                deps=deps,
+            )
+        except _auth_extraction._LoginRedirectError as expired:
+            # Keep the private ValueError signal inside the recovery ladder;
+            # public callers and adapters must see a categorized auth failure.
+            auth_error = AuthError(str(expired))
+            auth_error.recoverable = True
+            raise auth_error from expired
 
 
 async def _cold_fallbacks(
@@ -1054,6 +1062,7 @@ async def fetch_tokens(
 
     Raises:
         httpx.HTTPError: If request fails
+        AuthError: If authentication is expired and recovery is exhausted
         ValueError: If tokens cannot be extracted from response
         RuntimeError: If ``NOTEBOOKLM_REFRESH_CMD`` is set but fails
     """
@@ -1094,7 +1103,11 @@ async def fetch_tokens_with_domains(
     account_email: str | None = None,
     allow_headless: bool = False,
 ) -> tuple[str, str]:
-    """Fetch tokens with domain-preserving cookies and persist their observation."""
+    """Fetch tokens with domain-preserving cookies and persist their observation.
+
+    Raises:
+        AuthError: If authentication is expired and recovery is exhausted.
+    """
     storage_path = _auth_cookies.resolve_auth_storage_path(path, profile)
     pair = await asyncio.to_thread(_auth_cookies._build_cookie_pair_from_storage, storage_path)
     live = pair.live

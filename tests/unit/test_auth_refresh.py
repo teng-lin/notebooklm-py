@@ -28,6 +28,7 @@ from notebooklm.auth import (
     fetch_tokens_passive,
     fetch_tokens_with_domains,
 )
+from notebooklm.exceptions import AuthError
 
 
 class TestFetchTokens:
@@ -88,7 +89,7 @@ class TestFetchTokens:
         )
 
         cookies = {"SID": "expired_sid", "__Secure-1PSIDTS": "test_1psidts"}
-        with pytest.raises(ValueError, match="Authentication expired"):
+        with pytest.raises(AuthError, match="Authentication expired"):
             await fetch_tokens(cookies)
 
     @pytest.mark.asyncio
@@ -234,7 +235,7 @@ class TestFetchTokens:
         )
 
         cookies = {"SID": "expired_sid", "__Secure-1PSIDTS": "test_1psidts"}
-        with pytest.raises(ValueError) as exc:
+        with pytest.raises(AuthError) as exc:
             await fetch_tokens(cookies)
 
         message = str(exc.value)
@@ -676,7 +677,7 @@ class TestFetchTokensAutoRefresh:
 
     @pytest.mark.asyncio
     async def test_no_refresh_when_env_unset(self, httpx_mock: HTTPXMock):
-        """Auth error propagates unchanged when NOTEBOOKLM_REFRESH_CMD is not set."""
+        """Expired auth is typed even when NOTEBOOKLM_REFRESH_CMD is not set."""
         httpx_mock.add_response(
             url="https://notebook.google.com/",
             status_code=302,
@@ -687,7 +688,7 @@ class TestFetchTokensAutoRefresh:
             content=b"<html>Login</html>",
         )
 
-        with pytest.raises(ValueError, match="Authentication expired"):
+        with pytest.raises(AuthError, match="Authentication expired"):
             await fetch_tokens({"SID": "stale", "__Secure-1PSIDTS": "test_1psidts"})
 
     @pytest.mark.asyncio
@@ -1029,7 +1030,7 @@ class TestFetchTokensAutoRefresh:
                 content=b"<html>Login</html>",
             )
 
-        with pytest.raises(ValueError, match="Authentication expired"):
+        with pytest.raises(AuthError, match="Authentication expired"):
             await fetch_tokens({"SID": "stale", "__Secure-1PSIDTS": "test_1psidts"})
         assert "_NOTEBOOKLM_REFRESH_ATTEMPTED" not in os.environ
 

@@ -477,6 +477,7 @@ class AuthTokens:
 
         Raises:
             FileNotFoundError: If storage file doesn't exist
+            AuthError: If authentication is expired and recovery is exhausted
             ValueError: If required cookies are missing or tokens can't be extracted
             httpx.HTTPError: If token fetch request fails
 

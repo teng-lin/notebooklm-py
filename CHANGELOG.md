@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Expired cold-start authentication (#2461).** Exhausted login-redirect
+  recovery raises `AuthError`, so Python callers can catch it, CLI commands
+  return `AUTH_ERROR` with exit 1, and MCP tools preserve the re-login hint.
+
 ## [0.8.4] - 2026-10-01
 
 ### Added

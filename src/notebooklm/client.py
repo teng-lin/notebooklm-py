@@ -789,6 +789,10 @@ class NotebookLMClient:
             ``NotebookLMClient`` instance. ``async with``-ing it (canonical
             path) yields a ``NotebookLMClient`` that is already connected.
 
+        Raises:
+            AuthError: On context entry, if authentication is expired and
+                cold-start recovery is exhausted.
+
         Example:
             # Canonical idiom — no `await` on `from_storage`.
             async with NotebookLMClient.from_storage() as client:
