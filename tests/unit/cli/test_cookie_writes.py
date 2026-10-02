@@ -12,10 +12,12 @@ import json
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 from notebooklm._auth.profile_store import ReplaceResult, ReplaceStatus
 from notebooklm.cli.services.login import cookie_writes
 from notebooklm.cli.services.login.outcomes import CookieValidationFailure
+from notebooklm.exceptions import AuthError
 from tests._fixtures.login_io import RecordingLoginIO, make_recording_io
 
 
@@ -219,9 +221,10 @@ class TestWriteExtractedCookies:
         assert out.code == "STORAGE_WRITE_FAILED"
         assert "lock unavailable" in out.message
 
-    def test_verification_value_error_warns(self, tmp_path):
+    @pytest.mark.parametrize("error_type", [ValueError, AuthError])
+    def test_verification_failure_warns(self, tmp_path, error_type):
         storage_path = tmp_path / "storage_state.json"
-        io = make_recording_io(run_async=MagicMock(side_effect=ValueError("bad token")))
+        io = make_recording_io(run_async=MagicMock(side_effect=error_type("bad token")))
         with (
             patch.object(
                 cookie_writes, "validate_with_recovery", return_value=(_ok_storage(), None)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -101,6 +102,7 @@ def test_cli_expired_auth_has_auth_code_and_user_error_exit(expired_auth: Path) 
     assert "Run 'notebooklm login'" in payload["message"]
 
 
+@pytest.mark.skipif(importlib.util.find_spec("fastmcp") is None, reason="requires MCP extra")
 async def test_mcp_expired_auth_preserves_login_hint(expired_auth: Path) -> None:
     fastmcp = pytest.importorskip("fastmcp")
     from fastmcp.exceptions import ToolError

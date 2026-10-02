@@ -40,6 +40,7 @@ from ....auth import (
     validate_with_recovery,
 )
 from ....client import NotebookLMClient
+from ....exceptions import AuthError
 from ....paths import get_storage_path
 from ...language_cmd import set_language
 from .browser_accounts import _enumerate_browser_accounts, _read_browser_cookies
@@ -502,7 +503,7 @@ def _login_with_browser_cookies(
         io.run_async(deps.fetch_tokens_with_domains(storage_path, profile))
         logger.info("Cookies verified successfully")
         _emit(io, "[green]Cookies verified successfully.[/green]")
-    except ValueError as e:
+    except (ValueError, AuthError) as e:
         # Cookie validation failed - the extracted cookies are invalid
         logger.error("Extracted cookies are invalid: %s", e)
         _emit(

@@ -40,6 +40,7 @@ from ....auth import (
     replace_profile_from_login,
     validate_with_recovery,
 )
+from ....exceptions import AuthError
 from .outcomes import (
     BrowserCookieOutcome,
     CookieValidationFailure,
@@ -284,7 +285,7 @@ def _write_extracted_cookies(
     # log a WARNING and return None.
     try:
         io.run_async(fetch_tokens_with_domains(storage_path, profile))
-    except ValueError as e:
+    except (ValueError, AuthError) as e:
         logger.warning("Extracted cookies for %s failed verification: %s", email, e)
         _emit_warning(io, f"    [yellow]Warning: cookies for {email} failed verification.[/yellow]")
     except httpx.RequestError as e:
