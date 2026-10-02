@@ -873,10 +873,14 @@ class TestGenerationRateLimitSkip:
         artifacts = SimpleNamespace(**dict.fromkeys(conftest._JOURNALED_STUDIO_METHODS, harmless))
         client = ClientStub(artifacts=artifacts)
 
-        async def ambiguous(notebook_id):
+        async def generate_audio(notebook_id):
+            return await artifacts._send_create_artifact(SimpleNamespace(notebook_id=notebook_id))
+
+        async def ambiguous(request):
             raise RuntimeError("rate limit 429 in arbitrary text")
 
-        artifacts.generate_audio = ambiguous
+        artifacts.generate_audio = generate_audio
+        artifacts._send_create_artifact = ambiguous
         conftest._install_generation_journal(client, Journal())
         with pytest.raises(RuntimeError, match="arbitrary"):
             await artifacts.generate_audio("generation-role")
@@ -884,10 +888,10 @@ class TestGenerationRateLimitSkip:
 
         recorded.clear()
 
-        async def typed(notebook_id):
+        async def typed(request):
             raise RateLimitError("quota")
 
-        artifacts.generate_audio = typed
+        artifacts._send_create_artifact = typed
         conftest._install_generation_journal(client, Journal())
         with pytest.raises(RateLimitError):
             await artifacts.generate_audio("generation-role")
@@ -922,6 +926,9 @@ class TestGenerationRateLimitSkip:
         client = ClientStub(artifacts=artifacts)
 
         async def generate_report(notebook_id):
+            return await artifacts._send_create_artifact(SimpleNamespace(notebook_id=notebook_id))
+
+        async def send(request):
             return SimpleNamespace(task_id="shared-task-id", is_rate_limited=False)
 
         async def generate_study_guide(notebook_id):
@@ -929,6 +936,7 @@ class TestGenerationRateLimitSkip:
 
         artifacts.generate_report = generate_report
         artifacts.generate_study_guide = generate_study_guide
+        artifacts._send_create_artifact = send
         conftest._install_generation_journal(client, Journal())
 
         result = await artifacts.generate_study_guide("generation-role")

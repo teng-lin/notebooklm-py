@@ -8,7 +8,12 @@ import httpx
 
 from ..._auth.account import authuser_query
 from ..._auth.cookie_types import CookieJar
-from ..._auth.extraction import extract_wiz_field
+from ..._auth.extraction import (
+    _LoginRedirectError,
+    _safe_url,
+    _url_only_extraction_failure,
+    extract_wiz_field,
+)
 from ..._auth.recovery import (
     try_headless_reauth,
     try_master_token_reauth,
@@ -18,7 +23,7 @@ from ..._auth.refresh import try_refresh_cmd_reauth
 from ..._auth.tokens import AuthTokens
 from ..._env import get_base_url
 from ..._request_policy import RequestPolicyOwner, request_scoped
-from ..._url_utils import is_google_auth_redirect
+from ..._url_utils import is_notebooklm_app_host
 from ...exceptions import AuthExtractionError
 from ...paths import profile_from_storage_path
 from .auth import AuthRefreshCoordinator
@@ -61,8 +66,12 @@ class WebSessionAuth(RequestPolicyOwner):
         return self._auth_coord, self._web_transport
 
     async def refresh_base(self, expected_epoch: int) -> AuthTokens:
-        """Coordinator callback for the base (non-headless) refresh policy."""
-        return await self._refresh(allow_headless=False, expected_epoch=expected_epoch)
+        """Coordinator recovery callback, also joined by explicit headless recovery."""
+        return await self._refresh(
+            allow_headless=False,
+            expected_epoch=expected_epoch,
+            recover_missing_tokens=True,
+        )
 
     async def refresh(
         self,
@@ -76,11 +85,16 @@ class WebSessionAuth(RequestPolicyOwner):
             return await self._refresh(
                 allow_headless=allow_headless,
                 expected_epoch=expected_epoch,
+                recover_missing_tokens=allow_headless,
             )
         try:
             await auth_coord.await_refresh(expected_epoch)
         except ValueError:
-            return await self._refresh(allow_headless=True, expected_epoch=expected_epoch)
+            return await self._refresh(
+                allow_headless=True,
+                expected_epoch=expected_epoch,
+                recover_missing_tokens=True,
+            )
         return self._auth
 
     @request_scoped
@@ -89,6 +103,7 @@ class WebSessionAuth(RequestPolicyOwner):
         *,
         allow_headless: bool,
         expected_epoch: int,
+        recover_missing_tokens: bool = False,
     ) -> AuthTokens:
         auth_coord, web_transport = self._bound()
         return await refresh_auth_session(
@@ -99,6 +114,7 @@ class WebSessionAuth(RequestPolicyOwner):
             cookie_persistence=self._cookie_persistence,
             allow_headless=allow_headless,
             expected_epoch=expected_epoch,
+            recover_missing_tokens=recover_missing_tokens,
         )
 
 
@@ -111,6 +127,7 @@ async def refresh_auth_session(
     cookie_persistence: CookiePersistence,
     allow_headless: bool = False,
     expected_epoch: int,
+    recover_missing_tokens: bool = False,
 ) -> AuthTokens:
     """Refresh NotebookLM auth tokens through the raw homepage session path.
 
@@ -147,14 +164,23 @@ async def refresh_auth_session(
     RPCs trigger at most ONE refresh — and therefore at most one browser. The
     explicit ``client.refresh_auth(allow_headless=True)`` entry passes
     ``allow_headless`` straight through.
+
+    ``recover_missing_tokens`` is enabled by the default coordinator callback
+    after a confirmed RPC auth failure, or an explicit headless-recovery opt-in.
+    It permits the same bounded recovery ladder for an app-host response missing
+    CSRF/session tokens. Recovery requires nonempty tokens; an ordinary explicit
+    refresh preserves the existing extraction contract and reports missing
+    fields directly.
+    URL-classified access gates and cookie mismatches never enter recovery.
     """
     auth_coord.assert_epoch(expected_epoch)
     http_client = kernel.get_http_client(expected_epoch=expected_epoch)
     rejected_cookie_jar: CookieJar | None = None
+    extraction_failure: tuple[ValueError, AuthExtractionError] | None = None
 
     async def _get_and_extract() -> tuple[str, str] | None:
-        """GET the homepage + extract tokens; ``None`` signals a dead-cookie 302."""
-        nonlocal rejected_cookie_jar
+        """GET tokens; ``None`` signals a recoverable rejected session."""
+        nonlocal rejected_cookie_jar, extraction_failure
         auth_coord.assert_epoch(expected_epoch)
         kernel.assert_epoch(expected_epoch)
         url = f"{get_base_url()}/"
@@ -165,20 +191,44 @@ async def refresh_auth_session(
         auth_coord.assert_epoch(expected_epoch)
         kernel.assert_epoch(expected_epoch)
         response.raise_for_status()
-        if is_google_auth_redirect(str(response.url)):
-            rejected_cookie_jar = request_cookie_jar
-            return None
+        final_url = str(response.url)
+        url_failure = _url_only_extraction_failure(
+            final_url, tuple(str(hop.url) for hop in response.history)
+        )
+        if url_failure is not None:
+            if isinstance(url_failure, _LoginRedirectError):
+                rejected_cookie_jar = request_cookie_jar
+                return None
+            raise url_failure
+        if not is_notebooklm_app_host(final_url):
+            raise ValueError(
+                f"NotebookLM auth refresh reached a non-app page: {_safe_url(final_url)}"
+            )
         rejected_cookie_jar = None
         try:
             csrf_value = extract_wiz_field(response.text, "SNlM0e", strict=True)
             sid_value = extract_wiz_field(response.text, "FdrFJe", strict=True)
+            if recover_missing_tokens and not csrf_value:
+                raise AuthExtractionError("SNlM0e", response.text)
+            if recover_missing_tokens and not sid_value:
+                raise AuthExtractionError("FdrFJe", response.text)
         except AuthExtractionError as exc:
             label = {"SNlM0e": "CSRF token", "FdrFJe": "session ID"}.get(exc.key, exc.key)
-            raise ValueError(
+            failure = ValueError(
                 f"Failed to extract {label} ({exc.key}). "
                 "Page structure may have changed or authentication expired. "
                 f"Preview: {exc.payload_preview!r}"
-            ) from exc
+            )
+            if not recover_missing_tokens:
+                raise failure from exc
+            # RPC auth rejection or explicit recovery opt-in permits a retry when
+            # Google serves a tokenless app shell without a login redirect.
+            # Retain the request's jar, not response Set-Cookie mutations, so
+            # reload can recognize an untried live or persisted candidate.
+            rejected_cookie_jar = request_cookie_jar
+            if extraction_failure is None:
+                extraction_failure = failure, exc
+            return None
         return csrf_value or "", sid_value or ""
 
     extracted = await _get_and_extract()
@@ -246,6 +296,9 @@ async def refresh_auth_session(
         ):
             extracted = await _get_and_extract()
         if extracted is None:
+            if extraction_failure is not None:
+                failure, cause = extraction_failure
+                raise failure from cause
             raise ValueError("Authentication expired. Run 'notebooklm login' to re-authenticate.")
     csrf, sid = extracted
 

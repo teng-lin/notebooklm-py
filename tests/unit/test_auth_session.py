@@ -11,6 +11,7 @@ import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -25,6 +26,7 @@ from notebooklm._web.transport.auth import AuthRefreshCoordinator
 from notebooklm._web.transport.session_auth import refresh_auth_session
 from notebooklm.auth import AuthTokens
 from notebooklm.client import NotebookLMClient
+from notebooklm.exceptions import AuthExtractionError
 from tests._fixtures.kernel_test_helpers import install_http_client_for_test
 from tests._helpers.client_factory import build_client_shell_for_tests
 
@@ -213,7 +215,7 @@ def _client(handler: httpx.MockTransport | httpx.AsyncBaseTransport) -> httpx.As
     return httpx.AsyncClient(transport=handler, follow_redirects=True)
 
 
-def _invoke(bundle: RecordingRefreshBundle):
+def _invoke(bundle: RecordingRefreshBundle, *, recover_missing_tokens: bool = False):
     """Forward a :class:`RecordingRefreshBundle` into the new
     :func:`refresh_auth_session` kwarg shape.
 
@@ -230,6 +232,7 @@ def _invoke(bundle: RecordingRefreshBundle):
         web_transport=bundle.web_transport,  # type: ignore[arg-type]
         cookie_persistence=bundle.cookie_persistence,
         expected_epoch=TEST_EPOCH,
+        recover_missing_tokens=recover_missing_tokens,
     )
 
 
@@ -392,9 +395,15 @@ async def test_refresh_auth_session_detects_login_redirect() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rejected_html",
+    [None, "<html>Signed out</html>", '"SNlM0e":"csrf_only"', '"SNlM0e":"" "FdrFJe":"sid"'],
+    ids=["login-redirect", "missing-csrf", "missing-session-id", "empty-csrf"],
+)
 async def test_refresh_auth_session_reloads_fresh_profile_after_rejection(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    rejected_html: str | None,
 ) -> None:
     """A stale long-lived jar heals from a sibling process's persisted cookies."""
     storage = tmp_path / "storage_state.json"
@@ -441,6 +450,8 @@ async def test_refresh_auth_session_reloads_fresh_profile_after_rejection(
             requests.append(cookie)
             if "SID=fresh-sid" in cookie and "__Secure-1PSIDTS=fresh-ts" in cookie:
                 return httpx.Response(200, text=REFRESH_HTML, request=request)
+            if rejected_html is not None:
+                return httpx.Response(200, text=rejected_html, request=request)
             return httpx.Response(
                 302,
                 headers={"Location": "https://accounts.google.com/signin/v2/identifier"},
@@ -458,7 +469,7 @@ async def test_refresh_auth_session_reloads_fresh_profile_after_rejection(
         follow_redirects=True,
     ) as http_client:
         bundle = RecordingRefreshBundle(auth, http_client)
-        result = await _invoke(bundle)
+        result = await _invoke(bundle, recover_missing_tokens=rejected_html is not None)
 
     assert result is auth
     assert len(requests) == 2
@@ -1634,6 +1645,160 @@ async def test_refresh_auth_session_missing_session_id_wraps_extraction_error() 
     assert "Preview:" in message
     assert "\n" not in message
     assert bundle.operations == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_key", ["SNlM0e", "FdrFJe"])
+@pytest.mark.parametrize("recovered", [False, True])
+async def test_missing_tokens_after_auth_rejection_try_master_token_once(
+    monkeypatch: pytest.MonkeyPatch, missing_key: str, recovered: bool
+) -> None:
+    """Tokenless app shells can reach L4, retaining diagnostics on failure."""
+    html = '"FdrFJe":"sid"' if missing_key == "SNlM0e" else '"SNlM0e":"csrf"'
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        body = REFRESH_HTML if recovered and len(requests) > 1 else html
+        return httpx.Response(200, text=body, request=request)
+
+    reload = AsyncMock(return_value=False)
+    refresh_cmd = AsyncMock(return_value=False)
+    headless = AsyncMock(return_value=False)
+    master_token = AsyncMock(return_value=True)
+    monkeypatch.setattr(session_module, "_try_storage_cookie_reload", reload)
+    monkeypatch.setattr(session_module, "_try_refresh_cmd_reauth", refresh_cmd)
+    monkeypatch.setattr(session_module, "_try_headless_reauth", headless)
+    monkeypatch.setattr(session_module, "_try_master_token_reauth", master_token)
+    async with _client(httpx.MockTransport(handler)) as http_client:
+        http_client.cookies.update(_auth().cookie_jar)
+        rejected = CookieJar.from_httpx(http_client.cookies)
+        bundle = RecordingRefreshBundle(
+            _auth(authuser=1, account_email="selected@example.com"), http_client
+        )
+        if recovered:
+            assert await _invoke(bundle, recover_missing_tokens=True) is bundle.auth
+            assert bundle.auth.csrf_token == "new_csrf_token_123"
+            assert bundle.auth.session_id == "new_session_id_456"
+        else:
+            with pytest.raises(ValueError, match=f"Failed to extract.*{missing_key}") as error:
+                await _invoke(bundle, recover_missing_tokens=True)
+            assert isinstance(error.value.__cause__, AuthExtractionError)
+            assert error.value.__cause__.key == missing_key
+            assert "Preview:" in str(error.value)
+            assert (bundle.auth.csrf_token, bundle.auth.session_id) == ("old_csrf", "old_session")
+            assert bundle.operations == []
+
+    assert len(requests) == 2
+    assert all(request.url.params["authuser"] == "selected@example.com" for request in requests)
+    reload.assert_awaited_once()
+    assert reload.await_args.kwargs["rejected_cookie_jar"] == rejected
+    refresh_cmd.assert_awaited_once()
+    headless.assert_awaited_once()
+    master_token.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("target", "expected_message"),
+    [
+        ("https://notebooklm.google/?location=unsupported", "access gate"),
+        ("https://support.google.com/answer/123", "non-app page"),
+        ("https://accounts.google.com/CookieMismatch", "CookieMismatch"),
+    ],
+)
+@pytest.mark.parametrize("html", ["<html>Signed out</html>", REFRESH_HTML])
+async def test_auth_rejection_does_not_recover_from_non_app_pages(
+    monkeypatch: pytest.MonkeyPatch, target: str, expected_message: str, html: str
+) -> None:
+    """Gate/mismatch diagnostics win over earlier RPC auth failure and page tokens."""
+    recovery = AsyncMock(return_value=True)
+    for name in (
+        "_try_storage_cookie_reload",
+        "_try_refresh_cmd_reauth",
+        "_try_headless_reauth",
+        "_try_master_token_reauth",
+    ):
+        monkeypatch.setattr(session_module, name, recovery)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == get_base_host():
+            return httpx.Response(302, headers={"Location": target}, request=request)
+        return httpx.Response(200, text=html, request=request)
+
+    async with _client(httpx.MockTransport(handler)) as http_client:
+        bundle = RecordingRefreshBundle(_auth(), http_client)
+        with pytest.raises(ValueError, match=expected_message):
+            await _invoke(bundle, recover_missing_tokens=True)
+
+    recovery.assert_not_awaited()
+    assert (bundle.auth.csrf_token, bundle.auth.session_id) == ("old_csrf", "old_session")
+    assert bundle.operations == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("empty_key", ["SNlM0e", "FdrFJe"])
+@pytest.mark.parametrize("recover_missing_tokens", [False, True])
+async def test_refresh_empty_tokens_preserve_explicit_refresh_contract(
+    empty_key: str, recover_missing_tokens: bool
+) -> None:
+    html = REFRESH_HTML.replace(
+        "new_csrf_token_123" if empty_key == "SNlM0e" else "new_session_id_456", ""
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=html, request=request)
+
+    async with _client(httpx.MockTransport(handler)) as http_client:
+        bundle = RecordingRefreshBundle(_auth(), http_client)
+        if recover_missing_tokens:
+            with pytest.raises(ValueError, match=f"Failed to extract.*{empty_key}"):
+                await _invoke(bundle, recover_missing_tokens=True)
+        else:
+            assert await _invoke(bundle) is bundle.auth
+
+    if recover_missing_tokens:
+        assert (bundle.auth.csrf_token, bundle.auth.session_id) == ("old_csrf", "old_session")
+        assert bundle.operations == []
+    else:
+        assert (bundle.auth.csrf_token, bundle.auth.session_id) == (
+            "" if empty_key == "SNlM0e" else "new_csrf_token_123",
+            "" if empty_key == "FdrFJe" else "new_session_id_456",
+        )
+        assert bundle.operations == ["update_auth_tokens", "update_auth_headers", "save_cookies"]
+
+
+@pytest.mark.asyncio
+async def test_missing_tokens_retry_response_cookie_rotation_before_external_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tokenless response's cookie update remains an untried local candidate."""
+    requests: list[httpx.Request] = []
+    external_recovery = AsyncMock(return_value=False)
+    for name in ("_try_refresh_cmd_reauth", "_try_headless_reauth", "_try_master_token_reauth"):
+        monkeypatch.setattr(session_module, name, external_recovery)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if "SID=fresh-sid" in request.headers.get("cookie", ""):
+            return httpx.Response(200, text=REFRESH_HTML, request=request)
+        return httpx.Response(
+            200,
+            text="<html>Signed out app shell</html>",
+            headers={"Set-Cookie": "SID=fresh-sid; Domain=.google.com; Path=/"},
+            request=request,
+        )
+
+    async with _client(httpx.MockTransport(handler)) as http_client:
+        http_client.cookies.update(_auth().cookie_jar)
+        bundle = RecordingRefreshBundle(_auth(), http_client)
+        assert await _invoke(bundle, recover_missing_tokens=True) is bundle.auth
+
+    assert len(requests) == 2
+    assert "SID=test_sid" in requests[0].headers["cookie"]
+    assert "SID=fresh-sid" in requests[1].headers["cookie"]
+    assert bundle.auth.csrf_token == "new_csrf_token_123"
+    external_recovery.assert_not_awaited()
 
 
 @pytest.mark.asyncio

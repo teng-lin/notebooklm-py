@@ -233,13 +233,47 @@ _JOURNALED_STUDIO_METHODS = {
 
 
 def _install_generation_journal(client: NotebookLMClient, journal) -> None:
-    """Journal direct Studio calls that target the managed generation role."""
+    """Journal managed Studio calls when they reach the backend creation boundary."""
     managed_id = getattr(journal, "notebook_id", None)
     if managed_id is None:
         return
-    journal_call_active: ContextVar[bool] = ContextVar(
-        "notebooklm_e2e_generation_journal_call_active", default=False
+    journal_call: ContextVar[tuple[asyncio.Task[Any] | None, str, str] | None] = ContextVar(
+        "notebooklm_e2e_generation_journal_call", default=None
     )
+    original_send = client.artifacts._send_create_artifact
+
+    async def _send_with_journal(request):
+        call = journal_call.get()
+        if (
+            call is None
+            or call[0] is not asyncio.current_task()
+            or request.notebook_id != managed_id
+        ):
+            return await original_send(request)
+        _, family, surface = call
+        # Source discovery and request validation run before this seam. Starting
+        # here prevents their failures from looking like interrupted creates;
+        # every failure after entry still retains conservative commit uncertainty.
+        operation = journal.operation(
+            notebook_id=request.notebook_id,
+            family=family,
+            surface=surface,
+            id_kind="studio_task",
+            lifecycle="settle",
+        )
+        try:
+            result = await original_send(request)
+        except BaseException as exc:
+            if _typed_rate_limit_cause(exc) is not None:
+                operation.quota_response_unconfirmed()
+            raise
+        if result is not None and getattr(result, "task_id", None):
+            operation.accepted(result.task_id)
+        elif result is not None and bool(getattr(result, "is_rate_limited", False)):
+            operation.quota_response_unconfirmed()
+        return result
+
+    client.artifacts._send_create_artifact = _send_with_journal
 
     for method_name, family in _JOURNALED_STUDIO_METHODS.items():
         original = getattr(client.artifacts, method_name)
@@ -248,30 +282,14 @@ def _install_generation_journal(client: NotebookLMClient, journal) -> None:
             notebook_id = args[0] if args else kwargs.get("notebook_id")
             if notebook_id != managed_id:
                 return await __original(*args, **kwargs)
-            if journal_call_active.get():
+            call = journal_call.get()
+            if call is not None and call[0] is asyncio.current_task():
                 return await __original(*args, **kwargs)
-            operation = journal.operation(
-                notebook_id=notebook_id,
-                family=__family,
-                surface=journal.surface,
-                id_kind="studio_task",
-                lifecycle="settle",
-            )
-            journal_token = journal_call_active.set(True)
+            journal_token = journal_call.set((asyncio.current_task(), __family, journal.surface))
             try:
-                try:
-                    result = await __original(*args, **kwargs)
-                except BaseException as exc:
-                    if _typed_rate_limit_cause(exc) is not None:
-                        operation.quota_response_unconfirmed()
-                    raise
-                if result is not None and getattr(result, "task_id", None):
-                    operation.accepted(result.task_id)
-                elif result is not None and bool(getattr(result, "is_rate_limited", False)):
-                    operation.quota_response_unconfirmed()
-                return result
+                return await __original(*args, **kwargs)
             finally:
-                journal_call_active.reset(journal_token)
+                journal_call.reset(journal_token)
 
         setattr(client.artifacts, method_name, _journaled)
 
