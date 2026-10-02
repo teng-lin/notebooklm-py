@@ -26,6 +26,8 @@ from .web import COOKIE_NAME, OLD_COOKIE, list_response, rpc_response
 
 _REDIRECT_HTTP_TIMEOUT = 3.0
 _REDIRECT_OPERATION_TIMEOUT = 8.0
+_UPLOAD_HTTP_TIMEOUT = 3.0
+_UPLOAD_STALL_HTTP_TIMEOUT = 0.3
 
 NOTEBOOK = "00000000-0000-4000-8000-000000000200"
 SOURCE = "00000000-0000-4000-8000-000000000201"
@@ -225,6 +227,10 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
     def transfer_factory(**kwargs: Any) -> Any:
         nonlocal clients_created
         clients_created += 1
+        if variant == "body_stall" and clients_created == 4:
+            # Only the second upload's held finalize tests inactivity expiry.
+            # Its baseline and session start need room for CI scheduling delays.
+            kwargs["timeout"] = httpx.Timeout(_UPLOAD_STALL_HTTP_TIMEOUT)
         client = server.client_factory(**kwargs)
         if variant == "cancel_before_dispatch" and clients_created == 4:
             return _GatedEnterClient(client, entered, entered_release)
@@ -235,7 +241,7 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
         async with _cohort(
             result,
             server,
-            transfer_timeout=0.3,
+            transfer_timeout=_UPLOAD_HTTP_TIMEOUT,
             record_sleep=False,
             transfer_client_factory=transfer_factory,
         ) as client:
@@ -268,6 +274,7 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
                 uploaded = await task
             except BaseException as exc:
                 error = exc
+            result.record("outcome", error=None if error is None else type(error).__name__)
             if variant == "success":
                 result.require("uploaded_identity", error is None and uploaded.id == SOURCE)
             elif variant in {
@@ -301,7 +308,6 @@ async def upload_case(result: ScenarioResult, variant: str) -> None:
                     getattr(error, "stage", None)
                     == ("start_session" if variant.startswith("start_") else "upload_finalize"),
                 )
-            result.record("outcome", error=None if error is None else type(error).__name__)
             uploader = client._web_runtime.source_uploader
             result.require("upload_children_settled", not uploader._transport_tasks)
             result.require("upload_clients_settled", not uploader._transport_clients)
