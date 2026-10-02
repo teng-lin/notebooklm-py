@@ -118,12 +118,13 @@ def test_scope_duplicate_self_and_scc_rules(audit, tmp_path):
 
 
 def test_live_projection_is_the_frozen_scorecard(audit):
+    """The live auth inventory matches its reviewed size and import graph."""
     result = audit.build_projection()
     assert result["summary"] == {
         "modules": 33,
-        "total_lines": 13762,
-        "unique_edges": 124,
-        "module_edges": 112,
+        "total_lines": 13767,
+        "unique_edges": 125,
+        "module_edges": 113,
         "function_local_edges": 12,
     }
     assert result["sccs"] == {
@@ -275,6 +276,7 @@ def test_live_projection_is_the_frozen_scorecard(audit):
         ("tokens", "account", "module"),
         ("tokens", "cookie_types", "module"),
         ("tokens", "cookies", "module"),
+        ("tokens", "extraction", "module"),
         ("tokens", "paths", "module"),
         ("tokens", "profile_account", "module"),
         ("tokens", "profile_document", "module"),

@@ -583,6 +583,11 @@
     {
       "scope": "module",
       "source": "tokens",
+      "target": "extraction"
+    },
+    {
+      "scope": "module",
+      "source": "tokens",
       "target": "paths"
     },
     {
@@ -688,7 +693,7 @@
       "path": "src/notebooklm/_auth/credential_io.py"
     },
     {
-      "lines": 455,
+      "lines": 471,
       "name": "extraction",
       "path": "src/notebooklm/_auth/extraction.py"
     },
@@ -763,7 +768,7 @@
       "path": "src/notebooklm/_auth/recovery_rungs.py"
     },
     {
-      "lines": 1195,
+      "lines": 1182,
       "name": "refresh",
       "path": "src/notebooklm/_auth/refresh.py"
     },
@@ -783,7 +788,7 @@
       "path": "src/notebooklm/_auth/storage_lock.py"
     },
     {
-      "lines": 953,
+      "lines": 955,
       "name": "tokens",
       "path": "src/notebooklm/_auth/tokens.py"
     }
@@ -794,10 +799,10 @@
   },
   "summary": {
     "function_local_edges": 12,
-    "module_edges": 112,
+    "module_edges": 113,
     "modules": 33,
-    "total_lines": 13762,
-    "unique_edges": 124
+    "total_lines": 13767,
+    "unique_edges": 125
   },
   "version": 1
 }

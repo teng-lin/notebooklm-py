@@ -790,7 +790,8 @@ class NotebookLMClient:
             path) yields a ``NotebookLMClient`` that is already connected.
 
         Raises:
-            AuthError: On context entry, if authentication is expired and
+            AuthError: While loading auth via context entry or the legacy
+                await form, if authentication is expired and available
                 cold-start recovery is exhausted.
 
         Example:

@@ -32,7 +32,8 @@ Private helpers (also re-exported as white-box affordances for tests):
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 from .._env import get_base_host
@@ -43,7 +44,7 @@ from .._url_utils import (
     is_notebooklm_unavailable_redirect,
     notebooklm_unavailable_location,
 )
-from ..exceptions import AuthExtractionError
+from ..exceptions import AuthError, AuthExtractionError
 
 
 def _build_wiz_field_patterns(key: str) -> list[re.Pattern[str]]:
@@ -289,6 +290,21 @@ def _token_not_found_message(what: str, final_url: str) -> str:
 
 class _LoginRedirectError(ValueError):
     """Private typed signal for a confirmed Google login redirect."""
+
+
+@contextmanager
+def _auth_error_boundary() -> Iterator[None]:
+    """Translate unrecovered login redirects at a public token-loading boundary.
+
+    Keep the private ValueError signal inside extraction and recovery; only
+    wrap the final acquisition attempt or the exhausted recovery ladder.
+    """
+    try:
+        yield
+    except _LoginRedirectError as expired:
+        auth_error = AuthError(str(expired))
+        auth_error.recoverable = True
+        raise auth_error from expired
 
 
 def _url_only_extraction_failure(final_url: str, redirect_urls: Sequence[str]) -> ValueError | None:

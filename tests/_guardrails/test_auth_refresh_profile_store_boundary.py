@@ -23,9 +23,9 @@ REFRESH_PATH = REPO_ROOT / "src" / "notebooklm" / "_auth" / "refresh.py"
 _HELPER = "_merge_domain_fetch_observation"
 _FETCH = "fetch_tokens_with_domains"
 _MERGE = "merge_cookie_observation"
-_MODULE_HASH = "124419035d5b130e611bdddb6e26ae0878dee209994f5a695bea9da0a74f30aa"
+_MODULE_HASH = "23708278c6bcb77f1bdd62976a0091da67d5efa8371cd0bf23afb997b2c89561"
 _HELPER_HASH = "96fa4345674a291eee8906a51d5511438bb822b0c75785dc7ec52e5ffd82cc0c"
-_FETCH_HASH = "3b71b5ec2b38e22c2ec2264ee4f5b3f921833d2338a32a82bdd0c23083575974"
+_FETCH_HASH = "771347babf356ed424a380e949fc76f809af3cb034d9087517a5f3a14453d573"
 
 
 def _tree(source: str | None = None) -> ast.Module:
