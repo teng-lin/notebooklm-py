@@ -168,9 +168,10 @@ async def refresh_auth_session(
     ``recover_missing_tokens`` is enabled by the default coordinator callback
     after a confirmed RPC auth failure, or an explicit headless-recovery opt-in.
     It permits the same bounded recovery ladder for an app-host response missing
-    CSRF/session tokens. Recovery requires nonempty tokens; an ordinary explicit
-    refresh preserves the existing extraction contract and reports missing
-    fields directly.
+    CSRF/session tokens. Recovery requires a nonempty CSRF token and a present
+    session ID, preserving the existing acceptance of an empty session ID.
+    An ordinary explicit refresh preserves the existing extraction contract
+    and reports missing fields directly.
     URL-classified access gates and cookie mismatches never enter recovery.
     """
     auth_coord.assert_epoch(expected_epoch)
@@ -210,8 +211,6 @@ async def refresh_auth_session(
             sid_value = extract_wiz_field(response.text, "FdrFJe", strict=True)
             if recover_missing_tokens and not csrf_value:
                 raise AuthExtractionError("SNlM0e", response.text)
-            if recover_missing_tokens and not sid_value:
-                raise AuthExtractionError("FdrFJe", response.text)
         except AuthExtractionError as exc:
             label = {"SNlM0e": "CSRF token", "FdrFJe": "session ID"}.get(exc.key, exc.key)
             failure = ValueError(

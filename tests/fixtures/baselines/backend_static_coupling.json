@@ -7898,7 +7898,7 @@
     },
     {
       "kind": "from",
-      "lineno": 12,
+      "lineno": 17,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -7907,7 +7907,7 @@
     },
     {
       "kind": "from",
-      "lineno": 17,
+      "lineno": 22,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -7916,7 +7916,7 @@
     },
     {
       "kind": "from",
-      "lineno": 18,
+      "lineno": 23,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -7925,7 +7925,7 @@
     },
     {
       "kind": "from",
-      "lineno": 19,
+      "lineno": 24,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -7934,7 +7934,7 @@
     },
     {
       "kind": "from",
-      "lineno": 20,
+      "lineno": 25,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -7943,7 +7943,7 @@
     },
     {
       "kind": "from",
-      "lineno": 21,
+      "lineno": 26,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -7952,7 +7952,7 @@
     },
     {
       "kind": "from",
-      "lineno": 22,
+      "lineno": 27,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -7961,7 +7961,7 @@
     },
     {
       "kind": "from",
-      "lineno": 23,
+      "lineno": 28,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.transport.session_auth",
@@ -11827,12 +11827,12 @@
       "modules": 18
     },
     "web": {
-      "lines": 33724,
+      "lines": 33776,
       "modules": 97
     }
   },
   "summary": {
-    "authored_lines": 153566,
+    "authored_lines": 153618,
     "authored_modules": 492,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1298,

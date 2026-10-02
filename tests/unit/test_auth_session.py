@@ -1739,33 +1739,90 @@ async def test_auth_rejection_does_not_recover_from_non_app_pages(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("empty_key", ["SNlM0e", "FdrFJe"])
 @pytest.mark.parametrize("recover_missing_tokens", [False, True])
-async def test_refresh_empty_tokens_preserve_explicit_refresh_contract(
-    empty_key: str, recover_missing_tokens: bool
+async def test_refresh_empty_tokens_preserve_extraction_contract(
+    monkeypatch: pytest.MonkeyPatch, empty_key: str, recover_missing_tokens: bool
 ) -> None:
+    recovery = AsyncMock(return_value=False)
+    for name in (
+        "_try_storage_cookie_reload",
+        "_try_refresh_cmd_reauth",
+        "_try_headless_reauth",
+        "_try_master_token_reauth",
+    ):
+        monkeypatch.setattr(session_module, name, recovery)
     html = REFRESH_HTML.replace(
         "new_csrf_token_123" if empty_key == "SNlM0e" else "new_session_id_456", ""
     )
+    rejected_empty_csrf = recover_missing_tokens and empty_key == "SNlM0e"
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=html, request=request)
 
     async with _client(httpx.MockTransport(handler)) as http_client:
         bundle = RecordingRefreshBundle(_auth(), http_client)
-        if recover_missing_tokens:
+        if rejected_empty_csrf:
             with pytest.raises(ValueError, match=f"Failed to extract.*{empty_key}"):
                 await _invoke(bundle, recover_missing_tokens=True)
         else:
-            assert await _invoke(bundle) is bundle.auth
+            assert (
+                await _invoke(bundle, recover_missing_tokens=recover_missing_tokens) is bundle.auth
+            )
 
-    if recover_missing_tokens:
+    if rejected_empty_csrf:
         assert (bundle.auth.csrf_token, bundle.auth.session_id) == ("old_csrf", "old_session")
         assert bundle.operations == []
     else:
+        recovery.assert_not_awaited()
         assert (bundle.auth.csrf_token, bundle.auth.session_id) == (
             "" if empty_key == "SNlM0e" else "new_csrf_token_123",
             "" if empty_key == "FdrFJe" else "new_session_id_456",
         )
         assert bundle.operations == ["update_auth_tokens", "update_auth_headers", "save_cookies"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_accepts_authenticated_app_after_accounts_cookie_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An intermediate Google accounts hop is not a final login rejection."""
+    recovery = AsyncMock(return_value=False)
+    for name in (
+        "_try_storage_cookie_reload",
+        "_try_refresh_cmd_reauth",
+        "_try_headless_reauth",
+        "_try_master_token_reauth",
+    ):
+        monkeypatch.setattr(session_module, name, recovery)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.host == "accounts.google.com":
+            return httpx.Response(
+                302,
+                headers={"Location": "https://notebook.google.com/?checked=1"},
+                request=request,
+            )
+        if request.url.params.get("checked") == "1":
+            return httpx.Response(200, text=REFRESH_HTML, request=request)
+        return httpx.Response(
+            302, headers={"Location": "https://accounts.google.com/CheckCookie"}, request=request
+        )
+
+    async with _client(httpx.MockTransport(handler)) as http_client:
+        bundle = RecordingRefreshBundle(_auth(), http_client)
+        assert await _invoke(bundle, recover_missing_tokens=True) is bundle.auth
+
+    assert [request.url.host for request in requests] == [
+        "notebook.google.com",
+        "accounts.google.com",
+        "notebook.google.com",
+    ]
+    recovery.assert_not_awaited()
+    assert (bundle.auth.csrf_token, bundle.auth.session_id) == (
+        "new_csrf_token_123",
+        "new_session_id_456",
+    )
 
 
 @pytest.mark.asyncio

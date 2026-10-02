@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -11,16 +12,28 @@ import pytest
 
 from notebooklm._web.artifacts import WebArtifactsAPI
 from notebooklm._web.notebooks import WebNotebooksAPI
+from notebooklm.auth import AuthTokens
+from notebooklm.client import NotebookLMClient
 from notebooklm.exceptions import NetworkError, RateLimitError, RPCError, ValidationError
+from notebooklm.options import AndroidBackendConfig, ClientConfig, WebBackendConfig
 from notebooklm.rpc import RPCMethod
-from tests._fixtures.fake_core import make_fake_core
+from notebooklm.types import GenerationStatus
+from tests._fixtures.fake_core import declared_noop_operation_scope, make_fake_core
 from tests._helpers.operation import ClientStub
 from tests.e2e._generation_journal import (
     DisabledJournal,
     JournalConfigurationError,
     journal_from_environment,
 )
-from tests.unit.test_e2e_conftest_options import _load_e2e_conftest
+
+
+def _load_e2e_conftest():
+    path = Path(__file__).resolve().parents[1] / "e2e" / "conftest.py"
+    spec = importlib.util.spec_from_file_location("e2e_conftest", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _required_env(tmp_path: Path, journal: Path) -> dict[str, str]:
@@ -58,6 +71,52 @@ def journaled_web_client(tmp_path):
     journal = journal_from_environment(env=_required_env(tmp_path, path), node_id="test_node")
     _load_e2e_conftest()._install_generation_journal(client, journal)
     return client, rpc, path
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend_config", [WebBackendConfig(), AndroidBackendConfig()])
+@pytest.mark.parametrize(
+    ("method_name", "family"),
+    [
+        ("generate_audio", "audio"),
+        ("generate_video", "video"),
+        ("generate_cinematic_video", "video"),
+        ("generate_report", "report"),
+        ("generate_quiz", "quiz"),
+        ("generate_flashcards", "flashcards"),
+        ("generate_infographic", "infographic"),
+        ("generate_slide_deck", "slide_deck"),
+        ("generate_data_table", "data_table"),
+        ("generate_study_guide", "study_guide"),
+    ],
+)
+async def test_assembled_client_generation_methods_reach_journal_boundary(
+    tmp_path, monkeypatch, backend_config, method_name, family
+):
+    client = NotebookLMClient(
+        AuthTokens(cookies={"SID": "synthetic"}, csrf_token="csrf", session_id="session"),
+        config=ClientConfig(backend=backend_config),
+    )
+    # Exercise production assembly and public methods with offline admission;
+    # no backend auth/open or transport is needed to observe the normalized send.
+    monkeypatch.setattr(client.artifacts, "_operation_scope", declared_noop_operation_scope)
+    send = AsyncMock(return_value=GenerationStatus(task_id="assembled-id", status="pending"))
+    monkeypatch.setattr(client.artifacts, "_send_create_artifact", send)
+    path = _journal_file(tmp_path)
+    journal = journal_from_environment(env=_required_env(tmp_path, path), node_id="test_node")
+    _load_e2e_conftest()._install_generation_journal(client, journal)
+
+    result = await getattr(client.artifacts, method_name)(
+        "generation-role", source_ids=["source-id"]
+    )
+
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    assert result.task_id == "assembled-id"
+    assert [row["event"] for row in rows] == ["started", "accepted"]
+    assert all(row["family"] == family for row in rows)
+    assert rows[-1]["resource_id"] == "assembled-id"
+    send.assert_awaited_once()
+    assert send.await_args.args[0].notebook_id == "generation-role"
 
 
 @pytest.mark.asyncio
