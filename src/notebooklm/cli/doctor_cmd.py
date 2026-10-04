@@ -14,7 +14,7 @@ neutral ``run_checks``.
 import shlex
 import subprocess
 import sys
-from functools import partial
+from typing import Any
 
 import click
 from rich.markup import escape
@@ -46,13 +46,10 @@ def _doctor_paths(auth: AuthSource | None = None) -> DoctorPaths:
 
     # Capture inline auth through the consolidated accessor. Explicit storage
     # suppresses it, just as it does for runtime and the passive auth check.
+    inline_json: str | None = None
     if auth.has_env_auth:
         inline_json = read_env_auth_json()
-        read_auth_state = partial(
-            read_doctor_auth_state,
-            auth.storage_path_for_diagnostics(),
-            inline_auth_json=inline_json,
-        )
+        storage_path = auth.storage_path_for_diagnostics()
         auth_source = AUTH_JSON_ENV_NAME
     else:
         storage_path = (
@@ -60,8 +57,10 @@ def _doctor_paths(auth: AuthSource | None = None) -> DoctorPaths:
             if auth.storage_override is not None
             else get_storage_path(profile=auth.profile)
         )
-        read_auth_state = partial(read_doctor_auth_state, storage_path)
         auth_source = f"file ({storage_path})"
+
+    def read_auth_state() -> dict[str, Any]:
+        return read_doctor_auth_state(storage_path, inline_auth_json=inline_json)
 
     resolved_auth = auth
     return DoctorPaths(
@@ -199,8 +198,20 @@ def _source_command(
         command.extend(("--profile", auth.profile or report.profile))
     command.extend(args)
     if (sys.platform if platform is None else platform) == "win32":
-        return subprocess.list2cmdline(command)
+        return " ".join(_windows_command_arg(arg) for arg in command)
     return shlex.join(command)
+
+
+def _windows_command_arg(arg: str) -> str:
+    """Retain CRT escaping and quote cmd control characters in a path."""
+    escaped = subprocess.list2cmdline([arg])
+    if any(char in arg for char in "&|<>()^") and not escaped.startswith('"'):
+        # list2cmdline quotes whitespace. When adding quotes for cmd control
+        # characters, terminal backslashes must also be doubled before the
+        # closing quote, as they are for its normal whitespace quoting.
+        trailing_backslashes = len(arg) - len(arg.rstrip("\\"))
+        escaped = '"' + escaped + "\\" * trailing_backslashes + '"'
+    return escaped
 
 
 def _display_results(report: DoctorReport, *, auth: AuthSource):
@@ -231,7 +242,24 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
         console.print(f"Authentication source: {auth_source} (local checks only)", markup=False)
 
     guidance = checks.get("auth", {}).get("guidance")
-    if guidance == "configure_notebooklm_url":
+    online_command = _source_command(report, auth, "auth", "check", "--test", "--passive")
+    if guidance == "test_authentication":
+        console.print(
+            f"To test this auth source online without refreshing it, run '{online_command}'.",
+            markup=False,
+        )
+        if auth.has_env_auth:
+            console.print(
+                f"[yellow]If the passive check fails, replace {AUTH_JSON_ENV_NAME} with "
+                "valid exported authentication, or unset it to use stored profile "
+                "authentication.[/yellow]"
+            )
+        else:
+            login_command = _source_command(report, auth, "login")
+            console.print(
+                f"[yellow]If the passive check fails, re-run '{escape(login_command)}'.[/yellow]"
+            )
+    elif guidance == "configure_notebooklm_url":
         console.print(
             "[yellow]Fix or unset NOTEBOOKLM_BASE_URL to use a supported NotebookLM URL.[/yellow]"
         )
@@ -273,8 +301,8 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
         else:
             console.print("\nNo local failures detected. Online authentication was not tested.")
 
-    online_command = _source_command(report, auth, "auth", "check", "--test", "--passive")
-    console.print(
-        f"To test this auth source online without refreshing it, run '{online_command}'.",
-        markup=False,
-    )
+    if guidance != "test_authentication":
+        console.print(
+            f"To test this auth source online without refreshing it, run '{online_command}'.",
+            markup=False,
+        )

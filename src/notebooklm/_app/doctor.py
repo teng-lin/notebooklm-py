@@ -222,6 +222,7 @@ def _check_auth(
                 "warn",
                 f"SID usable locally but __Secure-1PSIDTS missing or unusable "
                 f"({cookie_count} cookies); online authentication may fail.",
+                guidance="test_authentication",
             )
         return result("pass", f"local auth cookies usable ({cookie_count} cookies)")
     except ConfigurationError as exc:

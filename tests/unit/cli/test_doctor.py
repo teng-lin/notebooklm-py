@@ -591,7 +591,10 @@ def test_doctor_inline_credentials_are_absent_from_repr_and_output(
         ),
     )
 
-    assert sentinel not in repr(doctor_cmd_module._doctor_paths())
+    bundle = doctor_cmd_module._doctor_paths()
+    assert sentinel not in repr(bundle)
+    assert bundle.read_auth_state is not None
+    assert sentinel not in repr(bundle.read_auth_state)
     for output_args in (["doctor"], ["doctor", "--json"]):
         result = runner.invoke(cli, output_args)
         assert result.exit_code == 0, result.output
@@ -654,6 +657,61 @@ def test_doctor_source_command_quotes_windows_storage_paths_for_cmd():
         r'notebooklm --storage "C:\Users\A User\storage state.json" auth check --test --passive'
     )
     assert "--profile" not in command
+
+
+def test_doctor_source_command_quotes_windows_ampersand_without_spaces():
+    report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
+    auth = doctor_cmd_module.AuthSource(
+        storage_override=Path(r"C:\Users\R&D\auth.json"), profile=None, has_env_auth=False
+    )
+
+    command = doctor_cmd_module._source_command(report, auth, "login", platform="win32")
+
+    assert command == r'notebooklm --storage "C:\Users\R&D\auth.json" login'
+
+
+def test_windows_control_character_quoting_preserves_terminal_backslash():
+    assert doctor_cmd_module._windows_command_arg("C:\\R&D\\") == r'"C:\R&D\\"'
+
+
+@pytest.mark.parametrize("inline", [False, True], ids=["file", "inline"])
+@pytest.mark.parametrize("unusable_psidts", [False, True], ids=["missing", "unusable"])
+def test_doctor_psidts_warning_tests_online_before_suggesting_auth_replacement(
+    runner, isolated_notebooklm_home, monkeypatch, inline, unusable_psidts
+):
+    cookies = [{"name": "SID", "value": "x"}]
+    if unusable_psidts:
+        cookies.append({"name": "__Secure-1PSIDTS", "value": ""})
+    state = _storage(cookies)
+    if inline:
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(state))
+    else:
+        profile_dir = _make_profile(isolated_notebooklm_home)
+        _write_json(profile_dir / "storage_state.json", state)
+    monkeypatch.setattr(
+        doctor_cmd_module,
+        "_headless_reauth_check",
+        lambda: {"status": "pass", "detail": "ready"},
+    )
+
+    data = _invoke_json(runner, [])
+    result = runner.invoke(cli, ["doctor"])
+    output = " ".join(result.output.split())
+
+    assert data["checks"]["auth"]["status"] == "warn"
+    assert data["checks"]["auth"]["guidance"] == "test_authentication"
+    assert result.exit_code == 0, result.output
+    passive_index = output.index("auth check --test --passive")
+    replacement_index = output.index("If the passive check fails")
+    assert passive_index < replacement_index
+    assert output.count("auth check --test --passive") == 1
+    assert "Online authentication was not tested." in output
+    if inline:
+        assert "replace NOTEBOOKLM_AUTH_JSON" in output[replacement_index:]
+        assert "Replace NOTEBOOKLM_AUTH_JSON" not in output
+    else:
+        assert "notebooklm --profile default login" in output[replacement_index:]
+        assert "Re-run" not in output
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])
