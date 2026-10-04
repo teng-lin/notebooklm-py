@@ -21,6 +21,7 @@ honoured rather than restarted on every tolerated failure.
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from typing import Any, NoReturn
 from unittest.mock import MagicMock
 
@@ -73,6 +74,7 @@ class _FakePage:
     def __init__(self, outcomes: list[Any], *, url: str = SIGNING_IN) -> None:
         self._outcomes = list(outcomes)
         self.url = url
+        self.context = SimpleNamespace(cookies=lambda urls: [{"name": "SID", "value": "sid"}])
         self.timeouts: list[float] = []
 
     def wait_for_url(self, _matcher: Any, *, wait_until: str, timeout: float) -> None:
@@ -97,6 +99,7 @@ class _ClockedPage:
     def __init__(self, script: list[Any], *, url: str = SIGNING_IN) -> None:
         self._script = list(script)
         self.url = url
+        self.context = SimpleNamespace(cookies=lambda urls: [{"name": "SID", "value": "sid"}])
         self.now = 1000.0
         self.timeouts: list[float] = []
 
@@ -642,7 +645,11 @@ def test_an_unreadable_page_url_does_not_mask_the_wait(caplog: pytest.LogCapture
     page = _UnreadableUrlPage([_playwright_error(ABORTED), LANDED])
     # An unreadable URL cannot match the accept predicate, so the wait resumes
     # rather than falsely reporting a landing.
-    assert wait_for_login_landing(page, timeout_s=300) == 1
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    page._outcomes = [_playwright_error(ABORTED), PlaywrightTimeout("timeout")]
+    with pytest.raises(PlaywrightTimeout):
+        wait_for_login_landing(page, timeout_s=300)
     assert any("could not read the page URL" in m for m in caplog.messages)
 
 
@@ -748,6 +755,7 @@ def test_interactive_login_survives_an_aborted_navigation(tmp_path: Any) -> None
         ],
         "origins": [],
     }
+    context.cookies.return_value = context.storage_state.return_value["cookies"]
     playwright = MagicMock()
     playwright.chromium.launch_persistent_context.return_value = context
 
@@ -770,7 +778,7 @@ def test_interactive_login_survives_an_aborted_navigation(tmp_path: Any) -> None
     assert calls["n"] == 2, "the wait must have been re-armed after the aborted hop"
     assert storage.exists(), "the completed sign-in must be persisted, not discarded"
     flattened = " ".join(str(a) for args in io.emitted for a in args)
-    assert "Login detected" in flattened
+    assert "Google session found; saving cookies" in flattened
 
 
 @pytest.mark.requires_playwright
@@ -806,6 +814,7 @@ def test_headless_reauth_never_trusts_a_stale_url_after_failed_navigations() -> 
         context = MagicMock()
         context.pages = [page]
         context.storage_state.return_value = {"cookies": [], "origins": []}
+        context.cookies.return_value = context.storage_state.return_value["cookies"]
         playwright = MagicMock()
         playwright.chromium.launch_persistent_context.return_value = context
 

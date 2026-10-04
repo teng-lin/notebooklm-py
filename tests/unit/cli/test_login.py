@@ -231,6 +231,7 @@ class TestLoginCommand:
             mock_page = MagicMock()
             mock_page.url = f"https://{get_base_host()}/"
             mock_context.pages = [mock_page]
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -386,6 +387,7 @@ class TestLoginCommand:
                 ],
                 "origins": [],
             }
+            mock_context.cookies.return_value = mock_context.storage_state.return_value["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -481,7 +483,8 @@ class TestLoginCommand:
         result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 0
-        assert "Already logged in" in result.output
+        assert "Google session found; saving cookies" in result.output
+        assert "Already logged in" not in result.output
         mock_page.wait_for_url.assert_not_called()
 
     def test_login_auto_detect_waits_for_url_when_not_logged_in(
@@ -504,7 +507,7 @@ class TestLoginCommand:
         assert result.exit_code == 0
         mock_page.wait_for_url.assert_called_once()
         # Verify timeout=300_000 (5 minutes) is passed
-        assert mock_page.wait_for_url.call_args.kwargs.get("timeout") == 300_000
+        assert 299_000 < mock_page.wait_for_url.call_args.kwargs["timeout"] <= 300_000
         # The detector must NOT inherit Playwright's default wait_until="load":
         # The app host is a streaming SPA that never fires "load", so a
         # load-gated wait hangs the full 5 min even though login already succeeded
@@ -513,7 +516,8 @@ class TestLoginCommand:
             "commit",
             "domcontentloaded",
         }
-        assert "Login detected" in result.output
+        assert "Google session found; saving cookies" in result.output
+        assert "Login detected" not in result.output
 
     def test_login_forwards_custom_browser_timeout(self, runner, mock_login_browser_with_storage):
         """The public timeout controls Playwright's human sign-in wait."""
@@ -529,7 +533,7 @@ class TestLoginCommand:
         result = runner.invoke(cli, ["login", "--browser-timeout", "420"])
 
         assert result.exit_code == 0
-        assert mock_page.wait_for_url.call_args.kwargs["timeout"] == 420_000
+        assert 419_000 < mock_page.wait_for_url.call_args.kwargs["timeout"] <= 420_000
         assert "Waiting for login (up to 420 seconds)" in result.output
 
     @pytest.mark.requires_playwright
@@ -747,6 +751,7 @@ class TestLoginCommand:
             mock_page.url = f"https://{get_base_host()}/"
             mock_context.pages = [mock_page]
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -784,6 +789,7 @@ class TestLoginCommand:
             mock_page.url = f"https://{get_base_host()}/"
             mock_context.pages = [mock_page]
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -823,6 +829,7 @@ class TestLoginCommand:
             mock_page.content.return_value = "<html></html>"
             mock_context.pages = [mock_page]
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -854,6 +861,7 @@ class TestLoginCommand:
         mock_page.content.return_value = "<html></html>"
         mock_context.pages = [mock_page]
         mock_context.storage_state.return_value = _required_cookie_state()
+        mock_context.cookies.return_value = _required_cookie_state()["cookies"]
         mock_playwright = MagicMock()
         mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 
@@ -949,6 +957,7 @@ class TestLoginCommand:
             mock_page.content.return_value = '<script>"bob@example.com"</script>'
             mock_context.pages = [mock_page]
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -1010,6 +1019,7 @@ class TestLoginCommand:
             mock_context.pages = [mock_page_stale]
             mock_context.new_page.return_value = mock_page_recovered
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -1065,6 +1075,7 @@ class TestLoginCommand:
             mock_page.content.return_value = "<html></html>"
             mock_context.pages = [mock_page]
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -1204,6 +1215,7 @@ class TestLoginCommand:
             mock_page.url = f"https://{get_base_host()}/"
             mock_context.pages = [mock_page]
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
             )
@@ -1294,6 +1306,7 @@ class TestLoginCommand:
             # new_page() returns a working fresh page
             mock_context.new_page.return_value = mock_page_fresh
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
 
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
@@ -1356,6 +1369,7 @@ class TestLoginCommand:
             mock_context.pages = [mock_page_stale]
             mock_context.new_page.return_value = mock_page_fresh
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
 
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
@@ -1405,13 +1419,20 @@ class TestLoginCommand:
 
             mock_page_stale.goto.side_effect = stale_goto_side_effect
             mock_page_stale.url = f"https://{get_base_host()}/"
-            mock_page_recovered.goto.side_effect = PlaywrightError(
-                'Page.goto: Navigation to "https://accounts.google.com/" is interrupted by '
-                'another navigation to "https://notebooklm.google.com/"'
-            )
+
+            def recovered_goto(url, **kwargs):
+                if url == "https://accounts.google.com/":
+                    raise PlaywrightError(
+                        'Page.goto: Navigation to "https://accounts.google.com/" is interrupted by '
+                        'another navigation to "https://notebooklm.google.com/"'
+                    )
+                # The final app visit commits on the recovered page.
+
+            mock_page_recovered.goto.side_effect = recovered_goto
             mock_context.pages = [mock_page_stale]
             mock_context.new_page.return_value = mock_page_recovered
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
 
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
@@ -1453,6 +1474,7 @@ class TestLoginCommand:
             mock_context.pages = [mock_page]
             mock_context.new_page.return_value = mock_page  # new pages also fail
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
 
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context
@@ -1514,6 +1536,7 @@ class TestLoginCommand:
             mock_context.pages = [mock_page_stale]
             mock_context.new_page.return_value = mock_page_recovered
             mock_context.storage_state.return_value = _required_cookie_state()
+            mock_context.cookies.return_value = _required_cookie_state()["cookies"]
 
             mock_launch = (
                 mock_pw.return_value.__enter__.return_value.chromium.launch_persistent_context

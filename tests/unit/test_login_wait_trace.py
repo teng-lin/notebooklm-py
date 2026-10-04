@@ -556,6 +556,7 @@ def _run_fake_interactive_login(tmp_path: Path) -> Any:
         ],
         "origins": [],
     }
+    context.cookies.return_value = context.storage_state.return_value["cookies"]
     playwright = MagicMock()
     playwright.chromium.launch_persistent_context.return_value = context
 

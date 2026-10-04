@@ -686,6 +686,7 @@ def test_run_playwright_login_capture_html_error_is_swallowed(tmp_path) -> None:
     mock_page.content.side_effect = PlaywrightError("cannot read content")
     mock_context.pages = [mock_page]
     mock_context.storage_state.return_value = _required_capture_state()
+    mock_context.cookies.return_value = _required_capture_state()["cookies"]
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 
@@ -752,6 +753,7 @@ def test_run_playwright_login_cookie_forcing_inner_recovery_reraises(tmp_path) -
     mock_context.pages = [mock_page_stale]
     mock_context.new_page.return_value = mock_page_recovered
     mock_context.storage_state.return_value = _required_capture_state()
+    mock_context.cookies.return_value = _required_capture_state()["cookies"]
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 
@@ -878,6 +880,7 @@ def test_run_playwright_login_wait_for_url_other_error_reraises(tmp_path) -> Non
     mock_page.wait_for_url.side_effect = PlaywrightError("Protocol error: something structural")
     mock_context.pages = [mock_page]
     mock_context.storage_state.return_value = _required_capture_state()
+    mock_context.cookies.return_value = _required_capture_state()["cookies"]
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 
@@ -930,9 +933,18 @@ def test_run_playwright_login_io_fail_inside_block_still_closes_context(tmp_path
     # NOT on the base host even after cookie-forcing → the unexpected-URL
     # ``io.fail(1)`` branch fires *inside* the sync_playwright block.
     mock_page.url = "https://accounts.google.com/AccountChooser"
-    mock_page.goto.return_value = None
+
+    def finish_login(*args, **kwargs):
+        mock_page.url = f"https://{get_base_host()}/"
+
+    def redirect_during_cookie_forcing(*args, **kwargs):
+        mock_page.url = "https://accounts.google.com/AccountChooser"
+
+    mock_page.wait_for_url.side_effect = finish_login
+    mock_page.goto.side_effect = redirect_during_cookie_forcing
     mock_context.pages = [mock_page]
     mock_context.storage_state.return_value = _required_capture_state()
+    mock_context.cookies.return_value = _required_capture_state()["cookies"]
     mock_playwright = MagicMock()
     mock_playwright.chromium.launch_persistent_context.return_value = mock_context
 

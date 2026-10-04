@@ -23,13 +23,13 @@ import asyncio
 import logging
 import sys
 import time
-from collections.abc import Awaitable, Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 # Collaborators of :func:`heal_captured_state` (absorbed from
 # ``browser_state_validation.py``, ADR-0033 PR 4.1): the sanitiser that shapes
@@ -141,6 +141,8 @@ MAX_TOLERATED_NAVIGATION_FAILURES = 20
 # A wait that failed faster than this took no real time, so the page — not the
 # human — produced it. Only such back-to-back failures count toward the cap.
 INSTANT_FAILURE_SECONDS = 0.25
+CAPTURE_SETTLE_SECONDS = 2.0
+CAPTURE_POLL_MS = 500
 BROWSER_CLOSED_HELP = (
     "[red]The browser window was closed during login.[/red]\n"
     "This can happen when switching Google accounts in a persistent browser session.\n\n"
@@ -479,13 +481,99 @@ def _current_url(page: Any) -> str:
         return ""
 
 
+def _capture_candidate_url(page: Any, context: Any) -> str | None:
+    """Return an app URL with a browser-routable SID, without claiming liveness.
+
+    App hosts also serve anonymous pages (#2467). Ask the browser for cookies
+    eligible for the observed URL, rather than accepting a sibling Google's
+    SID by name. Reading cookies may pump a navigation event, so require the
+    page to remain on the same URL through the observation. PSIDTS and DOM
+    tokens are deliberately not required: incomplete captures still need the
+    existing best-effort recovery path (#865 / #2082).
+    """
+    url = _current_url(page)
+    if not url_matches_base_host(url):
+        return None
+    cookies = context.cookies([url])
+    has_sid = any(
+        isinstance(cookie, dict)
+        and cookie.get("name") == "SID"
+        and isinstance(cookie.get("value"), str)
+        and bool(cookie["value"])
+        for cookie in cookies
+    )
+    return url if has_sid and _current_url(page) == url else None
+
+
+def _settle_capture_candidate(page: Any, context: Any, *, deadline: float) -> bool:
+    """Briefly allow cookies to arrive on an app landing, under the caller's budget."""
+    settle_deadline = min(deadline, time.monotonic() + CAPTURE_SETTLE_SECONDS)
+    while True:
+        if _capture_candidate_url(page, context) is not None:
+            return True
+        remaining_ms = (settle_deadline - time.monotonic()) * 1000
+        if remaining_ms <= 0 or not url_matches_base_host(_current_url(page)):
+            return False
+        # Playwright's wait pumps browser events, including same-document cookie
+        # arrivals. time.sleep would stall them, and an on-host wait_for_url
+        # resolves immediately, producing a busy loop.
+        page.wait_for_timeout(min(CAPTURE_POLL_MS, remaining_ms))
+
+
+def _captured_sid_is_usable(state: dict[str, Any], page: Any, context: Any) -> bool:
+    """Guard the exported jar for both bootstrap and configured RPC routing."""
+    observed_url = _capture_candidate_url(page, context)
+    return (
+        observed_url is not None
+        and _auth_cookies._storage_has_routable_cookie(state, "SID", f"{get_base_url()}/")
+        and _auth_cookies._storage_has_routable_cookie(state, "SID", observed_url)
+        and _current_url(page) == observed_url
+    )
+
+
+def _refuse_incomplete_capture(io: BrowserCaptureIO, *, headless: bool) -> NoReturn:
+    """Refuse before replacing an existing profile with an unusable SID capture."""
+    message = (
+        "No usable Google session cookies were captured for NotebookLM. "
+        "The saved authentication was not replaced. Complete Google sign-in "
+        "and retry 'notebooklm login'."
+    )
+    if headless:
+        raise HeadlessLoginRequiredError(message)
+    io.emit(f"[red]{message}[/red]")
+    io.fail(1)
+
+
+@contextmanager
+def _observe_main_frame_commits(page: Any) -> Iterator[Callable[[], bool]]:
+    """Observe commits when repeated goto races left only a restored page URL."""
+    committed = False
+    main_frame = page.main_frame
+
+    def on_commit(frame: Any) -> None:
+        nonlocal committed
+        if _is_main_frame(frame, main_frame):
+            committed = True
+
+    page.on("framenavigated", on_commit)
+    try:
+        yield lambda: committed
+    finally:
+        try:
+            page.remove_listener("framenavigated", on_commit)
+        except Exception as exc:
+            _log_suppressed("could not detach the commit listener", exc)
+
+
 def wait_for_login_landing(
     page: Any,
     *,
     timeout_s: float,
     io: BrowserCaptureIO | None = None,
+    context: Any = None,
+    deadline: float | None = None,
 ) -> int:
-    """Block until ``page`` lands on an accepted login host; return tolerated failures.
+    """Wait for an app landing with a routed SID; return tolerated failures.
 
     ``page.wait_for_url`` cannot be called once and trusted: Playwright's
     ``expect_navigation`` predicate returns True for *any* event carrying an
@@ -516,11 +604,17 @@ def wait_for_login_landing(
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-    deadline = time.monotonic() + timeout_s
-    # Seeded from the caller's value, not a clock read, so the common path hands
-    # Playwright the timeout verbatim (``--browser-timeout 420`` must arrive as
-    # 420_000, not 419_999.99). Only a re-arm consults the deadline.
+    if context is None:
+        context = page.context
+    supplied_deadline = deadline is not None
+    if deadline is None:
+        deadline = time.monotonic() + timeout_s
+    # Standalone callers seed from the timeout value, preserving the exact
+    # initial Playwright budget. Capture supplies its existing deadline so the
+    # initial settle and the sign-in continuation spend the same budget.
     remaining_ms: float = timeout_s * 1000
+    if supplied_deadline:
+        remaining_ms = min(remaining_ms, (deadline - time.monotonic()) * 1000)
     tolerated = 0
     # What the cap bounds, kept separate from the reported total: a cumulative
     # count would also clip the honest slow case — 21 failures spread over a
@@ -533,26 +627,32 @@ def wait_for_login_landing(
             # navigation can commit between the failure arm's URL read and this
             # deadline test, and a completed sign-in must never be reported as a
             # timeout.
-            if url_matches_base_host(_current_url(page)):
+            if _capture_candidate_url(page, context) is not None:
                 return tolerated
             raise PlaywrightTimeout(f"Timeout {timeout_s * 1000:.0f}ms exceeded.")
         attempt_started = time.monotonic()
         try:
             # The SPA never fires "load"; "commit" resolves as soon as the
-            # accepted host is reached (#1697). Cookies are read later.
+            # accepted host is reached (#1697). The callback must remain pure:
+            # reentrant synchronous cookie reads there can deadlock Playwright.
             page.wait_for_url(
                 url_matches_base_host,
                 wait_until="commit",
                 timeout=remaining_ms,
             )
-            return tolerated
+            if _capture_candidate_url(page, context) is not None:
+                return tolerated
+            remaining_ms = min(remaining_ms, (deadline - time.monotonic()) * 1000)
+            if remaining_ms > 0:
+                page.wait_for_timeout(min(CAPTURE_POLL_MS, remaining_ms))
+            remaining_ms = min(remaining_ms, (deadline - time.monotonic()) * 1000)
         except PlaywrightTimeout:
             # Playwright's timeout is a task racing the ``navigated`` event, so
             # losing that race by a hair is possible: check whether the browser
             # landed anyway before reporting "not detected". Same reasoning as
             # the navigation-failure arm below — the accept predicate, not the
             # exception, decides whether we are done.
-            if url_matches_base_host(_current_url(page)):
+            if _capture_candidate_url(page, context) is not None:
                 return tolerated
             raise
         except PlaywrightError as exc:
@@ -561,7 +661,7 @@ def wait_for_login_landing(
             # The failed navigation may be a *later* hop than the one that landed
             # us, and the human can arrive between the rejection and the re-arm.
             # The accept predicate, not the exception, decides if we are done.
-            if url_matches_base_host(_current_url(page)):
+            if _capture_candidate_url(page, context) is not None:
                 return tolerated
             tolerated += 1
             # A failure that took real time is the page pacing us and RESETS the
@@ -965,31 +1065,27 @@ def run_browser_capture(
                         )
                         raise
 
+            login_deadline = time.monotonic() + plan.login_timeout_s
             if headless:
-                # Layer-3 headless re-auth: there is NO human to complete a
-                # login form, so we never wait. Classify the landing instead:
-                #   * lands on the NotebookLM host  → the persistent profile
-                #     still holds a live Google session; proceed to capture.
-                #   * redirected to a login page    → the profile's Google
-                #     session is ALSO dead; fail loudly (raise) rather than
-                #     hang. ``HeadlessLoginRequiredError`` is the typed,
-                #     honest signal the caller maps to a FAILED outcome.
-                if not url_matches_base_host(page.url):
+                # There is no human to complete a form. Allow only a brief
+                # cookie settle, then fail with the existing typed outcome.
+                # Host + SID permits capture; it does not prove server liveness.
+                if not navigation_committed or not _settle_capture_candidate(
+                    page, context, deadline=login_deadline
+                ):
                     logger.warning(
-                        "Headless re-auth: landed off-host after navigation "
-                        "(the persisted browser profile's Google session is "
-                        "likely expired); cannot silently re-mint cookies."
+                        "Headless re-auth: no app landing with a routed SID "
+                        "after navigation; cannot silently re-mint cookies."
                     )
                     raise HeadlessLoginRequiredError(
                         "Headless re-auth could not reach NotebookLM: the "
-                        "persisted browser profile's Google session is "
-                        "expired. Run 'notebooklm login' to re-authenticate."
+                        "persisted browser profile has no usable Google "
+                        "session cookies. Run 'notebooklm login' to re-authenticate."
                     )
-            elif url_matches_base_host(page.url) and navigation_committed:
-                # Persistent browser profile already has a valid session. Gated on
-                # a committed navigation: after the retry loop breaks on repeated
-                # aborts, this URL is the restored tab's, not ours (#2260 review).
-                io.emit("[green]Already logged in.[/green]")
+            elif navigation_committed and _settle_capture_candidate(
+                page, context, deadline=login_deadline
+            ):
+                io.emit("[green]Google session found; saving cookies.[/green]")
             else:
                 io.emit("\n[bold green]Instructions:[/bold green]")
                 io.emit("1. Complete the Google login in the browser window")
@@ -1008,8 +1104,55 @@ def run_browser_capture(
                         timeout_s,
                     )
                 try:
-                    with log_observed_navigations(page):
-                        wait_for_login_landing(page, timeout_s=timeout_s, io=io)
+                    with (
+                        log_observed_navigations(page),
+                        (
+                            _observe_main_frame_commits(page)
+                            if not navigation_committed
+                            else nullcontext(lambda: True)
+                        ) as saw_commit,
+                    ):
+                        wait_start_url = _current_url(page)
+                        # Anonymous app pages never redirect on their own. Give
+                        # an initial on-app, SID-less landing one Google sign-in
+                        # continuation; never steer an in-progress off-host SSO
+                        # flow or repeatedly redirect a human entering credentials.
+                        remaining_ms = (login_deadline - time.monotonic()) * 1000
+                        if (
+                            url_matches_base_host(_current_url(page))
+                            and _capture_candidate_url(page, context) is None
+                            and remaining_ms > 0
+                        ):
+                            continuation = urlencode({"continue": f"{get_base_url()}/"})
+                            try:
+                                page.goto(
+                                    f"{GOOGLE_ACCOUNTS_URL}ServiceLogin?{continuation}",
+                                    wait_until="commit",
+                                    timeout=remaining_ms,
+                                )
+                                navigation_committed = True
+                            except PlaywrightError as exc:
+                                if not is_navigation_race(exc):
+                                    raise
+                        wait_for_login_landing(
+                            page,
+                            timeout_s=timeout_s,
+                            io=io,
+                            context=context,
+                            deadline=login_deadline,
+                        )
+                        # wait_for_url resolves immediately for an already
+                        # matching restored URL. A SID must not turn that into
+                        # positive commit evidence after every goto was aborted.
+                        # A changed URL is also commit evidence: Playwright's
+                        # page.url follows the committed main-frame URL.
+                        navigation_committed = (
+                            navigation_committed
+                            or saw_commit()
+                            or _current_url(page) != wait_start_url
+                        )
+                        if not navigation_committed:
+                            _refuse_incomplete_capture(io, headless=headless)
                 except PlaywrightTimeout:
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
@@ -1042,7 +1185,7 @@ def run_browser_capture(
                             kind=_CaptureAbortKind.BROWSER_CLOSED,
                         )
                     raise
-                io.emit("[green]Login detected.[/green]")
+                io.emit("[green]Google session found; saving cookies.[/green]")
 
             active_page_html = _capture_page_html(page)
 
@@ -1060,6 +1203,7 @@ def run_browser_capture(
                     if TARGET_CLOSED_ERROR in error_str:
                         # Page was destroyed (e.g. user switched accounts) -- get fresh page
                         page = recover_page(context, io, headless=headless)
+                        navigation_committed = False
                         recovered_during_cookie_forcing = True
                         try:
                             page.goto(url, wait_until="commit")
@@ -1081,7 +1225,7 @@ def run_browser_capture(
             # cookie-forcing round-trip above can land us back on
             # accounts.google.com if the session was invalidated mid-flow (rare).
             # Auto-detect is non-interactive, so fail fast with a clear next step.
-            if not url_matches_base_host(page.url) or not navigation_committed:
+            if not url_matches_base_host(_current_url(page)) or not navigation_committed:
                 # ``trace_url``, not the raw value: a swallowed cookie-forcing
                 # race can leave ``page.url`` on a credential-bearing SSO URL.
                 io.emit(
@@ -1089,6 +1233,11 @@ def run_browser_capture(
                     "Authentication may be incomplete. "
                     "Try: notebooklm login --fresh"
                 )
+                if headless:
+                    raise HeadlessLoginRequiredError(
+                        "Headless re-auth did not finish on a committed NotebookLM page. "
+                        "Run 'notebooklm login' to re-authenticate."
+                    )
                 io.fail(1)
 
             if recovered_during_cookie_forcing:
@@ -1108,7 +1257,11 @@ def run_browser_capture(
             filtered_state: dict[str, Any] = filter_storage_state_cookies_by_domain_policy(
                 dict(playwright_state), include_domains=include_domains
             )
+            if not _captured_sid_is_usable(filtered_state, page, context):
+                _refuse_incomplete_capture(io, headless=headless)
             filtered_state, heal_error = heal_captured_state(filtered_state)
+            if not _captured_sid_is_usable(filtered_state, page, context):
+                _refuse_incomplete_capture(io, headless=headless)
             # Persist through the canonical writer under the storage lock (fixes
             # [capture-2], the lockless re-mint write). The unattended
             # headless-launch arm re-mints against OUR OWN profile, so it carries
@@ -1119,10 +1272,8 @@ def run_browser_capture(
             # again under the lock: ADR-0029's entry-path-independent guarantee,
             # a DIFFERENT obligation from the pre-heal pass above (it holds for
             # callers that never filtered). Neither pass may be dropped.
-            # Persist unconditionally. A failed heal must never discard the
-            # sign-in the user just completed — the cookies are still the best
-            # material available, and the disk-based cold-start recovery retries
-            # from them on the next command.
+            # A declined PSIDTS heal must not discard a SID-bearing capture:
+            # the disk-based cold-start recovery retries from it (#865 / #2082).
             outcome = replace_captured_profile(
                 storage_path,
                 filtered_state,
@@ -1310,15 +1461,14 @@ def run_cdp_capture(
             # before landing classification. See #1697.
             page.goto(f"{get_base_url()}/", wait_until="commit", timeout=30000)
 
-            # SAME landing classification as the headless launch arm: if we did
-            # not land on the NotebookLM host, the attached browser's Google
-            # session cannot reach NotebookLM — fail loudly (raise) rather than
-            # capture a logged-out state.
-            if not url_matches_base_host(page.url):
+            # Same candidate classification as the headless launch arm: an app
+            # host without a URL-scoped SID must not replace saved authentication.
+            if not _settle_capture_candidate(
+                page, context, deadline=time.monotonic() + CAPTURE_SETTLE_SECONDS
+            ):
                 logger.warning(
-                    "CDP re-auth: landed off-host after navigation (the attached "
-                    "browser's Google session cannot reach NotebookLM); cannot "
-                    "re-mint cookies."
+                    "CDP re-auth: no app landing with a routed SID after navigation; "
+                    "cannot re-mint cookies."
                 )
                 raise HeadlessLoginRequiredError(
                     "CDP re-auth could not reach NotebookLM from the attached "
@@ -1340,7 +1490,11 @@ def run_cdp_capture(
             filtered_state: dict[str, Any] = filter_storage_state_cookies_by_domain_policy(
                 dict(playwright_state), include_domains=include_domains
             )
+            if not _captured_sid_is_usable(filtered_state, page, context):
+                _refuse_incomplete_capture(io, headless=True)
             filtered_state, heal_error = heal_captured_state(filtered_state)
+            if not _captured_sid_is_usable(filtered_state, page, context):
+                _refuse_incomplete_capture(io, headless=True)
             # Persist through the canonical writer under the storage lock (fixes
             # [capture-2]). CDP attaches to the operator's DAILY Chrome, whose
             # account set may not match our stored binding — carrying it blindly
@@ -1354,11 +1508,9 @@ def run_cdp_capture(
             # the pre-refactor whole-file overwrite (no regression). Full
             # stored-email re-resolution against the captured jar would be a
             # caller-side network lookup OUTSIDE this lock.
-            # Persist unconditionally. A failed heal must never discard the
-            # sign-in the user just completed — the cookies are still the best
-            # material available, and the disk-based cold-start recovery retries
-            # from them on the next command. And as in the launch arm, the
-            # writer's own pass under the lock is ADR-0029's entry-path-
+            # A declined PSIDTS heal must not discard a SID-bearing capture:
+            # disk-based cold-start recovery retries from it. As in the launch
+            # arm, the writer's own pass under the lock is ADR-0029's entry-path-
             # independent guarantee, not a repeat of the pre-heal pass above.
             outcome = replace_captured_profile(
                 storage_path,

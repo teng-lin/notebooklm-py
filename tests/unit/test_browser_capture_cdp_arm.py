@@ -103,6 +103,7 @@ def _fake_cdp_browser(
     page.goto.return_value = None
     page.content.return_value = "<html></html>"
     context = MagicMock()
+    context.cookies.return_value = cookies if cookies is not None else []
     context.new_page.return_value = page
     context.storage_state.return_value = {
         "cookies": cookies if cookies is not None else [],
