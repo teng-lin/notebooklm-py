@@ -114,6 +114,7 @@ def test_browser_import_projection_records_exact_cross_package_edges() -> None:
         ("browser_capture", "browser_launch_errors", "module"),
         ("browser_capture", "config", "module"),
         ("browser_capture", "exceptions", "module"),
+        ("browser_capture", "login_session", "module"),
         ("browser_capture", "navigation_errors", "module"),
         ("headless_reauth", "_auth.recovery_rungs", "module"),
         ("headless_reauth", "_request_context", "module"),
@@ -121,6 +122,9 @@ def test_browser_import_projection_records_exact_cross_package_edges() -> None:
         ("headless_reauth", "exceptions", "module"),
         ("headless_reauth", "paths", "function"),
         ("headless_reauth", "paths", "module"),
+        ("login_session", "_auth.cookie_policy", "module"),
+        ("login_session", "config", "module"),
+        ("login_session", "navigation_errors", "module"),
         ("oauth_token", "_auth.master_token_types", "module"),
         ("oauth_token", "browser_capture", "module"),
     }

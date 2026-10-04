@@ -68,6 +68,7 @@ from ..exceptions import HeadlessLoginRequiredError, LockUnavailableError
 # below because the capture implementation consumes it directly and existing
 # private importers may still resolve it here. CLI discovery uses the auth facade.
 from .browser_launch_errors import CHANNEL_BROWSERS, classify_launch_failure
+from .login_session import has_google_session, open_google_sign_in
 
 # Navigation-failure classification lives in its own pure leaf (ADR-0008); these
 # remain re-exported below for private compatibility.
@@ -974,9 +975,9 @@ def run_browser_capture(
                 #     session is ALSO dead; fail loudly (raise) rather than
                 #     hang. ``HeadlessLoginRequiredError`` is the typed,
                 #     honest signal the caller maps to a FAILED outcome.
-                if not url_matches_base_host(page.url):
+                if not url_matches_base_host(page.url) or not has_google_session(context):
                     logger.warning(
-                        "Headless re-auth: landed off-host after navigation "
+                        "Headless re-auth: no Google session after navigation "
                         "(the persisted browser profile's Google session is "
                         "likely expired); cannot silently re-mint cookies."
                     )
@@ -985,12 +986,18 @@ def run_browser_capture(
                         "persisted browser profile's Google session is "
                         "expired. Run 'notebooklm login' to re-authenticate."
                     )
-            elif url_matches_base_host(page.url) and navigation_committed:
+            elif (
+                navigation_committed
+                and has_google_session(context)
+                and url_matches_base_host(page.url)
+            ):
                 # Persistent browser profile already has a valid session. Gated on
                 # a committed navigation: after the retry loop breaks on repeated
                 # aborts, this URL is the restored tab's, not ours (#2260 review).
                 io.emit("[green]Already logged in.[/green]")
             else:
+                if navigation_committed and url_matches_base_host(page.url):
+                    open_google_sign_in(page)  # signed-out landing page (#2467)
                 io.emit("\n[bold green]Instructions:[/bold green]")
                 io.emit("1. Complete the Google login in the browser window")
                 io.emit("2. Authentication will be saved automatically once login is detected\n")
@@ -1314,9 +1321,9 @@ def run_cdp_capture(
             # not land on the NotebookLM host, the attached browser's Google
             # session cannot reach NotebookLM — fail loudly (raise) rather than
             # capture a logged-out state.
-            if not url_matches_base_host(page.url):
+            if not url_matches_base_host(page.url) or not has_google_session(context):
                 logger.warning(
-                    "CDP re-auth: landed off-host after navigation (the attached "
+                    "CDP re-auth: no Google session after navigation (the attached "
                     "browser's Google session cannot reach NotebookLM); cannot "
                     "re-mint cookies."
                 )

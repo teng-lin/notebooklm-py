@@ -238,6 +238,30 @@ def test_headless_redirected_to_login_raises_loudly(tmp_path: Path) -> None:
 
 
 @pytest.mark.requires_playwright
+def test_headless_signed_out_landing_on_app_host_raises_loudly(tmp_path: Path) -> None:
+    """#2467: signed out, the app host serves its landing page instead of
+    redirecting to login. Being on the host without a SID is a dead session."""
+    storage = tmp_path / "storage_state.json"
+    profile = tmp_path / "browser_profile"
+    profile.mkdir()
+
+    playwright, _context, page = _fake_playwright_landing(
+        f"{get_base_url()}/trynow",
+        cookies=[{"name": "NID", "value": "n", "domain": ".google.com", "path": "/"}],
+    )
+
+    with pytest.raises(HeadlessLoginRequiredError, match="session is"):
+        _run_headless(
+            BrowserCapturePlan(browser="chromium", browser_profile=profile, storage_path=storage),
+            _RaisingCaptureIO(),
+            playwright,
+        )
+
+    page.wait_for_url.assert_not_called()
+    assert not storage.exists()
+
+
+@pytest.mark.requires_playwright
 def test_headless_browser_close_is_typed_instead_of_session_expired(
     tmp_path: Path, monkeypatch
 ) -> None:

@@ -58,6 +58,11 @@
     {
       "scope": "module",
       "source": "browser_capture",
+      "target": "login_session"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
       "target": "navigation_errors"
     },
     {
@@ -92,6 +97,21 @@
     },
     {
       "scope": "module",
+      "source": "login_session",
+      "target": "_auth.cookie_policy"
+    },
+    {
+      "scope": "module",
+      "source": "login_session",
+      "target": "config"
+    },
+    {
+      "scope": "module",
+      "source": "login_session",
+      "target": "navigation_errors"
+    },
+    {
+      "scope": "module",
       "source": "oauth_token",
       "target": "_auth.master_token_types"
     },
@@ -108,7 +128,7 @@
       "path": "src/notebooklm/_browser/__init__.py"
     },
     {
-      "lines": 1439,
+      "lines": 1446,
       "name": "browser_capture",
       "path": "src/notebooklm/_browser/browser_capture.py"
     },
@@ -121,6 +141,11 @@
       "lines": 1092,
       "name": "headless_reauth",
       "path": "src/notebooklm/_browser/headless_reauth.py"
+    },
+    {
+      "lines": 48,
+      "name": "login_session",
+      "path": "src/notebooklm/_browser/login_session.py"
     },
     {
       "lines": 113,
@@ -139,10 +164,10 @@
   },
   "summary": {
     "function_local_edges": 1,
-    "module_edges": 19,
-    "modules": 6,
-    "total_lines": 3004,
-    "unique_edges": 20
+    "module_edges": 23,
+    "modules": 7,
+    "total_lines": 3059,
+    "unique_edges": 24
   },
   "version": 1
 }

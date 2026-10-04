@@ -3650,6 +3650,15 @@
     },
     {
       "kind": "from",
+      "lineno": 15,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._browser.login_session",
+      "target": "notebooklm._auth.cookie_policy",
+      "type_only": false
+    },
+    {
+      "kind": "from",
       "lineno": 16,
       "scope": null,
       "scope_kind": "module",
@@ -11807,8 +11816,8 @@
       "modules": 42
     },
     "root": {
-      "lines": 27126,
-      "modules": 90
+      "lines": 27181,
+      "modules": 91
     },
     "rpc": {
       "lines": 385,
@@ -11832,13 +11841,13 @@
     }
   },
   "summary": {
-    "authored_lines": 153618,
-    "authored_modules": 492,
+    "authored_lines": 153673,
+    "authored_modules": 493,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1298,
+    "cross_subsystem_edges": 1299,
     "dynamic_import_calls": 10,
     "function_local_edges": 92,
-    "module_level_edges": 1206,
+    "module_level_edges": 1207,
     "type_only_edges": 138
   },
   "version": 1
