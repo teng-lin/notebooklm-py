@@ -77,7 +77,7 @@ class TestDoctorCommand:
     @pytest.mark.parametrize("json_flag", [False, True])
     @notebooklm_vcr.use_cassette("cli_doctor.yaml")
     def test_doctor_happy_path(self, runner, isolated_home: Path, json_flag: bool) -> None:
-        """Doctor with a clean profile + Tier-1 cookies reports all checks pass.
+        """Doctor with a clean profile + Tier-1 cookies reports local checks pass.
 
         Asserts:
           * exit code 0
@@ -119,8 +119,9 @@ class TestDoctorCommand:
             assert data["checks"]["auth"]["status"] == "pass"
             assert data["checks"]["auth"]["scope"] == "local only; online authentication not tested"
         else:
-            assert "Online authentication was not tested" in result.output
-            assert "All checks passed" not in result.output
+            output = " ".join(result.output.split())
+            assert "Online authentication was not tested" in output
+            assert "All checks passed" not in output
 
     @notebooklm_vcr.use_cassette("cli_doctor.yaml")
     def test_doctor_reports_missing_auth(self, runner, isolated_home: Path) -> None:
