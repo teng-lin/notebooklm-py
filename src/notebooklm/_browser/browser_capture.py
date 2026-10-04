@@ -533,6 +533,7 @@ def wait_for_login_landing(
             )
             if _capture_candidate_url(page, context) is not None:
                 return tolerated
+            instant_failures = 0
             remaining_ms = min(remaining_ms, (deadline - time.monotonic()) * 1000)
             if remaining_ms > 0:
                 page.wait_for_timeout(min(CAPTURE_POLL_MS, remaining_ms))

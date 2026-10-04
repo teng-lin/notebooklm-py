@@ -270,6 +270,35 @@ def test_on_host_wait_detects_same_document_sid_arrival(monkeypatch: pytest.Monk
     heal.assert_not_called()
 
 
+def test_paced_no_sid_observations_reset_the_immediate_failure_streak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[NID])
+    heal = _install_browser(monkeypatch, browser)
+    total_failures = capture.MAX_TOLERATED_NAVIGATION_FAILURES + 5
+    attempts = 0
+
+    def alternate_failure_and_paced_observation(*args: Any, **kwargs: Any) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts <= 2 * total_failures:
+            if attempts % 2:
+                raise PlaywrightError("net::ERR_ABORTED")
+        else:
+            browser.browser_cookies = [deepcopy(SID)]
+
+    browser.page.wait_for_url.side_effect = alternate_failure_and_paced_observation
+
+    assert capture.wait_for_login_landing(browser.page, timeout_s=30) == total_failures
+
+    assert attempts == 2 * total_failures + 1
+    assert browser.page.wait_for_timeout.call_count == total_failures
+    assert browser.now == 1000 + total_failures * capture.CAPTURE_POLL_MS / 1000
+    heal.assert_not_called()
+
+
 @pytest.mark.parametrize("exit_arm", ["deadline", "timeout", "navigation_error"])
 def test_each_wait_recheck_requires_sid(monkeypatch: pytest.MonkeyPatch, exit_arm: str) -> None:
     from playwright.sync_api import Error as PlaywrightError
