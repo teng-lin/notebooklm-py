@@ -484,6 +484,34 @@ class TestLoginCommand:
         assert "Already logged in" in result.output
         mock_page.wait_for_url.assert_not_called()
 
+    def test_login_signed_out_landing_on_app_host_sends_to_sign_in(
+        self, runner, mock_login_browser_with_storage
+    ):
+        """#2467: signed out, the app host serves /trynow instead of redirecting.
+        On the host with no SID is not a session: open sign-in and wait."""
+        mock_page = mock_login_browser_with_storage
+        mock_context = mock_page.context
+        signed_in_state = mock_context.storage_state.return_value
+        mock_context.storage_state.return_value = {
+            "cookies": [{"name": "NID", "value": "n", "domain": ".google.com", "path": "/"}],
+            "origins": [],
+        }
+
+        def sign_in(predicate, **kwargs):
+            assert predicate(f"https://{get_base_host()}/")
+            mock_context.storage_state.return_value = signed_in_state
+
+        mock_page.wait_for_url.side_effect = sign_in
+
+        result = runner.invoke(cli, ["login"])
+
+        assert result.exit_code == 0
+        assert "Already logged in" not in result.output
+        assert "Login detected" in result.output
+        mock_page.wait_for_url.assert_called_once()
+        goto_urls = [call.args[0] for call in mock_page.goto.call_args_list]
+        assert goto_urls[1].startswith("https://accounts.google.com/ServiceLogin?continue=")
+
     def test_login_auto_detect_waits_for_url_when_not_logged_in(
         self, runner, mock_login_browser_with_storage
     ):

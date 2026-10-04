@@ -39,6 +39,7 @@ def test_in_process_playwright_imports_live_only_in_browser_package() -> None:
     assert _playwright_import_paths() == {
         "_browser/browser_capture.py",
         "_browser/headless_reauth.py",
+        "_browser/login_session.py",
         "_browser/oauth_token.py",
     }
 
