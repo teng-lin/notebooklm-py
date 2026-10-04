@@ -486,6 +486,49 @@ def test_restored_sid_after_every_goto_aborts_is_not_commit_evidence(
     assert plan.storage_path.read_bytes() == before
     assert not any("saving cookies" in message for message in io.messages)
     assert not any("Authentication saved" in message for message in io.messages)
+    messages = " ".join(io.messages)
+    assert "Login navigation never committed" in messages
+    assert "saved authentication was not replaced" in messages
+    assert "Retry: notebooklm login" in messages
+    assert "Unexpected URL" not in messages
+    assert "--fresh" not in messages
+
+
+@pytest.mark.parametrize("mode", ["interactive", "headless"])
+def test_recovered_on_app_page_without_a_commit_reports_navigation_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[SID])
+    browser.page.goto.side_effect = [None, PlaywrightError(capture.TARGET_CLOSED_ERROR)]
+    recovered = MagicMock()
+    recovered.url = APP
+    recovered.goto.side_effect = PlaywrightError("net::ERR_ABORTED")
+    browser.context.new_page.return_value = recovered
+    heal = _install_browser(monkeypatch, browser)
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    error = _InteractiveExit if mode == "interactive" else HeadlessLoginRequiredError
+    with pytest.raises(error) as exc_info:
+        _run(mode, plan, io)
+
+    assert recovered.goto.call_count == 2
+    writer.assert_not_called()
+    heal.assert_not_called()
+    browser.context.storage_state.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+    messages = " ".join(io.messages)
+    assert "Login navigation never committed" in messages
+    assert "saved authentication was not replaced" in messages
+    assert "Retry: notebooklm login" in messages
+    assert "Unexpected URL" not in messages
+    assert "--fresh" not in messages
+    if mode == "headless":
+        assert "Login navigation never committed" in str(exc_info.value)
 
 
 def test_forcing_commits_after_initial_goto_races_permit_sid_capture(

@@ -1056,7 +1056,7 @@ def run_browser_capture(
             # cookie-forcing round-trip above can land us back on
             # accounts.google.com if the session was invalidated mid-flow (rare).
             # Auto-detect is non-interactive, so fail fast with a clear next step.
-            if not url_matches_base_host(_current_url(page)) or not navigation_committed:
+            if not url_matches_base_host(_current_url(page)):
                 # ``trace_url``, not the raw value: a swallowed cookie-forcing
                 # race can leave ``page.url`` on a credential-bearing SSO URL.
                 io.emit(
@@ -1066,9 +1066,18 @@ def run_browser_capture(
                 )
                 if headless:
                     raise HeadlessLoginRequiredError(
-                        "Headless re-auth did not finish on a committed NotebookLM page. "
+                        "Headless re-auth did not finish on a NotebookLM page. "
                         "Run 'notebooklm login' to re-authenticate."
                     )
+                io.fail(1)
+            if not navigation_committed:
+                message = (
+                    "Login navigation never committed. The saved authentication was not "
+                    "replaced. Retry: notebooklm login"
+                )
+                io.emit(f"[red]{message}[/red]")
+                if headless:
+                    raise HeadlessLoginRequiredError(message)
                 io.fail(1)
 
             if recovered_during_cookie_forcing:
