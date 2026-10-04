@@ -12,6 +12,8 @@ neutral ``run_checks``.
 """
 
 import shlex
+import subprocess
+import sys
 from functools import partial
 
 import click
@@ -186,14 +188,19 @@ def _run_doctor(fix_issues: bool, *, json_output: bool) -> None:
         exit_with_code(1)
 
 
-def _source_command(report: DoctorReport, auth: AuthSource, *args: str) -> str:
+def _source_command(
+    report: DoctorReport, auth: AuthSource, *args: str, platform: str | None = None
+) -> str:
     """Preserve the auth selector in copyable diagnostic/remediation commands."""
     command = ["notebooklm"]
     if auth.storage_override is not None:
         command.extend(("--storage", str(auth.storage_override)))
     else:
         command.extend(("--profile", auth.profile or report.profile))
-    return shlex.join([*command, *args])
+    command.extend(args)
+    if (sys.platform if platform is None else platform) == "win32":
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
 
 
 def _display_results(report: DoctorReport, *, auth: AuthSource):
@@ -214,9 +221,9 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
 
     table.add_row("Profile", f"[bold]{report.profile}[/bold]", f"source: {report.profile_source}")
 
+    labels = {name: name.replace("_", " ").title() for name in checks}
     for name, check in checks.items():
-        label = name.replace("_", " ").title()
-        table.add_row(label, status_icon(check["status"]), check["detail"])
+        table.add_row(labels[name], status_icon(check["status"]), check["detail"])
 
     console.print(table)
     auth_source = checks.get("auth", {}).get("source")
@@ -255,9 +262,12 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
         if checks.get("profile_dir", {}).get("status") == "fail":
             console.print(f"[yellow]Run '{fix_command}' to create the profile directory.[/yellow]")
     elif not has_failures:
-        if any(check["status"] == "warn" for check in checks.values()):
+        warned_labels = [
+            labels[name] for name, check in checks.items() if check["status"] == "warn"
+        ]
+        if warned_labels:
             console.print(
-                "\n[yellow]Local checks raised a warning. "
+                f"\n[yellow]Local checks raised a warning ({', '.join(warned_labels)}). "
                 "Online authentication was not tested.[/yellow]"
             )
         else:

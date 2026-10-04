@@ -632,9 +632,84 @@ def test_doctor_preserves_storage_override_in_online_and_login_guidance(
     output = " ".join(result.output.split())
 
     assert result.exit_code == 0, result.output
-    selector = f"notebooklm --storage '{storage}'"
+    quoted_storage = f'"{storage}"' if sys.platform == "win32" else f"'{storage}'"
+    selector = f"notebooklm --storage {quoted_storage}"
     assert f"{selector} login" in output
     assert f"{selector} auth check --test --passive" in output
+
+
+def test_doctor_source_command_quotes_windows_storage_paths_for_cmd():
+    report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
+    auth = doctor_cmd_module.AuthSource(
+        storage_override=Path(r"C:\Users\A User\storage state.json"),
+        profile="ignored",
+        has_env_auth=False,
+    )
+
+    command = doctor_cmd_module._source_command(
+        report, auth, "auth", "check", "--test", "--passive", platform="win32"
+    )
+
+    assert command == (
+        r'notebooklm --storage "C:\Users\A User\storage state.json" auth check --test --passive'
+    )
+    assert "--profile" not in command
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_doctor_source_command_keeps_posix_storage_quoting(platform):
+    report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
+    auth = doctor_cmd_module.AuthSource(
+        storage_override=Path("/tmp/auth with spaces.json"), profile=None, has_env_auth=False
+    )
+
+    command = doctor_cmd_module._source_command(report, auth, "login", platform=platform)
+
+    assert command == f"notebooklm --storage '{auth.storage_override}' login"
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_doctor_source_command_preserves_profile_selector(platform):
+    report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
+    auth = doctor_cmd_module.AuthSource(storage_override=None, profile="work", has_env_auth=False)
+
+    command = doctor_cmd_module._source_command(report, auth, "login", platform=platform)
+
+    assert command == "notebooklm --profile work login"
+
+
+@pytest.mark.parametrize(
+    ("auth_warn", "headless_warn", "warned_labels"),
+    [
+        (False, True, "Headless Reauth"),
+        (True, False, "Auth"),
+        (True, True, "Auth, Headless Reauth"),
+    ],
+)
+def test_doctor_warning_footer_names_the_warned_rows(
+    runner, isolated_notebooklm_home, monkeypatch, auth_warn, headless_warn, warned_labels
+):
+    profile_dir = _make_profile(isolated_notebooklm_home)
+    cookies = [{"name": "SID", "value": "x"}]
+    if not auth_warn:
+        cookies.append({"name": "__Secure-1PSIDTS", "value": "y"})
+    _write_json(profile_dir / "storage_state.json", _storage(cookies))
+    monkeypatch.setattr(
+        doctor_cmd_module,
+        "_headless_reauth_check",
+        lambda: {
+            "status": "warn" if headless_warn else "pass",
+            "detail": "unavailable" if headless_warn else "ready",
+        },
+    )
+
+    result = runner.invoke(cli, ["doctor"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 0, result.output
+    assert f"Local checks raised a warning ({warned_labels})." in output
+    assert "Online authentication was not tested." in output
+    assert "All checks passed" not in output
 
 
 def test_doctor_routes_auth_cookies_to_configured_base_url(
