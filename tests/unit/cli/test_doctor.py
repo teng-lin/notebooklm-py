@@ -3,6 +3,7 @@
 import json
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -18,6 +19,7 @@ def isolated_notebooklm_home(tmp_path, monkeypatch):
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
     paths.set_active_profile(None)
     paths._reset_config_cache()
     yield tmp_path
@@ -38,8 +40,14 @@ def _make_profile(home: Path, name: str = "default") -> Path:
     return profile_dir
 
 
-def _storage(cookies: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
-    return {"cookies": cookies}
+def _storage(cookies: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "cookies": [{"domain": ".google.com", "path": "/", "secure": True, **c} for c in cookies]
+    }
+
+
+def _auth_summary(check: dict[str, str]) -> dict[str, str]:
+    return {key: check[key] for key in ("status", "detail")}
 
 
 def _invoke_json(runner, args: list[str], *, exit_code: int = 0) -> dict:
@@ -62,9 +70,9 @@ def test_doctor_reports_clean_profile_layout(runner, isolated_notebooklm_home):
     assert data["profile"] == "default"
     assert data["profile_source"] == "config.json"
     assert data["checks"]["migration"] == {"status": "pass", "detail": "complete"}
-    assert data["checks"]["auth"] == {
+    assert _auth_summary(data["checks"]["auth"]) == {
         "status": "pass",
-        "detail": "local auth cookies present (2 cookies)",
+        "detail": "local auth cookies usable (2 cookies)",
     }
     assert data["checks"]["config"] == {
         "status": "pass",
@@ -126,9 +134,9 @@ def test_doctor_explicit_storage_drives_path_info_and_auth(runner, isolated_note
 
     assert data["profile"] == "work"
     assert data["profile_source"] == "CLI flag (--storage, profile ignored)"
-    assert data["checks"]["auth"] == {
+    assert _auth_summary(data["checks"]["auth"]) == {
         "status": "pass",
-        "detail": "local auth cookies present (2 cookies)",
+        "detail": "local auth cookies usable (2 cookies)",
     }
 
 
@@ -146,9 +154,9 @@ def test_doctor_reports_legacy_layout_without_startup_migration(runner, isolated
         "detail": "legacy layout detected",
     }
     assert data["checks"]["profile_dir"]["status"] == "fail"
-    assert data["checks"]["auth"] == {
+    assert _auth_summary(data["checks"]["auth"]) == {
         "status": "pass",
-        "detail": "local auth cookies present (2 cookies)",
+        "detail": "local auth cookies usable (2 cookies)",
     }
 
 
@@ -165,7 +173,10 @@ def test_doctor_reports_missing_profile_dir(runner, isolated_notebooklm_home):
         "status": "fail",
         "detail": f"{home / 'profiles' / 'default'} not found",
     }
-    assert data["checks"]["auth"] == {"status": "fail", "detail": "not authenticated"}
+    assert _auth_summary(data["checks"]["auth"]) == {
+        "status": "fail",
+        "detail": "not authenticated",
+    }
 
 
 def test_doctor_reports_invalid_storage_json(runner, isolated_notebooklm_home):
@@ -184,10 +195,10 @@ def test_doctor_reports_invalid_storage_root_shape(runner, isolated_notebooklm_h
 
     data = _invoke_json(runner, [], exit_code=1)
 
-    assert data["checks"]["auth"] == {
-        "status": "fail",
-        "detail": "invalid storage file: storage root is not an object",
-    }
+    assert data["checks"]["auth"]["status"] == "fail"
+    assert data["checks"]["auth"]["detail"].startswith(
+        "invalid storage file: Storage state must contain a 'cookies' list."
+    )
 
 
 def test_doctor_reports_invalid_storage_cookie_shape(runner, isolated_notebooklm_home):
@@ -196,10 +207,10 @@ def test_doctor_reports_invalid_storage_cookie_shape(runner, isolated_notebooklm
 
     data = _invoke_json(runner, [], exit_code=1)
 
-    assert data["checks"]["auth"] == {
-        "status": "fail",
-        "detail": "invalid storage file: cookies is not a list",
-    }
+    assert data["checks"]["auth"]["status"] == "fail"
+    assert data["checks"]["auth"]["detail"].startswith(
+        "invalid storage file: Storage state must contain a 'cookies' list."
+    )
 
 
 def test_doctor_reports_cookies_missing_sid(runner, isolated_notebooklm_home):
@@ -208,7 +219,10 @@ def test_doctor_reports_cookies_missing_sid(runner, isolated_notebooklm_home):
 
     data = _invoke_json(runner, [], exit_code=1)
 
-    assert data["checks"]["auth"] == {"status": "fail", "detail": "SID cookie missing"}
+    assert _auth_summary(data["checks"]["auth"]) == {
+        "status": "fail",
+        "detail": "SID cookie missing",
+    }
 
 
 def test_doctor_warns_when_psidts_missing(runner, isolated_notebooklm_home):
@@ -340,8 +354,13 @@ def test_doctor_json_output_shape(runner, isolated_notebooklm_home):
         "config",
         "headless_reauth",
     }
-    for check in data["checks"].values():
-        assert set(check) == {"status", "detail"}
+    for name, check in data["checks"].items():
+        expected = (
+            {"status", "detail", "source", "scope", "guidance"}
+            if name == "auth"
+            else {"status", "detail"}
+        )
+        assert set(check) == expected
         assert check["status"] in {"pass", "warn", "fail"}
         assert isinstance(check["detail"], str)
 
@@ -447,7 +466,210 @@ def test_doctor_text_mode_exits_zero_when_all_pass(runner, isolated_notebooklm_h
     result = runner.invoke(cli, ["doctor"])
 
     assert result.exit_code == 0, result.output
-    assert "fail" not in result.output
+    assert "✗ fail" not in result.output
+    assert "All checks passed" not in result.output
+    assert "Online authentication was not tested" in " ".join(result.output.split())
+    assert "auth check --test --passive" in " ".join(result.output.split())
+
+
+def test_doctor_all_local_passes_do_not_claim_an_online_session(
+    runner, isolated_notebooklm_home, monkeypatch
+):
+    profile_dir = _make_profile(isolated_notebooklm_home)
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage([{"name": "SID", "value": "opaque"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
+    monkeypatch.setattr(
+        doctor_cmd_module,
+        "_headless_reauth_check",
+        lambda: {"status": "pass", "detail": "ready"},
+    )
+
+    result = runner.invoke(cli, ["doctor"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 0, result.output
+    assert "No local failures detected. Online authentication was not tested." in output
+    assert "All checks passed" not in output
+    assert "Authentication source:" in output
+
+
+@pytest.mark.parametrize("inline_usable", [False, True])
+def test_doctor_inspects_inline_auth_instead_of_disk(
+    runner, isolated_notebooklm_home, monkeypatch, inline_usable
+):
+    profile_dir = _make_profile(isolated_notebooklm_home)
+    valid = _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}])
+    ambient = _storage([{"name": "NID", "value": "ambient"}])
+    _write_json(profile_dir / "storage_state.json", ambient if inline_usable else valid)
+    monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(valid if inline_usable else ambient))
+
+    data = _invoke_json(runner, [], exit_code=0 if inline_usable else 1)
+
+    auth = data["checks"]["auth"]
+    assert auth["status"] == ("pass" if inline_usable else "fail")
+    assert auth["source"] == "NOTEBOOKLM_AUTH_JSON"
+    assert auth["scope"] == "local only; online authentication not tested"
+
+
+@pytest.mark.parametrize("disk_usable", [False, True])
+def test_doctor_explicit_storage_overrides_inline_auth(
+    runner, isolated_notebooklm_home, monkeypatch, disk_usable
+):
+    _make_profile(isolated_notebooklm_home)
+    valid = _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}])
+    ambient = _storage([{"name": "NID", "value": "ambient"}])
+    storage = isolated_notebooklm_home / "selected.json"
+    _write_json(storage, valid if disk_usable else ambient)
+    monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(ambient if disk_usable else valid))
+
+    data = _invoke_json(runner, ["--storage", str(storage)], exit_code=0 if disk_usable else 1)
+
+    assert data["checks"]["auth"]["status"] == ("pass" if disk_usable else "fail")
+    assert data["checks"]["auth"]["source"] == f"file ({storage})"
+
+
+@pytest.mark.parametrize("invalid_json", ["", "  ", "not json", "[]"])
+def test_doctor_invalid_inline_auth_never_falls_back_or_recommends_disk_login(
+    runner, isolated_notebooklm_home, monkeypatch, invalid_json
+):
+    profile_dir = _make_profile(isolated_notebooklm_home)
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
+    monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", invalid_json)
+
+    data = _invoke_json(runner, [], exit_code=1)
+    text = runner.invoke(cli, ["doctor"])
+
+    assert data["checks"]["auth"]["status"] == "fail"
+    assert data["checks"]["auth"]["source"] == "NOTEBOOKLM_AUTH_JSON"
+    assert data["checks"]["auth"]["guidance"] == "replace_inline_auth"
+    assert "Replace NOTEBOOKLM_AUTH_JSON" in " ".join(text.output.split())
+    assert "login" not in text.output
+
+
+@pytest.mark.parametrize("fix", [False, True])
+def test_doctor_inline_auth_passes_without_creating_profile(
+    runner, isolated_notebooklm_home, monkeypatch, fix
+):
+    monkeypatch.setenv(
+        "NOTEBOOKLM_AUTH_JSON",
+        json.dumps(
+            _storage([{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}])
+        ),
+    )
+    args = ["doctor", "--json"]
+    if fix:
+        args.append("--fix")
+
+    result = runner.invoke(cli, args)
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["checks"]["auth"]["status"] == "pass"
+    assert data["checks"]["profile_dir"]["detail"] == "not required for inline authentication"
+    assert "not applicable" in data["checks"]["headless_reauth"]["detail"]
+    assert not (isolated_notebooklm_home / "profiles").exists()
+
+
+@pytest.mark.parametrize("selector", ["flag", "env"])
+def test_doctor_checks_selected_profile_and_preserves_it_in_guidance(
+    runner, isolated_notebooklm_home, monkeypatch, selector
+):
+    _write_json(_make_profile(isolated_notebooklm_home) / "storage_state.json", _storage([]))
+    selected = _make_profile(isolated_notebooklm_home, "work") / "storage_state.json"
+    _write_json(selected, _storage([{"name": "SID", "value": "x"}]))
+    if selector == "env":
+        monkeypatch.setenv("NOTEBOOKLM_PROFILE", "work")
+        args = []
+    else:
+        args = ["--profile", "work"]
+
+    data = _invoke_json(runner, args)
+    result = runner.invoke(cli, [*args, "doctor"])
+    output = " ".join(result.output.split())
+
+    assert data["checks"]["auth"]["source"] == f"file ({selected})"
+    assert data["checks"]["auth"]["status"] == "warn"
+    assert "notebooklm --profile work login" in output
+    assert "notebooklm --profile work auth check --test --passive" in output
+
+
+def test_doctor_preserves_storage_override_in_online_and_login_guidance(
+    runner, isolated_notebooklm_home
+):
+    _make_profile(isolated_notebooklm_home)
+    storage = isolated_notebooklm_home / "auth with spaces.json"
+    _write_json(storage, _storage([{"name": "SID", "value": "x"}]))
+
+    result = runner.invoke(cli, ["--storage", str(storage), "doctor"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 0, result.output
+    selector = f"notebooklm --storage '{storage}'"
+    assert f"{selector} login" in output
+    assert f"{selector} auth check --test --passive" in output
+
+
+def test_doctor_routes_auth_cookies_to_configured_base_url(
+    runner, isolated_notebooklm_home, monkeypatch
+):
+    profile_dir = _make_profile(isolated_notebooklm_home)
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage(
+            [
+                {"name": "SID", "value": "x", "domain": "notebooklm.google.com"},
+                {"name": "__Secure-1PSIDTS", "value": "y", "domain": "notebooklm.google.com"},
+            ]
+        ),
+    )
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com")
+
+    data = _invoke_json(runner, [])
+
+    assert data["checks"]["auth"]["status"] == "pass"
+
+
+@pytest.mark.parametrize("fix", [False, True])
+def test_doctor_never_fetches_refreshes_or_rotates_auth(
+    runner, isolated_notebooklm_home, monkeypatch, fix
+):
+    import httpx
+
+    from notebooklm import auth
+
+    profile_dir = _make_profile(isolated_notebooklm_home)
+    storage = profile_dir / "storage_state.json"
+    _write_json(storage, _storage([{"name": "SID", "value": "opaque"}]))
+    original = storage.read_bytes()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("doctor must not fetch, refresh, rotate or launch a browser")
+
+    for name in (
+        "fetch_tokens",
+        "fetch_tokens_passive",
+        "fetch_tokens_with_domains",
+        "_rotate_cookies",
+        "_run_refresh_cmd",
+        "run_browser_login_capture",
+    ):
+        monkeypatch.setattr(auth, name, forbidden)
+    monkeypatch.setattr(httpx.Client, "send", forbidden)
+    monkeypatch.setattr(httpx.AsyncClient, "send", forbidden)
+    args = ["doctor", "--json"]
+    if fix:
+        args.append("--fix")
+
+    result = runner.invoke(cli, args)
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["checks"]["auth"]["status"] == "warn"
+    assert storage.read_bytes() == original
 
 
 def test_doctor_warn_only_keeps_exit_zero(runner, isolated_notebooklm_home):

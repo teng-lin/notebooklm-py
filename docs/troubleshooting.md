@@ -139,7 +139,13 @@ On Windows, both credential paths can leave you without `__Secure-1PSIDTS` (the 
 - **`notebooklm login --browser chrome` (Playwright flow).** The interactive browser completes Google sign-in, but Google may serve an automation-detected session *without* the token-binding cookie (and sometimes without the secondary-binding cookies `OSID` / `APISID` + `SAPISID` the automatic `RotateCookies` recovery needs to re-mint it). When that happens the saved `storage_state.json` is genuinely incomplete and re-running the same flow reproduces it.
 - **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so no external process can read it. This blocks every cookie-extraction library (`rookie-cookies`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`. There is no flag that bypasses ABE.
 
-Note that `notebooklm doctor` may still say the auth check passed with an older client — the check historically only looked for `SID`. Current versions surface a **warn** row when `__Secure-1PSIDTS` is missing (`auth check --test` has always reported the real error). Trust `notebooklm auth check --test` / `notebooklm list` over a green `doctor` for "is this session actually usable".
+`notebooklm doctor` checks local auth material, not whether Google accepts the session.
+It reports a **warn** row when `__Secure-1PSIDTS` is missing, expired, empty, or
+cannot be sent to the configured NotebookLM URL. A usable local `SID` does not
+guarantee successful recovery or an accepted server session. Use
+`notebooklm auth check --test --passive` to test token fetching without refreshing
+or writing credentials. Keep the same `--profile` / `--storage` selector and inline
+auth environment as the failing command; doctor prints a command for that source.
 
 Workarounds, most reliable first:
 

@@ -11,7 +11,11 @@ helpers (read off this module at call time so the
 neutral ``run_checks``.
 """
 
+import shlex
+from functools import partial
+
 import click
+from rich.markup import escape
 from rich.table import Table
 
 from .._app.doctor import DoctorPaths, DoctorReport, run_checks
@@ -26,30 +30,52 @@ from ..paths import (
 )
 from .error_handler import exit_with_code, handle_errors
 from .rendering import console, json_output_response
-from .services.auth_source import AuthSource
+from .services.auth_source import AUTH_JSON_ENV_NAME, AuthSource, read_env_auth_json
 
 
-def _doctor_paths() -> DoctorPaths:
+def _doctor_paths(auth: AuthSource | None = None) -> DoctorPaths:
     """Bundle this module's path helpers for the neutral ``run_checks``.
 
     Each callable is resolved off the module global at call time so a
     ``patch("notebooklm.cli.doctor_cmd.<helper>", ...)`` test seam lands.
     """
-    auth = AuthSource.from_click_context(click.get_current_context(silent=True))
+    if auth is None:
+        auth = AuthSource.from_click_context(click.get_current_context(silent=True))
+    from ..auth import _load_storage_state, _load_storage_state_from_env_value
+
+    # Capture inline auth through the consolidated accessor. Explicit storage
+    # suppresses it, just as it does for runtime and the passive auth check.
+    if auth.has_env_auth:
+        inline_json = read_env_auth_json()
+        read_auth_state = partial(_load_storage_state_from_env_value, inline_json)
+        auth_source = AUTH_JSON_ENV_NAME
+    else:
+        storage_path = (
+            auth.storage_override
+            if auth.storage_override is not None
+            else get_storage_path(profile=auth.profile)
+        )
+        read_auth_state = partial(_load_storage_state, storage_path)
+        auth_source = f"file ({storage_path})"
+
+    resolved_auth = auth
     return DoctorPaths(
         get_path_info=lambda: get_path_info(
-            profile=auth.profile,
-            storage_path=auth.storage_override,
+            profile=resolved_auth.profile,
+            storage_path=resolved_auth.storage_override,
         ),
         get_home_dir=get_home_dir,
         get_profile_dir=get_profile_dir,
         get_storage_path=lambda: (
-            auth.storage_override
-            if auth.storage_override is not None
-            else get_storage_path(profile=auth.profile)
+            resolved_auth.storage_override
+            if resolved_auth.storage_override is not None
+            else get_storage_path(profile=resolved_auth.profile)
         ),
         get_config_path=get_config_path,
         headless_reauth_check=_headless_reauth_check,
+        read_auth_state=read_auth_state,
+        auth_source=auth_source,
+        has_inline_auth=auth.has_env_auth,
     )
 
 
@@ -78,6 +104,11 @@ def _headless_reauth_check() -> dict[str, str]:
     """
     try:
         auth = AuthSource.from_click_context(click.get_current_context(silent=True))
+        if auth.has_env_auth:
+            return {
+                "status": "pass",
+                "detail": "not applicable to inline authentication (no writable auth profile)",
+            }
         browser_profile = get_browser_profile_dir(
             profile=auth.profile,
             storage_path=auth.storage_override,
@@ -101,10 +132,11 @@ def register_doctor_command(cli):
     @click.option("--fix", "fix_issues", is_flag=True, help="Attempt to fix detected issues")
     @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
     def doctor(fix_issues, json_output):
-        """Check profile setup, auth status, and migration.
+        """Check profile setup, local auth material, and migration.
 
         Diagnoses common issues with profiles, authentication, and directory
-        structure. Use --fix to automatically repair detected problems.
+        structure without testing online authentication. Use --fix to
+        automatically repair detected filesystem problems.
 
         \b
         Examples:
@@ -126,7 +158,8 @@ def _run_doctor(fix_issues: bool, *, json_output: bool) -> None:
     # via ``_doctor_paths`` (read off this module at call time so the
     # ``patch("...doctor_cmd.get_storage_path")`` seam lands); an unexpected
     # ``OSError`` from one of them propagates here for ``handle_errors`` to wrap.
-    report = run_checks(fix=fix_issues, paths=_doctor_paths())
+    auth = AuthSource.from_click_context(click.get_current_context(silent=True))
+    report = run_checks(fix=fix_issues, paths=_doctor_paths(auth))
 
     # Output
     if json_output:
@@ -145,12 +178,22 @@ def _run_doctor(fix_issues: bool, *, json_output: bool) -> None:
             exit_with_code(1)
         return
 
-    _display_results(report)
+    _display_results(report, auth=auth)
     if report.has_failures:
         exit_with_code(1)
 
 
-def _display_results(report: DoctorReport):
+def _source_command(report: DoctorReport, auth: AuthSource, *args: str) -> str:
+    """Preserve the auth selector in copyable diagnostic/remediation commands."""
+    command = ["notebooklm"]
+    if auth.storage_override is not None:
+        command.extend(("--storage", str(auth.storage_override)))
+    else:
+        command.extend(("--profile", auth.profile or report.profile))
+    return shlex.join([*command, *args])
+
+
+def _display_results(report: DoctorReport, *, auth: AuthSource):
     """Display doctor results using Rich."""
     checks = report.checks
     fixes_applied = report.fixes_applied
@@ -173,12 +216,22 @@ def _display_results(report: DoctorReport):
         table.add_row(label, status_icon(check["status"]), check["detail"])
 
     console.print(table)
+    auth_source = checks.get("auth", {}).get("source")
+    if auth_source is not None:
+        console.print(f"Authentication source: {auth_source} (local checks only)", markup=False)
 
-    if checks.get("auth", {}).get("guidance") == "refresh_authentication":
+    guidance = checks.get("auth", {}).get("guidance")
+    if guidance == "replace_inline_auth":
         console.print(
-            "[yellow]Re-run 'notebooklm login'; on Windows (Chrome 127+ App-Bound "
-            "Encryption) use '--browser-cookies firefox' or set up "
-            "'notebooklm login --master-token'.[/yellow]"
+            f"[yellow]Replace {AUTH_JSON_ENV_NAME} with valid exported authentication, "
+            "or unset it to use stored profile authentication.[/yellow]"
+        )
+    elif guidance == "refresh_authentication":
+        login_command = _source_command(report, auth, "login")
+        console.print(
+            f"[yellow]Re-run '{escape(login_command)}'; on Windows (Chrome 127+ App-Bound "
+            "Encryption) add '--browser-cookies firefox' or '--master-token' "
+            "to that login command.[/yellow]"
         )
 
     if fixes_applied:
@@ -189,30 +242,22 @@ def _display_results(report: DoctorReport):
     has_failures = report.has_failures
     if has_failures and not fixes_applied:
         console.print()
+        fix_command = escape(_source_command(report, auth, "doctor", "--fix"))
         if checks.get("migration", {}).get("status") == "fail":
-            console.print(
-                "[yellow]Run 'notebooklm doctor --fix' to migrate and set up profiles.[/yellow]"
-            )
-        if checks.get("auth", {}).get("status") == "fail":
-            console.print("[yellow]Run 'notebooklm login' to authenticate.[/yellow]")
+            console.print(f"[yellow]Run '{fix_command}' to migrate and set up profiles.[/yellow]")
         if checks.get("profile_dir", {}).get("status") == "fail":
-            console.print(
-                "[yellow]Run 'notebooklm doctor --fix' to create the profile directory.[/yellow]"
-            )
+            console.print(f"[yellow]Run '{fix_command}' to create the profile directory.[/yellow]")
     elif not has_failures:
-        if checks.get("auth", {}).get("status") == "warn":
-            # A warn on the auth row means the session looks present (SID) but is
-            # missing __Secure-1PSIDTS, so real RPCs may still fail (#1753).
-            # Printing the green "All checks passed." here would greenlight the
-            # exact unusable state this check is meant to surface — render an
-            # auth-specific advisory instead (the guidance after the table carries
-            # the full Firefox / master-token remediation). The exit code stays 0: a warn
-            # is not a hard failure, and the cookie can still be re-minted at
-            # runtime. Other benign warns (optional headless re-auth, profile-dir
-            # permissions) keep the green footer, unchanged.
+        if any(check["status"] == "warn" for check in checks.values()):
             console.print(
-                "\n[yellow]Auth check raised a warning: the session may not be "
-                "usable. See the authentication guidance above for how to fix it.[/yellow]"
+                "\n[yellow]Local checks raised a warning. "
+                "Online authentication was not tested.[/yellow]"
             )
         else:
-            console.print("\n[green]All checks passed.[/green]")
+            console.print("\nNo local failures detected. Online authentication was not tested.")
+
+    online_command = _source_command(report, auth, "auth", "check", "--test", "--passive")
+    console.print(
+        f"To test this auth source online without refreshing it, run '{online_command}'.",
+        markup=False,
+    )

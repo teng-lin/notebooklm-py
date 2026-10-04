@@ -36,6 +36,7 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
     paths.set_active_profile(None)
     paths._reset_config_cache()
     yield tmp_path
@@ -99,8 +100,14 @@ def _make_profile(home: Path, name: str = "default") -> Path:
     return profile_dir
 
 
-def _storage(cookies: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
-    return {"cookies": cookies}
+def _storage(cookies: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "cookies": [{"domain": ".google.com", "path": "/", "secure": True, **c} for c in cookies]
+    }
+
+
+def _auth_summary(check: dict[str, str]) -> dict[str, str]:
+    return {key: check[key] for key in ("status", "detail")}
 
 
 def _mkdir_kwargs_for_missing_profile_dir(platform: str) -> dict[str, Any]:
@@ -151,9 +158,9 @@ def test_reports_clean_profile_layout(home: Path) -> None:
     assert report.profile == "default"
     assert report.profile_source == "config.json"
     assert report.checks["migration"] == {"status": "pass", "detail": "complete"}
-    assert report.checks["auth"] == {
+    assert _auth_summary(report.checks["auth"]) == {
         "status": "pass",
-        "detail": "local auth cookies present (2 cookies)",
+        "detail": "local auth cookies usable (2 cookies)",
     }
     assert report.checks["config"] == {
         "status": "pass",
@@ -182,9 +189,9 @@ def test_reports_legacy_layout_without_migration(home: Path) -> None:
     assert report.checks["migration"] == {"status": "fail", "detail": "legacy layout detected"}
     assert report.checks["profile_dir"]["status"] == "fail"
     # Legacy storage_state.json still carries the Tier-1 cookie set -> auth passes.
-    assert report.checks["auth"] == {
+    assert _auth_summary(report.checks["auth"]) == {
         "status": "pass",
-        "detail": "local auth cookies present (2 cookies)",
+        "detail": "local auth cookies usable (2 cookies)",
     }
     assert report.has_failures
 
@@ -197,7 +204,7 @@ def test_reports_missing_profile_dir(home: Path) -> None:
         "status": "fail",
         "detail": f"{home / 'profiles' / 'default'} not found",
     }
-    assert report.checks["auth"] == {"status": "fail", "detail": "not authenticated"}
+    assert _auth_summary(report.checks["auth"]) == {"status": "fail", "detail": "not authenticated"}
     assert report.has_failures
 
 
@@ -443,10 +450,10 @@ def test_reports_invalid_storage_root_shape(home: Path) -> None:
 
     report = _run()
 
-    assert report.checks["auth"] == {
-        "status": "fail",
-        "detail": "invalid storage file: storage root is not an object",
-    }
+    assert report.checks["auth"]["status"] == "fail"
+    assert report.checks["auth"]["detail"].startswith(
+        "invalid storage file: Storage state must contain a 'cookies' list."
+    )
 
 
 def test_reports_invalid_storage_cookie_shape(home: Path) -> None:
@@ -455,10 +462,10 @@ def test_reports_invalid_storage_cookie_shape(home: Path) -> None:
 
     report = _run()
 
-    assert report.checks["auth"] == {
-        "status": "fail",
-        "detail": "invalid storage file: cookies is not a list",
-    }
+    assert report.checks["auth"]["status"] == "fail"
+    assert report.checks["auth"]["detail"].startswith(
+        "invalid storage file: Storage state must contain a 'cookies' list."
+    )
 
 
 def test_reports_cookies_missing_sid(home: Path) -> None:
@@ -467,7 +474,10 @@ def test_reports_cookies_missing_sid(home: Path) -> None:
 
     report = _run()
 
-    assert report.checks["auth"] == {"status": "fail", "detail": "SID cookie missing"}
+    assert _auth_summary(report.checks["auth"]) == {
+        "status": "fail",
+        "detail": "SID cookie missing",
+    }
 
 
 def test_warns_when_sid_present_but_psidts_missing(home: Path) -> None:
@@ -486,6 +496,118 @@ def test_warns_when_sid_present_but_psidts_missing(home: Path) -> None:
     assert report.checks["auth"]["status"] == "warn"
     assert "__Secure-1PSIDTS missing" in report.checks["auth"]["detail"]
     assert not report.has_failures
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"value": ""},
+        {"expires": 1},
+        {"domain": ".google.co.uk"},
+        {"domain": "notebooklm.google.com"},
+        {"domain": ".example.com"},
+        {"path": "/private"},
+    ],
+    ids=["empty", "expired", "regional", "alias", "unrelated", "wrong-path"],
+)
+def test_fails_when_sid_cannot_route_to_app(home: Path, invalid: dict[str, Any]) -> None:
+    profile_dir = _make_profile(home)
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage(
+            [
+                {"name": "SID", "value": "x", **invalid},
+                {"name": "__Secure-1PSIDTS", "value": "y"},
+            ]
+        ),
+    )
+
+    report = _run()
+
+    assert report.checks["auth"]["status"] == "fail"
+    assert "SID cookie unusable" in report.checks["auth"]["detail"]
+    assert report.has_failures
+
+
+def test_bad_cookie_siblings_do_not_hide_valid_auth(home: Path) -> None:
+    profile_dir = _make_profile(home)
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage(
+            [
+                {"name": "SID", "value": "x"},
+                {"name": "SID", "value": "old", "domain": ".google.co.uk", "expires": 1},
+                {"name": "SID", "value": "", "domain": ".example.com"},
+                {"name": "unrelated", "value": "bad", "expires": []},
+                {"name": "__Secure-1PSIDTS", "value": "y"},
+                {"name": "__Secure-1PSIDTS", "value": "old", "expires": 1},
+            ]
+        ),
+    )
+
+    report = _run()
+
+    assert report.checks["auth"]["status"] == "pass"
+    assert not report.has_failures
+
+
+@pytest.mark.parametrize(
+    "invalid", [{"value": ""}, {"expires": 1}, {"domain": ".google.co.uk"}, {"path": "/private"}]
+)
+def test_warns_when_psidts_is_unusable(home: Path, invalid: dict[str, Any]) -> None:
+    profile_dir = _make_profile(home)
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage(
+            [
+                {"name": "SID", "value": "x"},
+                {"name": "__Secure-1PSIDTS", "value": "y", **invalid},
+            ]
+        ),
+    )
+
+    report = _run()
+
+    assert report.checks["auth"]["status"] == "warn"
+    assert "__Secure-1PSIDTS missing or unusable" in report.checks["auth"]["detail"]
+    assert not report.has_failures
+
+
+def test_auth_reports_selected_source_and_local_scope(home: Path) -> None:
+    profile_dir = _make_profile(home)
+    _write_json(
+        profile_dir / "storage_state.json",
+        _storage([{"name": "SID", "value": "opaque"}, {"name": "__Secure-1PSIDTS", "value": "y"}]),
+    )
+
+    report = _run()
+
+    assert report.checks["auth"]["status"] == "pass"
+    assert report.checks["auth"]["source"] == f"file ({profile_dir / 'storage_state.json'})"
+    assert report.checks["auth"]["scope"] == "local only; online authentication not tested"
+
+
+def test_injected_inline_reader_needs_no_storage_file(home: Path) -> None:
+    from dataclasses import replace
+
+    injected = replace(
+        _doctor_paths(),
+        read_auth_state=lambda: _storage(
+            [{"name": "SID", "value": "x"}, {"name": "__Secure-1PSIDTS", "value": "y"}]
+        ),
+        auth_source="test inline source",
+        has_inline_auth=True,
+        headless_reauth_check=lambda: {"status": "pass", "detail": "not applicable"},
+    )
+
+    report = run_checks(fix=True, paths=injected)
+
+    assert report.checks["auth"]["status"] == "pass"
+    assert report.checks["auth"]["source"] == "test inline source"
+    assert report.checks["profile_dir"]["status"] == "pass"
+    assert not report.has_failures
+    assert report.fixes_applied == []
+    assert not (home / "profiles" / "default").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -658,8 +780,13 @@ def test_report_check_set_and_shape(home: Path) -> None:
         "config",
         "headless_reauth",
     }
-    for check in report.checks.values():
-        assert set(check) == {"status", "detail"}
+    for name, check in report.checks.items():
+        expected = (
+            {"status", "detail", "source", "scope", "guidance"}
+            if name == "auth"
+            else {"status", "detail"}
+        )
+        assert set(check) == expected
         assert check["status"] in {"pass", "warn", "fail"}
         assert isinstance(check["detail"], str)
     assert report.fixes_applied == []

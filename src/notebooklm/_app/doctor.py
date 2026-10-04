@@ -66,6 +66,11 @@ class DoctorPaths:
     transport-neutral core must NOT import — see the ``_app`` boundary lint),
     so the adapter that *may* import ``_auth`` supplies the probe and maps its
     credential-free outcome to the standard check shape.
+
+    ``read_auth_state`` and ``auth_source`` let adapters select inline or file
+    authentication using their existing resolver. The default reader keeps
+    direct callers compatible by inspecting ``get_storage_path()``. The auth
+    check remains local and never tests session acceptance or refreshes cookies.
     """
 
     get_path_info: Callable[[], dict[str, Any]]
@@ -74,6 +79,9 @@ class DoctorPaths:
     get_storage_path: Callable[[], Path]
     get_config_path: Callable[[], Path]
     headless_reauth_check: Callable[[], dict[str, str]]
+    read_auth_state: Callable[[], dict[str, Any]] | None = None
+    auth_source: str | None = None
+    has_inline_auth: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,7 +89,8 @@ class DoctorReport:
     """Typed outcome of :func:`run_checks`.
 
     ``checks`` mirrors the historical ``{name: {"status", "detail"}}`` mapping
-    so the CLI can rebuild its ``--json`` envelope byte-for-byte. ``has_failures``
+    so the CLI can render its ``--json`` envelope. The auth row additionally
+    records the selected source and local-only scope. ``has_failures``
     is computed from the *final* check states (after any fixes) and drives the
     non-zero exit.
     """
@@ -149,58 +158,57 @@ def _check_profile_dir(profile_dir: Path, *, platform: str | None = None) -> dic
     }
 
 
-def _check_auth(storage_path: Path) -> dict[str, str]:
-    if not storage_path.exists():
-        return {"status": "fail", "detail": "not authenticated"}
-    try:
-        data = json.loads(storage_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("storage root is not an object")
-        cookies = data.get("cookies", [])
-        if not isinstance(cookies, list):
-            raise ValueError("cookies is not a list")
-        # Reuse the shared, name-robust extractor (drops non-dict rows and
-        # nameless / empty-name / non-str-name entries) rather than a bare
-        # ``{c.get("name") ...}`` set — that would fold a nameless row in as a
-        # ``None`` member. Import is function-local so importing this neutral
-        # core never pulls the auth facade on the common path (mirrors the
-        # ``_auth`` import deferral in ``cli/doctor_cmd._headless_reauth_check``).
-        from ..auth import cookie_names_from_storage
+def _check_auth(
+    storage_path: Path,
+    *,
+    read_auth_state: Callable[[], dict[str, Any]] | None = None,
+    source: str | None = None,
+    has_inline_auth: bool = False,
+) -> dict[str, str]:
+    """Inspect the selected auth material without testing the server session.
 
-        # Count actual cookie *entries*, not unique names: the same name can
-        # legitimately appear on multiple domains, so ``len(cookie_names)`` would
-        # under-report the file's cookie count in the "N cookies" detail.
-        cookie_count = sum(isinstance(c, dict) for c in cookies)
+    Use the canonical storage reader and unsent-request cookie policy. A
+    locally usable SID may still be revoked by Google; only the existing
+    passive online auth check can establish whether token fetching works.
+    """
+    from ..auth import _load_storage_state, _storage_has_routable_cookie, cookie_names_from_storage
+
+    context = {
+        "source": source or f"file ({storage_path})",
+        "scope": "local only; online authentication not tested",
+    }
+    remediation = "replace_inline_auth" if has_inline_auth else "refresh_authentication"
+
+    def result(status: str, detail: str) -> dict[str, str]:
+        row = {"status": status, "detail": detail, **context}
+        if status in ("fail", "warn"):
+            row["guidance"] = remediation
+        return row
+
+    try:
+        data = (
+            read_auth_state() if read_auth_state is not None else _load_storage_state(storage_path)
+        )
+        cookie_count = sum(isinstance(c, dict) for c in data["cookies"])
         cookie_names = cookie_names_from_storage(data)
         if "SID" not in cookie_names:
-            return {"status": "fail", "detail": "SID cookie missing"}
-        # SID alone does not make a session usable. Google's homepage check also
-        # requires __Secure-1PSIDTS — the rotating freshness partner of
-        # __Secure-1PSID and the second half of the Tier-1 MINIMUM_REQUIRED_COOKIES
-        # set every real RPC enforces. It legitimately rotates and can be re-minted
-        # at runtime (RotateCookies), so a static, offline probe like doctor must
-        # not call its absence a hard failure — that would false-negative a
-        # recoverable session. But its absence is the #1 reason a session that
-        # looks authenticated is actually unusable (issue #1753; common on Windows,
-        # where Chrome 127+ App-Bound Encryption blocks --browser-cookies decryption
-        # and automated login can be served a session without the token-binding
-        # cookie). Surface it as a warn so doctor stops greenlighting an unusable
-        # session, without flipping the exit code on a session that may still heal.
-        if "__Secure-1PSIDTS" not in cookie_names:
-            return {
-                "status": "warn",
-                "detail": (
-                    f"SID present but __Secure-1PSIDTS missing ({cookie_count} cookies); "
-                    "the session may be unusable until the cookie is refreshed."
-                ),
-                "guidance": "refresh_authentication",
-            }
-        return {
-            "status": "pass",
-            "detail": f"local auth cookies present ({cookie_count} cookies)",
-        }
-    except (json.JSONDecodeError, OSError, ValueError) as e:
-        return {"status": "fail", "detail": f"invalid storage file: {e}"}
+            return result("fail", "SID cookie missing")
+        if not _storage_has_routable_cookie(data, "SID"):
+            return result("fail", "SID cookie unusable for the configured NotebookLM URL")
+        # Missing freshness cookies are still a warning: completed sign-ins
+        # may be incomplete and runtime recovery is best effort, not guaranteed.
+        if not _storage_has_routable_cookie(data, "__Secure-1PSIDTS"):
+            return result(
+                "warn",
+                f"SID usable locally but __Secure-1PSIDTS missing or unusable "
+                f"({cookie_count} cookies); online authentication may fail.",
+            )
+        return result("pass", f"local auth cookies usable ({cookie_count} cookies)")
+    except FileNotFoundError:
+        return result("fail", "not authenticated")
+    except (OSError, ValueError) as exc:
+        label = "invalid inline authentication" if has_inline_auth else "invalid storage file"
+        return result("fail", f"{label}: {exc}")
 
 
 def _check_config(config_path: Path, get_profile_dir: Callable[..., Path]) -> dict[str, str]:
@@ -314,8 +322,17 @@ def run_checks(*, fix: bool, paths: DoctorPaths, platform: str | None = None) ->
 
     checks: dict[str, dict[str, str]] = {
         "migration": _check_migration(home),
-        "profile_dir": _check_profile_dir(profile_dir, platform=platform),
-        "auth": _check_auth(paths.get_storage_path()),
+        "profile_dir": (
+            {"status": "pass", "detail": "not required for inline authentication"}
+            if paths.has_inline_auth
+            else _check_profile_dir(profile_dir, platform=platform)
+        ),
+        "auth": _check_auth(
+            paths.get_storage_path(),
+            read_auth_state=paths.read_auth_state,
+            source=paths.auth_source,
+            has_inline_auth=paths.has_inline_auth,
+        ),
         "config": _check_config(paths.get_config_path(), paths.get_profile_dir),
         "headless_reauth": paths.headless_reauth_check(),
     }

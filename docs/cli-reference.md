@@ -2101,6 +2101,19 @@ notebooklm doctor --fix
 notebooklm doctor --json
 ```
 
+Doctor checks local files and authentication material without contacting Google.
+It inspects the same auth source as other commands: explicit `--storage`, then
+`NOTEBOOKLM_AUTH_JSON`, then the selected profile. Its auth check requires a
+nonempty, unexpired `SID` cookie that can be sent to the configured NotebookLM
+URL; missing or unusable `__Secure-1PSIDTS` produces a warning. A local pass
+does not establish that Google still accepts the session.
+
+Use `notebooklm auth check --test --passive` to test token fetching without
+refresh hooks, cookie rotation, or storage writes. Preserve the same root
+`--profile` or `--storage` option, and keep `NOTEBOOKLM_AUTH_JSON` set when
+testing inline auth. Doctor prints a command with the active selector. `--fix`
+repairs filesystem setup; it does not repair credentials or test them online.
+
 ---
 
 ### Agent: `agent show`
