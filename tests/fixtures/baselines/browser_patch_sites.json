@@ -21,6 +21,10 @@
       "path": "tests/unit/test_auth_session_refresh_cmd.py"
     },
     {
+      "count": 6,
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
       "count": 13,
       "path": "tests/unit/test_browser_oauth_token.py"
     }
@@ -37,6 +41,56 @@
       "path": "tests/unit/test_auth_browser_facade.py"
     },
     {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "helper",
+      "owner_qualname": "_install_browser",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_invalid_final_export_is_refused_before_heal_or_write",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_late_invalid_session_after_heal_does_not_replace_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_nid_only_app_landing_preserves_existing_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_restored_sid_after_every_goto_aborts_is_not_commit_evidence",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
       "attribute": "run_browser_capture",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -45,6 +99,16 @@
       "owner_qualname": "test_capture_delegates_plan_and_projects_page_html",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_auth_browser_facade.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "helper",
+      "owner_qualname": "_install_browser",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
     {
       "attribute": "attempt_headless_reauth",
@@ -383,6 +447,36 @@
       "path": "tests/unit/test_auth_session_refresh_cmd.py"
     },
     {
+      "count": 2,
+      "owner_kind": "helper",
+      "owner_qualname": "_install_browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_invalid_final_export_is_refused_before_heal_or_write",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_late_invalid_session_after_heal_does_not_replace_storage",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_nid_only_app_landing_preserves_existing_storage",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_restored_sid_after_every_goto_aborts_is_not_commit_evidence",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
       "count": 1,
       "owner_kind": "test",
       "owner_qualname": "test_capture_cdp_preserves_external_ownership_and_closes_created_resources",
@@ -458,7 +552,25 @@
       "module": "browser_capture"
     },
     {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 4,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture"
+    },
+    {
       "attribute": "run_browser_capture",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture"
+    },
+    {
+      "attribute": "sync_playwright_context",
       "count": 1,
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture"
@@ -497,13 +609,13 @@
   "summary": {
     "TOTAL": {
       "private": 0,
-      "public": 27,
-      "total": 27
+      "public": 33,
+      "total": 33
     },
     "browser_capture": {
       "private": 0,
-      "public": 2,
-      "total": 2
+      "public": 8,
+      "total": 8
     },
     "headless_reauth": {
       "private": 0,

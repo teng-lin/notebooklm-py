@@ -57,7 +57,7 @@
   },
   "tests/_guardrails/test_auth_storage_compatibility.py": {
     "EXPECTED_ALIAS_CALLERS": 62,
-    "EXPECTED_DIRECT_CALLERS": 64,
+    "EXPECTED_DIRECT_CALLERS": 70,
     "EXPECTED_SIGNATURES": 564,
     "FACADE_INVENTORY_IDENTITIES": 23,
     "LIVE_SIGNATURES": 61

@@ -590,6 +590,7 @@ def _setup_fs_doctor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
     paths_module.set_active_profile(None)
     paths_module._reset_config_cache()
     profile_dir = tmp_path / "profiles" / "default"
@@ -598,7 +599,19 @@ def _setup_fs_doctor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         profile_dir.chmod(0o700)
     storage = profile_dir / "storage_state.json"
     storage.write_text(
-        json.dumps({"cookies": [{"name": "SID", "value": "x"}]}),
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "SID", "value": "x", "domain": ".google.com", "path": "/"},
+                    {
+                        "name": "__Secure-1PSIDTS",
+                        "value": "y",
+                        "domain": ".google.com",
+                        "path": "/",
+                    },
+                ]
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / "config.json").write_text(

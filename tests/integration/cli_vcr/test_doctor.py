@@ -45,6 +45,7 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("NOTEBOOKLM_HOME", str(tmp_path))
     monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
     monkeypatch.delenv("NOTEBOOKLM_AUTH_JSON", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
     paths.set_active_profile(None)
     paths._reset_config_cache()
     yield tmp_path
@@ -92,8 +93,13 @@ class TestDoctorCommand:
         _write_storage(
             profile_dir,
             [
-                {"name": "SID", "value": "fixture-sid"},
-                {"name": "__Secure-1PSIDTS", "value": "fixture-psidts"},
+                {"name": "SID", "value": "fixture-sid", "domain": ".google.com", "path": "/"},
+                {
+                    "name": "__Secure-1PSIDTS",
+                    "value": "fixture-psidts",
+                    "domain": ".google.com",
+                    "path": "/",
+                },
             ],
         )
         (isolated_home / "config.json").write_text(
@@ -111,6 +117,10 @@ class TestDoctorCommand:
             data = json.loads(result.output)
             assert data["profile"] == "default"
             assert data["checks"]["auth"]["status"] == "pass"
+            assert data["checks"]["auth"]["scope"] == "local only; online authentication not tested"
+        else:
+            assert "Online authentication was not tested" in result.output
+            assert "All checks passed" not in result.output
 
     @notebooklm_vcr.use_cassette("cli_doctor.yaml")
     def test_doctor_reports_missing_auth(self, runner, isolated_home: Path) -> None:

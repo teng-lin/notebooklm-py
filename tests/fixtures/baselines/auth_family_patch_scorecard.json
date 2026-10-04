@@ -6011,6 +6011,16 @@
       "path": "tests/unit/test_auth_browser_facade.py"
     },
     {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "helper",
+      "owner_qualname": "_install_browser",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
       "attribute": "load_with_recovery",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -6201,6 +6211,46 @@
       "path": "tests/unit/app/test_app_profile.py"
     },
     {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_invalid_final_export_is_refused_before_heal_or_write",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_late_invalid_session_after_heal_does_not_replace_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_nid_only_app_landing_preserves_existing_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_restored_sid_after_every_goto_aborts_is_not_commit_evidence",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
       "attribute": "replace_profile_from_login",
       "count": 1,
       "idiom": "monkeypatch.setattr",
@@ -6229,6 +6279,16 @@
       "owner_qualname": "test_paired_cookie_projection_sanitizes_and_converts_each_row_once",
       "package": "notebooklm._auth",
       "path": "tests/unit/test_auth_stored_auth.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "helper",
+      "owner_qualname": "_install_browser",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
     {
       "attribute": "sync_playwright_context",
@@ -6373,17 +6433,17 @@
   ],
   "packages": {
     "notebooklm._auth": 85,
-    "notebooklm._browser": 27,
+    "notebooklm._browser": 33,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
-    "distinct_targets": 62,
-    "files": 84,
-    "lexical_owners": 599,
+    "distinct_targets": 65,
+    "files": 85,
+    "lexical_owners": 604,
     "private": 50,
-    "public": 588,
-    "total": 638
+    "public": 594,
+    "total": 644
   },
   "version": 1
 }

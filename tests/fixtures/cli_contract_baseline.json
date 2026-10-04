@@ -2292,7 +2292,7 @@
           }
         }
       ],
-      "short_help": "Check profile setup, auth status, and..."
+      "short_help": "Check profile setup, local auth material,..."
     },
     "download": {
       "class": "Group",
