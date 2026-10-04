@@ -480,34 +480,40 @@ def test_restored_sid_after_every_goto_aborts_is_not_commit_evidence(
     with pytest.raises(_InteractiveExit):
         _run("interactive", plan, io)
 
-    assert browser.page.goto.call_count == capture.LOGIN_MAX_RETRIES
+    assert browser.page.goto.call_count == capture.LOGIN_MAX_RETRIES + 2
     writer.assert_not_called()
     heal.assert_not_called()
     assert plan.storage_path.read_bytes() == before
-    assert not any("Capturing Google cookies" in message for message in io.messages)
-    browser.page.remove_listener.assert_called_once()
+    assert not any("saving cookies" in message for message in io.messages)
+    assert not any("Authentication saved" in message for message in io.messages)
 
 
-def test_same_url_commit_after_initial_goto_races_permits_capture(
+def test_forcing_commits_after_initial_goto_races_permit_sid_capture(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from playwright.sync_api import Error as PlaywrightError
 
     browser = _Browser(cookies=[SID])
-    browser.page.goto.side_effect = PlaywrightError("net::ERR_ABORTED")
-    listeners: list[Any] = []
-    browser.page.on.side_effect = lambda event, listener: listeners.append(listener)
+    initial_attempts = 0
 
-    def commit_same_url(*args: Any, **kwargs: Any) -> None:
-        for listener in listeners:
-            listener(browser.page.main_frame)
+    def goto_after_initial_races(url: str, **kwargs: Any) -> None:
+        nonlocal initial_attempts
+        if initial_attempts < capture.LOGIN_MAX_RETRIES:
+            initial_attempts += 1
+            raise PlaywrightError("net::ERR_ABORTED")
+        browser.goto(url, **kwargs)
 
-    browser.page.wait_for_url.side_effect = commit_same_url
+    browser.page.goto.side_effect = goto_after_initial_races
     heal = _install_browser(monkeypatch, browser)
     plan = _existing_plan(tmp_path)
 
     _run("interactive", plan, _IO())
 
+    assert browser.page.goto.call_count == capture.LOGIN_MAX_RETRIES + 2
+    assert [call.args[0] for call in browser.page.goto.call_args_list[-2:]] == [
+        capture.GOOGLE_ACCOUNTS_URL,
+        APP,
+    ]
     heal.assert_called_once()
     assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
 
@@ -578,6 +584,38 @@ def test_browser_closed_during_candidate_settle_retains_abort_routing(
         assert exc_info.value.kind is capture._CaptureAbortKind.BROWSER_CLOSED
     assert plan.storage_path.read_bytes() == before
     heal.assert_not_called()
+    if mode == "interactive":
+        assert any("browser window was closed" in message for message in io.messages)
+
+
+@pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
+def test_browser_closed_during_post_heal_guard_preserves_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[SID])
+    heal = _install_browser(monkeypatch, browser)
+
+    def close_after_heal(state: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        browser.context.cookies.side_effect = PlaywrightError(capture.TARGET_CLOSED_ERROR)
+        return state, None
+
+    heal.side_effect = close_after_heal
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    error = _InteractiveExit if mode == "interactive" else capture._HeadlessCaptureAbort
+    with pytest.raises(error) as exc_info:
+        _run(mode, plan, io)
+
+    if mode != "interactive":
+        assert exc_info.value.kind is capture._CaptureAbortKind.BROWSER_CLOSED
+    assert plan.storage_path.read_bytes() == before
+    writer.assert_not_called()
+    heal.assert_called_once()
     if mode == "interactive":
         assert any("browser window was closed" in message for message in io.messages)
 

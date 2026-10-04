@@ -23,8 +23,8 @@ import asyncio
 import logging
 import sys
 import time
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager, nullcontext
+from collections.abc import Awaitable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -469,27 +469,6 @@ def _refuse_incomplete_capture(io: BrowserCaptureIO, *, headless: bool) -> NoRet
         raise HeadlessLoginRequiredError(message)
     io.emit(f"[red]{message}[/red]")
     io.fail(1)
-
-
-@contextmanager
-def _observe_main_frame_commits(page: Any) -> Iterator[Callable[[], bool]]:
-    """Observe commits when repeated goto races left only a restored page URL."""
-    committed = False
-    main_frame = page.main_frame
-
-    def on_commit(frame: Any) -> None:
-        nonlocal committed
-        if _is_main_frame(frame, main_frame):
-            committed = True
-
-    page.on("framenavigated", on_commit)
-    try:
-        yield lambda: committed
-    finally:
-        try:
-            page.remove_listener("framenavigated", on_commit)
-        except Exception as exc:
-            _log_suppressed("could not detach the commit listener", exc)
 
 
 def wait_for_login_landing(
@@ -973,15 +952,7 @@ def run_browser_capture(
                         timeout_s,
                     )
                 try:
-                    with (
-                        log_observed_navigations(page),
-                        (
-                            _observe_main_frame_commits(page)
-                            if not navigation_committed
-                            else nullcontext(lambda: True)
-                        ) as saw_commit,
-                    ):
-                        wait_start_url = _current_url(page)
+                    with log_observed_navigations(page):
                         # Anonymous app pages never redirect on their own. Give
                         # an initial on-app, SID-less landing one Google sign-in
                         # continuation; never steer an in-progress off-host SSO
@@ -1010,18 +981,9 @@ def run_browser_capture(
                             context=context,
                             deadline=login_deadline,
                         )
-                        # wait_for_url resolves immediately for an already
-                        # matching restored URL. A SID must not turn that into
-                        # positive commit evidence after every goto was aborted.
-                        # A changed URL is also commit evidence: Playwright's
-                        # page.url follows the committed main-frame URL.
-                        navigation_committed = (
-                            navigation_committed
-                            or saw_commit()
-                            or _current_url(page) != wait_start_url
-                        )
-                        if not navigation_committed:
-                            _refuse_incomplete_capture(io, headless=headless)
+                        # A restored wait-only match adds no commit evidence.
+                        # Cookie-forcing gotos may still establish a real commit;
+                        # the post-forcing guard decides before export.
                 except PlaywrightTimeout:
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
