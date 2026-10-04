@@ -575,6 +575,29 @@ def test_doctor_inline_auth_passes_without_creating_profile(
     assert not (isolated_notebooklm_home / "profiles").exists()
 
 
+def test_doctor_inline_credentials_are_absent_from_repr_and_output(
+    runner, isolated_notebooklm_home, monkeypatch
+):
+    sentinel = "synthetic-private-cookie-value"
+    monkeypatch.setenv(
+        "NOTEBOOKLM_AUTH_JSON",
+        json.dumps(
+            _storage(
+                [
+                    {"name": "SID", "value": sentinel},
+                    {"name": "__Secure-1PSIDTS", "value": "y"},
+                ]
+            )
+        ),
+    )
+
+    assert sentinel not in repr(doctor_cmd_module._doctor_paths())
+    for output_args in (["doctor"], ["doctor", "--json"]):
+        result = runner.invoke(cli, output_args)
+        assert result.exit_code == 0, result.output
+        assert sentinel not in result.output
+
+
 @pytest.mark.parametrize("selector", ["flag", "env"])
 def test_doctor_checks_selected_profile_and_preserves_it_in_guidance(
     runner, isolated_notebooklm_home, monkeypatch, selector

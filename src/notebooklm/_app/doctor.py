@@ -79,7 +79,7 @@ class DoctorPaths:
     get_storage_path: Callable[[], Path]
     get_config_path: Callable[[], Path]
     headless_reauth_check: Callable[[], dict[str, str]]
-    read_auth_state: Callable[[], dict[str, Any]] | None = None
+    read_auth_state: Callable[[], dict[str, Any]] | None = field(default=None, repr=False)
     auth_source: str | None = None
     has_inline_auth: bool = False
 
@@ -158,6 +158,23 @@ def _check_profile_dir(profile_dir: Path, *, platform: str | None = None) -> dic
     }
 
 
+def read_doctor_auth_state(
+    storage_path: Path, *, inline_auth_json: str | None = None
+) -> dict[str, Any]:
+    """Read an adapter-selected auth source using canonical validation.
+
+    The adapter resolves the source before calling this function. Empty inline
+    JSON is selected and rejected by the canonical parser; it never falls back
+    to a dormant storage file. Neither reader validates PSIDTS or performs I/O
+    beyond the selected file read.
+    """
+    from ..auth import _load_storage_state, _load_storage_state_from_env_value
+
+    if inline_auth_json is not None:
+        return _load_storage_state_from_env_value(inline_auth_json)
+    return _load_storage_state(storage_path)
+
+
 def _check_auth(
     storage_path: Path,
     *,
@@ -171,7 +188,7 @@ def _check_auth(
     locally usable SID may still be revoked by Google; only the existing
     passive online auth check can establish whether token fetching works.
     """
-    from ..auth import _load_storage_state, _storage_has_routable_cookie, cookie_names_from_storage
+    from ..auth import _storage_has_routable_cookie, cookie_names_from_storage
 
     context = {
         "source": source or f"file ({storage_path})",
@@ -187,7 +204,9 @@ def _check_auth(
 
     try:
         data = (
-            read_auth_state() if read_auth_state is not None else _load_storage_state(storage_path)
+            read_auth_state()
+            if read_auth_state is not None
+            else read_doctor_auth_state(storage_path)
         )
         cookie_count = sum(isinstance(c, dict) for c in data["cookies"])
         cookie_names = cookie_names_from_storage(data)
@@ -358,5 +377,6 @@ def run_checks(*, fix: bool, paths: DoctorPaths, platform: str | None = None) ->
 __all__ = [
     "DoctorPaths",
     "DoctorReport",
+    "read_doctor_auth_state",
     "run_checks",
 ]

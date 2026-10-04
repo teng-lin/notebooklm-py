@@ -18,7 +18,7 @@ import click
 from rich.markup import escape
 from rich.table import Table
 
-from .._app.doctor import DoctorPaths, DoctorReport, run_checks
+from .._app.doctor import DoctorPaths, DoctorReport, read_doctor_auth_state, run_checks
 from ..auth import check_headless_reauth_readiness
 from ..paths import (
     get_browser_profile_dir,
@@ -41,13 +41,16 @@ def _doctor_paths(auth: AuthSource | None = None) -> DoctorPaths:
     """
     if auth is None:
         auth = AuthSource.from_click_context(click.get_current_context(silent=True))
-    from ..auth import _load_storage_state, _load_storage_state_from_env_value
 
     # Capture inline auth through the consolidated accessor. Explicit storage
     # suppresses it, just as it does for runtime and the passive auth check.
     if auth.has_env_auth:
         inline_json = read_env_auth_json()
-        read_auth_state = partial(_load_storage_state_from_env_value, inline_json)
+        read_auth_state = partial(
+            read_doctor_auth_state,
+            auth.storage_path_for_diagnostics(),
+            inline_auth_json=inline_json,
+        )
         auth_source = AUTH_JSON_ENV_NAME
     else:
         storage_path = (
@@ -55,7 +58,7 @@ def _doctor_paths(auth: AuthSource | None = None) -> DoctorPaths:
             if auth.storage_override is not None
             else get_storage_path(profile=auth.profile)
         )
-        read_auth_state = partial(_load_storage_state, storage_path)
+        read_auth_state = partial(read_doctor_auth_state, storage_path)
         auth_source = f"file ({storage_path})"
 
     resolved_auth = auth
