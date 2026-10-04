@@ -234,6 +234,7 @@ _find_cookie_for_storage = _auth_cookies._find_cookie_for_storage
 _load_storage_state = _auth_cookies._load_storage_state
 _replace_cookie_jar = _auth_cookies._replace_cookie_jar
 _storage_entry_to_cookie = _auth_cookies._storage_entry_to_cookie
+_storage_has_routable_cookie = _auth_cookies._storage_has_routable_cookie
 _update_cookie_input = _auth_cookies._update_cookie_input
 build_cookie_jar = _auth_cookies.build_cookie_jar
 build_httpx_cookies_from_storage = _auth_cookies.build_httpx_cookies_from_storage

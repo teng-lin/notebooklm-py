@@ -10,7 +10,7 @@ from __future__ import annotations
 import http.cookiejar
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, TypeAlias, cast
 
@@ -719,6 +719,34 @@ def _safe_to_cookie(
             type(exc).__name__,
         )
         return None
+
+
+def _storage_has_routable_cookie(state: Mapping[str, Any], name: str, url: str) -> bool:
+    """Check a stored cookie's local usability for one unsent request.
+
+    This is a routing prerequisite, not proof that the server accepts a
+    session. Keep the original expiry and security attributes, and tolerate
+    unusable sibling rows without invoking strict required-cookie validation,
+    recovery, storage I/O, or a network request. In particular, SID remains
+    testable when a completed browser sign-in has not yet supplied PSIDTS.
+    """
+    jar = httpx.Cookies()
+    seen_keys: set[CookieKey] = set()
+    for entry in _sanitized_auth_entries(state):
+        if entry["name"] != name:
+            continue
+        cookie = _safe_to_cookie(entry)
+        if cookie is None:
+            continue
+        key = (cookie.name, cookie.domain, cookie.path)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        jar.jar.set_cookie(cookie)
+
+    request = httpx.Request("GET", url)
+    jar.set_cookie_header(request)
+    return name in _cookie_types._cookie_header_names(request.headers.get("cookie", ""))
 
 
 def _cookie_key_variants(key: CookieKey) -> set[CookieKey]:
