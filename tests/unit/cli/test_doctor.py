@@ -661,9 +661,9 @@ def test_doctor_routes_auth_cookies_to_configured_base_url(
 def test_doctor_never_fetches_refreshes_or_rotates_auth(
     runner, isolated_notebooklm_home, monkeypatch, fix
 ):
-    import httpx
+    import subprocess
 
-    from notebooklm import auth
+    import httpx
 
     profile_dir = _make_profile(isolated_notebooklm_home)
     storage = profile_dir / "storage_state.json"
@@ -673,17 +673,10 @@ def test_doctor_never_fetches_refreshes_or_rotates_auth(
     def forbidden(*args, **kwargs):
         raise AssertionError("doctor must not fetch, refresh, rotate or launch a browser")
 
-    for name in (
-        "fetch_tokens",
-        "fetch_tokens_passive",
-        "fetch_tokens_with_domains",
-        "_rotate_cookies",
-        "_run_refresh_cmd",
-        "run_browser_login_capture",
-    ):
-        monkeypatch.setattr(auth, name, forbidden)
     monkeypatch.setattr(httpx.Client, "send", forbidden)
     monkeypatch.setattr(httpx.AsyncClient, "send", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
     args = ["doctor", "--json"]
     if fix:
         args.append("--fix")
