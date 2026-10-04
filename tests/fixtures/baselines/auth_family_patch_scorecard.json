@@ -6266,6 +6266,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture",
       "owner_kind": "test",
+      "owner_qualname": "test_recovered_on_app_page_without_a_commit_reports_navigation_failure",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
       "owner_qualname": "test_restored_sid_after_every_goto_aborts_is_not_commit_evidence",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
@@ -6463,17 +6473,17 @@
   ],
   "packages": {
     "notebooklm._auth": 85,
-    "notebooklm._browser": 36,
+    "notebooklm._browser": 37,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
     "distinct_targets": 65,
     "files": 85,
-    "lexical_owners": 607,
+    "lexical_owners": 608,
     "private": 50,
-    "public": 597,
-    "total": 647
+    "public": 598,
+    "total": 648
   },
   "version": 1
 }
