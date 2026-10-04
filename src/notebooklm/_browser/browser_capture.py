@@ -124,6 +124,7 @@ MAX_TOLERATED_NAVIGATION_FAILURES = 20
 INSTANT_FAILURE_SECONDS = 0.25
 CAPTURE_SETTLE_SECONDS = 2.0
 CAPTURE_POLL_MS = 500
+CAPTURE_SNAPSHOT_ATTEMPTS = 3
 BROWSER_CLOSED_HELP = (
     "[red]The browser window was closed during login.[/red]\n"
     "This can happen when switching Google accounts in a persistent browser session.\n\n"
@@ -409,22 +410,26 @@ def _capture_candidate_url(page: Any, context: Any) -> str | None:
     """Find an app URL with a browser-routable SID, without claiming liveness.
 
     App hosts also serve anonymous pages (#2467). Read cookies eligible for
-    the observed URL, excluding sibling-domain SID cookies, and require the
-    URL to remain stable while the read pumps browser events. Do not require
+    the observed URL, excluding sibling-domain SID cookies. Use at most three
+    URL-scoped snapshots as reads pump browser events. Do not require
     PSIDTS or DOM tokens: incomplete captures retain recovery (#865 / #2082).
     """
-    url = _current_url(page)
-    if not url_matches_base_host(url):
-        return None
-    cookies = context.cookies([url])
-    has_sid = any(
-        isinstance(cookie, dict)
-        and cookie.get("name") == "SID"
-        and isinstance(cookie.get("value"), str)
-        and bool(cookie["value"])
-        for cookie in cookies
-    )
-    return url if has_sid and _current_url(page) == url else None
+    for _ in range(CAPTURE_SNAPSHOT_ATTEMPTS):
+        url = _current_url(page)
+        if not url_matches_base_host(url):
+            return None
+        cookies = context.cookies([url])
+        if _current_url(page) != url:
+            continue
+        has_sid = any(
+            isinstance(cookie, dict)
+            and cookie.get("name") == "SID"
+            and isinstance(cookie.get("value"), str)
+            and bool(cookie["value"])
+            for cookie in cookies
+        )
+        return url if has_sid else None
+    return None
 
 
 def _settle_capture_candidate(page: Any, context: Any, *, deadline: float) -> bool:
@@ -949,7 +954,7 @@ def run_browser_capture(
             elif navigation_committed and _settle_capture_candidate(
                 page, context, deadline=login_deadline
             ):
-                io.emit("[green]Google session found; saving cookies.[/green]")
+                io.emit("[dim]Capturing Google cookies...[/dim]")
             else:
                 io.emit("\n[bold green]Instructions:[/bold green]")
                 io.emit("1. Complete the Google login in the browser window")
@@ -1049,7 +1054,7 @@ def run_browser_capture(
                             kind=_CaptureAbortKind.BROWSER_CLOSED,
                         )
                     raise
-                io.emit("[green]Google session found; saving cookies.[/green]")
+                io.emit("[dim]Capturing Google cookies...[/dim]")
 
             active_page_html = _capture_page_html(page)
 

@@ -184,7 +184,7 @@ def test_nid_only_app_landing_preserves_existing_storage(
     writer.assert_not_called()
     heal.assert_not_called()
     assert plan.storage_path.read_bytes() == before
-    assert not any("session found" in message for message in io.messages)
+    assert not any("Capturing Google cookies" in message for message in io.messages)
     assert not any("Already logged in" in message for message in io.messages)
     assert not any("Login detected" in message for message in io.messages)
     service_logins = [
@@ -219,7 +219,7 @@ def test_interactive_anonymous_landing_gets_one_encoded_sign_in_fallback(
     heal.assert_called_once()
     assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
     assert "account" not in json.loads(plan.storage_path.read_text())["notebooklm"]
-    assert any("Google session found; saving cookies" in message for message in io.messages)
+    assert any("Capturing Google cookies..." in message for message in io.messages)
 
 
 @pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
@@ -354,6 +354,87 @@ def test_late_invalid_session_after_heal_does_not_replace_storage(
 
 
 @pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
+@pytest.mark.parametrize("new_url", [f"{APP}?authuser=0", f"{APP}notebook/synthetic"])
+def test_sid_only_capture_survives_post_heal_app_navigation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, new_url: str
+) -> None:
+    browser = _Browser(cookies=[SID])
+    heal = _install_browser(monkeypatch, browser)
+    snapshots: list[str] = []
+
+    def move_during_snapshot(urls: list[str]) -> list[dict[str, Any]]:
+        assert urls == [browser.page.url]
+        snapshots.append(urls[0])
+        if len(snapshots) == 1:
+            browser.page.url = new_url
+        return [deepcopy(SID)]
+
+    def decline_after_app_navigation(
+        state: dict[str, Any],
+    ) -> tuple[dict[str, Any], ValueError]:
+        browser.context.cookies.side_effect = move_during_snapshot
+        return state, ValueError("synthetic missing PSIDTS")
+
+    heal.side_effect = decline_after_app_navigation
+    plan = _existing_plan(tmp_path)
+    writer = MagicMock(wraps=capture.replace_captured_profile)
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+
+    _run(mode, plan, _IO())
+
+    assert snapshots == [APP, new_url]
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+    writer.assert_called_once()
+    heal.assert_called_once()
+    browser.page.wait_for_timeout.assert_not_called()
+
+
+@pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
+@pytest.mark.parametrize("failure", ["off_host", "sid_lost", "unstable"])
+def test_post_heal_reobservation_refuses_an_invalid_or_unstable_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, failure: str
+) -> None:
+    browser = _Browser(cookies=[SID])
+    heal = _install_browser(monkeypatch, browser)
+    snapshots: list[str] = []
+
+    def move_during_snapshot(urls: list[str]) -> list[dict[str, Any]]:
+        assert urls == [browser.page.url]
+        snapshots.append(urls[0])
+        if failure == "off_host":
+            browser.page.url = SIGN_IN
+        elif failure == "unstable":
+            browser.page.url = f"{APP}?transition={len(snapshots)}"
+        elif len(snapshots) == 1:
+            browser.page.url = f"{APP}?authuser=0"
+        else:
+            return [deepcopy(NID)]
+        return [deepcopy(SID)]
+
+    def decline_before_invalidation(
+        state: dict[str, Any],
+    ) -> tuple[dict[str, Any], ValueError]:
+        browser.context.cookies.side_effect = move_during_snapshot
+        return state, ValueError("synthetic missing PSIDTS")
+
+    heal.side_effect = decline_before_invalidation
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    error = _InteractiveExit if mode == "interactive" else HeadlessLoginRequiredError
+    with pytest.raises(error):
+        _run(mode, plan, _IO())
+
+    expected_snapshots = {"off_host": 1, "sid_lost": 2, "unstable": 3}
+    assert len(snapshots) == expected_snapshots[failure]
+    assert plan.storage_path.read_bytes() == before
+    writer.assert_not_called()
+    heal.assert_called_once()
+    browser.page.wait_for_timeout.assert_not_called()
+
+
+@pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
 def test_current_host_sid_cannot_replace_legacy_rpc_profile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
@@ -403,7 +484,7 @@ def test_restored_sid_after_every_goto_aborts_is_not_commit_evidence(
     writer.assert_not_called()
     heal.assert_not_called()
     assert plan.storage_path.read_bytes() == before
-    assert not any("session found" in message for message in io.messages)
+    assert not any("Capturing Google cookies" in message for message in io.messages)
     browser.page.remove_listener.assert_called_once()
 
 

@@ -395,7 +395,7 @@ class TestPreflightPrepareFresh:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -442,7 +442,7 @@ class TestEnsureChromiumInstalled:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -485,7 +485,7 @@ class TestEnsureChromiumInstalled:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -503,7 +503,7 @@ class TestEnsureChromiumInstalled:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -549,7 +549,7 @@ class TestLoginProgressSuccess:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -578,7 +578,7 @@ class TestLoginProgressSuccess:
             "2. Authentication will be saved automatically once login is detected\n"
             "\n"
             "Waiting for login (up to 5 minutes)...\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -605,7 +605,7 @@ class TestLoginProgressSuccess:
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
             "Browser page closed (attempt 1/3). Retrying with fresh page...\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -628,7 +628,7 @@ class TestLoginProgressSuccess:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "\n"
             f"Authentication saved to: {_STORAGE}\n"
         )
@@ -659,7 +659,7 @@ class TestLoginProgressSuccess:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "Identifying Google account...\n"
             "Account: alice@example.com\n"
             "\n"
@@ -849,7 +849,7 @@ class TestLoginErrorRender:
             "2. Authentication will be saved automatically once login is detected\n"
             "\n"
             "Waiting for login (up to 5 minutes)...\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             # Host only: the drift target can be a credential-bearing SSO URL,
             # and this line goes to the terminal and to captured CI output.
             "Unexpected URL after login: https://accounts.google.com/\n"
@@ -886,7 +886,7 @@ class TestLoginErrorRender:
             f"Profile: {_PROFILE_NAME}\n"
             "Opening Chromium for Google login...\n"
             f"Using persistent profile: {_PROFILE}\n"
-            "Google session found; saving cookies.\n"
+            "Capturing Google cookies...\n"
             "The browser window was closed during login.\n"
             "This can happen when switching Google accounts in a persistent browser "
             "session.\n"

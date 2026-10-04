@@ -778,7 +778,7 @@ def test_interactive_login_survives_an_aborted_navigation(tmp_path: Any) -> None
     assert calls["n"] == 2, "the wait must have been re-armed after the aborted hop"
     assert storage.exists(), "the completed sign-in must be persisted, not discarded"
     flattened = " ".join(str(a) for args in io.emitted for a in args)
-    assert "Google session found; saving cookies" in flattened
+    assert "Capturing Google cookies..." in flattened
 
 
 @pytest.mark.requires_playwright

@@ -483,7 +483,7 @@ class TestLoginCommand:
         result = runner.invoke(cli, ["login"])
 
         assert result.exit_code == 0
-        assert "Google session found; saving cookies" in result.output
+        assert "Capturing Google cookies..." in result.output
         assert "Already logged in" not in result.output
         mock_page.wait_for_url.assert_not_called()
 
@@ -516,7 +516,7 @@ class TestLoginCommand:
             "commit",
             "domcontentloaded",
         }
-        assert "Google session found; saving cookies" in result.output
+        assert "Capturing Google cookies..." in result.output
         assert "Login detected" not in result.output
 
     def test_login_forwards_custom_browser_timeout(self, runner, mock_login_browser_with_storage):
