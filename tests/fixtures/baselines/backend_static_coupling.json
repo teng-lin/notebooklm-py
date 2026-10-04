@@ -3384,6 +3384,15 @@
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._auth.cookies",
+      "target": "notebooklm.exceptions",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 21,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._auth.cookies",
       "target": "notebooklm.paths",
       "type_only": false
     },
@@ -11813,7 +11822,7 @@
       "modules": 47
     },
     "auth": {
-      "lines": 13800,
+      "lines": 13807,
       "modules": 33
     },
     "cli": {
@@ -11850,13 +11859,13 @@
     }
   },
   "summary": {
-    "authored_lines": 153723,
+    "authored_lines": 153730,
     "authored_modules": 492,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1300,
+    "cross_subsystem_edges": 1301,
     "dynamic_import_calls": 10,
     "function_local_edges": 93,
-    "module_level_edges": 1207,
+    "module_level_edges": 1208,
     "type_only_edges": 138
   },
   "version": 1

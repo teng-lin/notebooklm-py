@@ -14,6 +14,7 @@ import pytest
 
 from notebooklm import auth
 from notebooklm._auth import cookies
+from notebooklm.exceptions import ConfigurationError
 
 _APP_URL = "https://notebook.google.com/"
 _LEGACY_URL = "https://notebooklm.google.com/"
@@ -96,8 +97,29 @@ def test_explicit_cookie_route_does_not_resolve_configured_root(
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://invalid.example/")
     state = {"cookies": [_sid()]}
     assert auth._storage_has_routable_cookie(state, "SID", _APP_URL)
-    with pytest.raises(ValueError, match="NOTEBOOKLM_BASE_URL"):
+    with pytest.raises(ConfigurationError, match="NOTEBOOKLM_BASE_URL"):
         auth._storage_has_routable_cookie(state, "SID")
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        "https://synthetic-credential@notebook.google.com/",
+        "https://notebook.google.com:synthetic-credential/",
+        "https://invalid.example/?token=synthetic-credential",
+    ],
+)
+def test_default_cookie_route_classifies_invalid_config_without_echoing_value(
+    monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", configured)
+
+    with pytest.raises(ConfigurationError, match="NOTEBOOKLM_BASE_URL") as caught:
+        auth._storage_has_routable_cookie({"cookies": [_sid()]}, "SID")
+
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert str(caught.value) == str(caught.value.__cause__)
+    assert "synthetic-credential" not in str(caught.value)
 
 
 def test_inline_parser_facade_uses_supplied_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:

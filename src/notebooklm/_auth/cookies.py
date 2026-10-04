@@ -17,6 +17,7 @@ from typing import Any, TypeAlias, cast
 import httpx
 
 from .._env import get_base_url
+from ..exceptions import ConfigurationError
 from ..paths import get_storage_path
 from . import cookie_policy as _cookie_policy
 from . import cookie_semantics as _cookie_semantics
@@ -735,6 +736,12 @@ def _storage_has_routable_cookie(
     An omitted URL resolves the configured application root at call time;
     explicit URLs are checked without consulting that configuration.
     """
+    if url is None:
+        try:
+            url = f"{get_base_url()}/"
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from exc
+
     jar = httpx.Cookies()
     seen_keys: set[CookieKey] = set()
     for entry in _sanitized_auth_entries(state):
@@ -749,7 +756,7 @@ def _storage_has_routable_cookie(
         seen_keys.add(key)
         jar.jar.set_cookie(cookie)
 
-    request = httpx.Request("GET", f"{get_base_url()}/" if url is None else url)
+    request = httpx.Request("GET", url)
     jar.set_cookie_header(request)
     return name in _cookie_types._cookie_header_names(request.headers.get("cookie", ""))
 
