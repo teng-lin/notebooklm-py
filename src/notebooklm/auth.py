@@ -232,6 +232,7 @@ _cookie_map_from_jar = _auth_cookies._cookie_map_from_jar
 _cookie_to_storage_state = _auth_cookies._cookie_to_storage_state
 _find_cookie_for_storage = _auth_cookies._find_cookie_for_storage
 _load_storage_state = _auth_cookies._load_storage_state
+_load_storage_state_from_env_value = _auth_cookies._load_storage_state_from_env_value
 _replace_cookie_jar = _auth_cookies._replace_cookie_jar
 _storage_entry_to_cookie = _auth_cookies._storage_entry_to_cookie
 _storage_has_routable_cookie = _auth_cookies._storage_has_routable_cookie

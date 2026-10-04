@@ -683,7 +683,7 @@
       "path": "src/notebooklm/_auth/cookie_types.py"
     },
     {
-      "lines": 861,
+      "lines": 866,
       "name": "cookies",
       "path": "src/notebooklm/_auth/cookies.py"
     },
@@ -801,7 +801,7 @@
     "function_local_edges": 12,
     "module_edges": 113,
     "modules": 33,
-    "total_lines": 13795,
+    "total_lines": 13800,
     "unique_edges": 125
   },
   "version": 1

@@ -16,6 +16,7 @@ from typing import Any, TypeAlias, cast
 
 import httpx
 
+from .._env import get_base_url
 from ..paths import get_storage_path
 from . import cookie_policy as _cookie_policy
 from . import cookie_semantics as _cookie_semantics
@@ -721,7 +722,9 @@ def _safe_to_cookie(
         return None
 
 
-def _storage_has_routable_cookie(state: Mapping[str, Any], name: str, url: str) -> bool:
+def _storage_has_routable_cookie(
+    state: Mapping[str, Any], name: str, url: str | None = None
+) -> bool:
     """Check a stored cookie's local usability for one unsent request.
 
     This is a routing prerequisite, not proof that the server accepts a
@@ -729,6 +732,8 @@ def _storage_has_routable_cookie(state: Mapping[str, Any], name: str, url: str) 
     unusable sibling rows without invoking strict required-cookie validation,
     recovery, storage I/O, or a network request. In particular, SID remains
     testable when a completed browser sign-in has not yet supplied PSIDTS.
+    An omitted URL resolves the configured application root at call time;
+    explicit URLs are checked without consulting that configuration.
     """
     jar = httpx.Cookies()
     seen_keys: set[CookieKey] = set()
@@ -744,7 +749,7 @@ def _storage_has_routable_cookie(state: Mapping[str, Any], name: str, url: str) 
         seen_keys.add(key)
         jar.jar.set_cookie(cookie)
 
-    request = httpx.Request("GET", url)
+    request = httpx.Request("GET", f"{get_base_url()}/" if url is None else url)
     jar.set_cookie_header(request)
     return name in _cookie_types._cookie_header_names(request.headers.get("cookie", ""))
 

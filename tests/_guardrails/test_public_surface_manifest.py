@@ -902,6 +902,7 @@ def test_auth_cookie_conversion_facade_delegates_to_private_module() -> None:
     assert auth._cookie_map_from_jar is cookies._cookie_map_from_jar
     assert auth._cookie_to_storage_state is cookies._cookie_to_storage_state
     assert auth._load_storage_state is cookies._load_storage_state
+    assert auth._load_storage_state_from_env_value is cookies._load_storage_state_from_env_value
     assert auth._storage_entry_to_cookie is cookies._storage_entry_to_cookie
     assert auth._storage_has_routable_cookie is cookies._storage_has_routable_cookie
     assert auth._cookie_key_variants is cookies._cookie_key_variants

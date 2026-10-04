@@ -36,7 +36,7 @@ _MODULE_HASHES = {
     "account_types.py": "ae645b74c6d3f46ee9532179672c90d5b690877b900120889022d32d8efa372a",
     "profile_account.py": "899baf4cc0c748740247b68c3adfa2a3754bb565b143d4a1150329a05f456ce4",
     "cookie_types.py": "4cb8725cbbcb0dbdbb49f81e8495695bd98b6dc2e475ad8ea6bd137e392df5cb",
-    "cookies.py": "e5f3f2a60d9f352ebe2953deaa950f5c8865a3e1a5de0bad382a0fa517ebc621",
+    "cookies.py": "53b478d11534b9c07f72e260898d39f7279642c846edd46525f93b4cac9d510d",
     "keepalive.py": "505cfcf1d093d7aea2f26c2b7745a27ed8f7b51698e1bebdc3fafe4d6f78f065",
     "master_token.py": "42b3d3c3a4bc96c860d454ef8defd243b5d55617df7d3b4fc95467ae675bab78",
     "master_token_types.py": "856c741582249f7049fca0030e7af84cbda9141c7099a7aad6be6066090e5d57",

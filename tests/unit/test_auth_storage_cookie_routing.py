@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import time
 from types import MappingProxyType
 from typing import Any
@@ -64,6 +65,45 @@ def test_storage_cookie_routes_with_original_attributes(
     row: dict[str, Any], url: str, expected: bool
 ) -> None:
     assert cookies._storage_has_routable_cookie({"cookies": [row]}, "SID", url) is expected
+
+
+def test_storage_cookie_defaults_to_current_personal_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_BASE_URL", raising=False)
+    assert auth._storage_has_routable_cookie(
+        {"cookies": [_sid(domain="notebook.google.com")]}, "SID"
+    )
+    assert not auth._storage_has_routable_cookie(
+        {"cookies": [_sid(domain="notebooklm.google.com")]}, "SID"
+    )
+
+
+@pytest.mark.parametrize(
+    "host", ["notebook.google.com", "notebooklm.google.com", "notebooklm.cloud.google.com"]
+)
+def test_storage_cookie_default_obeys_configured_root(
+    monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", f"https://{host}/")
+    assert auth._storage_has_routable_cookie({"cookies": [_sid(domain=host)]}, "SID")
+    assert not auth._storage_has_routable_cookie(
+        {"cookies": [_sid(domain="accounts.google.com")]}, "SID"
+    )
+
+
+def test_explicit_cookie_route_does_not_resolve_configured_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://invalid.example/")
+    state = {"cookies": [_sid()]}
+    assert auth._storage_has_routable_cookie(state, "SID", _APP_URL)
+    with pytest.raises(ValueError, match="NOTEBOOKLM_BASE_URL"):
+        auth._storage_has_routable_cookie(state, "SID")
+
+
+def test_inline_parser_facade_uses_supplied_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", "invalid ambient value")
+    state = {"cookies": [_sid()], "origins": []}
+    assert auth._load_storage_state_from_env_value(json.dumps(state)) == state
 
 
 def test_storage_cookie_expiry_uses_canonical_units() -> None:
