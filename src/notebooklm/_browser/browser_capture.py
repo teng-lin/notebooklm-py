@@ -31,19 +31,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 from urllib.parse import urlencode, urlparse
 
-# Collaborators of :func:`heal_captured_state` (absorbed from
-# ``browser_state_validation.py``, ADR-0033 PR 4.1): the sanitiser that shapes
-# captured rows for the rookiepy contract, and the shared PSIDTS recovery that
-# contract runs. These were already on this module's import path transitively,
-# via the leaf that used to hold the bridge.
+# Captured-state sanitization and shared PSIDTS recovery (ADR-0033 PR 4.1).
 from .._auth import cookies as _auth_cookies
 from .._auth import psidts_recovery as _psidts_recovery
 
-# ``app_host_scope_note`` owns the both-personal-hosts cookie-scope caveat that
-# every "open the app in your browser" instruction needs (it is appended to the
-# binding-related hints in ``cookie_policy.missing_cookies_hint``). It is
-# retained here as a private-package compatibility re-export. First-party
-# adapters reach the canonical identity through the ``notebooklm.auth`` facade.
+# Private compatibility re-export; adapters use the notebooklm.auth facade.
 from .._auth.cookie_policy import app_host_scope_note
 from .._auth.profile_account import DomainSelection
 from .._auth.profile_document import ProfileDocument
@@ -54,19 +46,12 @@ from .._auth.profile_store import ProfileStore, RemintWriteRequest, ReplaceResul
 from .._auth.storage import _safe_cookie_shape as _safe_cookie_shape
 from .._auth.storage import filter_storage_state_cookies_by_domain_policy
 
-# ``PERSONAL_APP_HOSTS`` is imported from ``_env`` rather than ``config``
-# deliberately: it is not part of ``config.__all__``, and re-exporting it there
-# just to reach it here would add a public export for an internal host fact.
-# Importing ``_env`` directly is the established idiom (``_url_utils`` and
-# friends do the same).
+# Host-family sets are internal _env facts, not new public config exports.
 from .._env import ENTERPRISE_APP_HOSTS, PERSONAL_APP_HOSTS
 from ..config import get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError, LockUnavailableError
 
-# ``CHANNEL_BROWSERS`` and the launch-failure triage live in the
-# ``browser_launch_errors`` leaf (ADR-0008). ``CHANNEL_BROWSERS`` is re-exported
-# below because the capture implementation consumes it directly and existing
-# private importers may still resolve it here. CLI discovery uses the auth facade.
+# Pure launch classifier (ADR-0008); retain private compatibility re-exports.
 from .browser_launch_errors import CHANNEL_BROWSERS, classify_launch_failure
 
 # Navigation-failure classification lives in its own pure leaf (ADR-0008); these
@@ -86,17 +71,13 @@ logger = logging.getLogger(__name__)
 
 
 class BrowserCaptureIO(Protocol):
-    """Caller-injected sink for the neutral browser-capture core's side effects.
+    """Caller-injected presentation, exit, and async side effects.
 
-    ``emit`` forwards a presentation line (``*args, **kwargs`` pass through
-    verbatim, incl. ``markup=False``); ``fail`` aborts the flow according to the
-    injected adapter. First-party interactive callers arrive through the auth
-    facade's private callback bridge, not through a direct CLI import.
-
-    Note: :func:`run_browser_capture` itself never calls ``run_async`` — only
-    post-capture app orchestration drives account repair. ``run_async`` remains
-    on this private Protocol for structural compatibility; first-party capture
-    bridges provide a loudly failing implementation.
+    ``emit`` forwards arguments verbatim, including ``markup=False``; ``fail``
+    aborts through the adapter. Interactive callers use the auth facade's
+    callback bridge rather than importing the CLI here. Capture never calls
+    ``run_async``: it remains for compatibility with post-capture app account
+    repair, and first-party capture bridges implement it as a loud failure.
     """
 
     def emit(self, *args: Any, **kwargs: Any) -> None: ...
@@ -186,13 +167,11 @@ def _abort_capture(
 
 @contextmanager
 def windows_playwright_event_loop() -> Iterator[None]:
-    """Temporarily restore the default event loop policy for Playwright on Windows.
+    """Temporarily restore Playwright's required event-loop policy on Windows.
 
-    Playwright's sync API spawns the browser via subprocess, which needs
-    ``ProactorEventLoop`` on Windows. The CLI sets
-    ``WindowsSelectorEventLoopPolicy`` globally (issue #79), incompatible with
-    that path; this swaps the policy in for the Playwright section and restores
-    it on exit. No-op on non-Windows platforms.
+    Its subprocesses need ``ProactorEventLoop``, while the CLI installs an
+    incompatible ``WindowsSelectorEventLoopPolicy`` (#79). Restore the original
+    policy on exit; do nothing on other platforms.
     """
     if sys.platform != "win32":
         yield
@@ -221,14 +200,11 @@ def recover_page(
     *,
     headless: bool = False,
 ) -> Page:
-    """Get a fresh page from a persistent browser context.
+    """Replace a stale page, inheriting the persistent context's cookies.
 
-    Used when the current page reference is stale (TargetClosedError); a new
-    page in a persistent context inherits all cookies and storage. Returns a
-    new ``Page``, or aborts if the context/browser is dead;
-    re-raises the original ``PlaywrightError`` for non-TargetClosed failures.
-    ``io`` supplies both emit + fail. Headless callers receive a typed abort
-    for a dead browser instead of the interactive ``io.fail`` exception.
+    If the browser is dead, emit the closed-browser help and abort through the
+    interactive adapter or the typed headless infrastructure error. Other
+    Playwright failures propagate unchanged.
     """
     from playwright.sync_api import Error as PlaywrightError
 
@@ -249,18 +225,12 @@ def recover_page(
 
 
 def accepted_login_hosts() -> tuple[str, ...]:
-    """Return the lowercased hostnames :func:`url_matches_base_host` accepts.
+    """Return the lowercased app-family hosts used by matching and DEBUG tracing.
 
-    Single source of truth for the accept set so the login-wait DEBUG line
-    ("waiting for host X") can never drift from the predicate that actually
-    ends the wait — the drift that made the ``notebook.google.com`` rebrand
-    (#2017 / #2025 and friends) so expensive to triage.
-
-    Selecting *either* personal host accepts *both* of them. Google's login
-    flow may land on either one regardless of which we navigated to, so keying
-    the accept set on the selected host alone would reject a perfectly good
-    landing (and, on the alias, fail every login). Enterprise accepts its
-    current and legacy Google-identity hosts, never a personal app host.
+    Either personal host accepts both aliases: Google may land on either one
+    regardless of the configured host (#2017 / #2025). Enterprise accepts only
+    its current and legacy Google-identity hosts. Sharing this set prevents
+    diagnostic instructions from drifting from the actual predicate.
     """
     base_host = get_base_host().lower()
     for hosts in (PERSONAL_APP_HOSTS, ENTERPRISE_APP_HOSTS):
@@ -297,17 +267,8 @@ def connection_error_help() -> str:
 # ---------------------------------------------------------------------------
 # Login-wait DEBUG tracing (absorbed from ``login_wait_trace.py``, ADR-0033)
 #
-# ``notebooklm -vv login`` used to print nothing at all for the whole five-minute
-# ``page.wait_for_url`` block below, so a login that never landed (e.g. Google's
-# ``notebook.google.com`` rebrand) was indistinguishable from a user who simply
-# walked away from the browser. Issues #2017 / #2022 / #2023 / #2025 / #2028 /
-# #2030 / #2032 each needed manual triage that a single "navigated to X" line
-# would have answered. See #2046.
-#
-# This section owns the Playwright-event side of that tracing. It holds no state
-# and has no CLI / Click / Rich coupling (ADR-0021); it was a separate module
-# only to keep this file under the ADR-0008 module-size budget, and its sole
-# consumer has always been :func:`run_browser_capture` below.
+# Host-only event tracing diagnoses stalled sign-ins without exposing SSO grants
+# or coupling this core to the CLI (ADR-0021, #2046).
 # ---------------------------------------------------------------------------
 
 # Stand-in when the page's URL cannot be read at all. Distinct from
@@ -322,28 +283,14 @@ _HOSTLESS_URL = "{scheme}:<no host>"
 
 
 def trace_url(url: str) -> str:
-    """Render ``url`` as ``scheme://host[:port]/`` — host only, nothing else.
+    """Render only ``scheme://host[:port]/``; omit all credential-bearing parts.
 
-    **This is deliberately a SECOND URL redactor, not a duplicate of
-    ``_auth.extraction._safe_url``. Do not unify them.** ``_safe_url`` is built
-    for *error messages about Google endpoints*: it keeps the path for any host
-    outside a small Google-OAuth allowlist, on the reasoning that the path tells
-    an operator which endpoint failed.
-
-    That trade is wrong here. This formatter renders **arbitrary main-frame
-    navigations observed during a live SSO flow**, and a Workspace tenant can
-    federate to any identity provider — ``https://idp.example/sso/<assertion>``
-    puts a one-time credential straight in the path of a host no allowlist can
-    anticipate. `-vv` output is exactly what our issue template asks users to
-    paste into public bug reports, so the safe default is to keep nothing but
-    the host.
-
-    Nothing is lost: the entire diagnostic this tracing exists to provide is
-    *which host the browser is on* — "waiting for notebook.google.com, landed
-    on notebooklm.google.com". The path never contributed to that answer.
-
-    Userinfo (``https://TOKEN@host/``) is dropped by rebuilding from
-    ``hostname``; query and fragment are dropped by never reading them.
+    Keep this separate from ``_auth.extraction._safe_url``, whose endpoint
+    errors retain paths outside a Google-OAuth allowlist. Login observes
+    arbitrary Workspace SSO providers: a path such as ``/sso/<assertion>`` can
+    carry a grant on any host. Public ``-vv`` issue reports therefore retain
+    only the host, which is sufficient to diagnose landing problems. Rebuild
+    from ``hostname`` to drop userinfo; never include query or fragment.
     """
     if not url:
         return ""
@@ -361,27 +308,20 @@ def trace_url(url: str) -> str:
 
 
 def _log_suppressed(what: str, exc: BaseException) -> None:
-    """Record that a tracing step failed, naming the exception TYPE only.
+    """Record only a tracing failure's exception type.
 
-    Deliberately **not** ``exc_info=True``. Playwright exception messages
-    routinely embed the offending URL (``net::ERR_ABORTED at https://…?f.sid=…``),
-    and a rendered traceback bypasses :func:`trace_url` — the precise,
-    structural redaction this section promises — leaving only the package's
-    heuristic ``scrub_secrets`` backstop, which has no marker to match on an
-    opaque OAuth grant carried in a URL *path*. The exception class is the
-    entire diagnostic signal here (``TargetClosedError`` vs ``TypeError``);
-    the message adds leak surface and nothing else.
+    Never include the message or ``exc_info``: Playwright errors contain URLs,
+    and traceback formatting bypasses host-only redaction. Heuristic secret
+    scrubbing cannot recognize opaque grants in arbitrary SSO paths.
     """
     logger.debug("Login wait: %s (%s)", what, type(exc).__name__)
 
 
 def safe_page_url(page: Any) -> str:
-    """Return ``page.url`` credential-stripped, or a placeholder if unreadable.
+    """Return the credential-stripped page URL, or a placeholder if unreadable.
 
-    Reading ``url`` off a Playwright page can raise once the page or browser is
-    gone. A DEBUG diagnostic must never be the thing that turns a
-    browser-closed login into an unhandled traceback, so every failure degrades
-    to :data:`_UNREADABLE_URL` instead of propagating.
+    A dead page can reject URL reads; diagnostics must not replace the existing
+    browser-closed routing with an unhandled traceback.
     """
     try:
         return trace_url(page.url)
@@ -391,14 +331,10 @@ def safe_page_url(page: Any) -> str:
 
 
 def _is_main_frame(frame: Any, main_frame: Any) -> bool:
-    """True when ``frame`` is the page's top-level frame.
+    """Match the top-level frame by identity or absence of a parent.
 
-    Identity against ``page.main_frame`` is the fast path, but it is not the
-    only test: if Playwright ever hands the listener a different wrapper object
-    for the same underlying frame, an identity-only filter would silently drop
-    *every* navigation — turning this diagnostic back into the silence it
-    exists to fix. So fall back to the structural definition: only the top
-    frame has no parent.
+    The structural fallback supports distinct wrappers for one underlying
+    frame, so identity changes cannot silently drop every navigation.
     """
     if main_frame is not None and frame is main_frame:
         return True
@@ -407,23 +343,12 @@ def _is_main_frame(frame: Any, main_frame: Any) -> bool:
 
 @contextmanager
 def log_observed_navigations(page: Any) -> Iterator[None]:
-    """Log every main-frame navigation observed inside the block, at DEBUG.
+    """Trace main-frame navigations at DEBUG without affecting the login wait.
 
-    Guarantees that let this sit inside the five-minute login wait:
-
-    * **Inert when DEBUG is off** — the listener is never attached, so no
-      Playwright event plumbing runs and the wait is byte-for-byte unchanged.
-    * **Never breaks the wait** — the callback swallows every exception, and a
-      Playwright build without ``page.on`` degrades to a no-op block.
-    * **Never leaks credentials** — URLs go through :func:`trace_url`, which
-      keeps the host and drops everything else (path, query, fragment,
-      userinfo), any of which can carry auth material mid-SSO — including on a
-      third-party identity provider no allowlist could anticipate.
-
-    Args:
-        page: The Playwright ``Page`` being waited on. Typed ``Any`` because
-            ``playwright`` is an optional (``browser`` extra) dependency this
-            module must not import at module scope.
+    With DEBUG off, attach nothing. Guard every diagnostic read and callback,
+    and tolerate missing event support. URLs use host-only ``trace_url``
+    redaction because arbitrary SSO paths, queries, fragments, and userinfo may
+    carry credentials. Playwright stays optional, so the page is typed ``Any``.
     """
     if not logger.isEnabledFor(logging.DEBUG):
         yield
@@ -468,11 +393,10 @@ def log_observed_navigations(page: Any) -> Iterator[None]:
 
 
 def _current_url(page: Any) -> str:
-    """Read ``page.url`` unredacted for host matching, or ``""`` if unreadable.
+    """Return the raw page URL for matching, or ``""`` if unreadable.
 
-    The redacted :func:`safe_page_url` is for *logging*; this is what the accept
-    predicate runs on. Both degrade rather than raise — a dead page must not turn
-    a browser-closed login into an unhandled traceback.
+    Logging uses ``safe_page_url`` instead; both tolerate a dead page so a URL
+    read cannot mask browser-closed routing.
     """
     try:
         return page.url or ""
@@ -482,14 +406,12 @@ def _current_url(page: Any) -> str:
 
 
 def _capture_candidate_url(page: Any, context: Any) -> str | None:
-    """Return an app URL with a browser-routable SID, without claiming liveness.
+    """Find an app URL with a browser-routable SID, without claiming liveness.
 
-    App hosts also serve anonymous pages (#2467). Ask the browser for cookies
-    eligible for the observed URL, rather than accepting a sibling Google's
-    SID by name. Reading cookies may pump a navigation event, so require the
-    page to remain on the same URL through the observation. PSIDTS and DOM
-    tokens are deliberately not required: incomplete captures still need the
-    existing best-effort recovery path (#865 / #2082).
+    App hosts also serve anonymous pages (#2467). Read cookies eligible for
+    the observed URL, excluding sibling-domain SID cookies, and require the
+    URL to remain stable while the read pumps browser events. Do not require
+    PSIDTS or DOM tokens: incomplete captures retain recovery (#865 / #2082).
     """
     url = _current_url(page)
     if not url_matches_base_host(url):
@@ -575,31 +497,16 @@ def wait_for_login_landing(
 ) -> int:
     """Wait for an app landing with a routed SID; return tolerated failures.
 
-    ``page.wait_for_url`` cannot be called once and trusted: Playwright's
-    ``expect_navigation`` predicate returns True for *any* event carrying an
-    ``error`` ("Any failed navigation results in a rejection", in its own
-    words). So one failed main-frame navigation anywhere in Google's sign-in
-    chain used to raise out of the five-minute wait, reach the CLI as
-    "Unexpected error … report a bug" + exit 2, and discard a sign-in the human
-    may have *already completed* — the browser could be sitting on the accepted
-    host at the moment we gave up (#2257).
+    Playwright rejects ``wait_for_url`` on any failed main-frame navigation,
+    including unrelated sign-in hops (#2257). A failure need not mean login
+    failed, so recheck the candidate and re-arm on the remaining deadline.
+    TargetClosed and unrelated errors propagate unchanged.
 
-    Nothing about a failed navigation says the login failed; the usual causes
-    are routine (a passkey ``ms-cxh://`` handoff, a ``204``, a download, a DNS
-    or VPN blip). Each is tolerated and the wait re-arms on the REMAINING
-    budget. ``TargetClosed`` and non-navigation errors propagate unchanged.
-
-    Two properties worth keeping in mind when editing:
-
-    * **The deadline alone is not a sufficient bound.** ``wait_for_url`` blocks
-      between real navigations, so iterations look page-paced — but a page that
-      fails *instantly* rejects with no delay and would spin out the timeout.
-      :data:`MAX_TOLERATED_NAVIGATION_FAILURES` consecutive *immediate* failures
-      is the real bound; the deadline bounds only the paced case.
-    * **A committed error page is tolerated but cannot self-heal.** An abort
-      leaves the document intact; ``ERR_NAME_NOT_RESOLVED`` and friends commit a
-      Chromium error page. We wait either way, but only the first recovers
-      alone — hence the notice.
+    Bound both paced and immediate failures: the deadline covers slow hops;
+    ``MAX_TOLERATED_NAVIGATION_FAILURES`` caps only consecutive instant failures,
+    which otherwise spin at full speed. Slow failures reset that streak. An
+    aborted hop can self-heal; a committed Chromium error page generally cannot,
+    so the first failure notice names the code.
     """
     from playwright.sync_api import Error as PlaywrightError
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
@@ -729,45 +636,25 @@ def wait_for_login_landing(
 # ---------------------------------------------------------------------------
 # Captured-state heal (absorbed from ``browser_state_validation.py``, ADR-0033)
 #
-# Best-effort in-memory PSIDTS heal for Playwright-captured state, run by both
-# capture arms below just before persistence. It was a separate module only to
-# keep this file under the ADR-0008 module-size budget; both of its callers have
-# always been in this file.
+# One best-effort in-memory heal before persistence, shared by capture arms.
 # ---------------------------------------------------------------------------
 
 
 def heal_captured_state(state: dict[str, Any]) -> tuple[dict[str, Any], ValueError | None]:
-    """Try one in-memory PSIDTS heal on captured rows; never discard the capture.
+    """Try one best-effort in-memory PSIDTS heal, preserving declined captures.
 
-    Google does not always answer the login flow's passive ``goto()``
-    navigations with ``Set-Cookie: __Secure-1PSIDTS`` (issue #865), so a
-    completed browser sign-in can land a state that carries ``SID`` and the
-    secondary binding but no usable PSIDTS. Running the shared rookiepy recovery
-    contract here means the first command after ``login`` works instead of
-    paying for a cold-start heal. The bridge adapts only the ``httpOnly``
-    spelling; the converter preserves an existing Playwright ``sameSite`` and
-    newly minted recovery cookies take its safe default.
+    Passive login navigations can withhold PSIDTS despite SID and a secondary
+    binding (#865). Reuse the rookiepy recovery contract to avoid a cold-start
+    heal when possible. Adapt only ``httpOnly`` spelling; preserve existing
+    ``sameSite`` and use the converter's safe default for newly minted cookies.
 
-    **The heal is best-effort and this function must not raise.** Returning the
-    error instead lets the caller persist what the browser gave us: those
-    cookies are the product of an SSO round-trip the user just completed, and
-    the disk-based ``_recover_psidts_inline`` retries the heal on the next
-    command. Raising would throw that session away on a withheld rotation or a
-    transient network blip — strictly worse than the pre-#2061 behaviour of
-    writing the imperfect state, and the same mistake as hardening a loader that
-    has no heal behind it (#2082 review).
+    Return errors instead of raising: a declined rotation or network blip must
+    not discard SID-bearing sign-in material (#2082). Disk recovery may retry
+    on the next command. Successful rows are rebuilt from sanitized entries,
+    which discard empty/non-string values even if the domain filter kept them.
 
-    Note the shape change on the success path: rows are rebuilt from
-    ``_sanitized_auth_entries``, which requires a non-empty string ``value``, so
-    an empty-valued row that cleared the domain filter is dropped rather than
-    persisted verbatim. Auth cookies always carry a value, and a valueless row
-    cannot enter a request jar anyway.
-
-    Returns:
-        ``(state, error)``. ``error`` is ``None`` when the captured rows already
-        validated or the in-memory heal supplied what was missing; otherwise it
-        is the final validation error and ``state`` is the caller's input,
-        unchanged and still worth persisting.
+    Return ``(state, error)``: validated/healed rows and ``None`` on success;
+    the original unchanged state and final validation error on decline.
     """
     rookiepy_rows: list[dict[str, Any]] = []
     for entry in _auth_cookies._sanitized_auth_entries(state):
@@ -822,15 +709,12 @@ class CaptureResult:
 
 
 def ensure_playwright_available(io: BrowserCaptureIO, *, browser: str) -> None:
-    """Abort with an install hint if the Playwright sync API cannot be imported.
+    """Abort with a browser-specific install hint if Playwright is unavailable.
 
-    Surfaced as a standalone check (rather than only failing inside
-    :func:`run_browser_capture`) so the CLI adapter can run it *before* its
-    launch banner — preserving the historical ordering where a missing
-    ``browser`` extra produces only the install hint, with no banner. The hint
-    text branches on ``browser``: a system ``channel`` (chrome / msedge) only
-    needs the ``[browser]`` extra, while the bundled chromium also needs
-    ``playwright install chromium``. ``playwright`` is imported lazily here too.
+    The adapter calls this before its launch banner, preserving the historical
+    hint-only failure. System channels need the browser extra; bundled Chromium
+    also needs its executable installed. ``markup=False`` keeps the literal
+    ``[browser]`` extra, and the import remains lazy for optional dependencies.
     """
     try:
         import playwright.sync_api  # noqa: F401
@@ -846,25 +730,11 @@ def ensure_playwright_available(io: BrowserCaptureIO, *, browser: str) -> None:
 
 
 def _reject_unsupported_mode(*, headless: bool, interactive: bool, io: BrowserCaptureIO) -> None:
-    """Guard the supported ``(headless, interactive)`` combinations.
+    """Accept only interactive headed login and unattended headless re-auth.
 
-    Two arms are wired:
-
-    * ``interactive=True, headless=False`` — the interactive ``notebooklm
-      login`` flow (a human completes the Google SSO in a visible browser).
-    * ``interactive=False, headless=True`` - the layer-3 headless re-auth flow:
-      an unattended browser harvests a still-live Google session from the
-      persistent profile, with NO human to wait on.
-
-    Any other combination (interactive + headless, or non-interactive +
-    non-headless) is a programmer error: a visible-but-unattended browser would
-    hang waiting for a human who isn't there, and a headless-but-interactive
-    flow is contradictory. Refuse loudly so a caller cannot silently get a
-    half-wired flow.
-
-    ``io`` is accepted but deliberately unused: this is a programmer-facing
-    guard that raises ``NotImplementedError`` (not an end-user condition routed
-    through ``io.fail``).
+    A visible unattended browser can hang, while headless interactive login is
+    contradictory. Reject other pairings with ``NotImplementedError`` as a
+    programmer error, rather than routing through the unused ``io`` adapter.
     """
     if interactive and not headless:
         return
@@ -886,19 +756,13 @@ def run_browser_capture(
     headless: bool = False,
     interactive: bool = True,
 ) -> CaptureResult:
-    """Launch a browser, capture + filter + persist NotebookLM storage state.
+    """Launch, navigate, capture, filter, heal, and atomically persist auth state.
 
-    The neutral core shared by the interactive CLI login and the layer-3
-    headless re-auth profile-launch path. Imports Playwright lazily
-    (``io.fail(1)`` + install hint on ImportError), opens a persistent context
-    against ``plan.browser_profile``, retries navigation on transient connection
-    errors, waits for login in the interactive arm, classifies the landing in
-    the headless arm, pins ``.google.com`` cookies, applies the cookie-domain
-    allowlist, and atomically writes ``storage_state.json``.
-
-    The chromium pre-flight (``playwright install``) is intentionally NOT run
-    here — it is a CLI-install concern owned by the adapter, run before this
-    core is entered.
+    Shared by interactive CLI login and layer-3 headless profile re-auth. Import
+    Playwright lazily; retry transient connection failures; wait for a capture
+    candidate interactively or settle briefly unattended. Pin ``.google.com``
+    cookies, filter domains, and guard SID routing before and after one heal.
+    The adapter owns the Chromium-install pre-flight before this core runs.
     """
     _reject_unsupported_mode(headless=headless, interactive=interactive, io=io)
 
@@ -1359,57 +1223,26 @@ def run_cdp_capture(
     *,
     cdp_url: str,
 ) -> CaptureResult:
-    """Capture NotebookLM storage state by attaching to a running Chrome over CDP.
+    """Capture auth from an operator-provided Chrome CDP endpoint.
 
-    An **alternative credential source** for layer-3 headless re-auth: instead
-    of launching a dedicated persistent-context browser against our profile
-    dir, attach (``playwright.chromium.connect_over_cdp``) to a Chrome the
-    operator is *already* running and pointed us at via an explicit CDP
-    endpoint. The motivation is freshness: a user's daily Chrome is
-    continuously Google-refreshed, whereas our dedicated profile can go stale in
-    the long-idle case — so the live browser is a stronger re-mint source.
+    This explicit, opt-in layer-3 source uses the same app/SID candidate,
+    filtering, best-effort heal, and guarded atomic persistence as headless
+    profile capture. It never waits for a human; an incomplete landing raises
+    ``HeadlessLoginRequiredError``.
 
-    This arm performs the SAME landing classification as the headless launch
-    arm (:func:`run_browser_capture` with ``headless=True``): navigate to the
-    NotebookLM base URL, and if it does not land on the configured host, raise
-    :class:`HeadlessLoginRequiredError` (the typed honest signal the caller
-    maps to FAILED) rather than hang. On success it captures
-    ``BrowserContext.storage_state()``, applies the same cookie-domain
-    allowlist, and atomically persists ``storage_state.json``.
+    CDP is account-equivalent and local unattended only, never a hosted/remote
+    MCP auth path. ``resolve_cdp_url`` enforces loopback upstream. Do not
+    rediscover endpoints, log the endpoint, or log cookie values.
 
-    **EXPLICIT / opt-in only.** ``cdp_url`` is an endpoint the operator
-    provides; this never auto-discovers a browser. **LOCAL-UNATTENDED-ONLY** —
-    a CDP endpoint is account-equivalent and this is NOT a remote / hosted MCP
-    auth path; the local-only host check is enforced upstream in
-    ``resolve_cdp_url`` (loopback hosts only). **Never logs a cookie value or
-    the endpoint** (only the typed outcome).
+    The attached Chrome belongs to the operator. Reuse its existing context,
+    never create a fresh logged-out one, and fail if no context exists. Navigate
+    and close only our temporary page, leaving the operator's tabs/context
+    untouched. ``browser.close()`` disconnects the CDP client without killing
+    Chrome. Preserve that ownership policy on every failure path.
 
-    **Lifecycle (CRITICAL):** the attached Chrome belongs to the operator. We
-    reuse its EXISTING browser context (which carries the live Google session)
-    — never ``new_context`` (a fresh context would be logged out) — and create
-    a TEMPORARY page we own for the navigation, closing ONLY that page in
-    ``finally`` so the operator's own tabs are never navigated or closed.
-    Teardown then only **disconnects** the Playwright client (``browser.close()``
-    on a CDP-connected browser severs the connection without killing the user's
-    Chrome). If the attached browser exposes no context, we fail loudly rather
-    than fabricate one.
-
-    Args:
-        plan: Capture plan; ``browser`` / ``browser_profile`` are ignored on
-            this arm (we attach to a running browser, not a profile dir), while
-            ``storage_path`` / ``include_domains`` are honored identically.
-        io: Side-effect sink. The headless caller injects a silent / raising
-            sink; ``emit`` lines are dropped and never carry a cookie value.
-        cdp_url: The operator-provided CDP endpoint (e.g.
-            ``http://127.0.0.1:9222``) of an already-running Chrome started with
-            ``--remote-debugging-port``.
-
-    Returns:
-        A :class:`CaptureResult` (``page_html`` best-effort, may be ``None``).
-
-    Raises:
-        HeadlessLoginRequiredError: the attached browser did not land on the
-            NotebookLM host (its Google session cannot reach NotebookLM).
+    ``plan.browser`` and ``plan.browser_profile`` are ignored; storage path and
+    domain selection retain their normal meaning. The headless IO sink drops
+    presentation lines. Return best-effort final page HTML in ``CaptureResult``.
     """
     ensure_playwright_available(io, browser="chromium")
     from playwright.sync_api import Error as PlaywrightError
