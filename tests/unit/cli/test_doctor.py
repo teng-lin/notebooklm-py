@@ -657,6 +657,59 @@ def test_doctor_routes_auth_cookies_to_configured_base_url(
     assert data["checks"]["auth"]["status"] == "pass"
 
 
+@pytest.mark.parametrize("inline", [False, True], ids=["file", "inline"])
+@pytest.mark.parametrize("fix", [False, True])
+def test_doctor_invalid_base_url_is_configuration_failure_without_credential_repairs(
+    runner, isolated_notebooklm_home, monkeypatch, inline, fix
+):
+    import httpx
+
+    profile_dir = _make_profile(isolated_notebooklm_home)
+    storage = profile_dir / "storage_state.json"
+    state = _storage(
+        [{"name": "SID", "value": "synthetic-secret"}, {"name": "__Secure-1PSIDTS", "value": "y"}]
+    )
+    _write_json(storage, state)
+    original = storage.read_bytes()
+    inline_json = json.dumps(state)
+    if inline:
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", inline_json)
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://invalid.example/")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("doctor must not contact Google")
+
+    monkeypatch.setattr(httpx.Client, "send", forbidden)
+    monkeypatch.setattr(httpx.AsyncClient, "send", forbidden)
+    args = ["doctor"]
+    if fix:
+        args.append("--fix")
+
+    json_result = runner.invoke(cli, [*args, "--json"])
+    text_result = runner.invoke(cli, args)
+
+    assert json_result.exit_code == text_result.exit_code == 1
+    auth = json.loads(json_result.output)["checks"]["auth"]
+    assert auth["status"] == "fail"
+    assert auth["detail"].startswith("invalid NotebookLM URL configuration:")
+    assert auth["guidance"] == "configure_notebooklm_url"
+    assert auth["scope"] == "local only; online authentication not tested"
+    assert auth["source"] == ("NOTEBOOKLM_AUTH_JSON" if inline else f"file ({storage})")
+    assert "Fix or unset NOTEBOOKLM_BASE_URL" in " ".join(text_result.output.split())
+    assert "invalid storage file" not in text_result.output
+    assert "invalid inline authentication" not in text_result.output
+    # Optional browser-profile setup diagnostics can independently mention
+    # login. The auth/config error must not recommend replacing credentials.
+    assert "Re-run" not in text_result.output
+    assert "Replace NOTEBOOKLM_AUTH_JSON" not in text_result.output
+    assert "synthetic-secret" not in json_result.output + text_result.output
+    assert storage.read_bytes() == original
+    if inline:
+        from notebooklm.cli.services.auth_source import read_env_auth_json
+
+        assert read_env_auth_json() == inline_json
+
+
 @pytest.mark.parametrize("fix", [False, True])
 def test_doctor_never_fetches_refreshes_or_rotates_auth(
     runner, isolated_notebooklm_home, monkeypatch, fix

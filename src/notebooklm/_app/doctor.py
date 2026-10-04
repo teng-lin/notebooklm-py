@@ -189,6 +189,7 @@ def _check_auth(
     passive online auth check can establish whether token fetching works.
     """
     from ..auth import _storage_has_routable_cookie, cookie_names_from_storage
+    from ..exceptions import ConfigurationError
 
     context = {
         "source": source or f"file ({storage_path})",
@@ -196,10 +197,10 @@ def _check_auth(
     }
     remediation = "replace_inline_auth" if has_inline_auth else "refresh_authentication"
 
-    def result(status: str, detail: str) -> dict[str, str]:
+    def result(status: str, detail: str, *, guidance: str | None = None) -> dict[str, str]:
         row = {"status": status, "detail": detail, **context}
         if status in ("fail", "warn"):
-            row["guidance"] = remediation
+            row["guidance"] = guidance if guidance is not None else remediation
         return row
 
     try:
@@ -223,6 +224,12 @@ def _check_auth(
                 f"({cookie_count} cookies); online authentication may fail.",
             )
         return result("pass", f"local auth cookies usable ({cookie_count} cookies)")
+    except ConfigurationError as exc:
+        return result(
+            "fail",
+            f"invalid NotebookLM URL configuration: {exc}",
+            guidance="configure_notebooklm_url",
+        )
     except FileNotFoundError:
         return result("fail", "not authenticated")
     except (OSError, ValueError) as exc:

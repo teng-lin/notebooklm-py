@@ -224,7 +224,11 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
         console.print(f"Authentication source: {auth_source} (local checks only)", markup=False)
 
     guidance = checks.get("auth", {}).get("guidance")
-    if guidance == "replace_inline_auth":
+    if guidance == "configure_notebooklm_url":
+        console.print(
+            "[yellow]Fix or unset NOTEBOOKLM_BASE_URL to use a supported NotebookLM URL.[/yellow]"
+        )
+    elif guidance == "replace_inline_auth":
         console.print(
             f"[yellow]Replace {AUTH_JSON_ENV_NAME} with valid exported authentication, "
             "or unset it to use stored profile authentication.[/yellow]"
