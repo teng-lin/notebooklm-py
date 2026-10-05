@@ -414,7 +414,15 @@ def _current_url(page: Any) -> str:
         return ""
 
 
-def _capture_cookie_observation(page: Any, context: Any) -> tuple[str, bool] | None:
+@dataclass(frozen=True)
+class _CaptureCookieObservation:
+    """Stable app URL and its browser-scoped SID availability."""
+
+    url: str
+    has_sid: bool
+
+
+def _capture_cookie_observation(page: Any, context: Any) -> _CaptureCookieObservation | None:
     """Read a stable app URL and whether its browser cookie scope has SID.
 
     App hosts also serve anonymous pages (#2467). Read cookies eligible for
@@ -437,14 +445,14 @@ def _capture_cookie_observation(page: Any, context: Any) -> tuple[str, bool] | N
             and bool(cookie["value"])
             for cookie in cookies
         )
-        return url, has_sid
+        return _CaptureCookieObservation(url=url, has_sid=has_sid)
     return None
 
 
 def _capture_candidate_url(page: Any, context: Any) -> str | None:
     """Find an app URL with a browser-routable SID, without claiming liveness."""
     observation = _capture_cookie_observation(page, context)
-    return observation[0] if observation is not None and observation[1] else None
+    return observation.url if observation is not None and observation.has_sid else None
 
 
 def _settle_capture_candidate(page: Any, context: Any, *, deadline: float) -> bool:
@@ -988,8 +996,8 @@ def run_browser_capture(
                         remaining_ms = (login_deadline - time.monotonic()) * 1000
                         if (
                             observation is not None
-                            and not observation[1]
-                            and _current_url(page) == observation[0]
+                            and not observation.has_sid
+                            and _current_url(page) == observation.url
                             and remaining_ms > 0
                         ):
                             continuation = urlencode({"continue": f"{get_base_url()}/"})
