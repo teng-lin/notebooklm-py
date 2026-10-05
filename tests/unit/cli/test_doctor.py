@@ -700,25 +700,99 @@ def test_doctor_source_command_quotes_windows_variable_like_profile():
     assert command == "notebooklm --profile '%TEMP%' login"
 
 
+@pytest.fixture(
+    params=[
+        (
+            "test_authentication",
+            [
+                ["auth", "check", "--test", "--passive"],
+                ["login"],
+                ["doctor", "--fix"],
+                ["doctor", "--fix"],
+            ],
+        ),
+        (
+            "recover_file_authentication",
+            [
+                ["auth", "check", "--test"],
+                ["login"],
+                ["doctor", "--fix"],
+                ["doctor", "--fix"],
+            ],
+        ),
+        (
+            "refresh_authentication",
+            [
+                ["login"],
+                ["doctor", "--fix"],
+                ["doctor", "--fix"],
+                ["auth", "check", "--test", "--passive"],
+            ],
+        ),
+    ],
+    ids=["passive", "recovery", "login"],
+)
+def doctor_command_hint_case(request):
+    guidance, commands = request.param
+    report = doctor_cmd_module.DoctorReport(
+        profile="default",
+        profile_source="default",
+        checks={
+            "migration": {"status": "fail", "detail": "legacy layout"},
+            "profile_dir": {"status": "fail", "detail": "missing profile directory"},
+            "auth": {
+                "status": "fail" if guidance == "refresh_authentication" else "warn",
+                "detail": "synthetic auth diagnostic",
+                "guidance": guidance,
+            },
+        },
+    )
+    return report, commands
+
+
+def test_doctor_windows_prints_copyable_commands_on_unwrapped_lines(
+    capsys, doctor_command_hint_case
+):
+    report, commands = doctor_command_hint_case
+    storage = Path(r"C:\Users\R&D\%TEMP%\O'Brien\O’Neil\name‘a’b‚c‛d\auth space`$name.json")
+    auth = doctor_cmd_module.AuthSource(storage_override=storage, profile=None, has_env_auth=False)
+
+    doctor_cmd_module._display_results(report, auth=auth, platform="win32")
+    output = capsys.readouterr().out
+    command_lines = [line for line in output.splitlines() if line.startswith("notebooklm ")]
+
+    prefix = (
+        r"notebooklm --storage 'C:\Users\R&D\%TEMP%\O''Brien\O’’Neil\name‘‘a’’b‚‚c‛‛d"
+        r"\auth space`$name.json'"
+    )
+    assert command_lines == [f"{prefix} {' '.join(args)}" for args in commands]
+    assert all(len(line) > 80 for line in command_lines)
+    assert "in PowerShell" in " ".join(output.split())
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell argv probe is a Windows check")
-def test_windows_powershell_command_roundtrips_synthetic_argv():
+def test_windows_printed_powershell_commands_roundtrip_synthetic_argv(
+    capsys, doctor_command_hint_case
+):
     import base64
     import shutil
     import subprocess
 
     shell = shutil.which("pwsh") or shutil.which("powershell")
     assert shell is not None, "The supported Windows test runner must provide PowerShell"
-    report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
+    report, commands = doctor_command_hint_case
     storage = Path(r"C:\Users\R&D\%TEMP%\O'Brien\O’Neil\name‘a’b‚c‛d\auth space`$name.json")
     auth = doctor_cmd_module.AuthSource(storage_override=storage, profile=None, has_env_auth=False)
-    command = doctor_cmd_module._source_command(
-        report, auth, "auth", "check", "--test", "--passive", platform="win32"
-    )
+    doctor_cmd_module._display_results(report, auth=auth, platform="win32")
+    command_lines = [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith("notebooklm ")
+    ]
+    assert len(command_lines) == len(commands)
     script = (
         "function notebooklm {\n"
         "  $json = ConvertTo-Json -InputObject @($args) -Compress\n"
         "  [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))\n"
-        "}\n" + command
+        "}\n" + "\n".join(command_lines)
     )
 
     result = subprocess.run(
@@ -729,14 +803,10 @@ def test_windows_powershell_command_roundtrips_synthetic_argv():
         timeout=15,
     )
 
-    assert json.loads(base64.b64decode(result.stdout.strip()).decode("utf-8")) == [
-        "--storage",
-        str(storage),
-        "auth",
-        "check",
-        "--test",
-        "--passive",
+    actual_args = [
+        json.loads(base64.b64decode(line).decode("utf-8")) for line in result.stdout.splitlines()
     ]
+    assert actual_args == [["--storage", str(storage), *args] for args in commands]
 
 
 @pytest.mark.parametrize("guidance", ["refresh_authentication", "recover_file_authentication"])

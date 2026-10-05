@@ -222,6 +222,10 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
     def source_command(*args: str) -> str:
         return _source_command(report, auth, *args, platform=platform)
 
+    def command_hint(prose: str, command: str, *, style: str | None = None) -> None:
+        console.print(prose, markup=False, style=style)
+        console.print(command, markup=False, soft_wrap=True, highlight=False)
+
     table = Table(title="NotebookLM Doctor")
     table.add_column("Check", style="dim")
     table.add_column("Status")
@@ -252,10 +256,9 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
     guidance = checks.get("auth", {}).get("guidance")
     online_command = source_command("auth", "check", "--test", "--passive")
     if guidance == "test_authentication":
-        console.print(
-            f"To test this auth source online without refreshing it, run{shell_label} "
-            f"'{online_command}'.",
-            markup=False,
+        command_hint(
+            f"To test this auth source online without refreshing it, run{shell_label}:",
+            online_command,
         )
         if auth.has_env_auth:
             console.print(
@@ -265,9 +268,10 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
             )
         else:
             login_command = source_command("login")
-            console.print(
-                f"[yellow]If the passive check fails, re-run{shell_label} "
-                f"'{escape(login_command)}'.[/yellow]"
+            command_hint(
+                f"If the passive check fails, re-run{shell_label}:",
+                login_command,
+                style="yellow",
             )
     elif guidance == "configure_notebooklm_url":
         console.print(
@@ -275,15 +279,13 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
         )
     elif guidance == "recover_file_authentication":
         recovery_command = source_command("auth", "check", "--test")
-        console.print(
-            f"To attempt best-effort recovery, run{shell_label} '{recovery_command}'. "
-            "This check may refresh, rotate, or update stored cookies.",
-            markup=False,
+        command_hint(
+            f"To attempt best-effort recovery, run{shell_label}:",
+            recovery_command,
         )
+        console.print("This check may refresh, rotate, or update stored cookies.", markup=False)
         login_command = source_command("login")
-        console.print(
-            f"[yellow]If recovery fails, re-run{shell_label} '{escape(login_command)}'.[/yellow]"
-        )
+        command_hint(f"If recovery fails, re-run{shell_label}:", login_command, style="yellow")
     elif guidance == "replace_incomplete_inline_auth":
         console.print(
             f"[yellow]{AUTH_JSON_ENV_NAME} is an incomplete export: __Secure-1PSIDTS is "
@@ -298,8 +300,9 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
         )
     elif guidance == "refresh_authentication":
         login_command = source_command("login")
+        command_hint(f"Re-run{shell_label}:", login_command, style="yellow")
         console.print(
-            f"[yellow]Re-run{shell_label} '{escape(login_command)}'; on Windows (Chrome 127+ App-Bound "
+            "[yellow]On Windows (Chrome 127+ App-Bound "
             "Encryption) add '--browser-cookies firefox' or '--master-token' "
             "to that login command.[/yellow]"
         )
@@ -312,14 +315,18 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
     has_failures = report.has_failures
     if has_failures and not fixes_applied:
         console.print()
-        fix_command = escape(source_command("doctor", "--fix"))
+        fix_command = source_command("doctor", "--fix")
         if checks.get("migration", {}).get("status") == "fail":
-            console.print(
-                f"[yellow]Run{shell_label} '{fix_command}' to migrate and set up profiles.[/yellow]"
+            command_hint(
+                f"Run{shell_label} to migrate and set up profiles:",
+                fix_command,
+                style="yellow",
             )
         if checks.get("profile_dir", {}).get("status") == "fail":
-            console.print(
-                f"[yellow]Run{shell_label} '{fix_command}' to create the profile directory.[/yellow]"
+            command_hint(
+                f"Run{shell_label} to create the profile directory:",
+                fix_command,
+                style="yellow",
             )
     elif not has_failures:
         warned_labels = [
@@ -338,8 +345,7 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
         "recover_file_authentication",
         "replace_incomplete_inline_auth",
     ):
-        console.print(
-            f"To test this auth source online without refreshing it, run{shell_label} "
-            f"'{online_command}'.",
-            markup=False,
+        command_hint(
+            f"To test this auth source online without refreshing it, run{shell_label}:",
+            online_command,
         )
