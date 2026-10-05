@@ -787,6 +787,29 @@ def test_doctor_renders_bracketed_check_details_literally(capsys):
     assert "profile/[backup]/data" in capsys.readouterr().out
 
 
+def test_doctor_renders_bracketed_profile_source_and_fix_messages_literally(capsys):
+    fixes = [
+        "Created profile directory: /tmp/[backup]/work",
+        "Fixed permissions on /tmp/[backup]/work",
+    ]
+    report = doctor_cmd_module.DoctorReport(
+        profile="work[backup]",
+        profile_source="config[default]",
+        checks={},
+        fixes_applied=fixes,
+    )
+    auth = doctor_cmd_module.AuthSource(storage_override=None, profile=None, has_env_auth=False)
+
+    doctor_cmd_module._display_results(report, auth=auth)
+    output = capsys.readouterr().out
+
+    profile_row = next(line for line in output.splitlines() if "Profile" in line)
+    assert "work[backup]" in profile_row
+    assert "source: config[default]" in profile_row
+    for fix in fixes:
+        assert fix in output
+
+
 @pytest.mark.parametrize("inline", [False, True], ids=["file", "inline"])
 @pytest.mark.parametrize(
     "psidts_fields",

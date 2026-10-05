@@ -234,7 +234,11 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
             return "[yellow]! warn[/yellow]"
         return "[red]\u2717 fail[/red]"
 
-    table.add_row("Profile", f"[bold]{report.profile}[/bold]", f"source: {report.profile_source}")
+    table.add_row(
+        "Profile",
+        f"[bold]{escape(report.profile)}[/bold]",
+        f"source: {escape(report.profile_source)}",
+    )
 
     labels = {name: name.replace("_", " ").title() for name in checks}
     for name, check in checks.items():
@@ -303,7 +307,7 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
     if fixes_applied:
         console.print()
         for fix in fixes_applied:
-            console.print(f"  [green]\u2713[/green] {fix}")
+            console.print(f"  [green]\u2713[/green] {escape(fix)}")
 
     has_failures = report.has_failures
     if has_failures and not fixes_applied:
