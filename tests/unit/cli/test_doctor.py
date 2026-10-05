@@ -549,6 +549,48 @@ def test_doctor_invalid_inline_auth_never_falls_back_or_recommends_disk_login(
     assert data["checks"]["auth"]["guidance"] == "replace_inline_auth"
     assert "Replace NOTEBOOKLM_AUTH_JSON" in " ".join(text.output.split())
     assert "login" not in text.output
+    assert "--passive" not in text.output
+    assert "To test this auth source online" not in text.output
+
+
+@pytest.mark.parametrize(
+    ("inline", "payload"),
+    [
+        pytest.param(False, None, id="missing-file"),
+        pytest.param(False, "not json", id="invalid-file"),
+        pytest.param(False, json.dumps(_storage([])), id="file-missing-SID"),
+        pytest.param(True, "", id="empty-inline"),
+        pytest.param(True, "not json", id="invalid-inline"),
+        pytest.param(True, json.dumps(_storage([])), id="inline-missing-SID"),
+    ],
+)
+def test_doctor_failed_auth_keeps_local_remediation_without_advertising_passive_probe(
+    runner, isolated_notebooklm_home, monkeypatch, inline, payload
+):
+    profile_dir = _make_profile(isolated_notebooklm_home, "work")
+    if inline:
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", payload)
+    elif payload is not None:
+        (profile_dir / "storage_state.json").write_text(payload, encoding="utf-8")
+    monkeypatch.setattr(
+        doctor_cmd_module,
+        "_headless_reauth_check",
+        lambda: {"status": "pass", "detail": "ready"},
+    )
+
+    data = _invoke_json(runner, ["--profile", "work"], exit_code=1)
+    result = runner.invoke(cli, ["--profile", "work", "doctor"])
+    output = " ".join(result.output.split())
+
+    assert result.exit_code == 1, result.output
+    assert data["checks"]["auth"]["status"] == "fail"
+    assert "--passive" not in output
+    assert "To test this auth source online" not in output
+    if inline:
+        assert "Replace NOTEBOOKLM_AUTH_JSON" in output
+        assert "notebooklm --profile work login" not in output
+    else:
+        assert "notebooklm --profile work login" in output
 
 
 @pytest.mark.parametrize("fix", [False, True])
@@ -726,7 +768,6 @@ def test_doctor_source_command_quotes_windows_variable_like_profile():
                 ["login"],
                 ["doctor", "--fix"],
                 ["doctor", "--fix"],
-                ["auth", "check", "--test", "--passive"],
             ],
         ),
     ],
@@ -833,7 +874,7 @@ def test_doctor_windows_hints_explicitly_name_powershell(capsys, guidance):
 
     if guidance == "refresh_authentication":
         assert "Re-run in PowerShell" in output
-        assert "auth check --test --passive" in output
+        assert "auth check --test" not in output
     else:
         assert "re-run in PowerShell" in output
         assert "auth check --test" in output
@@ -880,11 +921,37 @@ def test_doctor_renders_bracketed_profile_source_and_fix_messages_literally(caps
         assert fix in output
 
 
+def test_doctor_preserves_emoji_like_posix_paths_in_details_sources_commands_and_fixes(capsys):
+    directory = "/tmp/:key:/[backup]"
+    storage = Path(f"{directory}/auth state.json")
+    fixes = [f"Created profile directory: {directory}", f"Fixed permissions on {directory}"]
+    report = doctor_cmd_module.DoctorReport(
+        profile="work:key:",
+        profile_source="config:key:",
+        checks={"auth": {"status": "pass", "detail": directory, "source": f"file ({storage})"}},
+        fixes_applied=fixes,
+    )
+    auth = doctor_cmd_module.AuthSource(storage_override=storage, profile=None, has_env_auth=False)
+
+    doctor_cmd_module._display_results(report, auth=auth, platform="linux")
+    output = capsys.readouterr().out
+
+    profile_row = next(line for line in output.splitlines() if "Profile" in line)
+    auth_row = next(line for line in output.splitlines() if "Auth" in line)
+    assert "work:key:" in profile_row
+    assert "source: config:key:" in profile_row
+    assert directory in auth_row
+    assert f"Authentication source: file ({storage})" in " ".join(output.split())
+    assert f"notebooklm --storage '{storage}' auth check --test --passive" in output.splitlines()
+    for fix in fixes:
+        assert fix in output
+
+
 @pytest.mark.parametrize("inline", [False, True], ids=["file", "inline"])
 @pytest.mark.parametrize(
     "psidts_fields",
     [{"expires": 1}, {"domain": "notebooklm.google.com"}],
-    ids=["expired", "app-only"],
+    ids=["expired", "other-app-alias"],
 )
 def test_doctor_name_only_complete_warning_uses_passive_before_auth_replacement(
     runner, isolated_notebooklm_home, monkeypatch, inline, psidts_fields

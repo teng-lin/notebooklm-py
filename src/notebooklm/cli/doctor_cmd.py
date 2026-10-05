@@ -19,6 +19,7 @@ from typing import Any
 import click
 from rich.markup import escape
 from rich.table import Table
+from rich.text import Text
 
 from .._app.doctor import DoctorPaths, DoctorReport, read_doctor_auth_state, run_checks
 from ..auth import check_headless_reauth_readiness
@@ -224,7 +225,7 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
 
     def command_hint(prose: str, command: str, *, style: str | None = None) -> None:
         console.print(prose, markup=False, style=style)
-        console.print(command, markup=False, soft_wrap=True, highlight=False)
+        console.print(command, markup=False, soft_wrap=True, highlight=False, emoji=False)
 
     table = Table(title="NotebookLM Doctor")
     table.add_column("Check", style="dim")
@@ -240,18 +241,20 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
 
     table.add_row(
         "Profile",
-        f"[bold]{escape(report.profile)}[/bold]",
-        f"source: {escape(report.profile_source)}",
+        Text(report.profile, style="bold"),
+        Text(f"source: {report.profile_source}"),
     )
 
     labels = {name: name.replace("_", " ").title() for name in checks}
     for name, check in checks.items():
-        table.add_row(labels[name], status_icon(check["status"]), escape(check["detail"]))
+        table.add_row(labels[name], status_icon(check["status"]), Text(check["detail"]))
 
     console.print(table)
     auth_source = checks.get("auth", {}).get("source")
     if auth_source is not None:
-        console.print(f"Authentication source: {auth_source} (local checks only)", markup=False)
+        console.print(
+            f"Authentication source: {auth_source} (local checks only)", markup=False, emoji=False
+        )
 
     guidance = checks.get("auth", {}).get("guidance")
     online_command = source_command("auth", "check", "--test", "--passive")
@@ -310,7 +313,7 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
     if fixes_applied:
         console.print()
         for fix in fixes_applied:
-            console.print(f"  [green]\u2713[/green] {escape(fix)}")
+            console.print(f"  [green]\u2713[/green] {escape(fix)}", emoji=False)
 
     has_failures = report.has_failures
     if has_failures and not fixes_applied:
@@ -340,7 +343,7 @@ def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | 
         else:
             console.print("\nNo local failures detected. Online authentication was not tested.")
 
-    if guidance not in (
+    if checks.get("auth", {}).get("status") != "fail" and guidance not in (
         "test_authentication",
         "recover_file_authentication",
         "replace_incomplete_inline_auth",
