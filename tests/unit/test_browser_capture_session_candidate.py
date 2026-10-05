@@ -11,7 +11,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, NoReturn
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, PropertyMock
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -222,6 +222,97 @@ def test_interactive_anonymous_landing_gets_one_encoded_sign_in_fallback(
     assert any("Capturing Google cookies..." in message for message in io.messages)
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        "net::ERR_CONNECTION_RESET",
+        "net::ERR_CONNECTION_REFUSED",
+        "net::ERR_INVALID_URL",
+        "Protocol error",
+    ],
+)
+def test_owned_sign_in_continuation_does_not_hide_non_race_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[NID])
+
+    def fail_continuation(url: str, **kwargs: Any) -> None:
+        if "ServiceLogin?" in url:
+            raise PlaywrightError(error)
+        browser.goto(url, **kwargs)
+
+    browser.page.goto.side_effect = fail_continuation
+    heal = _install_browser(monkeypatch, browser)
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    with pytest.raises(PlaywrightError, match=error):
+        _run("interactive", plan, _IO())
+
+    browser.page.wait_for_url.assert_not_called()
+    writer.assert_not_called()
+    heal.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("failure", ["timeout", "closed"])
+def test_owned_sign_in_continuation_preserves_timeout_and_closed_routing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    browser = _Browser(cookies=[NID])
+
+    def fail_continuation(url: str, **kwargs: Any) -> None:
+        if "ServiceLogin?" in url:
+            if failure == "timeout":
+                raise PlaywrightTimeout("synthetic timeout")
+            raise PlaywrightError(capture.TARGET_CLOSED_ERROR)
+        browser.goto(url, **kwargs)
+
+    browser.page.goto.side_effect = fail_continuation
+    heal = _install_browser(monkeypatch, browser)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    with pytest.raises(_InteractiveExit):
+        _run("interactive", plan, io)
+
+    expected = "Login not detected" if failure == "timeout" else "browser window was closed"
+    assert any(expected in message for message in io.messages)
+    browser.page.wait_for_url.assert_not_called()
+    heal.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+
+
+def test_superseded_sign_in_continuation_still_waits_for_sid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[NID])
+    browser.finish_sign_in = True
+
+    def superseded_continuation(url: str, **kwargs: Any) -> None:
+        browser.goto(url, **kwargs)
+        if "ServiceLogin?" in url:
+            raise PlaywrightError("net::ERR_ABORTED")
+
+    browser.page.goto.side_effect = superseded_continuation
+    heal = _install_browser(monkeypatch, browser)
+    plan = _existing_plan(tmp_path)
+
+    _run("interactive", plan, _IO())
+
+    browser.page.wait_for_url.assert_called_once()
+    heal.assert_called_once()
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+
+
 @pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
 def test_same_document_sid_arrival_during_settle_is_captured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
@@ -416,6 +507,105 @@ def test_sid_only_capture_survives_post_heal_app_navigation(
     writer.assert_called_once()
     heal.assert_called_once()
     browser.page.wait_for_timeout.assert_not_called()
+
+
+@pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
+@pytest.mark.parametrize("new_url", [f"{APP}?authuser=0", f"{APP}notebook/synthetic"])
+def test_final_routing_verification_reobserves_a_changed_app_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, new_url: str
+) -> None:
+    browser = _Browser(cookies=[SID])
+    heal = _install_browser(monkeypatch, browser)
+    original_routes = capture._auth_cookies._storage_has_routable_cookie
+    routed_urls: list[str] = []
+
+    def routes_with_navigation(state: dict[str, Any], name: str, url: str) -> bool:
+        result = original_routes(state, name, url)
+        routed_urls.append(url)
+        if len(routed_urls) == 2:
+            browser.page.url = new_url
+        return result
+
+    def decline_before_navigation(state: dict[str, Any]) -> tuple[dict[str, Any], ValueError]:
+        monkeypatch.setattr(
+            capture._auth_cookies, "_storage_has_routable_cookie", routes_with_navigation
+        )
+        return state, ValueError("synthetic missing PSIDTS")
+
+    heal.side_effect = decline_before_navigation
+    plan = _existing_plan(tmp_path)
+
+    _run(mode, plan, _IO())
+
+    assert routed_urls == [APP, APP, APP, new_url]
+    assert [call.args[0] for call in browser.context.cookies.call_args_list[-2:]] == [
+        [APP],
+        [new_url],
+    ]
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+    heal.assert_called_once()
+    browser.page.wait_for_timeout.assert_not_called()
+
+
+@pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
+@pytest.mark.parametrize("failure", ["off_host", "sid_lost", "unstable", "export_scope"])
+def test_final_routing_reobservation_still_refuses_invalid_or_unstable_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, failure: str
+) -> None:
+    stored_sid = {**SID, "domain": "notebook.google.com"} if failure == "export_scope" else SID
+    browser = _Browser(cookies=[SID])
+    browser.state["cookies"] = [deepcopy(stored_sid)]
+    heal = _install_browser(monkeypatch, browser)
+    original_routes = capture._auth_cookies._storage_has_routable_cookie
+    routed_urls: list[str] = []
+    snapshots: list[str] = []
+
+    def cookies(urls: list[str]) -> list[dict[str, Any]]:
+        snapshots.append(urls[0])
+        return browser.cookies(urls)
+
+    def routes_with_navigation(state: dict[str, Any], name: str, url: str) -> bool:
+        result = original_routes(state, name, url)
+        routed_urls.append(url)
+        if len(routed_urls) % 2 == 0:
+            if failure == "off_host":
+                browser.page.url = SIGN_IN
+            elif failure == "export_scope":
+                browser.page.url = "https://notebooklm.google.com/"
+            else:
+                browser.page.url = f"{APP}?transition={len(routed_urls)}"
+                if failure == "sid_lost":
+                    browser.browser_cookies = [deepcopy(NID)]
+        return result
+
+    def decline_before_navigation(state: dict[str, Any]) -> tuple[dict[str, Any], ValueError]:
+        browser.context.cookies.side_effect = cookies
+        monkeypatch.setattr(
+            capture._auth_cookies, "_storage_has_routable_cookie", routes_with_navigation
+        )
+        return state, ValueError("synthetic missing PSIDTS")
+
+    heal.side_effect = decline_before_navigation
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    error = _InteractiveExit if mode == "interactive" else HeadlessLoginRequiredError
+    with pytest.raises(error):
+        _run(mode, plan, io)
+
+    expected_snapshots = {"off_host": 1, "sid_lost": 2, "unstable": 3, "export_scope": 2}
+    assert len(snapshots) == expected_snapshots[failure]
+    assert len(routed_urls) <= 2 * capture.CAPTURE_SNAPSHOT_ATTEMPTS
+    writer.assert_not_called()
+    heal.assert_called_once()
+    browser.page.wait_for_timeout.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+    if mode == "interactive":
+        assert any(
+            "Could not verify a stable Google cookie capture" in message for message in io.messages
+        )
 
 
 @pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
@@ -656,6 +846,90 @@ def test_browser_closed_during_candidate_settle_retains_abort_routing(
         assert exc_info.value.kind is capture._CaptureAbortKind.BROWSER_CLOSED
     assert plan.storage_path.read_bytes() == before
     heal.assert_not_called()
+    if mode == "interactive":
+        assert any("browser window was closed" in message for message in io.messages)
+
+
+@pytest.mark.parametrize(
+    ("mode", "phase"),
+    [
+        ("interactive", "candidate"),
+        ("headless", "candidate"),
+        ("cdp", "candidate"),
+        ("interactive", "commit"),
+        ("headless", "commit"),
+    ],
+)
+def test_url_read_target_closed_retains_browser_abort_classification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, phase: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[SID])
+    closed = PlaywrightError(capture.TARGET_CLOSED_ERROR)
+
+    def close_before_url_read(url: str, **kwargs: Any) -> None:
+        browser.goto(url, **kwargs)
+        if phase == "candidate" or browser.app_visits == 2:
+            monkeypatch.setattr(
+                type(browser.page), "url", PropertyMock(side_effect=closed), raising=False
+            )
+
+    browser.page.goto.side_effect = close_before_url_read
+    heal = _install_browser(monkeypatch, browser)
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    error = _InteractiveExit if mode == "interactive" else capture._HeadlessCaptureAbort
+    with pytest.raises(error) as exc_info:
+        _run(mode, plan, io)
+
+    if mode != "interactive":
+        assert exc_info.value.kind is capture._CaptureAbortKind.BROWSER_CLOSED
+    assert plan.storage_path.read_bytes() == before
+    writer.assert_not_called()
+    heal.assert_not_called()
+    browser.context.storage_state.assert_not_called()
+    assert capture.safe_page_url(browser.page) == capture._UNREADABLE_URL
+    if mode == "interactive":
+        assert any("browser window was closed" in message for message in io.messages)
+
+
+@pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
+def test_page_only_close_after_heal_refuses_cached_url_and_context_sid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    browser = _Browser(cookies=[SID])
+    heal = _install_browser(monkeypatch, browser)
+    snapshots_before_close = 0
+
+    def close_after_heal(state: dict[str, Any]) -> tuple[dict[str, Any], None]:
+        nonlocal snapshots_before_close
+        snapshots_before_close = browser.context.cookies.call_count
+        browser.page.is_closed.return_value = True
+        return state, None
+
+    heal.side_effect = close_after_heal
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    error = _InteractiveExit if mode == "interactive" else capture._HeadlessCaptureAbort
+    with pytest.raises(error) as exc_info:
+        _run(mode, plan, io)
+
+    if mode != "interactive":
+        assert exc_info.value.kind is capture._CaptureAbortKind.BROWSER_CLOSED
+    assert plan.storage_path.read_bytes() == before
+    writer.assert_not_called()
+    heal.assert_called_once()
+    assert browser.context.cookies.call_count == snapshots_before_close
+    assert browser.page.url == APP
+    assert browser.context.cookies([APP]) == [SID]
+    assert capture.safe_page_url(browser.page) == APP
     if mode == "interactive":
         assert any("browser window was closed" in message for message in io.messages)
 

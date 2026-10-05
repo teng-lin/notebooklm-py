@@ -396,12 +396,20 @@ def log_observed_navigations(page: Any) -> Iterator[None]:
 def _current_url(page: Any) -> str:
     """Return the raw page URL for matching, or ``""`` if unreadable.
 
-    Logging uses ``safe_page_url`` instead; both tolerate a dead page so a URL
-    read cannot mask browser-closed routing.
+    Propagate TargetClosed so callers retain infrastructure-abort routing.
+    Diagnostic ``safe_page_url`` remains tolerant even when the browser is gone.
     """
     try:
+        is_closed = getattr(page, "is_closed", None)
+        if callable(is_closed) and is_closed() is True:
+            from playwright.sync_api import Error as PlaywrightError
+
+            # Playwright may retain the last URL after only the page closes.
+            raise PlaywrightError(TARGET_CLOSED_ERROR)
         return page.url or ""
     except Exception as exc:
+        if TARGET_CLOSED_ERROR in str(exc):
+            raise
         _log_suppressed("could not read the page URL", exc)
         return ""
 
@@ -410,7 +418,8 @@ def _capture_candidate_url(page: Any, context: Any) -> str | None:
     """Find an app URL with a browser-routable SID, without claiming liveness.
 
     App hosts also serve anonymous pages (#2467). Read cookies eligible for
-    the observed URL, excluding sibling-domain SID cookies. Use at most three
+    the observed URL; Playwright owns live domain/path/secure/expiry eligibility.
+    Exclude sibling-domain SID cookies. Use at most three
     URL-scoped snapshots as reads pump browser events. Do not require
     PSIDTS or DOM tokens: incomplete captures retain recovery (#865 / #2082).
     """
@@ -448,20 +457,29 @@ def _settle_capture_candidate(page: Any, context: Any, *, deadline: float) -> bo
 
 
 def _captured_sid_is_usable(state: dict[str, Any], page: Any, context: Any) -> bool:
-    """Guard the exported jar for both bootstrap and configured RPC routing."""
-    observed_url = _capture_candidate_url(page, context)
-    return (
-        observed_url is not None
-        and _auth_cookies._storage_has_routable_cookie(state, "SID", f"{get_base_url()}/")
-        and _auth_cookies._storage_has_routable_cookie(state, "SID", observed_url)
-        and _current_url(page) == observed_url
-    )
+    """Guard the exported jar for bootstrap and configured RPC routing.
+
+    HTTPX projection checks the filtered/healed export, a separate boundary
+    from Playwright's live eligibility. Recheck both after healing: synchronous
+    browser calls can dispatch pending navigation or logout events.
+    """
+    for _ in range(CAPTURE_SNAPSHOT_ATTEMPTS):
+        observed_url = _capture_candidate_url(page, context)
+        if (
+            observed_url is None
+            or not _auth_cookies._storage_has_routable_cookie(state, "SID", f"{get_base_url()}/")
+            or not _auth_cookies._storage_has_routable_cookie(state, "SID", observed_url)
+        ):
+            return False
+        if _current_url(page) == observed_url:
+            return True
+    return False
 
 
 def _refuse_incomplete_capture(io: BrowserCaptureIO, *, headless: bool) -> NoReturn:
     """Refuse before replacing an existing profile with an unusable SID capture."""
     message = (
-        "No usable Google session cookies were captured for NotebookLM. "
+        "Could not verify a stable Google cookie capture for NotebookLM. "
         "The saved authentication was not replaced. Complete Google sign-in "
         "and retry 'notebooklm login'."
     )
@@ -973,6 +991,8 @@ def run_browser_capture(
                                 )
                                 navigation_committed = True
                             except PlaywrightError as exc:
+                                # Owned navigation: tolerate superseded requests,
+                                # not network/configuration faults (navigation_errors).
                                 if not is_navigation_race(exc):
                                     raise
                         wait_for_login_landing(
