@@ -414,8 +414,8 @@ def _current_url(page: Any) -> str:
         return ""
 
 
-def _capture_candidate_url(page: Any, context: Any) -> str | None:
-    """Find an app URL with a browser-routable SID, without claiming liveness.
+def _capture_cookie_observation(page: Any, context: Any) -> tuple[str, bool] | None:
+    """Read a stable app URL and whether its browser cookie scope has SID.
 
     App hosts also serve anonymous pages (#2467). Read cookies eligible for
     the observed URL; Playwright owns live domain/path/secure/expiry eligibility.
@@ -437,8 +437,14 @@ def _capture_candidate_url(page: Any, context: Any) -> str | None:
             and bool(cookie["value"])
             for cookie in cookies
         )
-        return url if has_sid else None
+        return url, has_sid
     return None
+
+
+def _capture_candidate_url(page: Any, context: Any) -> str | None:
+    """Find an app URL with a browser-routable SID, without claiming liveness."""
+    observation = _capture_cookie_observation(page, context)
+    return observation[0] if observation is not None and observation[1] else None
 
 
 def _settle_capture_candidate(page: Any, context: Any, *, deadline: float) -> bool:
@@ -976,10 +982,14 @@ def run_browser_capture(
                         # an initial on-app, SID-less landing one Google sign-in
                         # continuation; never steer an in-progress off-host SSO
                         # flow or repeatedly redirect a human entering credentials.
+                        # A missing candidate can also mean a moving/off-host page;
+                        # steer only a still-current stable no-SID observation.
+                        observation = _capture_cookie_observation(page, context)
                         remaining_ms = (login_deadline - time.monotonic()) * 1000
                         if (
-                            url_matches_base_host(_current_url(page))
-                            and _capture_candidate_url(page, context) is None
+                            observation is not None
+                            and not observation[1]
+                            and _current_url(page) == observation[0]
                             and remaining_ms > 0
                         ):
                             continuation = urlencode({"continue": f"{get_base_url()}/"})

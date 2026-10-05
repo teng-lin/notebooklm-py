@@ -821,6 +821,179 @@ def test_off_host_human_sign_in_is_not_redirected_to_service_login(
     heal.assert_called_once()
 
 
+@pytest.mark.parametrize("step", ["cookie_read", "url_read"])
+def test_courtesy_decision_does_not_interrupt_a_racing_sso_navigation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    browser = _Browser(cookies=[NID])
+    browser.finish_sign_in = True
+    heal = _install_browser(monkeypatch, browser)
+    plan = _existing_plan(tmp_path)
+    io = _IO()
+    moved_to_sso = False
+    read_cookies = False
+    original_current_url = capture._current_url
+
+    def current_url(page: Any) -> str:
+        nonlocal moved_to_sso
+        observed = original_current_url(page)
+        if step == "url_read" and read_cookies and not moved_to_sso:
+            # The cookie snapshot's final URL read observes the old URL while
+            # the page moves; the courtesy decision must recheck that snapshot.
+            browser.page.url = SIGN_IN
+            moved_to_sso = True
+        return observed
+
+    def cookies(urls: list[str]) -> list[dict[str, Any]]:
+        nonlocal read_cookies, moved_to_sso
+        rows = browser.cookies(urls)
+        if any("Waiting for login" in message for message in io.messages) and not moved_to_sso:
+            read_cookies = True
+            if step == "cookie_read":
+                browser.page.url = SIGN_IN
+                moved_to_sso = True
+        return rows
+
+    human_wait_urls: list[str] = []
+
+    def human_wait(matcher: Any, **kwargs: Any) -> None:
+        human_wait_urls.append(browser.page.url)
+        browser.wait_for_url(matcher, **kwargs)
+
+    monkeypatch.setattr(capture, "_current_url", current_url)
+    browser.context.cookies.side_effect = cookies
+    browser.page.wait_for_url.side_effect = human_wait
+
+    _run("interactive", plan, io)
+
+    assert moved_to_sso
+    assert all("ServiceLogin?" not in call.args[0] for call in browser.page.goto.call_args_list)
+    assert human_wait_urls == [SIGN_IN]
+    assert browser.page.wait_for_url.call_args.kwargs["timeout"] == 4000
+    assert browser.now == 1002
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+    heal.assert_called_once()
+
+
+@pytest.mark.parametrize("transition", ["sid_arrival", "url_churn"])
+def test_courtesy_decision_declines_sid_arrival_and_unstable_app_snapshots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transition: str
+) -> None:
+    browser = _Browser(cookies=[NID])
+    heal = _install_browser(monkeypatch, browser)
+    plan = _existing_plan(tmp_path)
+    io = _IO()
+    courtesy_snapshots = 0
+
+    def cookies(urls: list[str]) -> list[dict[str, Any]]:
+        nonlocal courtesy_snapshots
+        rows = browser.cookies(urls)
+        if (
+            any("Waiting for login" in message for message in io.messages)
+            and not browser.page.wait_for_url.called
+        ):
+            courtesy_snapshots += 1
+            if transition == "sid_arrival":
+                browser.browser_cookies = [deepcopy(SID)]
+                browser.state["cookies"] = [deepcopy(SID)]
+                return deepcopy(browser.browser_cookies)
+            browser.page.url = f"{APP}?transition={courtesy_snapshots}"
+        return rows
+
+    def human_wait(matcher: Any, **kwargs: Any) -> None:
+        browser.page.url = APP
+        browser.browser_cookies = [deepcopy(SID)]
+        browser.state["cookies"] = [deepcopy(SID)]
+        browser.wait_for_url(matcher, **kwargs)
+
+    browser.context.cookies.side_effect = cookies
+    browser.page.wait_for_url.side_effect = human_wait
+
+    _run("interactive", plan, io)
+
+    assert courtesy_snapshots == (1 if transition == "sid_arrival" else 3)
+    assert all("ServiceLogin?" not in call.args[0] for call in browser.page.goto.call_args_list)
+    browser.page.wait_for_url.assert_called_once()
+    assert browser.page.wait_for_url.call_args.kwargs["timeout"] == 4000
+    assert browser.now == 1002
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+    heal.assert_called_once()
+
+
+def test_courtesy_observation_consuming_deadline_never_schedules_a_redirect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    browser = _Browser(cookies=[NID])
+    heal = _install_browser(monkeypatch, browser)
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    consumed_deadline = False
+
+    def cookies(urls: list[str]) -> list[dict[str, Any]]:
+        nonlocal consumed_deadline
+        rows = browser.cookies(urls)
+        if any("Waiting for login" in message for message in io.messages) and not consumed_deadline:
+            browser.now += 4
+            consumed_deadline = True
+        return rows
+
+    browser.context.cookies.side_effect = cookies
+
+    with pytest.raises(_InteractiveExit):
+        _run("interactive", plan, io)
+
+    assert consumed_deadline
+    assert browser.now == 1006
+    assert any("Login not detected" in message for message in io.messages)
+    browser.page.goto.assert_called_once()
+    browser.page.wait_for_url.assert_not_called()
+    writer.assert_not_called()
+    heal.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("step", ["cookie_read", "url_read"])
+def test_browser_close_during_courtesy_observation_retains_abort_routing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[NID])
+    heal = _install_browser(monkeypatch, browser)
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+    io = _IO()
+    original_current_url = capture._current_url
+
+    def current_url(page: Any) -> str:
+        if step == "url_read" and any("Waiting for login" in message for message in io.messages):
+            raise PlaywrightError(capture.TARGET_CLOSED_ERROR)
+        return original_current_url(page)
+
+    def cookies(urls: list[str]) -> list[dict[str, Any]]:
+        if step == "cookie_read" and any("Waiting for login" in message for message in io.messages):
+            raise PlaywrightError(capture.TARGET_CLOSED_ERROR)
+        return browser.cookies(urls)
+
+    monkeypatch.setattr(capture, "_current_url", current_url)
+    browser.context.cookies.side_effect = cookies
+
+    with pytest.raises(_InteractiveExit):
+        _run("interactive", plan, io)
+
+    assert any("browser window was closed" in message for message in io.messages)
+    assert all("ServiceLogin?" not in call.args[0] for call in browser.page.goto.call_args_list)
+    browser.page.wait_for_url.assert_not_called()
+    writer.assert_not_called()
+    heal.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+
+
 @pytest.mark.parametrize("mode", ["interactive", "headless", "cdp"])
 @pytest.mark.parametrize("step", ["cookie_read", "settle_wait"])
 def test_browser_closed_during_candidate_settle_retains_abort_routing(
