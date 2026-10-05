@@ -832,15 +832,18 @@ def test_courtesy_decision_does_not_interrupt_a_racing_sso_navigation(
     io = _IO()
     moved_to_sso = False
     read_cookies = False
-    original_current_url = capture._current_url
+    cached_url = APP
 
-    def current_url(page: Any) -> str:
-        nonlocal moved_to_sso
-        observed = original_current_url(page)
+    def page_url(*values: str) -> str | None:
+        nonlocal moved_to_sso, cached_url
+        if values:
+            cached_url = values[0]
+            return None
+        observed = cached_url
         if step == "url_read" and read_cookies and not moved_to_sso:
             # The cookie snapshot's final URL read observes the old URL while
             # the page moves; the courtesy decision must recheck that snapshot.
-            browser.page.url = SIGN_IN
+            cached_url = SIGN_IN
             moved_to_sso = True
         return observed
 
@@ -860,7 +863,9 @@ def test_courtesy_decision_does_not_interrupt_a_racing_sso_navigation(
         human_wait_urls.append(browser.page.url)
         browser.wait_for_url(matcher, **kwargs)
 
-    monkeypatch.setattr(capture, "_current_url", current_url)
+    monkeypatch.setattr(
+        type(browser.page), "url", PropertyMock(side_effect=page_url), raising=False
+    )
     browser.context.cookies.side_effect = cookies
     browser.page.wait_for_url.side_effect = human_wait
 
@@ -968,19 +973,25 @@ def test_browser_close_during_courtesy_observation_retains_abort_routing(
     plan = _existing_plan(tmp_path)
     before = plan.storage_path.read_bytes()
     io = _IO()
-    original_current_url = capture._current_url
+    cached_url = APP
 
-    def current_url(page: Any) -> str:
+    def page_url(*values: str) -> str | None:
+        nonlocal cached_url
+        if values:
+            cached_url = values[0]
+            return None
         if step == "url_read" and any("Waiting for login" in message for message in io.messages):
             raise PlaywrightError(capture.TARGET_CLOSED_ERROR)
-        return original_current_url(page)
+        return cached_url
 
     def cookies(urls: list[str]) -> list[dict[str, Any]]:
         if step == "cookie_read" and any("Waiting for login" in message for message in io.messages):
             raise PlaywrightError(capture.TARGET_CLOSED_ERROR)
         return browser.cookies(urls)
 
-    monkeypatch.setattr(capture, "_current_url", current_url)
+    monkeypatch.setattr(
+        type(browser.page), "url", PropertyMock(side_effect=page_url), raising=False
+    )
     browser.context.cookies.side_effect = cookies
 
     with pytest.raises(_InteractiveExit):
