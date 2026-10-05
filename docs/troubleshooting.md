@@ -144,8 +144,15 @@ It reports a **warn** row when `__Secure-1PSIDTS` is missing, expired, empty, or
 cannot be sent to the configured NotebookLM URL. A usable local `SID` does not
 guarantee successful recovery or an accepted server session. Use
 `notebooklm auth check --test --passive` to test token fetching without refreshing
-or writing credentials. Keep the same `--profile` / `--storage` selector and inline
-auth environment as the failing command; doctor prints a command for that source.
+or writing credentials when the required cookie names remain structurally usable.
+Absent, empty, malformed, or disallowed-domain PSIDTS stops the passive check
+locally before contacting Google. For incomplete file-backed auth, use
+`notebooklm auth check --test` for best-effort recovery; it may refresh, rotate,
+or update stored cookies. Incomplete inline auth needs a complete export, or
+unsetting `NOTEBOOKLM_AUTH_JSON` to use stored profile recovery.
+Keep the same `--profile` / `--storage` selector and inline auth environment as
+the failing command; doctor prints guidance for that source. On Windows, paste
+doctor's labeled commands into PowerShell so quoted selectors stay literal.
 
 Workarounds, most reliable first:
 

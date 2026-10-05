@@ -2109,10 +2109,21 @@ URL; missing or unusable `__Secure-1PSIDTS` produces a warning. A local pass
 does not establish that Google still accepts the session.
 
 Use `notebooklm auth check --test --passive` to test token fetching without
-refresh hooks, cookie rotation, or storage writes. Preserve the same root
-`--profile` or `--storage` option, and keep `NOTEBOOKLM_AUTH_JSON` set when
-testing inline auth. Doctor prints a command with the active selector. `--fix`
-repairs filesystem setup; it does not repair credentials or test them online.
+refresh hooks, cookie rotation, or storage writes. It requires structurally
+usable required cookies first: absent, empty, malformed, or disallowed-domain
+`__Secure-1PSIDTS` fails this local preflight before Google is contacted.
+For that incomplete file-backed state, doctor instead suggests
+`notebooklm auth check --test` for best-effort recovery; this check may refresh,
+rotate, or update stored cookies. Missing PSIDTS in an inline export requires
+a complete export or unsetting `NOTEBOOKLM_AUTH_JSON` to use stored recovery.
+Present expired or differently scoped PSIDTS can pass the name-only preflight,
+so doctor retains the passive probe for those warnings.
+
+Preserve the same root `--profile` or `--storage` option, and keep
+`NOTEBOOKLM_AUTH_JSON` set when testing inline auth. Doctor prints guidance
+for the active source. On Windows, generated commands are explicitly labeled
+for PowerShell and quote selectors literally; paste them into PowerShell.
+`--fix` repairs filesystem setup; it does not repair credentials or test them online.
 
 ---
 

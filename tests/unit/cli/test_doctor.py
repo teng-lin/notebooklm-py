@@ -621,7 +621,8 @@ def test_doctor_checks_selected_profile_and_preserves_it_in_guidance(
     assert data["checks"]["auth"]["source"] == f"file ({selected})"
     assert data["checks"]["auth"]["status"] == "warn"
     assert "notebooklm --profile work login" in output
-    assert "notebooklm --profile work auth check --test --passive" in output
+    assert "notebooklm --profile work auth check --test" in output
+    assert "--passive" not in output
 
 
 def test_doctor_preserves_storage_override_in_online_and_login_guidance(
@@ -635,13 +636,14 @@ def test_doctor_preserves_storage_override_in_online_and_login_guidance(
     output = " ".join(result.output.split())
 
     assert result.exit_code == 0, result.output
-    quoted_storage = f'"{storage}"' if sys.platform == "win32" else f"'{storage}'"
+    quoted_storage = f"'{storage}'"
     selector = f"notebooklm --storage {quoted_storage}"
     assert f"{selector} login" in output
-    assert f"{selector} auth check --test --passive" in output
+    assert f"{selector} auth check --test" in output
+    assert "--passive" not in output
 
 
-def test_doctor_source_command_quotes_windows_storage_paths_for_cmd():
+def test_doctor_source_command_quotes_windows_storage_paths_for_powershell():
     report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
     auth = doctor_cmd_module.AuthSource(
         storage_override=Path(r"C:\Users\A User\storage state.json"),
@@ -654,7 +656,7 @@ def test_doctor_source_command_quotes_windows_storage_paths_for_cmd():
     )
 
     assert command == (
-        r'notebooklm --storage "C:\Users\A User\storage state.json" auth check --test --passive'
+        r"notebooklm --storage 'C:\Users\A User\storage state.json' auth check --test --passive"
     )
     assert "--profile" not in command
 
@@ -667,21 +669,137 @@ def test_doctor_source_command_quotes_windows_ampersand_without_spaces():
 
     command = doctor_cmd_module._source_command(report, auth, "login", platform="win32")
 
-    assert command == r'notebooklm --storage "C:\Users\R&D\auth.json" login'
+    assert command == r"notebooklm --storage 'C:\Users\R&D\auth.json' login"
 
 
-def test_windows_control_character_quoting_preserves_terminal_backslash():
-    assert doctor_cmd_module._windows_command_arg("C:\\R&D\\") == r'"C:\R&D\\"'
+@pytest.mark.parametrize(
+    ("value", "quoted"),
+    [
+        (r"C:\Users\%TEMP%\auth.json", r"'C:\Users\%TEMP%\auth.json'"),
+        (r"C:\Users\R&D\auth.json", r"'C:\Users\R&D\auth.json'"),
+        (r"C:\Users\A User\auth.json", r"'C:\Users\A User\auth.json'"),
+        (r"C:\Users\O'Brien\auth`$name.json", r"'C:\Users\O''Brien\auth`$name.json'"),
+        (r"C:\Users\O’Neil\auth.json", r"'C:\Users\O’’Neil\auth.json'"),
+        ("name‘a’b‚c‛d", "'name‘‘a’’b‚‚c‛‛d'"),
+        ("C:\\R&D\\", r"'C:\R&D\'"),
+        ("%TEMP%", "'%TEMP%'"),
+        ("", "''"),
+        ("work-prod", "work-prod"),
+    ],
+)
+def test_powershell_command_arg_preserves_literal_values(value, quoted):
+    assert doctor_cmd_module._powershell_command_arg(value) == quoted
+
+
+def test_doctor_source_command_quotes_windows_variable_like_profile():
+    report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
+    auth = doctor_cmd_module.AuthSource(storage_override=None, profile="%TEMP%", has_env_auth=False)
+
+    command = doctor_cmd_module._source_command(report, auth, "login", platform="win32")
+
+    assert command == "notebooklm --profile '%TEMP%' login"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell argv probe is a Windows check")
+def test_windows_powershell_command_roundtrips_synthetic_argv():
+    import base64
+    import shutil
+    import subprocess
+
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    assert shell is not None, "The supported Windows test runner must provide PowerShell"
+    report = doctor_cmd_module.DoctorReport(profile="default", profile_source="default", checks={})
+    storage = Path(r"C:\Users\R&D\%TEMP%\O'Brien\O’Neil\name‘a’b‚c‛d\auth space`$name.json")
+    auth = doctor_cmd_module.AuthSource(storage_override=storage, profile=None, has_env_auth=False)
+    command = doctor_cmd_module._source_command(
+        report, auth, "auth", "check", "--test", "--passive", platform="win32"
+    )
+    script = (
+        "function notebooklm {\n"
+        "  $json = ConvertTo-Json -InputObject @($args) -Compress\n"
+        "  [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))\n"
+        "}\n" + command
+    )
+
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert json.loads(base64.b64decode(result.stdout.strip()).decode("utf-8")) == [
+        "--storage",
+        str(storage),
+        "auth",
+        "check",
+        "--test",
+        "--passive",
+    ]
+
+
+@pytest.mark.parametrize("guidance", ["refresh_authentication", "recover_file_authentication"])
+def test_doctor_windows_hints_explicitly_name_powershell(capsys, guidance):
+    report = doctor_cmd_module.DoctorReport(
+        profile="default",
+        profile_source="default",
+        checks={
+            "migration": {"status": "fail", "detail": "legacy layout"},
+            "profile_dir": {"status": "fail", "detail": "missing profile directory"},
+            "auth": {
+                "status": "fail",
+                "detail": "SID missing",
+                "guidance": guidance,
+            },
+        },
+    )
+    auth = doctor_cmd_module.AuthSource(
+        storage_override=Path(r"C:\Users\%TEMP%\auth.json"), profile=None, has_env_auth=False
+    )
+
+    doctor_cmd_module._display_results(report, auth=auth, platform="win32")
+    output = " ".join(capsys.readouterr().out.split())
+
+    if guidance == "refresh_authentication":
+        assert "Re-run in PowerShell" in output
+        assert "auth check --test --passive" in output
+    else:
+        assert "re-run in PowerShell" in output
+        assert "auth check --test" in output
+        assert "--passive" not in output
+    assert "Run in PowerShell" in output
+    assert "run in PowerShell" in output
+    assert "doctor --fix" in output
+    assert "login" in output
+
+
+def test_doctor_renders_bracketed_check_details_literally(capsys):
+    report = doctor_cmd_module.DoctorReport(
+        profile="default",
+        profile_source="default",
+        checks={"profile_dir": {"status": "pass", "detail": "profile/[backup]/data"}},
+    )
+    auth = doctor_cmd_module.AuthSource(storage_override=None, profile=None, has_env_auth=False)
+
+    doctor_cmd_module._display_results(report, auth=auth)
+
+    assert "profile/[backup]/data" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("inline", [False, True], ids=["file", "inline"])
-@pytest.mark.parametrize("unusable_psidts", [False, True], ids=["missing", "unusable"])
-def test_doctor_psidts_warning_tests_online_before_suggesting_auth_replacement(
-    runner, isolated_notebooklm_home, monkeypatch, inline, unusable_psidts
+@pytest.mark.parametrize(
+    "psidts_fields",
+    [{"expires": 1}, {"domain": "notebooklm.google.com"}],
+    ids=["expired", "app-only"],
+)
+def test_doctor_name_only_complete_warning_uses_passive_before_auth_replacement(
+    runner, isolated_notebooklm_home, monkeypatch, inline, psidts_fields
 ):
-    cookies = [{"name": "SID", "value": "x"}]
-    if unusable_psidts:
-        cookies.append({"name": "__Secure-1PSIDTS", "value": ""})
+    cookies = [
+        {"name": "SID", "value": "x"},
+        {"name": "__Secure-1PSIDTS", "value": "y", **psidts_fields},
+    ]
     state = _storage(cookies)
     if inline:
         monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", json.dumps(state))
@@ -712,6 +830,78 @@ def test_doctor_psidts_warning_tests_online_before_suggesting_auth_replacement(
     else:
         assert "notebooklm --profile default login" in output[replacement_index:]
         assert "Re-run" not in output
+
+
+@pytest.mark.parametrize("inline", [False, True], ids=["file", "inline"])
+@pytest.mark.parametrize("fix", [False, True])
+@pytest.mark.parametrize(
+    "psidts_fields",
+    [None, {"value": ""}, {"path": []}, {"domain": ".example.com"}],
+    ids=["missing", "empty", "malformed", "disallowed-domain"],
+)
+def test_doctor_incomplete_export_gives_source_specific_guidance_without_side_effects(
+    runner, isolated_notebooklm_home, monkeypatch, inline, fix, psidts_fields
+):
+    import subprocess
+
+    import httpx
+
+    cookies = [{"name": "SID", "value": "x"}]
+    if psidts_fields is not None:
+        cookies.append({"name": "__Secure-1PSIDTS", "value": "y", **psidts_fields})
+    state = _storage(cookies)
+    profile_dir = _make_profile(isolated_notebooklm_home, "work")
+    storage = profile_dir / "storage_state.json"
+    _write_json(storage, state)
+    original = storage.read_bytes()
+    inline_json = json.dumps(state)
+    if inline:
+        monkeypatch.setenv("NOTEBOOKLM_AUTH_JSON", inline_json)
+    monkeypatch.setattr(
+        doctor_cmd_module,
+        "_headless_reauth_check",
+        lambda: {"status": "pass", "detail": "ready"},
+    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("doctor must not run the recovery commands it suggests")
+
+    monkeypatch.setattr(httpx.Client, "send", forbidden)
+    monkeypatch.setattr(httpx.AsyncClient, "send", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    args = ["--profile", "work", "doctor"]
+    if fix:
+        args.append("--fix")
+
+    json_result = runner.invoke(cli, [*args, "--json"])
+    text_result = runner.invoke(cli, args)
+    output = " ".join(text_result.output.split())
+
+    assert json_result.exit_code == text_result.exit_code == 0
+    auth = json.loads(json_result.output)["checks"]["auth"]
+    assert auth["status"] == "warn"
+    assert auth["scope"] == "local only; online authentication not tested"
+    assert "--passive" not in output
+    assert storage.read_bytes() == original
+    if inline:
+        from notebooklm.cli.services.auth_source import read_env_auth_json
+
+        assert auth["source"] == "NOTEBOOKLM_AUTH_JSON"
+        assert auth["guidance"] == "replace_incomplete_inline_auth"
+        assert "incomplete export" in output
+        assert "no writable backing file for recovery" in output
+        assert "complete export" in output
+        assert "unset it to use stored profile authentication and recovery" in output
+        assert "auth check --test" not in output
+        assert read_env_auth_json() == inline_json
+    else:
+        assert auth["source"] == f"file ({storage})"
+        assert auth["guidance"] == "recover_file_authentication"
+        assert "notebooklm --profile work auth check --test" in output
+        assert "may refresh, rotate, or update stored cookies" in output
+        assert "If recovery fails" in output
+        assert "notebooklm --profile work login" in output
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])

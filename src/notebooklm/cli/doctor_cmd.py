@@ -11,8 +11,8 @@ helpers (read off this module at call time so the
 neutral ``run_checks``.
 """
 
+import re
 import shlex
-import subprocess
 import sys
 from typing import Any
 
@@ -198,26 +198,30 @@ def _source_command(
         command.extend(("--profile", auth.profile or report.profile))
     command.extend(args)
     if (sys.platform if platform is None else platform) == "win32":
-        return " ".join(_windows_command_arg(arg) for arg in command)
+        return " ".join(_powershell_command_arg(arg) for arg in command)
     return shlex.join(command)
 
 
-def _windows_command_arg(arg: str) -> str:
-    """Retain CRT escaping and quote cmd control characters in a path."""
-    escaped = subprocess.list2cmdline([arg])
-    if any(char in arg for char in "&|<>()^") and not escaped.startswith('"'):
-        # list2cmdline quotes whitespace. When adding quotes for cmd control
-        # characters, terminal backslashes must also be doubled before the
-        # closing quote, as they are for its normal whitespace quoting.
-        trailing_backslashes = len(arg) - len(arg.rstrip("\\"))
-        escaped = '"' + escaped + "\\" * trailing_backslashes + '"'
-    return escaped
+def _powershell_command_arg(arg: str) -> str:
+    """Use literal PowerShell arguments so selectors cannot expand variables."""
+    if re.fullmatch(r"[A-Za-z0-9_.-]+", arg):
+        return arg
+    # PowerShell also treats these typographic single quotes as delimiters.
+    escaped = "".join(char * 2 if char in "'\u2018\u2019\u201a\u201b" else char for char in arg)
+    return "'" + escaped + "'"
 
 
-def _display_results(report: DoctorReport, *, auth: AuthSource):
+def _display_results(report: DoctorReport, *, auth: AuthSource, platform: str | None = None):
     """Display doctor results using Rich."""
     checks = report.checks
     fixes_applied = report.fixes_applied
+    shell_label = (
+        " in PowerShell" if (sys.platform if platform is None else platform) == "win32" else ""
+    )
+
+    def source_command(*args: str) -> str:
+        return _source_command(report, auth, *args, platform=platform)
+
     table = Table(title="NotebookLM Doctor")
     table.add_column("Check", style="dim")
     table.add_column("Status")
@@ -234,7 +238,7 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
 
     labels = {name: name.replace("_", " ").title() for name in checks}
     for name, check in checks.items():
-        table.add_row(labels[name], status_icon(check["status"]), check["detail"])
+        table.add_row(labels[name], status_icon(check["status"]), escape(check["detail"]))
 
     console.print(table)
     auth_source = checks.get("auth", {}).get("source")
@@ -242,10 +246,11 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
         console.print(f"Authentication source: {auth_source} (local checks only)", markup=False)
 
     guidance = checks.get("auth", {}).get("guidance")
-    online_command = _source_command(report, auth, "auth", "check", "--test", "--passive")
+    online_command = source_command("auth", "check", "--test", "--passive")
     if guidance == "test_authentication":
         console.print(
-            f"To test this auth source online without refreshing it, run '{online_command}'.",
+            f"To test this auth source online without refreshing it, run{shell_label} "
+            f"'{online_command}'.",
             markup=False,
         )
         if auth.has_env_auth:
@@ -255,13 +260,32 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
                 "authentication.[/yellow]"
             )
         else:
-            login_command = _source_command(report, auth, "login")
+            login_command = source_command("login")
             console.print(
-                f"[yellow]If the passive check fails, re-run '{escape(login_command)}'.[/yellow]"
+                f"[yellow]If the passive check fails, re-run{shell_label} "
+                f"'{escape(login_command)}'.[/yellow]"
             )
     elif guidance == "configure_notebooklm_url":
         console.print(
             "[yellow]Fix or unset NOTEBOOKLM_BASE_URL to use a supported NotebookLM URL.[/yellow]"
+        )
+    elif guidance == "recover_file_authentication":
+        recovery_command = source_command("auth", "check", "--test")
+        console.print(
+            f"To attempt best-effort recovery, run{shell_label} '{recovery_command}'. "
+            "This check may refresh, rotate, or update stored cookies.",
+            markup=False,
+        )
+        login_command = source_command("login")
+        console.print(
+            f"[yellow]If recovery fails, re-run{shell_label} '{escape(login_command)}'.[/yellow]"
+        )
+    elif guidance == "replace_incomplete_inline_auth":
+        console.print(
+            f"[yellow]{AUTH_JSON_ENV_NAME} is an incomplete export: __Secure-1PSIDTS is "
+            "missing or malformed. The passive check stops locally, and inline auth "
+            "has no writable backing file for recovery. Replace it with a complete "
+            "export, or unset it to use stored profile authentication and recovery.[/yellow]"
         )
     elif guidance == "replace_inline_auth":
         console.print(
@@ -269,9 +293,9 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
             "or unset it to use stored profile authentication.[/yellow]"
         )
     elif guidance == "refresh_authentication":
-        login_command = _source_command(report, auth, "login")
+        login_command = source_command("login")
         console.print(
-            f"[yellow]Re-run '{escape(login_command)}'; on Windows (Chrome 127+ App-Bound "
+            f"[yellow]Re-run{shell_label} '{escape(login_command)}'; on Windows (Chrome 127+ App-Bound "
             "Encryption) add '--browser-cookies firefox' or '--master-token' "
             "to that login command.[/yellow]"
         )
@@ -284,11 +308,15 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
     has_failures = report.has_failures
     if has_failures and not fixes_applied:
         console.print()
-        fix_command = escape(_source_command(report, auth, "doctor", "--fix"))
+        fix_command = escape(source_command("doctor", "--fix"))
         if checks.get("migration", {}).get("status") == "fail":
-            console.print(f"[yellow]Run '{fix_command}' to migrate and set up profiles.[/yellow]")
+            console.print(
+                f"[yellow]Run{shell_label} '{fix_command}' to migrate and set up profiles.[/yellow]"
+            )
         if checks.get("profile_dir", {}).get("status") == "fail":
-            console.print(f"[yellow]Run '{fix_command}' to create the profile directory.[/yellow]")
+            console.print(
+                f"[yellow]Run{shell_label} '{fix_command}' to create the profile directory.[/yellow]"
+            )
     elif not has_failures:
         warned_labels = [
             labels[name] for name, check in checks.items() if check["status"] == "warn"
@@ -301,8 +329,13 @@ def _display_results(report: DoctorReport, *, auth: AuthSource):
         else:
             console.print("\nNo local failures detected. Online authentication was not tested.")
 
-    if guidance != "test_authentication":
+    if guidance not in (
+        "test_authentication",
+        "recover_file_authentication",
+        "replace_incomplete_inline_auth",
+    ):
         console.print(
-            f"To test this auth source online without refreshing it, run '{online_command}'.",
+            f"To test this auth source online without refreshing it, run{shell_label} "
+            f"'{online_command}'.",
             markup=False,
         )

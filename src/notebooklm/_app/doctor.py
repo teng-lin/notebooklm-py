@@ -185,10 +185,14 @@ def _check_auth(
     """Inspect the selected auth material without testing the server session.
 
     Use the canonical storage reader and unsent-request cookie policy. A
-    locally usable SID may still be revoked by Google; only the existing
-    passive online auth check can establish whether token fetching works.
+    locally usable SID may still be revoked by Google; an existing online auth
+    check is needed to establish whether token fetching works.
     """
-    from ..auth import _storage_has_routable_cookie, cookie_names_from_storage
+    from ..auth import (
+        _sanitized_auth_entries,
+        _storage_has_routable_cookie,
+        cookie_names_from_storage,
+    )
     from ..exceptions import ConfigurationError
 
     context = {
@@ -218,11 +222,26 @@ def _check_auth(
         # Missing freshness cookies are still a warning: completed sign-ins
         # may be incomplete and runtime recovery is best effort, not guaranteed.
         if not _storage_has_routable_cookie(data, "__Secure-1PSIDTS"):
+            # Passive auth checking validates these canonical sanitized names
+            # before attempting its GET. Expired/app-scoped rows remain in the
+            # name-only set; absent or malformed rows cannot reach the network.
+            name_only_complete = any(
+                entry["name"] == "__Secure-1PSIDTS" for entry in _sanitized_auth_entries(data)
+            )
+            guidance = (
+                "test_authentication"
+                if name_only_complete
+                else (
+                    "replace_incomplete_inline_auth"
+                    if has_inline_auth
+                    else "recover_file_authentication"
+                )
+            )
             return result(
                 "warn",
                 f"SID usable locally but __Secure-1PSIDTS missing or unusable "
                 f"({cookie_count} cookies); online authentication may fail.",
-                guidance="test_authentication",
+                guidance=guidance,
             )
         return result("pass", f"local auth cookies usable ({cookie_count} cookies)")
     except ConfigurationError as exc:
