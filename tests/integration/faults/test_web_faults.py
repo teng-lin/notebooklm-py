@@ -9,7 +9,7 @@ import pytest
 from tests._fault_server.common import ScenarioFailure
 from tests._fault_server.http import Action, HttpFaultServer, Reply, RequestRecord, Route
 from tests._fault_server.web_scenarios import SCENARIOS, run_scenario
-from tests._fault_server.web_transfers import BASE_FINAL, FINAL, UPLOAD
+from tests._fault_server.web_transfers import ASSET, BASE_FINAL, FINAL, UPLOAD
 
 pytestmark = pytest.mark.allow_no_vcr
 
@@ -96,4 +96,82 @@ async def test_web_upload_failure_records_outcome_before_failed_check(
     outcome = next(event for event in events if event["kind"] == "outcome")
     failure = next(event for event in events if event.get("passed") is False)
     assert outcome["error"] == "ServerError"
+    assert events.index(outcome) < events.index(failure)
+
+
+@pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+@pytest.mark.parametrize(
+    ("variant", "delayed_request"),
+    [
+        pytest.param("success", 1, id="success-baseline"),
+        pytest.param("success", 2, id="success-download"),
+        pytest.param("expired_capability", 1, id="expired-baseline"),
+        pytest.param("expired_capability", 2, id="expired-response"),
+        pytest.param("body_stall", 1, id="stall-baseline"),
+    ],
+)
+async def test_web_download_tolerates_delayed_unstalled_reply(
+    monkeypatch: pytest.MonkeyPatch, batch: bool, variant: str, delayed_request: int
+) -> None:
+    run_action = HttpFaultServer._run_action
+    asset_requests = 0
+
+    async def delayed_reply(
+        server: HttpFaultServer,
+        action: Action,
+        writer: asyncio.StreamWriter,
+        record: RequestRecord,
+    ) -> None:
+        nonlocal asset_requests
+        if record.route == ASSET:
+            asset_requests += 1
+            if asset_requests == delayed_request:
+                # A finite response delay exceeds the old 200 ms stall deadline.
+                await asyncio.sleep(0.4)
+        await run_action(server, action, writer, record)
+
+    monkeypatch.setattr(HttpFaultServer, "_run_action", delayed_reply)
+    scenario = f"download_{'batch_' if batch else ''}{variant}"
+    result = await asyncio.wait_for(run_scenario(scenario, operation_id="delayed-download"), 20)
+
+    assert result.checks["successful_download_baseline"]
+    assert all(result.checks.values())
+    outcome = next(event for event in result.events if event["kind"] == "outcome")
+    if variant == "expired_capability":
+        assert outcome["error"] == "AuthError"
+    elif variant == "body_stall":
+        assert outcome["underlying_error"] == "ReadTimeout"
+    else:
+        assert outcome["error"] is None
+
+
+async def test_web_download_failure_records_outcome_before_failed_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_action = HttpFaultServer._run_action
+    asset_requests = 0
+
+    async def rejected_download(
+        server: HttpFaultServer,
+        action: Action,
+        writer: asyncio.StreamWriter,
+        record: RequestRecord,
+    ) -> None:
+        nonlocal asset_requests
+        if record.route == ASSET:
+            asset_requests += 1
+            if asset_requests == 2:
+                action = Reply(403)
+        await run_action(server, action, writer, record)
+
+    monkeypatch.setattr(HttpFaultServer, "_run_action", rejected_download)
+    with pytest.raises(ScenarioFailure, match="download_completed") as raised:
+        await asyncio.wait_for(
+            run_scenario("download_success", operation_id="rejected-download"), 20
+        )
+
+    events = raised.value.result.events
+    outcome = next(event for event in events if event["kind"] == "outcome")
+    failure = next(event for event in events if event.get("passed") is False)
+    assert outcome["error"] == "AuthError"
     assert events.index(outcome) < events.index(failure)

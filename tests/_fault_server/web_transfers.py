@@ -28,6 +28,8 @@ _REDIRECT_HTTP_TIMEOUT = 3.0
 _REDIRECT_OPERATION_TIMEOUT = 8.0
 _UPLOAD_HTTP_TIMEOUT = 3.0
 _UPLOAD_STALL_HTTP_TIMEOUT = 0.3
+_DOWNLOAD_HTTP_TIMEOUT = 3.0
+_DOWNLOAD_STALL_HTTP_TIMEOUT = 0.2
 
 NOTEBOOK = "00000000-0000-4000-8000-000000000200"
 SOURCE = "00000000-0000-4000-8000-000000000201"
@@ -383,9 +385,7 @@ async def _download(client: Any, destination: Path, *, batch: bool, url: str = A
 async def download_case(result: ScenarioResult, variant: str, *, batch: bool = False) -> None:
     from .web_scenarios import _cohort, _requests, _require_clean
 
-    # Redirect ceilings exercise a finite hop count, not inactivity expiry.
-    # Keep the short body-stall timeout for the other transfer variants.
-    http_timeout = _REDIRECT_HTTP_TIMEOUT if variant == "redirect_loop" else 0.2
+    http_timeout = _REDIRECT_HTTP_TIMEOUT if variant == "redirect_loop" else _DOWNLOAD_HTTP_TIMEOUT
     operation_timeout = _REDIRECT_OPERATION_TIMEOUT if variant == "redirect_loop" else None
     server = HttpFaultServer(hosts=["lh3.googleusercontent.com", "storage.googleapis.com"])
     if not batch:
@@ -424,6 +424,7 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
     _probe(server)
     successful = variant in {"success", "trusted_redirect"}
     error: BaseException | None = None
+    clients_created = 0
     responses: list[httpx.Response] = []
     response_headers = asyncio.Event()
 
@@ -433,7 +434,13 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
             response_headers.set()
 
     def transfer_factory(**kwargs: Any) -> httpx.AsyncClient:
+        nonlocal clients_created
+        clients_created += 1
         kwargs["timeout"] = httpx.Timeout(http_timeout)
+        if variant == "body_stall" and clients_created == 2:
+            # Only the held second response exercises read inactivity expiry.
+            # Baselines and finite replies need room for CI scheduling delays.
+            kwargs["timeout"] = httpx.Timeout(http_timeout, read=_DOWNLOAD_STALL_HTTP_TIMEOUT)
         hooks = dict(kwargs.pop("event_hooks", {}))
         hooks["response"] = [*hooks.get("response", []), observe_response]
         return server.client_factory(event_hooks=hooks, **kwargs)
@@ -466,6 +473,19 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
                 error = exc
             if variant == "close_reopen":
                 await client.__aenter__()
+            underlying_error = (
+                returned.failed[0][1]
+                if batch and returned is not None and returned.failed
+                else getattr(error, "cause", None)
+            )
+            result.record(
+                "outcome",
+                error=None if error is None else type(error).__name__,
+                publication="buffered_batch" if batch else "streamed_single",
+                underlying_error=None
+                if underlying_error is None
+                else type(underlying_error).__name__,
+            )
             if successful:
                 result.require(
                     "download_completed", error is None and destination.read_bytes() == MEDIA
@@ -488,19 +508,6 @@ async def download_case(result: ScenarioResult, variant: str, *, batch: bool = F
                 result.require(
                     "old_destination_preserved", destination.read_bytes() == b"old destination"
                 )
-            underlying_error = (
-                returned.failed[0][1]
-                if batch and returned is not None and returned.failed
-                else getattr(error, "cause", None)
-            )
-            result.record(
-                "outcome",
-                error=None if error is None else type(error).__name__,
-                publication="buffered_batch" if batch else "streamed_single",
-                underlying_error=None
-                if underlying_error is None
-                else type(underlying_error).__name__,
-            )
             if variant == "redirect_loop":
                 result.require(
                     "redirect_limit_error", isinstance(underlying_error, httpx.TooManyRedirects)
@@ -570,7 +577,9 @@ async def credential_redirect_case(result: ScenarioResult, *, trusted: bool, bat
     _probe(server)
     with tempfile.TemporaryDirectory(prefix="fault-web-credentials-") as directory:
         destination = Path(directory) / "asset.wav"
-        async with _cohort(result, server, transfer_timeout=0.2, record_sleep=False) as client:
+        async with _cohort(
+            result, server, transfer_timeout=_DOWNLOAD_HTTP_TIMEOUT, record_sleep=False
+        ) as client:
             await _download(client, destination, batch=batch, url=initial_url)
             result.require("credential_download_baseline", destination.read_bytes() == MEDIA)
             destination.write_bytes(b"existing")
