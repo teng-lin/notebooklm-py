@@ -130,10 +130,11 @@ def _install_browser(monkeypatch: pytest.MonkeyPatch, browser: _Browser) -> Magi
     def playwright_context():
         yield browser.playwright
 
-    monkeypatch.setattr(capture, "sync_playwright_context", playwright_context)
+    # Substitute the external browser gateway; auth module patches belong to
+    # the individual tests under the survivor policy.
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", playwright_context)
     monkeypatch.setattr(capture.time, "monotonic", lambda: browser.now)
     heal = MagicMock(side_effect=lambda state: (state, ValueError("synthetic missing PSIDTS")))
-    monkeypatch.setattr(capture, "heal_captured_state", heal)
     return heal
 
 
@@ -171,6 +172,7 @@ def test_nid_only_app_landing_preserves_existing_storage(
 ) -> None:
     browser = _Browser(cookies=[NID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -201,6 +203,7 @@ def test_interactive_anonymous_landing_gets_one_encoded_sign_in_fallback(
     browser = _Browser(cookies=[NID])
     browser.finish_sign_in = True
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     io = _IO()
 
@@ -245,6 +248,7 @@ def test_owned_sign_in_continuation_does_not_hide_non_race_errors(
 
     browser.page.goto.side_effect = fail_continuation
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -276,6 +280,7 @@ def test_owned_sign_in_continuation_preserves_timeout_and_closed_routing(
 
     browser.page.goto.side_effect = fail_continuation
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     before = plan.storage_path.read_bytes()
     io = _IO()
@@ -304,6 +309,7 @@ def test_superseded_sign_in_continuation_still_waits_for_sid(
 
     browser.page.goto.side_effect = superseded_continuation
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
 
     _run("interactive", plan, _IO())
@@ -320,6 +326,7 @@ def test_same_document_sid_arrival_during_settle_is_captured(
     browser = _Browser(cookies=[NID])
     browser.arrive_at = browser.now + 1
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
 
     _run(mode, plan, _IO())
@@ -338,6 +345,7 @@ def test_on_host_incomplete_wait_is_paced_and_times_out_without_sid(
 
     browser = _Browser(cookies=[NID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     with pytest.raises(PlaywrightTimeout):
         capture.wait_for_login_landing(browser.page, timeout_s=1.2)
 
@@ -353,6 +361,7 @@ def test_on_host_wait_detects_same_document_sid_arrival(monkeypatch: pytest.Monk
     browser = _Browser(cookies=[NID])
     browser.arrive_at = browser.now + 1
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
 
     assert capture.wait_for_login_landing(browser.page, timeout_s=3) == 0
 
@@ -368,6 +377,7 @@ def test_paced_no_sid_observations_reset_the_immediate_failure_streak(
 
     browser = _Browser(cookies=[NID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     total_failures = capture.MAX_TOLERATED_NAVIGATION_FAILURES + 5
     attempts = 0
 
@@ -428,6 +438,7 @@ def test_invalid_final_export_is_refused_before_heal_or_write(
     browser = _Browser(cookies=[SID])
     browser.state["cookies"] = [invalid_sid]
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -449,6 +460,7 @@ def test_late_invalid_session_after_heal_does_not_replace_storage(
 ) -> None:
     browser = _Browser(cookies=[SID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
 
     def invalidate(state: dict[str, Any]) -> tuple[dict[str, Any], None]:
         if change == "export_sid":
@@ -480,6 +492,7 @@ def test_sid_only_capture_survives_post_heal_app_navigation(
 ) -> None:
     browser = _Browser(cookies=[SID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     snapshots: list[str] = []
 
     def move_during_snapshot(urls: list[str]) -> list[dict[str, Any]]:
@@ -516,6 +529,7 @@ def test_final_routing_verification_reobserves_a_changed_app_url(
 ) -> None:
     browser = _Browser(cookies=[SID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     original_routes = capture._auth_cookies._storage_has_routable_cookie
     routed_urls: list[str] = []
 
@@ -556,6 +570,7 @@ def test_final_routing_reobservation_still_refuses_invalid_or_unstable_state(
     browser = _Browser(cookies=[SID])
     browser.state["cookies"] = [deepcopy(stored_sid)]
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     original_routes = capture._auth_cookies._storage_has_routable_cookie
     routed_urls: list[str] = []
     snapshots: list[str] = []
@@ -615,6 +630,7 @@ def test_post_heal_reobservation_refuses_an_invalid_or_unstable_candidate(
 ) -> None:
     browser = _Browser(cookies=[SID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     snapshots: list[str] = []
 
     def move_during_snapshot(urls: list[str]) -> list[dict[str, Any]]:
@@ -660,6 +676,7 @@ def test_current_host_sid_cannot_replace_legacy_rpc_profile(
     monkeypatch.setenv("NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com")
     browser = _Browser(cookies=[{**SID, "domain": "notebook.google.com"}])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     before = plan.storage_path.read_bytes()
     error = _InteractiveExit if mode == "interactive" else HeadlessLoginRequiredError
@@ -691,6 +708,7 @@ def test_restored_sid_after_every_goto_aborts_is_not_commit_evidence(
     browser = _Browser(cookies=[SID])
     browser.page.goto.side_effect = PlaywrightError("net::ERR_ABORTED")
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -726,6 +744,7 @@ def test_recovered_on_app_page_without_a_commit_reports_navigation_failure(
     recovered.goto.side_effect = PlaywrightError("net::ERR_ABORTED")
     browser.context.new_page.return_value = recovered
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -767,6 +786,7 @@ def test_forcing_commits_after_initial_goto_races_permit_sid_capture(
 
     browser.page.goto.side_effect = goto_after_initial_races
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
 
     _run("interactive", plan, _IO())
@@ -785,6 +805,7 @@ def test_initial_settle_and_fallback_share_a_short_deadline(
 ) -> None:
     browser = _Browser(cookies=[NID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path, timeout=1)
     before = plan.storage_path.read_bytes()
     with pytest.raises(_InteractiveExit):
@@ -811,6 +832,7 @@ def test_off_host_human_sign_in_is_not_redirected_to_service_login(
 
     browser.page.goto.side_effect = goto
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
 
     _run("interactive", plan, _IO())
@@ -828,6 +850,7 @@ def test_courtesy_decision_does_not_interrupt_a_racing_sso_navigation(
     browser = _Browser(cookies=[NID])
     browser.finish_sign_in = True
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     io = _IO()
     moved_to_sso = False
@@ -886,6 +909,7 @@ def test_courtesy_decision_declines_sid_arrival_and_unstable_app_snapshots(
 ) -> None:
     browser = _Browser(cookies=[NID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     io = _IO()
     courtesy_snapshots = 0
@@ -930,6 +954,7 @@ def test_courtesy_observation_consuming_deadline_never_schedules_a_redirect(
 ) -> None:
     browser = _Browser(cookies=[NID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -968,6 +993,7 @@ def test_browser_close_during_courtesy_observation_retains_abort_routing(
 
     browser = _Browser(cookies=[NID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -1019,6 +1045,7 @@ def test_browser_closed_during_candidate_settle_retains_abort_routing(
     else:
         browser.page.wait_for_timeout.side_effect = closed
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     before = plan.storage_path.read_bytes()
     io = _IO()
@@ -1061,6 +1088,7 @@ def test_url_read_target_closed_retains_browser_abort_classification(
 
     browser.page.goto.side_effect = close_before_url_read
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     writer = MagicMock()
     monkeypatch.setattr(capture, "replace_captured_profile", writer)
     plan = _existing_plan(tmp_path)
@@ -1087,6 +1115,7 @@ def test_page_only_close_after_heal_refuses_cached_url_and_context_sid(
 ) -> None:
     browser = _Browser(cookies=[SID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     snapshots_before_close = 0
 
     def close_after_heal(state: dict[str, Any]) -> tuple[dict[str, Any], None]:
@@ -1126,6 +1155,7 @@ def test_browser_closed_during_post_heal_guard_preserves_storage(
 
     browser = _Browser(cookies=[SID])
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
 
     def close_after_heal(state: dict[str, Any]) -> tuple[dict[str, Any], None]:
         browser.context.cookies.side_effect = PlaywrightError(capture.TARGET_CLOSED_ERROR)
@@ -1159,6 +1189,7 @@ def test_non_navigation_candidate_errors_propagate(
     browser = _Browser(cookies=[NID])
     browser.context.cookies.side_effect = PlaywrightError("Protocol error: synthetic")
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     before = plan.storage_path.read_bytes()
     with pytest.raises(PlaywrightError, match="Protocol error"):
@@ -1175,6 +1206,7 @@ def test_logout_during_cookie_forcing_preserves_storage(
     browser = _Browser(cookies=[SID])
     browser.finish_cookie_forcing = False
     heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
     before = plan.storage_path.read_bytes()
     error = _InteractiveExit if mode == "interactive" else HeadlessLoginRequiredError
