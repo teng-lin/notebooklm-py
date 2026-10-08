@@ -198,6 +198,12 @@ def test_near_miss_no_close_match_returns_empty() -> None:
     assert near_miss_candidates("Zzzzqwx", items, id_of=_id_of, title_of=_title_of) == []
 
 
+def test_near_miss_dotted_i_prefix_preserves_original_title() -> None:
+    items = [Item(id="istanbul-id", title="İstanbul notları")]
+    got = near_miss_candidates("i", items, id_of=_id_of, title_of=_title_of)
+    assert got == [{"id": "istanbul-id", "title": "İstanbul notları"}]
+
+
 def test_near_miss_empty_token_returns_empty() -> None:
     items = [Item(id="deadbeef", title="Alpha")]
     assert near_miss_candidates("   ", items, id_of=_id_of, title_of=_title_of) == []
