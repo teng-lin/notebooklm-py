@@ -197,6 +197,15 @@ _FUZZY_CUTOFF = 0.6
 _MAX_NEAR_MISS_CANDIDATES = 3
 
 
+def casefold_title(text: str) -> str:
+    """Fold title case, treating dotted İ and its decomposed form like i.
+
+    Unicode casefold retains the combining dot in ``İ`` as ``i\u0307``.
+    Remove only that dot, preserving dotless ı and unrelated accents.
+    """
+    return text.casefold().replace("i\u0307", "i")
+
+
 def _normalize_for_match(text: str) -> str:
     """Fold a title/token for punctuation- and case-insensitive comparison.
 
@@ -207,7 +216,7 @@ def _normalize_for_match(text: str) -> str:
     match the real title.
     """
     folded = unicodedata.normalize("NFKC", text).translate(_DASH_TRANSLATION)
-    return " ".join(folded.split()).casefold()
+    return casefold_title(" ".join(folded.split()))
 
 
 def near_miss_candidates(

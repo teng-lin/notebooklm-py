@@ -134,6 +134,27 @@ async def test_title_match_casefold_non_ascii() -> None:
     assert await resolve_notebook(client, "STRASSE") == "deadbeef"
 
 
+@pytest.mark.parametrize("title", ["İstanbul notları", "I\u0307stanbul notları"])
+@pytest.mark.parametrize("query", ["istanbul", "istanbul notları", "İstanbul"])
+async def test_title_match_dotted_i(title: str, query: str) -> None:
+    client = _client(notebooks=[_NB(FULL_A, title)])
+    assert await resolve_notebook(client, query) == FULL_A
+
+
+async def test_title_match_dotted_i_collision_is_ambiguous() -> None:
+    client = _client(notebooks=[_NB(FULL_A, "İstanbul"), _NB(FULL_B, "istanbul")])
+    with pytest.raises(AmbiguousIdError) as exc:
+        await resolve_notebook(client, "istanbul")
+    assert set(exc.value.candidate_ids) == {FULL_A, FULL_B}
+
+
+@pytest.mark.parametrize("title, query", [("ıstanbul", "istanbul"), ("café", "cafe")])
+async def test_title_match_preserves_dotless_i_and_accents(title: str, query: str) -> None:
+    client = _client(notebooks=[_NB(FULL_A, title)])
+    with pytest.raises(NotebookNotFoundError):
+        await resolve_notebook(client, query)
+
+
 async def test_ambiguous_prefix_raises_with_candidates() -> None:
     client = _client(notebooks=[_NB("deadbeef01", "A"), _NB("deadbeef02", "B")])
     with pytest.raises(AmbiguousIdError) as caught:

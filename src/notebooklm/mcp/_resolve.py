@@ -52,6 +52,7 @@ from .._app.artifacts import require_complete_artifact_listing
 from .._app.resolve import (
     FULL_ID_PATTERN,
     AmbiguousIdError,
+    casefold_title,
     near_miss_candidates,
     resolve_ref,
     validate_id,
@@ -177,8 +178,8 @@ def _resolve_by_title(
     # casefold (not lower) for correct non-ASCII case-insensitive matching, e.g.
     # German ß folds to "ss" so "STRASSE" matches a title "Straße". Fold each
     # title once up front so the two passes below don't re-casefold every item.
-    token_folded = token.casefold()
-    folded = [((item.title or "").casefold(), item) for item in items]
+    token_folded = casefold_title(token)
+    folded = [(casefold_title(item.title or ""), item) for item in items]
 
     exact = [item for title_folded, item in folded if title_folded == token_folded]
     if len(exact) == 1:

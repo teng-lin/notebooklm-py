@@ -262,7 +262,8 @@ These conventions hold across every tool:
   `structured_content`. A `resource_link` appears only when a tool explicitly brokers
   file transfer, such as `studio_download`.
 - **Name *or* ID.** Every `notebook`/`source`/`note`/`artifact` argument accepts a human title **or**
-  an ID. Both resolve by prefix: an exact title wins, otherwise a **unique title prefix** matches
+  an ID. Title matching ignores case, including dotted `İ` (`istanbul` matches `İstanbul`),
+  while preserving dotless `ı` and other accents. Both resolve by prefix: an exact title wins, otherwise a **unique title prefix** matches
   (so `"Scientific"` finds `"Scientific PDF Parsing — …"`), and likewise a full ID or a unique ID
   prefix. Use the matching `*_list` tool to discover them. An ambiguous name or prefix returns a
   `VALIDATION` error listing the candidates so you can retry with an exact title or ID. When a name
