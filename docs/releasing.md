@@ -248,8 +248,8 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] Wait for **test.yml** to pass:
   - Linting and formatting
   - Type checking
-  - Unit and integration tests in the reduced 7-cell PR matrix: Python
-    3.10-3.14 on Ubuntu plus Python 3.12 on macOS and Windows
+  - Unit and integration tests in the reduced 5-cell PR matrix: Python
+    3.10, 3.12, and 3.15 on Ubuntu plus Python 3.12 on macOS and Windows
 - [ ] Merge the release PR to `main`.
 
 ### Authenticated E2E on protected main
@@ -258,7 +258,7 @@ no break against the baseline) is a CI failure, not silent cruft.
 - [ ] After the release PR is merged, dispatch the workflow on `main`; choose
       `account_rotation_base=auto` unless reproducing a slot-specific failure
 - [ ] Separately dispatch **Nightly Code Checks** (`nightly-checks.yml`) on the
-      same release commit. It runs the full 15-cell compatibility matrix, coverage,
+      same release commit. It runs the full 18-cell compatibility matrix, coverage,
       and repository lint. These checks are independent of the live E2E workflow.
 - [ ] Wait for code checks and the full Web/Ubuntu, full Android/macOS, and
       read-only Web/Windows E2E jobs to pass

@@ -28,6 +28,8 @@ class _CoroutineStateProbe:
     def __init__(self, state: str) -> None:
         self.cr_running = False
         self.cr_suspended = state == "started"
+        # Python 3.15's ``inspect.getcoroutinestate`` reads ``cr_state``.
+        self.cr_state = inspect.CORO_SUSPENDED if state == "started" else inspect.CORO_CLOSED
         self.cr_frame = None if state == "completed" else SimpleNamespace(f_lasti=0)
         self.close_calls = 0
 

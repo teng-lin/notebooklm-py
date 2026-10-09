@@ -53,7 +53,7 @@ PR_LIFECYCLE_CONTRACTS = {
 PUBLISH_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "publish.yml"
 TESTPYPI_PUBLISH_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "testpypi-publish.yml"
 SUPPORTED_OSES = ["ubuntu-latest", "macos-latest", "windows-latest"]
-SUPPORTED_PYTHONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+SUPPORTED_PYTHONS = ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
 GENERATION_E2E = Path(__file__).resolve().parents[1] / "e2e" / "test_generation.py"
 E2E_DIR = Path(__file__).resolve().parents[1] / "e2e"
 
@@ -148,7 +148,7 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
         },
         {
             "os": "ubuntu-latest",
-            "python-version": "3.14",
+            "python-version": "3.15",
             "canonical": False,
             "windows_playwright": False,
             "selection": "full",

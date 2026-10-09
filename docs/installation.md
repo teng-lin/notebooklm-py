@@ -28,7 +28,7 @@ This is the canonical installation guide for `notebooklm-py`. The README has a q
 
 ## Prerequisites
 
-- **Python 3.10 or later.** Tested and classified for 3.10, 3.11, 3.12, 3.13, 3.14. The CLI hard-fails with a clear error on older versions (see `_version_check.py`).
+- **Python 3.10 or later.** Tested and classified for 3.10, 3.11, 3.12, 3.13, 3.14, 3.15. The CLI hard-fails with a clear error on older versions (see `_version_check.py`).
 - **Operating systems.** macOS (primary development platform), Linux (Debian/Ubuntu, Fedora), Windows 10/11, WSL.
 - **`uv` (optional but recommended for contributors).** Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` or `brew install uv` / `winget install astral-sh.uv`. End users can use plain `pip` or `pipx`.
 - **Disk and bandwidth.** Base install is small (~10 MB). The first `notebooklm login` downloads Chromium (~170 MB; 30–90 s; **no progress bar** — be patient).
