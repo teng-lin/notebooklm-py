@@ -132,14 +132,16 @@ def _inject_into_response(response: dict[str, Any]) -> bool:
                 "Response already advertises Content-Encoding but body is not valid gzip."
             ) from exc
 
-    # ``gzip.compress`` writes one byte that varies across Python releases
-    # (the OS field at offset 9): 3.10 picks an OS-dependent constant
-    # while 3.11+ pins it to ``0xff`` (unknown). Pin ``mtime=0`` and
-    # overwrite the OS field so the same source cassette produces a
-    # byte-identical artifact under every Python in the CI matrix
-    # (``3.10`` – ``3.14``). ``0xff`` is the documented "unknown" value
-    # from RFC 1952 §2.3.1 and round-trips through every gzip decoder.
+    # ``gzip.compress`` writes two header bytes that vary across Python
+    # releases: the OS field at offset 9 (3.10 picks an OS-dependent
+    # constant while 3.11+ pins it to ``0xff``, unknown) and the XFL field at
+    # offset 8 (``0x02``, "maximum compression", through 3.14; ``0x00`` on
+    # 3.15). Pin ``mtime=0`` and overwrite both so the same source cassette
+    # produces a byte-identical artifact under every Python in the CI matrix
+    # (``3.10`` – ``3.15``). Both values are valid per RFC 1952 §2.3.1 and
+    # round-trip through every gzip decoder.
     gzipped = bytearray(gzip.compress(body_bytes, mtime=0))
+    gzipped[8] = 0x02
     gzipped[9] = 0xFF
     body["string"] = bytes(gzipped)
 

@@ -129,7 +129,7 @@ async def test_http_session_retains_body_error_when_worker_wait_fails(tmp_path, 
 
     @asynccontextmanager
     async def connection(*args, **kwargs):
-        yield None, None, None
+        yield None, None
 
     @asynccontextmanager
     async def session(*args, **kwargs):

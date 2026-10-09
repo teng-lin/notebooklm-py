@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from fastmcp import Context
 from fastmcp.server.dependencies import get_http_request
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
 from ..._app import labels as labels_core

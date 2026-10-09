@@ -24,9 +24,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, NamedTuple, TypeAlias, cast
 
 from fastmcp.server.dependencies import get_http_request
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools import ToolResult
 from mcp.types import ResourceLink, TextContent
-from pydantic import AnyUrl, BeforeValidator, WithJsonSchema
+from pydantic import BeforeValidator, WithJsonSchema
 
 from ..._app import download as download_core
 from ..._app import download_specs as download_specs_core
@@ -442,10 +442,7 @@ def _broker_download(
     link = ResourceLink(
         type="resource_link",
         name=f"{artifact_type} download",
-        # ResourceLink.uri is an AnyUrl — construct it explicitly rather than
-        # passing the raw str (keeps mypy happy across pydantic-stub versions:
-        # a bare str needed a [arg-type] ignore that CI's stubs flagged unused).
-        uri=AnyUrl(url),
+        uri=url,
         description=desc,
     )
     content: list[Any] = [link]

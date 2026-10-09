@@ -201,7 +201,7 @@ jobs:
         # supported CPython versions. The secondary OS cells start with the
         # audited platform manifest; high-risk or unclassifiable PRs expand
         # those cells back to the full routine selector below. The complete
-        # 15-cell product remains in nightly-checks.yml until the observation
+        # 18-cell product remains in nightly-checks.yml until the observation
         # criteria in the optimization plan have been met.
         include:
         - os: ubuntu-latest
@@ -215,7 +215,7 @@ jobs:
           windows_playwright: false
           selection: full
         - os: ubuntu-latest
-          python-version: "3.14"
+          python-version: "3.15"
           canonical: false
           windows_playwright: false
           selection: full

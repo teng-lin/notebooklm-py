@@ -12,7 +12,9 @@ from .mcp_startup_cleanup import _finish
 
 
 def _describe_message(message: Any) -> dict[str, Any]:
-    root = getattr(getattr(message, "message", None), "root", None)
+    wrapped = getattr(message, "message", None)
+    # mcp 1.x wraps the JSON-RPC message in a ``.root`` RootModel; 2.x does not.
+    root = getattr(wrapped, "root", wrapped)
     item: dict[str, Any] = {
         "kind": type(root).__name__ if root is not None else type(message).__name__
     }

@@ -14,8 +14,10 @@ def _canonical_ast(value: Any) -> object:
         for name, child in ast.iter_fields(value):
             # Python minors add fields such as ``type_params`` and
             # ``posonlyargs``. An absent field and its empty default have the
-            # same semantics, so omit empty defaults from the digest.
-            if child is None or child == []:
+            # same semantics, so omit empty defaults from the digest. 3.15
+            # adds ``is_lazy`` (PEP 810) to ``Import``/``ImportFrom``; it is 0
+            # for every ordinary import.
+            if child is None or child == [] or (name == "is_lazy" and not child):
                 continue
             fields.append([name, _canonical_ast(child)])
         return [type(value).__name__, fields]

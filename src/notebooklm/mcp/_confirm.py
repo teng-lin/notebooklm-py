@@ -35,11 +35,11 @@ __all__ = [
 #: Annotation for tools that only read state (``*_list`` / ``*_describe`` /
 #: ``*_status`` / ``server_info``). ``readOnlyHint`` lets a host skip a
 #: confirmation prompt; explicitly not destructive.
-READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
+READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
 #: Annotation for tools that can irreversibly remove data (the deletes). Paired
 #: with the ``confirm`` parameter + :func:`needs_confirmation` both-mode flow.
-DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
+DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 
 
 def needs_confirmation(preview: dict[str, Any]) -> dict[str, Any]:
