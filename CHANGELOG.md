@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Read-only Android auth loading reports the same error without running Web
   recovery or persisting cookies.
 
+- **Signed-out sessions misreported as a page-structure change (#2479).** The
+  app host now answers a signed-out request with a token-less landing page
+  instead of a sign-in redirect. When the CSRF token is missing, token loading
+  now asks the app's `/login` endpoint whether the session is signed in. A
+  stale session reports `Authentication expired` and enters the existing login
+  recovery, instead of `CSRF token not found ... page structure has changed`.
+
 ## [0.8.4] - 2026-10-01
 
 ### Added

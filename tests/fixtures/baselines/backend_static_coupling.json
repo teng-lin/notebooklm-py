@@ -3416,7 +3416,7 @@
     },
     {
       "kind": "from",
-      "lineno": 39,
+      "lineno": 42,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._auth.extraction",
@@ -3425,7 +3425,7 @@
     },
     {
       "kind": "from",
-      "lineno": 40,
+      "lineno": 43,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._auth.extraction",
@@ -3434,7 +3434,7 @@
     },
     {
       "kind": "from",
-      "lineno": 47,
+      "lineno": 50,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._auth.extraction",
@@ -3555,12 +3555,21 @@
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._auth.refresh",
+      "target": "notebooklm._url_utils",
+      "type_only": false
+    },
+    {
+      "kind": "from",
+      "lineno": 22,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._auth.refresh",
       "target": "notebooklm.paths",
       "type_only": false
     },
     {
       "kind": "from",
-      "lineno": 972,
+      "lineno": 994,
       "scope": "_fetch_tokens_with_jar",
       "scope_kind": "function",
       "source": "notebooklm._auth.refresh",
@@ -11831,7 +11840,7 @@
       "modules": 47
     },
     "auth": {
-      "lines": 13807,
+      "lines": 13879,
       "modules": 33
     },
     "cli": {
@@ -11868,13 +11877,13 @@
     }
   },
   "summary": {
-    "authored_lines": 153860,
+    "authored_lines": 153932,
     "authored_modules": 492,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1302,
+    "cross_subsystem_edges": 1303,
     "dynamic_import_calls": 10,
     "function_local_edges": 94,
-    "module_level_edges": 1208,
+    "module_level_edges": 1209,
     "type_only_edges": 138
   },
   "version": 1

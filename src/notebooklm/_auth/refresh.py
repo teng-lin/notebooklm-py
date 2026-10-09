@@ -18,6 +18,7 @@ import httpx
 
 from .._env import get_base_url
 from .._request_context import has_bound_policy, policy_child_environment, policy_env, policy_key
+from .._url_utils import is_notebooklm_app_host
 from ..paths import get_storage_path, resolve_profile
 from . import cookies as _auth_cookies
 from . import extraction as _auth_extraction
@@ -52,6 +53,8 @@ extract_session_id_from_html = _auth_extraction.extract_session_id_from_html
 # hand-rolled pre-check this module used to carry, and message formatting now
 # lives entirely behind the classifier.
 _url_only_extraction_failure = _auth_extraction._url_only_extraction_failure
+_login_probe_url = _auth_extraction._login_probe_url
+_signed_out_probe_failure = _auth_extraction._signed_out_probe_failure
 
 # Env-var names live in ``_auth.paths``; aliased so the refresh bodies can
 # reference them without an extra hop.
@@ -924,6 +927,25 @@ async def _cold_fallbacks(
     )
 
 
+async def _probe_signed_out_session(
+    client: Any, token_url: str, final_url: str
+) -> ValueError | None:
+    """Return an auth-expired error when the app's ``/login`` confirms sign-out.
+
+    Runs only after the app host answered without a CSRF token. The probe
+    response is discarded, so its cookies never reach the caller's jar, and a
+    transport failure keeps the caller's original diagnostic.
+    """
+    try:
+        probe = await client.get(_login_probe_url(token_url), follow_redirects=True, timeout=30.0)
+    except httpx.HTTPError as exc:
+        logger.debug("Signed-out probe failed: %s", type(exc).__name__)
+        return None
+    return _signed_out_probe_failure(
+        final_url, str(probe.url), tuple(str(hop.url) for hop in probe.history)
+    )
+
+
 async def _fetch_tokens_with_jar(
     cookie_jar: httpx.Cookies,
     storage_path: Path | None = None,
@@ -1007,6 +1029,15 @@ async def _fetch_tokens_with_jar(
         url_failure = _url_only_extraction_failure(final_url, redirect_urls)
         if url_failure is not None:
             raise url_failure
+
+        # A signed-out session now lands on a token-less app page instead of a
+        # login redirect; ask ``/login`` before reporting a structure change.
+        if _auth_extraction.extract_wiz_field(
+            response.text, "SNlM0e", strict=False
+        ) is None and is_notebooklm_app_host(final_url):
+            signed_out = await _probe_signed_out_session(client, url, final_url)
+            if signed_out is not None:
+                raise signed_out
 
         csrf = extract_csrf_from_html(response.text, final_url, redirect_urls=redirect_urls)
         session_id = extract_session_id_from_html(

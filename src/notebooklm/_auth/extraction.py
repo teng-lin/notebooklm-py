@@ -27,6 +27,9 @@ Private helpers (also re-exported as white-box affordances for tests):
   gate → cookie-mismatch → auth-redirect precedence. ``_auth.refresh`` calls it
   before parsing a response body, because Google's login page carries its own
   ``SNlM0e`` and would otherwise be mistaken for a valid app page.
+* :func:`_signed_out_probe_failure` — classifies a token-less app page by
+  where the app's ``/login`` probe lands, since a signed-out ``GET /`` no
+  longer redirects (#2479).
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from .._env import get_base_host
 from .._url_utils import (
@@ -348,6 +351,44 @@ def _url_only_extraction_failure(final_url: str, redirect_urls: Sequence[str]) -
             "Run 'notebooklm login' to re-authenticate."
         )
     return None
+
+
+def _login_probe_url(token_url: str) -> str:
+    """Return the app's ``/login`` URL for ``token_url``, keeping its query.
+
+    The query carries the ``authuser`` route, so the probe asks about the same
+    account the token fetch did.
+    """
+    parts = urlsplit(token_url)
+    return urlunsplit(parts._replace(path=parts.path.rstrip("/") + "/login", fragment=""))
+
+
+def _signed_out_probe_failure(
+    app_url: str, probe_final_url: str, probe_redirect_urls: Sequence[str]
+) -> _LoginRedirectError | None:
+    """Classify a token-less app page from where the app's ``/login`` probe landed.
+
+    Since October 2026 the app host answers a signed-out ``GET /`` with an HTTP
+    200 landing page instead of redirecting to Google sign-in (#2467, #2479), so
+    a stale session reaches the app host without a CSRF token and the URL-only
+    taxonomy reads it as a page-structure change. ``/login`` still enforces a
+    session: signed in, it redirects back to the app; signed out, it redirects
+    to ``accounts.google.com``. Live-captured 2026-10-09 on
+    ``notebook.google.com`` with live, stale and empty cookie jars.
+
+    This keeps the classification URL-driven instead of keying on
+    obfuscated ``WIZ_global_data`` field names. Only a confirmed login redirect
+    is reported; any other probe outcome returns ``None`` so the caller keeps
+    its original diagnostic.
+    """
+    failure = _url_only_extraction_failure(probe_final_url, probe_redirect_urls)
+    if not isinstance(failure, _LoginRedirectError):
+        return None
+    return _LoginRedirectError(
+        f"Authentication expired or invalid. {_safe_url(app_url)} served a signed-out "
+        f"page, and its sign-in check redirected to {_safe_url(probe_final_url)}\n"
+        "Run 'notebooklm login' to re-authenticate."
+    )
 
 
 def _extraction_failure(what: str, final_url: str, redirect_urls: Sequence[str]) -> ValueError:
