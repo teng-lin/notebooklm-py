@@ -3569,7 +3569,7 @@
     },
     {
       "kind": "from",
-      "lineno": 994,
+      "lineno": 1007,
       "scope": "_fetch_tokens_with_jar",
       "scope_kind": "function",
       "source": "notebooklm._auth.refresh",
@@ -11840,7 +11840,7 @@
       "modules": 47
     },
     "auth": {
-      "lines": 13879,
+      "lines": 13894,
       "modules": 33
     },
     "cli": {
@@ -11877,7 +11877,7 @@
     }
   },
   "summary": {
-    "authored_lines": 153932,
+    "authored_lines": 153947,
     "authored_modules": 492,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1303,

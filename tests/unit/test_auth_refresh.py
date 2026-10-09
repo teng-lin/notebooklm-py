@@ -510,10 +510,8 @@ class TestSignedOutLandingProbe:
         httpx_mock.add_response(url=self.APP_URL, content=self.SIGNED_OUT_HTML)
         self._login_redirects_to_sign_in(httpx_mock, self.LOGIN_URL)
 
-        cookies = {"SID": "stale_sid", "__Secure-1PSIDTS": "test_1psidts"}
-        original = cookies.copy()
         with pytest.raises(AuthError) as exc:
-            await fetch_tokens(cookies)
+            await fetch_tokens({"SID": "stale_sid", "__Secure-1PSIDTS": "test_1psidts"})
 
         message = str(exc.value)
         assert "Authentication expired" in message
@@ -522,8 +520,21 @@ class TestSignedOutLandingProbe:
         assert "page structure" not in message
         assert "ALX_SIGNIN_PAGE_TOKEN" not in message
         assert "ServiceLogin" not in message
-        # The probe's Set-Cookie never reaches the caller's cookies.
-        assert cookies == original
+
+    @pytest.mark.asyncio
+    async def test_probe_set_cookie_never_reaches_the_callers_jar(self, httpx_mock: HTTPXMock):
+        from notebooklm._auth.extraction import _LoginRedirectError
+
+        httpx_mock.add_response(url=self.APP_URL, content=self.SIGNED_OUT_HTML)
+        self._login_redirects_to_sign_in(httpx_mock, self.LOGIN_URL)
+        jar = httpx.Cookies()
+        jar.set("SID", "stale_sid", domain=".google.com")
+
+        with pytest.raises(_LoginRedirectError):
+            await _auth_refresh._fetch_tokens_with_jar(jar, poke=False)
+
+        assert jar.get("NID") is None
+        assert jar.get("SID") == "stale_sid"
 
     @pytest.mark.asyncio
     async def test_signed_in_tokenless_page_still_reports_structure_change(
@@ -545,15 +556,55 @@ class TestSignedOutLandingProbe:
         assert "Authentication expired" not in message
 
     @pytest.mark.asyncio
-    async def test_probe_transport_failure_keeps_original_diagnostic(self, httpx_mock: HTTPXMock):
+    async def test_probe_transport_failure_keeps_original_diagnostic(
+        self, httpx_mock: HTTPXMock, caplog: pytest.LogCaptureFixture
+    ):
         httpx_mock.add_response(url=self.APP_URL, content=self.SIGNED_OUT_HTML)
         httpx_mock.add_exception(httpx.ConnectError("probe refused"), url=self.LOGIN_URL)
+
+        with (
+            caplog.at_level("WARNING", logger="notebooklm._auth.refresh"),
+            pytest.raises(ValueError) as exc,
+        ):
+            await fetch_tokens({"SID": "sid", "__Secure-1PSIDTS": "test_1psidts"})
+
+        assert not isinstance(exc.value, AuthError)
+        assert "page structure has changed" in str(exc.value)
+        assert "Sign-in check https://notebook.google.com/login failed: ConnectError" in (
+            caplog.text
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [404, 500])
+    async def test_probe_error_status_keeps_original_diagnostic(
+        self, httpx_mock: HTTPXMock, caplog: pytest.LogCaptureFixture, status: int
+    ):
+        httpx_mock.add_response(url=self.APP_URL, content=self.SIGNED_OUT_HTML)
+        httpx_mock.add_response(url=self.LOGIN_URL, status_code=status)
+
+        with (
+            caplog.at_level("WARNING", logger="notebooklm._auth.refresh"),
+            pytest.raises(ValueError) as exc,
+        ):
+            await fetch_tokens({"SID": "sid", "__Secure-1PSIDTS": "test_1psidts"})
+
+        assert not isinstance(exc.value, AuthError)
+        assert "page structure has changed" in str(exc.value)
+        assert f"(HTTP {status}) without confirming sign-out" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_probe_region_gate_reports_the_gate(self, httpx_mock: HTTPXMock):
+        gate = "https://notebooklm.google/?location=unsupported"
+        httpx_mock.add_response(url=self.APP_URL, content=self.SIGNED_OUT_HTML)
+        httpx_mock.add_response(url=self.LOGIN_URL, status_code=302, headers={"Location": gate})
+        httpx_mock.add_response(url=gate, content=b"<html>Not available</html>")
 
         with pytest.raises(ValueError) as exc:
             await fetch_tokens({"SID": "sid", "__Secure-1PSIDTS": "test_1psidts"})
 
         assert not isinstance(exc.value, AuthError)
-        assert "page structure has changed" in str(exc.value)
+        assert "access gate" in str(exc.value)
+        assert "location=unsupported" in str(exc.value)
 
     @pytest.mark.asyncio
     async def test_probe_keeps_the_account_route(self, httpx_mock: HTTPXMock):
@@ -567,8 +618,7 @@ class TestSignedOutLandingProbe:
                 account_email="selected@example.com",
             )
 
-        probe = [request for request in httpx_mock.get_requests() if request.method == "GET"][1]
-        assert probe.url.path == "/login"
+        (probe,) = [r for r in httpx_mock.get_requests() if r.url.path == "/login"]
         assert probe.url.params["authuser"] == "selected@example.com"
 
     @pytest.mark.asyncio
@@ -609,6 +659,7 @@ class TestSignedOutLandingProbe:
             "https://notebook.google.com/?authuser=1",
             "https://notebook.google.com/login?authuser=1",
         ),
+        ("https://notebook.google.com/u/1/#x", "https://notebook.google.com/login"),
     ],
 )
 def test_login_probe_url_keeps_route(token_url: str, probe_url: str) -> None:
@@ -619,16 +670,43 @@ def test_login_probe_url_keeps_route(token_url: str, probe_url: str) -> None:
 
 @pytest.mark.parametrize(
     "probe_final_url",
-    [
-        "https://notebook.google.com/",
-        "https://notebooklm.google/?location=unsupported",
-        "https://accounts.google.com/CookieMismatch",
-    ],
+    ["https://notebook.google.com/", "https://support.google.com/accounts/answer/32050"],
 )
-def test_signed_out_probe_reports_only_login_redirects(probe_final_url: str) -> None:
+def test_signed_out_probe_keeps_unconfirmed_outcomes(probe_final_url: str) -> None:
     from notebooklm._auth.extraction import _signed_out_probe_failure
 
     assert _signed_out_probe_failure("https://notebook.google.com/", probe_final_url, ()) is None
+
+
+def test_signed_out_probe_reports_a_cookie_mismatch_hop() -> None:
+    """The probe chain uses the token fetch's taxonomy, history included."""
+    from notebooklm._auth.extraction import _LoginRedirectError, _signed_out_probe_failure
+
+    failure = _signed_out_probe_failure(
+        "https://notebook.google.com/",
+        "https://support.google.com/accounts/answer/32050",
+        ("https://notebook.google.com/login", "https://accounts.google.com/CookieMismatch"),
+    )
+
+    assert failure is not None
+    assert not isinstance(failure, _LoginRedirectError)
+    assert "CookieMismatch" in str(failure)
+    assert "Authentication expired" not in str(failure)
+
+
+def test_signed_out_probe_classifies_without_redirect_history() -> None:
+    """curl_cffi reports no history; the final sign-in URL alone suffices."""
+    from notebooklm._auth.extraction import _LoginRedirectError, _signed_out_probe_failure
+
+    failure = _signed_out_probe_failure(
+        "https://notebook.google.com/",
+        "https://accounts.google.com/v3/signin/identifier?continue=https://notebook.google.com/",
+        (),
+    )
+
+    assert isinstance(failure, _LoginRedirectError)
+    assert "continue=" not in str(failure)
+    assert "https://accounts.google.com/<redacted>" in str(failure)
 
 
 class TestFetchTokensPassive:

@@ -354,18 +354,17 @@ def _url_only_extraction_failure(final_url: str, redirect_urls: Sequence[str]) -
 
 
 def _login_probe_url(token_url: str) -> str:
-    """Return the app's ``/login`` URL for ``token_url``, keeping its query.
+    """Return the app's root ``/login`` URL for ``token_url``, keeping its query.
 
     The query carries the ``authuser`` route, so the probe asks about the same
     account the token fetch did.
     """
-    parts = urlsplit(token_url)
-    return urlunsplit(parts._replace(path=parts.path.rstrip("/") + "/login", fragment=""))
+    return urlunsplit(urlsplit(token_url)._replace(path="/login", fragment=""))
 
 
 def _signed_out_probe_failure(
     app_url: str, probe_final_url: str, probe_redirect_urls: Sequence[str]
-) -> _LoginRedirectError | None:
+) -> ValueError | None:
     """Classify a token-less app page from where the app's ``/login`` probe landed.
 
     Since October 2026 the app host answers a signed-out ``GET /`` with an HTTP
@@ -377,18 +376,21 @@ def _signed_out_probe_failure(
     ``notebook.google.com`` with live, stale and empty cookie jars.
 
     This keeps the classification URL-driven instead of keying on
-    obfuscated ``WIZ_global_data`` field names. Only a confirmed login redirect
-    is reported; any other probe outcome returns ``None`` so the caller keeps
-    its original diagnostic.
+    obfuscated ``WIZ_global_data`` field names. The probe chain goes through
+    the same gate -> cookie-mismatch -> auth-redirect taxonomy as the token
+    fetch itself: a login redirect is reported as expired auth, and a gate or
+    CookieMismatch as itself. Any other outcome returns ``None`` so the caller
+    keeps its original diagnostic. A valid session whose ``authuser`` the
+    browser no longer holds also lands on sign-in and is reported as expired.
     """
     failure = _url_only_extraction_failure(probe_final_url, probe_redirect_urls)
-    if not isinstance(failure, _LoginRedirectError):
-        return None
-    return _LoginRedirectError(
-        f"Authentication expired or invalid. {_safe_url(app_url)} served a signed-out "
-        f"page, and its sign-in check redirected to {_safe_url(probe_final_url)}\n"
-        "Run 'notebooklm login' to re-authenticate."
-    )
+    if isinstance(failure, _LoginRedirectError):
+        return _LoginRedirectError(
+            f"Authentication expired or invalid. {_safe_url(app_url)} served a signed-out "
+            f"page, and its sign-in check redirected to {_safe_url(probe_final_url)}\n"
+            "Run 'notebooklm login' to re-authenticate."
+        )
+    return failure
 
 
 def _extraction_failure(what: str, final_url: str, redirect_urls: Sequence[str]) -> ValueError:

@@ -263,7 +263,7 @@ def test_real_function_local_import_sites_are_not_dropped(script):
 
 
 def test_cold_recovery_mint_patches_are_owned_by_tests():
-    """The ten mint fakes stay lexical; no patching helper can gain consumers."""
+    """The eleven mint fakes stay lexical; no patching helper can gain consumers."""
     path = REPO_ROOT / "tests/unit/test_auth_cold_start_recovery.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     owners: list[str] = []
@@ -301,6 +301,7 @@ def test_cold_recovery_mint_patches_are_owned_by_tests():
         {
             "tests/unit/test_auth_cold_start_recovery.py::test_auth_tokens_cold_start_remints_from_sibling_master_token": 1,
             "tests/unit/test_auth_cold_start_recovery.py::test_client_factory_reaches_cold_master_token_recovery": 1,
+            "tests/unit/test_auth_cold_start_recovery.py::test_signed_out_landing_reaches_cold_master_token_recovery": 1,
             "tests/unit/test_auth_cold_start_recovery.py::test_concurrent_cold_start_coalesces_one_master_token_mint": 1,
             "tests/unit/test_auth_cold_start_recovery.py::test_cancelled_waiter_does_not_cancel_shared_master_token_mint": 1,
             "tests/unit/test_auth_cold_start_recovery.py::test_cancelled_direct_l4_waiter_does_not_cancel_shared_mint": 1,

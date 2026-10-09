@@ -930,20 +930,33 @@ async def _cold_fallbacks(
 async def _probe_signed_out_session(
     client: Any, token_url: str, final_url: str
 ) -> ValueError | None:
-    """Return an auth-expired error when the app's ``/login`` confirms sign-out.
+    """Classify a token-less app page by where the app's ``/login`` lands.
 
-    Runs only after the app host answered without a CSRF token. The probe
-    response is discarded, so its cookies never reach the caller's jar, and a
-    transport failure keeps the caller's original diagnostic.
+    Runs only after the app host answered without a CSRF token, so every caller
+    path raises before copying ``client.cookies`` (including any probe
+    Set-Cookie) back to its jar. Like the homepage GET it follows, this is a
+    plain GET, so the passive path stays free of rotation POSTs and disk writes.
+    An unconfirmed outcome keeps the caller's original diagnostic and is
+    logged, so a retired ``/login`` is not silent.
     """
+    probe_url = _login_probe_url(token_url)
+    safe_url = _auth_extraction._safe_url
     try:
-        probe = await client.get(_login_probe_url(token_url), follow_redirects=True, timeout=30.0)
+        probe = await client.get(probe_url, follow_redirects=True, timeout=30.0)
     except httpx.HTTPError as exc:
-        logger.debug("Signed-out probe failed: %s", type(exc).__name__)
+        logger.warning("Sign-in check %s failed: %s", safe_url(probe_url), type(exc).__name__)
         return None
-    return _signed_out_probe_failure(
+    failure = _signed_out_probe_failure(
         final_url, str(probe.url), tuple(str(hop.url) for hop in probe.history)
     )
+    if failure is None:
+        logger.warning(
+            "Sign-in check %s ended at %s (HTTP %s) without confirming sign-out",
+            safe_url(probe_url),
+            safe_url(str(probe.url)),
+            probe.status_code,
+        )
+    return failure
 
 
 async def _fetch_tokens_with_jar(

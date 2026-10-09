@@ -40,7 +40,7 @@ from notebooklm._env import PERSONAL_APP_HOSTS
 from notebooklm._web.transport import session_auth as session_auth_mod
 from notebooklm.auth import AuthTokens, fetch_tokens_with_domains
 from notebooklm.client import NotebookLMClient
-from notebooklm.exceptions import MissingDependencyError
+from notebooklm.exceptions import AuthError, MissingDependencyError
 
 _PERSONAL_HOST_PATTERN = "|".join(re.escape(host) for host in sorted(PERSONAL_APP_HOSTS))
 _PERSONAL_HOMEPAGE_PATTERN = re.compile(rf"^https://(?:{_PERSONAL_HOST_PATTERN})/(?:\?.*)?$")
@@ -232,6 +232,86 @@ async def test_client_factory_reaches_cold_master_token_recovery(
 
     assert client.auth.csrf_token == "csrf"
     assert client.auth.cookie_jar.get("SID") == "fresh"
+
+
+_SIGNED_OUT_LANDING = (
+    b"<html><title>Gemini Notebook</title><script>window.WIZ_global_data = "
+    b'{"S06Grb":"","FdrFJe":"-6501173173841838274"};</script></html>'
+)
+_PERSONAL_LOGIN_PATTERN = re.compile(rf"^https://(?:{_PERSONAL_HOST_PATTERN})/login(?:\?.*)?$")
+
+
+def _stub_signed_out_landing_then_fresh(httpx_mock: HTTPXMock, *, fresh_sid: str) -> None:
+    """Model #2479: a stale session gets a token-less 200 landing, not a redirect."""
+
+    def homepage(request: httpx.Request) -> httpx.Response:
+        if f"SID={fresh_sid}" in request.headers.get("cookie", ""):
+            return httpx.Response(200, content=b'"SNlM0e":"csrf" "FdrFJe":"sess"', request=request)
+        return httpx.Response(200, content=_SIGNED_OUT_LANDING, request=request)
+
+    httpx_mock.add_callback(homepage, url=_PERSONAL_HOMEPAGE_PATTERN, is_reusable=True)
+    httpx_mock.add_response(
+        url=_PERSONAL_LOGIN_PATTERN,
+        status_code=302,
+        headers={
+            "Location": "https://accounts.google.com/ServiceLogin",
+            "Set-Cookie": "NID=probe; Domain=.google.com; Path=/",
+        },
+        is_reusable=True,
+    )
+    httpx_mock.add_response(
+        url="https://accounts.google.com/ServiceLogin",
+        content=b"<html>Sign in</html>",
+        is_reusable=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_signed_out_landing_reaches_cold_master_token_recovery(
+    tmp_path, httpx_mock: HTTPXMock
+) -> None:
+    """A token-less landing confirmed signed out enters the cold ladder (#2479)."""
+    storage = tmp_path / "storage_state.json"
+    _write_storage(storage, sid="stale")
+    mt.write_master_token(
+        tmp_path / "master_token.json",
+        email="agent@example.com",
+        master_token="aas_et/test",
+        android_id="abc123",
+    )
+    fresh_jar = httpx.Cookies()
+    fresh_jar.set("SID", "fresh", domain=".google.com")
+    fresh_jar.set("__Secure-1PSIDTS", "fresh-ts", domain=".google.com")
+    _stub_signed_out_landing_then_fresh(httpx_mock, fresh_sid="fresh")
+    mint = AsyncMock(return_value=fresh_jar)
+
+    with patch.object(MintService, "mint", autospec=True, side_effect=_mint_side_effect(mint)):
+        client = await NotebookLMClient.from_storage(path=str(storage))._build()
+
+    mint.assert_awaited_once()
+    assert client.auth.csrf_token == "csrf"
+    assert [r.url.path for r in httpx_mock.get_requests()].count("/login") == 1
+    persisted = {row["name"] for row in json.loads(storage.read_text())["cookies"]}
+    assert "NID" not in persisted
+
+
+@pytest.mark.asyncio
+async def test_signed_out_landing_without_recovery_reports_expired_auth(
+    tmp_path, httpx_mock: HTTPXMock
+) -> None:
+    """The exhausted ladder surfaces the probe diagnosis, not a structure change."""
+    storage = tmp_path / "storage_state.json"
+    _write_storage(storage, sid="stale")
+    before = storage.read_bytes()
+    _stub_signed_out_landing_then_fresh(httpx_mock, fresh_sid="fresh")
+
+    with pytest.raises(AuthError) as exc:
+        await fetch_tokens_with_domains(storage)
+
+    message = str(exc.value)
+    assert "signed-out page" in message
+    assert "page structure" not in message
+    assert storage.read_bytes() == before
 
 
 @pytest.mark.asyncio

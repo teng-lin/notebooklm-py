@@ -693,7 +693,7 @@
       "path": "src/notebooklm/_auth/credential_io.py"
     },
     {
-      "lines": 512,
+      "lines": 514,
       "name": "extraction",
       "path": "src/notebooklm/_auth/extraction.py"
     },
@@ -768,7 +768,7 @@
       "path": "src/notebooklm/_auth/recovery_rungs.py"
     },
     {
-      "lines": 1213,
+      "lines": 1226,
       "name": "refresh",
       "path": "src/notebooklm/_auth/refresh.py"
     },
@@ -801,7 +801,7 @@
     "function_local_edges": 12,
     "module_edges": 113,
     "modules": 33,
-    "total_lines": 13879,
+    "total_lines": 13894,
     "unique_edges": 125
   },
   "version": 1
