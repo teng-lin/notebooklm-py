@@ -43,6 +43,11 @@
     {
       "scope": "module",
       "source": "browser_capture",
+      "target": "_url_utils"
+    },
+    {
+      "scope": "module",
+      "source": "browser_capture",
       "target": "browser_launch_errors"
     },
     {
@@ -108,7 +113,7 @@
       "path": "src/notebooklm/_browser/__init__.py"
     },
     {
-      "lines": 1439,
+      "lines": 1476,
       "name": "browser_capture",
       "path": "src/notebooklm/_browser/browser_capture.py"
     },
@@ -139,10 +144,10 @@
   },
   "summary": {
     "function_local_edges": 1,
-    "module_edges": 19,
+    "module_edges": 20,
     "modules": 6,
-    "total_lines": 3004,
-    "unique_edges": 20
+    "total_lines": 3041,
+    "unique_edges": 21
   },
   "version": 1
 }

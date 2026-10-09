@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stale session reports `Authentication expired` and enters the existing login
   recovery, instead of `CSRF token not found ... page structure has changed`.
 
+- **Headless and CDP re-auth no longer capture a signed-out browser session
+  (#2482).** An app-host landing with a `SID` cookie is no longer enough: the
+  capture first asks the app's `/login`, through the browser context's own
+  cookies, whether the session is signed in. A signed-out session is refused
+  with `HeadlessLoginRequiredError` and the saved authentication is kept,
+  instead of being overwritten with another expired set. If the check cannot
+  be answered, capture proceeds as before.
+
 ## [0.8.4] - 2026-10-01
 
 ### Added

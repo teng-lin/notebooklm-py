@@ -115,6 +115,7 @@ def test_browser_import_projection_records_exact_cross_package_edges() -> None:
         ("browser_capture", "config", "module"),
         ("browser_capture", "exceptions", "module"),
         ("browser_capture", "navigation_errors", "module"),
+        ("browser_capture", "_url_utils", "module"),
         ("headless_reauth", "_auth.recovery_rungs", "module"),
         ("headless_reauth", "_request_context", "module"),
         ("headless_reauth", "browser_capture", "module"),

@@ -48,6 +48,7 @@ from .._auth.storage import filter_storage_state_cookies_by_domain_policy
 
 # Host-family sets are internal _env facts, not new public config exports.
 from .._env import ENTERPRISE_APP_HOSTS, PERSONAL_APP_HOSTS
+from .._url_utils import is_google_auth_redirect
 from ..config import get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError, LockUnavailableError
 
@@ -501,6 +502,38 @@ def _refuse_incomplete_capture(io: BrowserCaptureIO, *, headless: bool) -> NoRet
         raise HeadlessLoginRequiredError(message)
     io.emit(f"[red]{message}[/red]")
     io.fail(1)
+
+
+def _refuse_signed_out_capture() -> NoReturn:
+    """Refuse an unattended capture whose browser session is signed out (#2482)."""
+    raise HeadlessLoginRequiredError(
+        "The browser's Google session is signed out, so it cannot re-mint "
+        "NotebookLM authentication. The saved authentication was not replaced. "
+        "Run 'notebooklm login' to re-authenticate."
+    )
+
+
+def _browser_session_is_signed_out(context: Any) -> bool:
+    """Ask the app's ``/login`` through the browser context whether it is signed out.
+
+    An app-host landing with a ``SID`` cookie does not prove a live session:
+    a signed-out ``GET /`` is an HTTP 200 landing page, so an expired profile
+    passes the candidate check. ``/login`` still enforces a session -- signed in
+    it redirects back to the app, signed out to ``accounts.google.com`` (the
+    probe behind #2481). The request shares the context's cookies. Only a
+    confirmed sign-in redirect returns ``True``; any failure to ask is
+    unknown and keeps the existing behaviour.
+    """
+    from playwright.sync_api import Error as PlaywrightError
+
+    try:
+        response = context.request.get(f"{get_base_url()}/login", timeout=15000)
+        final_url = str(response.url)
+        response.dispose()
+    except PlaywrightError as exc:
+        _log_suppressed("sign-in check through the browser context", exc)
+        return False
+    return is_google_auth_redirect(final_url)
 
 
 def wait_for_login_landing(
@@ -1132,6 +1165,8 @@ def run_browser_capture(
             # (ADR-0033 D3). It runs BEFORE ``heal_captured_state``, so the heal's
             # routing preflight and recovery-jar build see domain-filtered rows,
             # not sibling-product cookies + domain-variant name collisions (#2054).
+            if headless and _browser_session_is_signed_out(context):
+                _refuse_signed_out_capture()
             playwright_state = context.storage_state()
             filtered_state: dict[str, Any] = filter_storage_state_cookies_by_domain_policy(
                 dict(playwright_state), include_domains=include_domains
@@ -1334,6 +1369,8 @@ def run_cdp_capture(
             # filtered rows (ADR-0033 D3) — and matters most here: CDP attaches
             # to the operator's DAILY Chrome, the richest source of sibling-
             # product cookies and domain-variant name collisions (#2054).
+            if _browser_session_is_signed_out(context):
+                _refuse_signed_out_capture()
             playwright_state = context.storage_state()
             filtered_state: dict[str, Any] = filter_storage_state_cookies_by_domain_policy(
                 dict(playwright_state), include_domains=include_domains

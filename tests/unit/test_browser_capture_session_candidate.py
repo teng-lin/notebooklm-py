@@ -1215,3 +1215,79 @@ def test_logout_during_cookie_forcing_preserves_storage(
 
     assert plan.storage_path.read_bytes() == before
     heal.assert_not_called()
+
+
+def _probe_lands_on(browser: _Browser, url: str) -> None:
+    browser.context.request.get.return_value = MagicMock(url=url)
+
+
+@pytest.mark.parametrize("mode", ["headless", "cdp"])
+def test_signed_out_browser_session_does_not_replace_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """An expired ``SID`` on the anonymous app landing must not clobber storage (#2482)."""
+    browser = _Browser(cookies=[SID])
+    _probe_lands_on(browser, SIGN_IN)
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+
+    with pytest.raises(HeadlessLoginRequiredError, match="signed out"):
+        _run(mode, plan, _IO())
+
+    (call,) = browser.context.request.get.call_args_list
+    assert call.args == (f"{APP}login",)
+    browser.context.storage_state.assert_not_called()
+    heal.assert_not_called()
+    writer.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("mode", ["headless", "cdp"])
+def test_signed_in_browser_session_is_captured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    browser = _Browser(cookies=[SID])
+    _probe_lands_on(browser, APP)
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    plan = _existing_plan(tmp_path)
+
+    _run(mode, plan, _IO())
+
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+
+
+@pytest.mark.parametrize("mode", ["headless", "cdp"])
+def test_unanswered_sign_in_check_keeps_the_existing_capture_behaviour(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[SID])
+    browser.context.request.get.side_effect = PlaywrightError("synthetic probe failure")
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    plan = _existing_plan(tmp_path)
+
+    _run(mode, plan, _IO())
+
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+
+
+def test_interactive_login_does_not_run_the_sign_in_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    browser = _Browser(cookies=[SID])
+    _probe_lands_on(browser, SIGN_IN)
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    plan = _existing_plan(tmp_path)
+
+    _run("interactive", plan, _IO())
+
+    browser.context.request.get.assert_not_called()
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
