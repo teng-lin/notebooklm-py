@@ -6136,6 +6136,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture",
       "owner_kind": "test",
+      "owner_qualname": "test_http_error_on_a_sign_in_host_is_not_confirmed_sign_out",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
       "owner_qualname": "test_initial_settle_and_fallback_share_a_short_deadline",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
@@ -6913,17 +6923,17 @@
   ],
   "packages": {
     "notebooklm._auth": 85,
-    "notebooklm._browser": 81,
+    "notebooklm._browser": 82,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
     "distinct_targets": 64,
     "files": 85,
-    "lexical_owners": 637,
+    "lexical_owners": 638,
     "private": 50,
-    "public": 642,
-    "total": 692
+    "public": 643,
+    "total": 693
   },
   "version": 1
 }

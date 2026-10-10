@@ -9,6 +9,6 @@
     "_auth/psidts_recovery.py": 1051,
     "_auth/refresh.py": 1226,
     "_auth/storage.py": 1089,
-    "_browser/browser_capture.py": 1494
+    "_browser/browser_capture.py": 1500
   }
 }

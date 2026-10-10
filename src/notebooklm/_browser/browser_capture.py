@@ -522,7 +522,8 @@ def _browser_session_is_signed_out(context: Any) -> bool:
     passes the candidate check. ``/login`` still enforces a session -- signed in
     it redirects back to the app, signed out to ``accounts.google.com`` (the
     probe behind #2481). The request shares the context's cookies. Only a
-    confirmed sign-in redirect returns ``True``.
+    successful response that ended on a sign-in page returns ``True``; an HTTP
+    error such as 403 or 429 on that host does not establish session state.
 
     This is a liveness check for the browser's Google session, not an account
     check: ``/login`` ignores ``authuser``, so it cannot say whether a stored
@@ -536,6 +537,7 @@ def _browser_session_is_signed_out(context: Any) -> bool:
     try:
         response = context.request.get(f"{get_base_url()}/login", timeout=SIGN_IN_CHECK_TIMEOUT_MS)
         final_url = str(response.url)
+        answered = bool(response.ok)
         try:
             response.dispose()
         except PlaywrightError as exc:
@@ -551,7 +553,11 @@ def _browser_session_is_signed_out(context: Any) -> bool:
         return False
     # A CookieMismatch interstitial is also served from accounts.google.com but
     # is a cookie-scoping fault, not a signed-out session.
-    return is_google_auth_redirect(final_url) and not is_cookie_mismatch_redirect(final_url)
+    return (
+        answered
+        and is_google_auth_redirect(final_url)
+        and not is_cookie_mismatch_redirect(final_url)
+    )
 
 
 def wait_for_login_landing(

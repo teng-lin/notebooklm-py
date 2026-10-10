@@ -1218,7 +1218,7 @@ def test_logout_during_cookie_forcing_preserves_storage(
 
 
 def _probe_lands_on(browser: _Browser, url: str) -> None:
-    browser.context.request.get.return_value = MagicMock(url=url)
+    browser.context.request.get.return_value = MagicMock(url=url, ok=True)
 
 
 @pytest.mark.parametrize("mode", ["headless", "cdp"])
@@ -1388,3 +1388,18 @@ def test_failed_response_release_does_not_discard_a_sign_in_redirect(
         _run(mode, plan, _IO())
 
     assert plan.storage_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("mode", ["headless", "cdp"])
+def test_http_error_on_a_sign_in_host_is_not_confirmed_sign_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    browser = _Browser(cookies=[SID])
+    browser.context.request.get.return_value = MagicMock(url=SIGN_IN, ok=False)
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    plan = _existing_plan(tmp_path)
+
+    _run(mode, plan, _IO())
+
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
