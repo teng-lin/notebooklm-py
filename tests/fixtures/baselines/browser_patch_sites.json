@@ -21,7 +21,7 @@
       "path": "tests/unit/test_auth_session_refresh_cmd.py"
     },
     {
-      "count": 50,
+      "count": 54,
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
     {
@@ -76,6 +76,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture",
       "owner_kind": "test",
+      "owner_qualname": "test_browser_closed_during_sign_in_check_preserves_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
       "owner_qualname": "test_courtesy_decision_declines_sid_arrival_and_unstable_app_snapshots",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
@@ -107,6 +117,16 @@
       "module": "browser_capture",
       "owner_kind": "test",
       "owner_qualname": "test_current_host_sid_cannot_replace_legacy_rpc_profile",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_failed_response_release_does_not_discard_a_sign_in_redirect",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
@@ -217,6 +237,16 @@
       "module": "browser_capture",
       "owner_kind": "test",
       "owner_qualname": "test_non_navigation_candidate_errors_propagate",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_non_sign_in_probe_landings_are_not_refused",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
@@ -407,6 +437,16 @@
       "module": "browser_capture",
       "owner_kind": "test",
       "owner_qualname": "test_browser_closed_during_post_heal_guard_preserves_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_browser_closed_during_sign_in_check_preserves_storage",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
@@ -905,6 +945,12 @@
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
     {
+      "count": 2,
+      "owner_kind": "test",
+      "owner_qualname": "test_browser_closed_during_sign_in_check_preserves_storage",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
       "count": 1,
       "owner_kind": "test",
       "owner_qualname": "test_courtesy_decision_declines_sid_arrival_and_unstable_app_snapshots",
@@ -926,6 +972,12 @@
       "count": 1,
       "owner_kind": "test",
       "owner_qualname": "test_current_host_sid_cannot_replace_legacy_rpc_profile",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_failed_response_release_does_not_discard_a_sign_in_redirect",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
     {
@@ -992,6 +1044,12 @@
       "count": 1,
       "owner_kind": "test",
       "owner_qualname": "test_non_navigation_candidate_errors_propagate",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
+      "owner_qualname": "test_non_sign_in_probe_landings_are_not_refused",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
     {
@@ -1173,13 +1231,13 @@
     },
     {
       "attribute": "heal_captured_state",
-      "count": 35,
+      "count": 38,
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture"
     },
     {
       "attribute": "replace_captured_profile",
-      "count": 15,
+      "count": 16,
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture"
     },
@@ -1223,13 +1281,13 @@
   "summary": {
     "TOTAL": {
       "private": 0,
-      "public": 77,
-      "total": 77
+      "public": 81,
+      "total": 81
     },
     "browser_capture": {
       "private": 0,
-      "public": 52,
-      "total": 52
+      "public": 56,
+      "total": 56
     },
     "headless_reauth": {
       "private": 0,

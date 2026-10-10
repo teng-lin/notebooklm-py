@@ -2415,6 +2415,66 @@
       "reason": "Observes that a signed-out browser session never reaches the real profile replacement.",
       "removal_trigger": "Replace with an injected capture-operation owner preserving the same guard ordering and persistence contract.",
       "ceiling": 1
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_browser_closed_during_sign_in_check_preserves_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py",
+      "category": "sealed_fault",
+      "owner": "browser authentication maintainers",
+      "reason": "Injects a declined PSIDTS heal so the capture reaches persistence without a network re-mint.",
+      "removal_trigger": "Replace with an injected capture-operation owner preserving the same guard ordering and persistence contract.",
+      "ceiling": 1
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_browser_closed_during_sign_in_check_preserves_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py",
+      "category": "composition_probe",
+      "owner": "browser authentication maintainers",
+      "reason": "Observes that a browser closing during the sign-in check never reaches the real profile replacement.",
+      "removal_trigger": "Replace with an injected capture-operation owner preserving the same guard ordering and persistence contract.",
+      "ceiling": 1
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_failed_response_release_does_not_discard_a_sign_in_redirect",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py",
+      "category": "sealed_fault",
+      "owner": "browser authentication maintainers",
+      "reason": "Injects a declined PSIDTS heal so the capture reaches persistence without a network re-mint.",
+      "removal_trigger": "Replace with an injected capture-operation owner preserving the same guard ordering and persistence contract.",
+      "ceiling": 1
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_non_sign_in_probe_landings_are_not_refused",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py",
+      "category": "sealed_fault",
+      "owner": "browser authentication maintainers",
+      "reason": "Injects a declined PSIDTS heal so the capture reaches persistence without a network re-mint.",
+      "removal_trigger": "Replace with an injected capture-operation owner preserving the same guard ordering and persistence contract.",
+      "ceiling": 1
     }
   ]
 }

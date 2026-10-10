@@ -1259,16 +1259,27 @@ def test_signed_in_browser_session_is_captured(
     _run(mode, plan, _IO())
 
     assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+    (call,) = browser.context.request.get.call_args_list
+    assert call.args == (f"{APP}login",)
+    assert call.kwargs == {"timeout": 30000}
+    browser.context.request.get.return_value.dispose.assert_called_once_with()
 
 
 @pytest.mark.parametrize("mode", ["headless", "cdp"])
-def test_unanswered_sign_in_check_keeps_the_existing_capture_behaviour(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+@pytest.mark.parametrize(
+    "landing",
+    [
+        "https://notebooklm.google/?location=unsupported",
+        "https://support.google.com/accounts/answer/32050",
+        "https://accounts.google.com/CookieMismatch",
+        f"{APP}login",
+    ],
+)
+def test_non_sign_in_probe_landings_are_not_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, landing: str
 ) -> None:
-    from playwright.sync_api import Error as PlaywrightError
-
     browser = _Browser(cookies=[SID])
-    browser.context.request.get.side_effect = PlaywrightError("synthetic probe failure")
+    _probe_lands_on(browser, landing)
     heal = _install_browser(monkeypatch, browser)
     monkeypatch.setattr(capture, "heal_captured_state", heal)
     plan = _existing_plan(tmp_path)
@@ -1276,6 +1287,33 @@ def test_unanswered_sign_in_check_keeps_the_existing_capture_behaviour(
     _run(mode, plan, _IO())
 
     assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+
+
+@pytest.mark.parametrize("mode", ["headless", "cdp"])
+def test_unanswered_sign_in_check_keeps_the_existing_capture_behaviour(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    mode: str,
+) -> None:
+
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    browser = _Browser(cookies=[SID])
+    browser.context.request.get.side_effect = PlaywrightTimeout(
+        f"synthetic timeout for {APP}login?secret=abc"
+    )
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    plan = _existing_plan(tmp_path)
+
+    with caplog.at_level("WARNING", logger=capture.logger.name):
+        _run(mode, plan, _IO())
+
+    assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+    browser.context.request.get.assert_called_once()
+    assert "TimeoutError" in caplog.text
+    assert "secret=abc" not in caplog.text
 
 
 def test_interactive_login_does_not_run_the_sign_in_check(
@@ -1291,3 +1329,62 @@ def test_interactive_login_does_not_run_the_sign_in_check(
 
     browser.context.request.get.assert_not_called()
     assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
+
+
+@pytest.mark.parametrize("mode", ["headless", "cdp"])
+def test_browser_closed_during_sign_in_check_preserves_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[SID])
+    browser.context.request.get.side_effect = PlaywrightError(capture.TARGET_CLOSED_ERROR)
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    writer = MagicMock()
+    monkeypatch.setattr(capture, "replace_captured_profile", writer)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+
+    with pytest.raises(capture._HeadlessCaptureAbort) as exc_info:
+        _run(mode, plan, _IO())
+
+    assert exc_info.value.kind is capture._CaptureAbortKind.BROWSER_CLOSED
+    browser.context.storage_state.assert_not_called()
+    heal.assert_not_called()
+    writer.assert_not_called()
+    assert plan.storage_path.read_bytes() == before
+
+
+def test_sign_in_check_uses_the_configured_enterprise_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enterprise = "https://notebook.cloud.google.com"
+    monkeypatch.setenv("NOTEBOOKLM_BASE_URL", enterprise)
+    context = MagicMock()
+    context.request.get.return_value = MagicMock(url=SIGN_IN)
+
+    assert capture._browser_session_is_signed_out(context) is True
+
+    (call,) = context.request.get.call_args_list
+    assert call.args == (f"{enterprise}/login",)
+
+
+@pytest.mark.parametrize("mode", ["headless", "cdp"])
+def test_failed_response_release_does_not_discard_a_sign_in_redirect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from playwright.sync_api import Error as PlaywrightError
+
+    browser = _Browser(cookies=[SID])
+    _probe_lands_on(browser, SIGN_IN)
+    browser.context.request.get.return_value.dispose.side_effect = PlaywrightError("disposed")
+    heal = _install_browser(monkeypatch, browser)
+    monkeypatch.setattr(capture, "heal_captured_state", heal)
+    plan = _existing_plan(tmp_path)
+    before = plan.storage_path.read_bytes()
+
+    with pytest.raises(HeadlessLoginRequiredError, match="signed out"):
+        _run(mode, plan, _IO())
+
+    assert plan.storage_path.read_bytes() == before

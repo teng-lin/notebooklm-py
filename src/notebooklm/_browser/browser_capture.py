@@ -48,7 +48,7 @@ from .._auth.storage import filter_storage_state_cookies_by_domain_policy
 
 # Host-family sets are internal _env facts, not new public config exports.
 from .._env import ENTERPRISE_APP_HOSTS, PERSONAL_APP_HOSTS
-from .._url_utils import is_google_auth_redirect
+from .._url_utils import is_cookie_mismatch_redirect, is_google_auth_redirect
 from ..config import get_base_host, get_base_url
 from ..exceptions import HeadlessLoginRequiredError, LockUnavailableError
 
@@ -521,19 +521,36 @@ def _browser_session_is_signed_out(context: Any) -> bool:
     passes the candidate check. ``/login`` still enforces a session -- signed in
     it redirects back to the app, signed out to ``accounts.google.com`` (the
     probe behind #2481). The request shares the context's cookies. Only a
-    confirmed sign-in redirect returns ``True``; any failure to ask is
-    unknown and keeps the existing behaviour.
+    confirmed sign-in redirect returns ``True``.
+
+    This is a liveness check for the browser's Google session, not an account
+    check: ``/login`` ignores ``authuser``, so it cannot say whether a stored
+    non-default account is the one signed in. A closed browser is re-raised so
+    the caller's abort routing handles it. Any other failure to ask (timeout,
+    network, redirect loop) keeps the existing behaviour and is logged as a
+    warning, type only, because Playwright errors embed URLs.
     """
     from playwright.sync_api import Error as PlaywrightError
 
     try:
-        response = context.request.get(f"{get_base_url()}/login", timeout=15000)
+        response = context.request.get(f"{get_base_url()}/login", timeout=30000)
         final_url = str(response.url)
-        response.dispose()
+        try:
+            response.dispose()
+        except PlaywrightError as exc:
+            _log_suppressed("sign-in check response release", exc)
     except PlaywrightError as exc:
-        _log_suppressed("sign-in check through the browser context", exc)
+        if TARGET_CLOSED_ERROR in str(exc):
+            raise
+        logger.warning(
+            "Browser capture: could not confirm the browser's Google session is signed in "
+            "(%s); continuing without that check.",
+            type(exc).__name__,
+        )
         return False
-    return is_google_auth_redirect(final_url)
+    # A CookieMismatch interstitial is also served from accounts.google.com but
+    # is a cookie-scoping fault, not a signed-out session.
+    return is_google_auth_redirect(final_url) and not is_cookie_mismatch_redirect(final_url)
 
 
 def wait_for_login_landing(

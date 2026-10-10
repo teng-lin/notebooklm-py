@@ -6046,6 +6046,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture",
       "owner_kind": "test",
+      "owner_qualname": "test_browser_closed_during_sign_in_check_preserves_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
       "owner_qualname": "test_courtesy_decision_declines_sid_arrival_and_unstable_app_snapshots",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
@@ -6077,6 +6087,16 @@
       "module": "browser_capture",
       "owner_kind": "test",
       "owner_qualname": "test_current_host_sid_cannot_replace_legacy_rpc_profile",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_failed_response_release_does_not_discard_a_sign_in_redirect",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
@@ -6187,6 +6207,16 @@
       "module": "browser_capture",
       "owner_kind": "test",
       "owner_qualname": "test_non_navigation_candidate_errors_propagate",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "heal_captured_state",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
+      "owner_qualname": "test_non_sign_in_probe_landings_are_not_refused",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
@@ -6576,6 +6606,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "browser_capture",
       "owner_kind": "test",
+      "owner_qualname": "test_browser_closed_during_sign_in_check_preserves_storage",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_capture_session_candidate.py"
+    },
+    {
+      "attribute": "replace_captured_profile",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "browser_capture",
+      "owner_kind": "test",
       "owner_qualname": "test_courtesy_observation_consuming_deadline_never_schedules_a_redirect",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_capture_session_candidate.py"
@@ -6873,17 +6913,17 @@
   ],
   "packages": {
     "notebooklm._auth": 85,
-    "notebooklm._browser": 77,
+    "notebooklm._browser": 81,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
     "distinct_targets": 64,
     "files": 85,
-    "lexical_owners": 634,
+    "lexical_owners": 637,
     "private": 50,
-    "public": 638,
-    "total": 688
+    "public": 642,
+    "total": 692
   },
   "version": 1
 }
