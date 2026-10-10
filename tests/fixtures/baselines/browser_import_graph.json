@@ -113,7 +113,7 @@
       "path": "src/notebooklm/_browser/__init__.py"
     },
     {
-      "lines": 1493,
+      "lines": 1494,
       "name": "browser_capture",
       "path": "src/notebooklm/_browser/browser_capture.py"
     },
@@ -146,7 +146,7 @@
     "function_local_edges": 1,
     "module_edges": 20,
     "modules": 6,
-    "total_lines": 3058,
+    "total_lines": 3059,
     "unique_edges": 21
   },
   "version": 1

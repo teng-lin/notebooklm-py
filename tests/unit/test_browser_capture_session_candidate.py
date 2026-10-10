@@ -1261,7 +1261,7 @@ def test_signed_in_browser_session_is_captured(
     assert json.loads(plan.storage_path.read_text())["cookies"] == [SID]
     (call,) = browser.context.request.get.call_args_list
     assert call.args == (f"{APP}login",)
-    assert call.kwargs == {"timeout": 30000}
+    assert call.kwargs == {"timeout": capture.SIGN_IN_CHECK_TIMEOUT_MS}
     browser.context.request.get.return_value.dispose.assert_called_once_with()
 
 

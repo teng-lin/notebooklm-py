@@ -125,6 +125,7 @@ MAX_TOLERATED_NAVIGATION_FAILURES = 20
 INSTANT_FAILURE_SECONDS = 0.25
 CAPTURE_SETTLE_SECONDS = 2.0
 CAPTURE_POLL_MS = 500
+SIGN_IN_CHECK_TIMEOUT_MS = 30_000
 CAPTURE_SNAPSHOT_ATTEMPTS = 3
 BROWSER_CLOSED_HELP = (
     "[red]The browser window was closed during login.[/red]\n"
@@ -526,14 +527,14 @@ def _browser_session_is_signed_out(context: Any) -> bool:
     This is a liveness check for the browser's Google session, not an account
     check: ``/login`` ignores ``authuser``, so it cannot say whether a stored
     non-default account is the one signed in. A closed browser is re-raised so
-    the caller's abort routing handles it. Any other failure to ask (timeout,
+    the caller's abort routing handles it. Any other Playwright failure (timeout,
     network, redirect loop) keeps the existing behaviour and is logged as a
     warning, type only, because Playwright errors embed URLs.
     """
     from playwright.sync_api import Error as PlaywrightError
 
     try:
-        response = context.request.get(f"{get_base_url()}/login", timeout=30000)
+        response = context.request.get(f"{get_base_url()}/login", timeout=SIGN_IN_CHECK_TIMEOUT_MS)
         final_url = str(response.url)
         try:
             response.dispose()
