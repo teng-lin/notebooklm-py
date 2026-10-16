@@ -859,6 +859,32 @@ async def test_source_delete_without_confirm_previews(mcp_call, mock_client) -> 
     mock_client.sources.delete.assert_not_called()
 
 
+async def test_source_delete_preview_shows_the_resolved_title(mcp_call, mock_client) -> None:
+    """A tier-2 name match previews the REAL source title (issue #2476)."""
+    mock_client.sources.list = AsyncMock(
+        return_value=[
+            FakeSource(id=SRC_ID, title="İstanbul notları"),
+            FakeSource(id=SRC2_ID, title="Other"),
+        ]
+    )
+    mock_client.sources.delete = AsyncMock(return_value=None)
+    single = await mcp_call("source_delete", {"notebook": NB_ID, "source": "istanbul"})
+    assert single.structured_content == {
+        "status": "needs_confirmation",
+        "preview": {
+            "action": "delete_source",
+            "notebook_id": NB_ID,
+            "source_id": SRC_ID,
+            "title": "İstanbul notları",
+        },
+    }
+    bulk = await mcp_call("source_delete", {"notebook": NB_ID, "sources": ["istanbul"]})
+    assert bulk.structured_content["preview"]["sources"] == [
+        {"source_id": SRC_ID, "title": "İstanbul notları"}
+    ]
+    mock_client.sources.delete.assert_not_called()
+
+
 async def test_source_delete_with_confirm_deletes(mcp_call, mock_client) -> None:
     mock_client.sources.delete = AsyncMock(return_value=None)
     result = await mcp_call("source_delete", {"notebook": NB_ID, "source": SRC_ID, "confirm": True})

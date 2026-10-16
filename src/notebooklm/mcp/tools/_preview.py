@@ -1,10 +1,11 @@
 """Shared helper for the destructive tools' confirmation previews.
 
-The single-type delete tools (``notebook_delete`` / ``source_delete``) build a
-``needs_confirmation`` preview that includes the resolved resource's title. Each
-fetches its own domain list (notebooks / sources), but the id-to-title match over
-that list is identical, so it lives here. (Cross-type ``studio_delete`` gets its
-preview title straight off the merged-list resolution instead.)
+The single-type delete tools (``notebook_delete`` / ``source_delete``) and the
+confirm-gated sharing tools build a ``needs_confirmation`` preview that includes
+the resolved resource's title. Each fetches its own domain list (notebooks /
+sources), but the id-to-title match over that list is identical, so it lives
+here. (Cross-type ``studio_delete`` gets its preview title straight off the
+merged-list resolution instead.)
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """

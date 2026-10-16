@@ -663,7 +663,7 @@ def register(mcp: Any) -> None:
             client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             try:
-                resolved = await resolve_studio_item(client, nb_id, item)
+                resolved = await resolve_studio_item(client, nb_id, item, mutating=True)
             except NotFoundError:
                 # Mirror studio_delete: an absent FULL UUID routes down the artifact
                 # rename path, whose core probes mind_maps.list — preserving
@@ -824,7 +824,9 @@ def register(mcp: Any) -> None:
                 raise ValidationError("Provide 'item' or 'items'")
             item = item.strip()
             try:
-                resolved = await resolve_studio_item(client, nb_id, item)
+                # A confirmed call deletes with no preview, so it resolves strictly;
+                # the preview resolves loosely and returns the canonical item id.
+                resolved = await resolve_studio_item(client, nb_id, item, mutating=confirm)
             except NotFoundError:
                 # Idempotent-on-missing carve-out: an absent FULL UUID is safe to
                 # send down the artifact delete path (a present note would have been

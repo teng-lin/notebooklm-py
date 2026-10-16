@@ -52,6 +52,7 @@ from .._app.artifacts import require_complete_artifact_listing
 from .._app.resolve import (
     FULL_ID_PATTERN,
     AmbiguousIdError,
+    match_title,
     near_miss_candidates,
     resolve_ref,
     validate_id,
@@ -155,13 +156,15 @@ def _resolve_by_title(
 ) -> str:
     """Resolve ``token`` by title over ``items``: exact match wins, else unique prefix.
 
-    Matching order (mirrors the id resolver's "exact wins over prefix"):
+    Matching order (mirrors the id resolver's "exact wins over prefix"; see
+    :func:`~notebooklm._app.resolve.match_title`):
 
     1. Case-insensitive **exact** title: exactly one -> that id; more than one ->
        :class:`AmbiguousIdError`.
     2. No exact match -> case-insensitive title **prefix** (#1786): exactly one ->
-       that id; more than one -> :class:`AmbiguousIdError` listing the candidates;
-       none -> ``not_found(token)``.
+       that id; more than one -> :class:`AmbiguousIdError` listing the candidates.
+    3. Neither -> steps 1 and 2 again, accent-insensitively (#2476), so
+       ``"istanbul"`` finds ``"İstanbul"``; none -> ``not_found(token)``.
 
     Exact precedence means a title that is also a prefix of a longer one
     (``"Report"`` vs ``"Report Q1"``) resolves to itself rather than being
@@ -174,32 +177,20 @@ def _resolve_by_title(
     :func:`~notebooklm._app.resolve.validate_id` first), so an empty prefix
     cannot match every item.
     """
-    # casefold (not lower) for correct non-ASCII case-insensitive matching, e.g.
-    # German ß folds to "ss" so "STRASSE" matches a title "Straße". Fold each
-    # title once up front so the two passes below don't re-casefold every item.
-    token_folded = token.casefold()
-    folded = [((item.title or "").casefold(), item) for item in items]
-
-    exact = [item for title_folded, item in folded if title_folded == token_folded]
-    if len(exact) == 1:
-        (match,) = exact  # unpack (not exact[0]) — these are typed items, not an RPC row
+    # Shared tiered matcher (issue #2476): canonical caseless exact, then prefix
+    # (issue #1786, so a name is as prefix-resolvable as an id); only on a miss the
+    # same two passes again accent-insensitively. casefold (not lower) means German
+    # ß folds to "ss" so "STRASSE" matches a title "Straße". The keys deliberately
+    # do NOT dash/space-normalize (unlike near_miss_candidates below): a
+    # punctuation-slip token like "Acme - X" for a title "Acme — X" must stay a
+    # true miss here so it reaches the near-miss "did you mean" path (#1787) rather
+    # than silently resolving to a near match.
+    matches, kind = match_title(token, items, title_of=lambda item: item.title)
+    if len(matches) == 1:
+        (match,) = matches  # unpack (not matches[0]) — typed items, not an RPC row
         return str(match.id)
-    if len(exact) > 1:
-        raise _ambiguous_title_error(token, exact, kind="title")
-
-    # No exact title -> fall back to a unique title prefix so a name is as
-    # prefix-resolvable as an id (issue #1786). Kept as a second pass (rather than
-    # a single fused loop) so exact-wins-over-prefix reads directly off the code.
-    # This pass casefolds but deliberately does NOT dash/space-normalize (unlike
-    # near_miss_candidates below): a punctuation-slip token like "Acme - X" for a
-    # title "Acme — X" must stay a true miss here so it reaches the near-miss
-    # "did you mean" path (#1787) rather than silently resolving to a near match.
-    prefix = [item for title_folded, item in folded if title_folded.startswith(token_folded)]
-    if len(prefix) == 1:
-        (match,) = prefix
-        return str(match.id)
-    if len(prefix) > 1:
-        raise _ambiguous_title_error(token, prefix, kind="prefix")
+    if matches:
+        raise _ambiguous_title_error(token, matches, kind=kind or "title")
 
     # Neither an exact title nor a unique/ambiguous prefix matched -> a true miss.
     # Enrich it with near-miss "did you mean" candidates (issue #1787): a title

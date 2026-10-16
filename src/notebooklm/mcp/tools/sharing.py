@@ -48,6 +48,7 @@ from .._confirm import (
 from .._context import get_client
 from .._errors import mcp_errors
 from .._resolve import resolve_notebook
+from ._preview import title_for_id
 
 # The enum→label projection (``_label`` / ``_status_payload``) + its label maps
 # now live in the shared, transport-neutral ``_app.views`` so the REST adapter
@@ -127,6 +128,7 @@ def register(mcp: Any) -> None:
                     preview: dict[str, Any] = {
                         "action": "share_set_access",
                         "notebook_id": nb_id,
+                        "title": title_for_id(await client.notebooks.list(), nb_id),
                         "change": "restricted -> anyone_with_link",
                     }
                     if view_level is not None:
@@ -205,6 +207,7 @@ def register(mcp: Any) -> None:
                     {
                         "action": "share_set_user",
                         "notebook_id": nb_id,
+                        "title": title_for_id(await client.notebooks.list(), nb_id),
                         **(
                             {"grants": [grant.model_dump() for grant in grants]}
                             if grants is not None
@@ -250,8 +253,14 @@ def register(mcp: Any) -> None:
             client = await get_client(ctx)
             nb_id = await resolve_notebook(client, notebook)
             if not confirm:
+                title = title_for_id(await client.notebooks.list(), nb_id)
                 return needs_confirmation(
-                    {"action": "remove_share_user", "notebook_id": nb_id, "email": email}
+                    {
+                        "action": "remove_share_user",
+                        "notebook_id": nb_id,
+                        "title": title,
+                        "email": email,
+                    }
                 )
             await client.sharing.remove_user(nb_id, email)
             return with_confirmation_deprecation(
