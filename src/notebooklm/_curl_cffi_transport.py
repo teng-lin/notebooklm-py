@@ -95,12 +95,14 @@ class _CurlCffiSyncTransport(httpx.BaseTransport):
     """
 
     def __init__(self, impersonate: str | None) -> None:
+        """Create an opt-in curl session while leaving credential storage to HTTPX."""
         from curl_cffi.requests import Session
 
         fingerprint: Any = impersonate
         self._curl: Any = Session(impersonate=fingerprint)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        """Send one hop with curl and return an HTTPX-compatible buffered response."""
         from curl_cffi.requests import RequestsError
 
         timeout_options = request.extensions.get("timeout")
@@ -125,6 +127,7 @@ class _CurlCffiSyncTransport(httpx.BaseTransport):
         )
 
     def close(self) -> None:
+        """Release the curl session when the owning HTTPX client closes."""
         self._curl.close()
 
 
@@ -136,6 +139,7 @@ def resolve_sync_transport_factory() -> Callable[..., httpx.Client]:
     impersonate = policy_env("NOTEBOOKLM_IMPERSONATE", DEFAULT_IMPERSONATE)
 
     def factory(**kwargs: Any) -> httpx.Client:
+        """Build a sync client without overriding an explicit User-Agent."""
         client = httpx.Client(transport=_CurlCffiSyncTransport(impersonate), **kwargs)
         # Let curl supply the impersonated browser's UA, unless explicitly set.
         if "user-agent" not in httpx.Headers(kwargs.get("headers")):

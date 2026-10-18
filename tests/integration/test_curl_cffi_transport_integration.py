@@ -41,9 +41,11 @@ pytestmark = [
 
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *_a):  # silence
+        """Keep deterministic loopback-server requests out of the test output."""
         pass
 
     def do_GET(self):  # noqa: N802
+        """Echo received cookies and set a cookie for the following request."""
         body = f"token=OK cookie={self.headers.get('Cookie', '')}".encode()
         self.send_response(200)
         self.send_header("Set-Cookie", "ROTATED=v; Path=/")
@@ -52,6 +54,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):  # noqa: N802
+        """Echo uploads or exercise intermediate, replacement and deletion cookies."""
         data = self.rfile.read(int(self.headers.get("Content-Length", 0)))
         if self.path == "/rotate":
             self.send_response(307)
@@ -85,6 +88,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def server():
+    """Run an ephemeral loopback server and always release its thread and socket."""
     httpd = HTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

@@ -25,6 +25,7 @@ _HEADERS = [
 
 @pytest.fixture
 def curl_session(monkeypatch):
+    """Replace curl's wire session with a synthetic two-cookie rotation response."""
     requests = pytest.importorskip("curl_cffi.requests")
     session = Mock()
     session.request.return_value = SimpleNamespace(
@@ -42,6 +43,7 @@ def curl_session(monkeypatch):
 def test_psidts_recovery_uses_selected_transport(
     source, tmp_path, monkeypatch, httpx_mock, curl_session
 ):
+    """Both recovery entry points use curl and retain both newly minted cookies."""
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
     monkeypatch.setenv("NOTEBOOKLM_IMPERSONATE", "chrome")
     # Negative control: old code reaches HTTPX, never the selected curl session.
@@ -68,6 +70,7 @@ def test_psidts_recovery_uses_selected_transport(
 
 @pytest.mark.parametrize("transport", ["", "httpx"])
 def test_default_rotation_transport_remains_httpx(transport, monkeypatch, httpx_mock):
+    """The default transport keeps HTTPX behavior and does not mutate the input jar."""
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", transport)
     jar = httpx.Cookies({"SID": "synthetic"})
     httpx_mock.add_response(url="https://example.test/", headers={"Set-Cookie": "new=value"})
@@ -79,6 +82,7 @@ def test_default_rotation_transport_remains_httpx(transport, monkeypatch, httpx_
 
 
 def test_rotation_rejects_unknown_transport(monkeypatch):
+    """A transport typo fails before any authentication request can be sent."""
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curlcffi")
     with (
         pytest.raises(ValueError, match="Unknown NOTEBOOKLM_TRANSPORT"),
@@ -88,6 +92,7 @@ def test_rotation_rejects_unknown_transport(monkeypatch):
 
 
 def test_rotation_respects_bound_transport_policy(monkeypatch, curl_session):
+    """The request-bound transport and fingerprint override ambient settings."""
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "httpx")
     monkeypatch.setenv("NOTEBOOKLM_IMPERSONATE", "firefox")
     policy = SimpleNamespace(
@@ -102,10 +107,12 @@ def test_rotation_respects_bound_transport_policy(monkeypatch, curl_session):
 
 
 def test_rotation_does_not_fall_back_when_curl_is_missing(monkeypatch):
+    """An unavailable selected dependency must not silently change the wire transport."""
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
     original_import = builtins.__import__
 
     def without_curl(name, *args, **kwargs):
+        """Simulate only the missing optional curl import, leaving other imports intact."""
         if name == "curl_cffi.requests":
             raise ImportError("synthetic missing optional dependency")
         return original_import(name, *args, **kwargs)
@@ -122,6 +129,7 @@ def test_rotation_does_not_fall_back_when_curl_is_missing(monkeypatch):
 def test_curl_recovery_failure_is_nonfatal_and_preserves_storage(
     failure, tmp_path, monkeypatch, curl_session
 ):
+    """HTTP and transport failures preserve stored cookies and release the session."""
     from curl_cffi.requests import RequestsError
 
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
@@ -141,6 +149,7 @@ def test_curl_recovery_failure_is_nonfatal_and_preserves_storage(
 
 @pytest.mark.parametrize("timeout", [None, 0, 15])
 def test_curl_rotation_preserves_request_options(timeout, monkeypatch, curl_session):
+    """Forward payload, cookies and timeout without taking over redirect ownership."""
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
     _, session = curl_session
     jar = httpx.Cookies()
