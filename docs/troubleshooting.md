@@ -78,6 +78,13 @@ Google rotates `__Secure-1PSIDTS` (the freshness partner of `__Secure-1PSID`) on
 6. **Manual re-login** — `notebooklm login`; the legacy `notebooklm login --master-token-refresh` remains for an unconditional master-token re-mint.
 7. **External scheduler** — `notebooklm auth refresh` driven by cron / launchd / systemd / Task Scheduler / k8s CronJob, for idle profiles with no Python process running. Recommended cadence: 15–20 minutes.
 
+The opt-in `NOTEBOOKLM_TRANSPORT=curl_cffi` transport also applies to the
+synchronous missing-`__Secure-1PSIDTS` recovery used when loading a saved session
+or importing browser cookies. It uses the same `NOTEBOOKLM_IMPERSONATE` setting
+as async requests; it does not silently fall back to HTTPX if the optional
+dependency is missing. This keeps transport selection consistent, but is not a
+guarantee against Google expiring or revoking a session.
+
 > **Master-token troubleshooting:** `MasterTokenError: ... re-bootstrap` means Google rejected the stored token or it was explicitly revoked; re-run `notebooklm login --master-token --account you@example.com`. A password change alone is not reliable revocation or containment for a leaked master token—remove its associated device/session in Google Account security. `MissingDependencyError: ... needs gpsoauth` means neither the `[headless]` nor `[android]` extra is installed; add the extra for your backend. Recovery stops with that configuration error instead of misreporting rejected credentials. A minted jar "missing required cookies" indicates a MergeSession change — file an issue.
 >
 > **"This browser or app may not be secure" during `--master-token` sign-in:** Google blocks sign-in inside the automated browser the auto-capture launches. The client drops the obvious automation flags, but Google may still block — use one of the reliable paths instead:

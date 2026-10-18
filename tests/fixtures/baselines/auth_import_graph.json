@@ -698,7 +698,7 @@
       "path": "src/notebooklm/_auth/extraction.py"
     },
     {
-      "lines": 438,
+      "lines": 441,
       "name": "keepalive",
       "path": "src/notebooklm/_auth/keepalive.py"
     },
@@ -801,7 +801,7 @@
     "function_local_edges": 12,
     "module_edges": 113,
     "modules": 33,
-    "total_lines": 13894,
+    "total_lines": 13897,
     "unique_edges": 125
   },
   "version": 1

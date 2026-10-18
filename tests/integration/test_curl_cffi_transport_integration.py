@@ -13,12 +13,14 @@ httpx), so this tier is local-server-backed, not cassette-backed — hence
 from __future__ import annotations
 
 import importlib.util
+import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
 import pytest
 
+from notebooklm._auth.keepalive import _rotation_http_client
 from notebooklm._curl_cffi_transport import CurlCffiAsyncClient
 from notebooklm._web.transport.init import _resolve_async_client_factory
 from notebooklm._web.transport.streaming_post import stream_post_with_size_cap
@@ -51,6 +53,29 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         data = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        if self.path == "/rotate":
+            self.send_response(307)
+            self.send_header("Location", "/rotate/final")
+            self.send_header("Set-Cookie", "intermediate=fresh; Path=/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if self.path == "/rotate/final":
+            body = json.dumps(
+                {
+                    "body": data.decode(),
+                    "cookie": self.headers.get("Cookie", ""),
+                    "user_agent": self.headers.get("User-Agent", ""),
+                }
+            ).encode()
+            self.send_response(200)
+            self.send_header("Set-Cookie", "first=fresh; Path=/")
+            self.send_header("Set-Cookie", "second=fresh; Path=/")
+            self.send_header("Set-Cookie", "obsolete=; Max-Age=0; Path=/")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         body = b"echo:" + data
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
@@ -126,3 +151,30 @@ async def test_env_var_unset_resolves_to_httpx(monkeypatch):
     """Without the opt-in, the resolver returns plain httpx.AsyncClient (default path)."""
     monkeypatch.delenv("NOTEBOOKLM_TRANSPORT", raising=False)
     assert _resolve_async_client_factory(None) is httpx.AsyncClient
+
+
+def test_sync_rotation_round_trips_redirect_cookies(server, monkeypatch):
+    """Real curl I/O preserves HTTPX cookie/redirect semantics and the browser UA."""
+    monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
+    monkeypatch.setenv("NOTEBOOKLM_IMPERSONATE", "chrome")
+    jar = httpx.Cookies()
+    jar.set("SID", "synthetic", domain="127.0.0.1", path="/")
+    jar.set("obsolete", "old", domain="127.0.0.1", path="/")
+
+    with _rotation_http_client(jar) as client:
+        response = client.post(f"{server}/rotate", content=b"rotation-body")
+        response.raise_for_status()
+        seen = response.json()
+        assert seen["body"] == "rotation-body"
+        assert "SID=synthetic" in seen["cookie"]
+        assert "intermediate=fresh" in seen["cookie"]
+        assert "Chrome/" in seen["user_agent"]
+        assert len(response.history) == 1
+        assert client.cookies["first"] == client.cookies["second"] == "fresh"
+        assert "obsolete" not in client.cookies
+        followup = client.get(f"{server}/").text
+        assert "first=fresh" in followup and "second=fresh" in followup
+        assert "obsolete=" not in followup
+
+    assert jar["obsolete"] == "old"
+    assert "first" not in jar

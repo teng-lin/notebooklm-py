@@ -27,6 +27,7 @@ from typing import Any, ClassVar
 
 import httpx
 
+from .._curl_cffi_transport import resolve_sync_transport_factory
 from . import mint_service as _mint_service
 from . import paths as _auth_paths
 from .storage_lock import (
@@ -89,7 +90,9 @@ def _rotation_http_client(jar: httpx.Cookies) -> httpx.Client:
     jar; the rotated ``Set-Cookie`` values land in ``client.cookies``, never in
     ``jar`` — callers read the client's jar after the POST.
     """
-    return httpx.Client(cookies=jar, follow_redirects=True, timeout=_KEEPALIVE_POKE_TIMEOUT)
+    return resolve_sync_transport_factory()(
+        cookies=jar, follow_redirects=True, timeout=_KEEPALIVE_POKE_TIMEOUT
+    )
 
 
 # In-process state for rotation throttling, keyed per-profile and per-loop.

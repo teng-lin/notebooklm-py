@@ -37,7 +37,7 @@ _MODULE_HASHES = {
     "profile_account.py": "899baf4cc0c748740247b68c3adfa2a3754bb565b143d4a1150329a05f456ce4",
     "cookie_types.py": "4cb8725cbbcb0dbdbb49f81e8495695bd98b6dc2e475ad8ea6bd137e392df5cb",
     "cookies.py": "73808d966ca039738a6439f9b2a9c56700f3f2e185785a8874f1e2e2fcba7664",
-    "keepalive.py": "505cfcf1d093d7aea2f26c2b7745a27ed8f7b51698e1bebdc3fafe4d6f78f065",
+    "keepalive.py": "c3a0f9c36f416b11f7621a191d4da42ca048f7e27e3277a2a77d9224ed2564fb",
     "master_token.py": "42b3d3c3a4bc96c860d454ef8defd243b5d55617df7d3b4fc95467ae675bab78",
     "master_token_types.py": "856c741582249f7049fca0030e7af84cbda9141c7099a7aad6be6066090e5d57",
     "profile_migration.py": "ea6408a76890563c6f0f948e8031038436687611c0dd832b19c07b0177ede582",

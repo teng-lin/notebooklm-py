@@ -86,6 +86,65 @@ def _strip_preserving_duplicates(headers: Mapping[str, str]) -> list[tuple[str, 
     return [(key, value) for key, value in items if key.lower() not in _STRIP_HEADERS]
 
 
+class _CurlCffiSyncTransport(httpx.BaseTransport):
+    """Buffered sync transport for the small cookie-recovery request.
+
+    HTTPX owns redirects and the cookie jar. Keeping curl's cookie store empty
+    avoids a second authority replaying cookies that HTTPX deleted or scoped
+    away on a redirect. The optional dependency is imported only on opt-in.
+    """
+
+    def __init__(self, impersonate: str | None) -> None:
+        from curl_cffi.requests import Session
+
+        fingerprint: Any = impersonate
+        self._curl: Any = Session(impersonate=fingerprint)
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        from curl_cffi.requests import RequestsError
+
+        timeout_options = request.extensions.get("timeout")
+        timeout = httpx.Timeout(**timeout_options) if timeout_options else None
+        try:
+            response = self._curl.request(
+                request.method,
+                str(request.url),
+                headers=request.headers.multi_items(),
+                data=request.read(),
+                allow_redirects=False,
+                discard_cookies=True,
+                timeout=_to_curl_timeout(timeout),
+            )
+        except RequestsError as exc:
+            raise httpx.RequestError(str(exc), request=request) from exc
+        return httpx.Response(
+            response.status_code,
+            headers=_strip_preserving_duplicates(response.headers),
+            content=response.content,
+            request=request,
+        )
+
+    def close(self) -> None:
+        self._curl.close()
+
+
+def resolve_sync_transport_factory() -> Callable[..., httpx.Client]:
+    """Select the same HTTP transport for synchronous cookie recovery."""
+    if _resolve_transport_name() != "curl_cffi":
+        return httpx.Client
+
+    impersonate = policy_env("NOTEBOOKLM_IMPERSONATE", DEFAULT_IMPERSONATE)
+
+    def factory(**kwargs: Any) -> httpx.Client:
+        client = httpx.Client(transport=_CurlCffiSyncTransport(impersonate), **kwargs)
+        # Let curl supply the impersonated browser's UA, unless explicitly set.
+        if "user-agent" not in httpx.Headers(kwargs.get("headers")):
+            client.headers.pop("user-agent", None)
+        return client
+
+    return factory
+
+
 async def _materialize(content: Any) -> bytes | None:
     """Collapse an httpx-style request body (bytes / sync- or async-iterable) to bytes.
 
@@ -719,14 +778,20 @@ def resolve_transport_factory() -> Any:
     typo (e.g. ``curlcffi``) fails loudly instead of silently using httpx while the
     operator believes impersonation is on.
     """
-    transport = (policy_env("NOTEBOOKLM_TRANSPORT", "") or "").strip()
+    transport = _resolve_transport_name()
     if transport == "curl_cffi":
         if has_bound_policy():
             return make_curl_cffi_factory(policy_env("NOTEBOOKLM_IMPERSONATE"))
         return make_curl_cffi_factory()
+    return httpx.AsyncClient
+
+
+def _resolve_transport_name() -> str:
+    """Share opt-in validation between async traffic and sync cookie recovery."""
+    transport = (policy_env("NOTEBOOKLM_TRANSPORT", "") or "").strip()
     if transport and transport not in _KNOWN_TRANSPORTS:
         raise ValueError(
             f"Unknown NOTEBOOKLM_TRANSPORT={transport!r}; "
             f"expected one of {sorted(_KNOWN_TRANSPORTS)} or unset."
         )
-    return httpx.AsyncClient
+    return transport

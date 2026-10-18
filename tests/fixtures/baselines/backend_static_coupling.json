@@ -3443,6 +3443,15 @@
     },
     {
       "kind": "from",
+      "lineno": 30,
+      "scope": null,
+      "scope_kind": "module",
+      "source": "notebooklm._auth.keepalive",
+      "target": "notebooklm._curl_cffi_transport",
+      "type_only": false
+    },
+    {
+      "kind": "from",
       "lineno": 272,
       "scope": "_verify_by_listing_notebooks",
       "scope_kind": "function",
@@ -11858,7 +11867,7 @@
       "modules": 47
     },
     "auth": {
-      "lines": 13894,
+      "lines": 13897,
       "modules": 33
     },
     "cli": {
@@ -11870,7 +11879,7 @@
       "modules": 42
     },
     "root": {
-      "lines": 27595,
+      "lines": 27660,
       "modules": 92
     },
     "rpc": {
@@ -11895,13 +11904,13 @@
     }
   },
   "summary": {
-    "authored_lines": 154534,
+    "authored_lines": 154602,
     "authored_modules": 494,
     "class_local_edges": 0,
-    "cross_subsystem_edges": 1305,
+    "cross_subsystem_edges": 1306,
     "dynamic_import_calls": 10,
     "function_local_edges": 95,
-    "module_level_edges": 1210,
+    "module_level_edges": 1211,
     "type_only_edges": 138
   },
   "version": 1
