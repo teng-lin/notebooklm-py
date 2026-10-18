@@ -281,7 +281,7 @@ tests and the stress runner use those same functions.
 | Contradictory success | `web_consistency.py`, `android_consistency.py` | Missing IDs, incomplete empty lookup, media readiness, stale verified readback and actual pagination. |
 | Resource saturation | `web_saturation.py` | Actual small transport pool and library permit, repeated baseline restoration. |
 | Protocol bounds | `web_protocol.py`, `android_protocol.py` | Decoded/cumulative caps, first-crossing abort, gzip, lengths and large fragmented frame. |
-| Stored-auth startup, pytest-only | `mcp_auth_startup_worker.py`, `mcp_startup_cleanup.py` | Real stored credentials, local issuance, stdio/HTTP discovery and shared opening ownership. |
+| Stored-auth startup, pytest-only | `mcp_auth_startup_worker.py`, `mcp_startup_cleanup.py`, `mcp_startup_report.py` | Real stored credentials, local issuance, stdio/HTTP discovery and shared opening ownership. |
 
 Portable registration includes the expansion families below; use `--list-scenarios`
 for the exact current deck. The Web registry
