@@ -1650,7 +1650,7 @@ server = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.0.0,<9" },
-    { name = "curl-cffi", marker = "extra == 'impersonate'", specifier = ">=0.11,<1" },
+    { name = "curl-cffi", marker = "extra == 'impersonate'", specifier = ">=0.15.0,<1" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.118,<1" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = "==4.1.0" },
     { name = "filelock", specifier = ">=3.13,<5" },

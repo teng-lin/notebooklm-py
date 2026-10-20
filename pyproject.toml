@@ -49,7 +49,8 @@ cookies = ["rookie-cookies>=0.1.0,<1"]
 # EXPERIMENTAL / PoC: optional curl_cffi transport for browser TLS-JA3
 # impersonation (NOTEBOOKLM_TRANSPORT=curl_cffi). Native wheels, so excluded from
 # `all` like `cookies`. Opt in via pip install "notebooklm-py[impersonate]".
-impersonate = ["curl_cffi>=0.11,<1"]
+# >=0.15.0 supports discard_cookies and READFUNCTION streaming-upload callbacks.
+impersonate = ["curl_cffi>=0.15.0,<1"]
 # Headless master-token auth: mint web cookies from a durable Google master
 # token, no per-session browser (docs/installation.md#headless). gpsoauth is
 # pure-Python (no native wheels), so it is safe in `all`. >=1.1.0 for
