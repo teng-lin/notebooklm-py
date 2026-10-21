@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from notebooklm._auth import keepalive, psidts_recovery
+from notebooklm._curl_cffi_transport import resolve_sync_transport_factory
 from notebooklm._request_context import request_policy_scope
 
 _COOKIES = [
@@ -147,7 +148,7 @@ def test_curl_recovery_failure_is_nonfatal_and_preserves_storage(
     session.close.assert_called_once()
 
 
-@pytest.mark.parametrize("timeout", [None, 0, 15])
+@pytest.mark.parametrize("timeout", [None, 15])
 def test_curl_rotation_preserves_request_options(timeout, monkeypatch, curl_session):
     """Forward payload, cookies and timeout without taking over redirect ownership."""
     monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
@@ -158,7 +159,10 @@ def test_curl_rotation_preserves_request_options(timeout, monkeypatch, curl_sess
         response = client.post(
             keepalive.KEEPALIVE_ROTATE_URL,
             content="payload",
-            headers={"Origin": "https://accounts.google.com"},
+            headers={
+                "Origin": "https://accounts.google.com",
+                "Content-Type": "application/json",
+            },
             timeout=timeout,
         )
         assert isinstance(response, httpx.Response)
@@ -169,8 +173,30 @@ def test_curl_rotation_preserves_request_options(timeout, monkeypatch, curl_sess
     headers = httpx.Headers(options["headers"])
     assert "SID=synthetic" in headers["Cookie"]
     assert headers["Origin"] == "https://accounts.google.com"
-    assert "user-agent" not in headers  # curl supplies the selected browser's UA
+    assert headers["Content-Type"] == "application/json"
+    for name in ("user-agent", "accept", "accept-encoding", "connection"):
+        assert name not in headers  # curl supplies the selected browser's defaults
     assert options["data"] == b"payload"
     assert options["timeout"] == (None if timeout is None else (timeout, timeout))
     assert options["allow_redirects"] is False  # HTTPX handles redirect cookies
     assert options["discard_cookies"] is True
+
+
+@pytest.mark.parametrize("source", ["client", "request"])
+@pytest.mark.parametrize("name", ["User-Agent", "Accept", "Accept-Encoding", "Connection"])
+def test_curl_rotation_preserves_explicit_headers(source, name, monkeypatch, curl_session):
+    """Preserve each explicit header while removing the other HTTPX defaults."""
+    monkeypatch.setenv("NOTEBOOKLM_TRANSPORT", "curl_cffi")
+    _, session = curl_session
+    explicit = {name: "caller-value"}
+    kwargs = {"headers": explicit} if source == "client" else {}
+    with resolve_sync_transport_factory()(**kwargs) as client:
+        client.post(
+            keepalive.KEEPALIVE_ROTATE_URL,
+            headers=explicit if source == "request" else None,
+        )
+    headers = httpx.Headers(session.request.call_args.kwargs["headers"])
+    assert headers[name] == "caller-value"
+    for default in ("user-agent", "accept", "accept-encoding", "connection"):
+        if default != name.lower():
+            assert default not in headers

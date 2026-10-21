@@ -139,11 +139,13 @@ def resolve_sync_transport_factory() -> Callable[..., httpx.Client]:
     impersonate = policy_env("NOTEBOOKLM_IMPERSONATE", DEFAULT_IMPERSONATE)
 
     def factory(**kwargs: Any) -> httpx.Client:
-        """Build a sync client without overriding an explicit User-Agent."""
+        """Let curl supply browser defaults while preserving explicit headers."""
         client = httpx.Client(transport=_CurlCffiSyncTransport(impersonate), **kwargs)
-        # Let curl supply the impersonated browser's UA, unless explicitly set.
-        if "user-agent" not in httpx.Headers(kwargs.get("headers")):
-            client.headers.pop("user-agent", None)
+        # Let curl supply browser defaults unless the caller explicitly set them.
+        explicit_headers = httpx.Headers(kwargs.get("headers"))
+        for name in ("user-agent", "accept", "accept-encoding", "connection"):
+            if name not in explicit_headers:
+                client.headers.pop(name, None)
         return client
 
     return factory
