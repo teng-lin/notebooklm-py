@@ -11,8 +11,11 @@ source / note / artifact refs.
 
 Routing is by token shape:
 
-* A full canonical UUID is returned verbatim with **no list call** (so a tool
-  invoked with a concrete id never pays for a list).
+* A full canonical UUID is returned lowercased with **no list call** (so a tool
+  invoked with a concrete id never pays for a list). Lowercased because the
+  backend matches ids case-sensitively and its ids are always lowercase: an
+  uppercase UUID would read as not found, and a delete by one would silently do
+  nothing.
 * A hex-ish token (``^[0-9a-fA-F-]+$``) takes the id/prefix path via
   ``resolve_ref`` against the listed items, then **falls back to the title path**
   if the id/prefix path finds nothing — so an item whose title is all-hex
@@ -333,7 +336,7 @@ async def resolve_notebook(client: NotebookLMClient, ref: str, *, strict: bool =
     reject_non_canonical_id(ref, "notebook")
     # Full UUID fast-path — never list.
     if FULL_ID_PATTERN.fullmatch(ref):
-        return ref
+        return ref.lower()
     items = await client.notebooks.list()
     if _HEX_ISH.match(ref):
         return _resolve_hex(ref, items, not_found=NotebookNotFoundError, strict=strict)
@@ -367,7 +370,7 @@ async def resolve_source(
     reject_non_canonical_id(ref, "source")
     # Full UUID fast-path — never list.
     if FULL_ID_PATTERN.fullmatch(ref):
-        return ref
+        return ref.lower()
     items = await client.sources.list(notebook_id)
     if _HEX_ISH.match(ref):
         return _resolve_hex(ref, items, not_found=SourceNotFoundError, strict=strict)
@@ -426,13 +429,13 @@ async def resolve_sources(
         reject_non_canonical_id(ref, "source")
     # If every ref is already a full UUID, skip the list call entirely.
     if all(FULL_ID_PATTERN.fullmatch(ref) for ref in validated):
-        return validated
+        return [ref.lower() for ref in validated]
     items = await client.sources.list(notebook_id)
 
     # Same matching dispatch as resolve_source, but against one shared snapshot.
     def match(ref: str) -> str:
         if FULL_ID_PATTERN.fullmatch(ref):
-            return ref
+            return ref.lower()
         if _HEX_ISH.match(ref):
             return _resolve_hex(ref, items, not_found=SourceNotFoundError, strict=strict)
         return _resolve_by_title(ref, items, not_found=SourceNotFoundError, strict=strict)
@@ -508,7 +511,7 @@ async def resolve_note(
     reject_non_canonical_id(ref, "note")
     # Full UUID fast-path — never list.
     if FULL_ID_PATTERN.fullmatch(ref):
-        return ref
+        return ref.lower()
     items = await client.notes.list(notebook_id)
     if _HEX_ISH.match(ref):
         return _resolve_hex(ref, items, not_found=NoteNotFoundError, strict=strict)
@@ -525,7 +528,7 @@ async def resolve_artifact(
     note-backed) under one listing, so a note-backed mind map is resolvable by
     id / prefix / title here just like any other artifact.
 
-    The full-UUID fast-path returns ``ref`` **verbatim with no list call**: this
+    The full-UUID fast-path returns ``ref`` **lowercased with no list call**: this
     lets a concrete id (including a note-backed mind-map id, or one missing from a
     stale list) reach the ``_app`` core, which then routes it by kind.
 
@@ -558,7 +561,7 @@ async def resolve_artifact(
     reject_non_canonical_id(ref, "artifact")
     # Full UUID fast-path — never list.
     if FULL_ID_PATTERN.fullmatch(ref):
-        return ref
+        return ref.lower()
     items = await require_complete_artifact_listing(client, notebook_id)
     if _HEX_ISH.match(ref):
         return _resolve_hex(ref, items, not_found=ArtifactNotFoundError, strict=strict)

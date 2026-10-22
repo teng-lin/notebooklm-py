@@ -112,6 +112,34 @@ async def test_full_uuid_skips_the_list_call() -> None:
     client.notebooks.list.assert_not_called()
 
 
+async def test_uppercase_full_uuid_is_lowercased_without_listing() -> None:
+    """The backend matches ids case-sensitively and its ids are lowercase."""
+    client = _client(
+        notebooks=[_NB(FULL_A, "Alpha")],
+        sources=[_Src(FULL_A, "S")],
+        artifacts=[_Art(FULL_A, "A")],
+        notes=[_Note(FULL_A, "N")],
+    )
+    upper = FULL_A.upper()
+    assert await resolve_notebook(client, upper) == FULL_A
+    assert await resolve_source(client, "nb-1", upper) == FULL_A
+    assert await resolve_sources(client, "nb-1", [upper, FULL_B.upper()]) == [FULL_A, FULL_B]
+    assert await resolve_note(client, "nb-1", upper) == FULL_A
+    assert await resolve_artifact(client, "nb-1", upper) == FULL_A
+    client.notebooks.list.assert_not_called()
+    client.sources.list.assert_not_called()
+    client.notes.list.assert_not_called()
+    client.artifacts.list_with_status.assert_not_called()
+
+
+async def test_uppercase_full_uuid_in_a_mixed_source_batch_is_lowercased() -> None:
+    client = _client(sources=[_Src("ab0001cdef", "Notes")])
+    assert await resolve_sources(client, "nb-1", ["Notes", FULL_A.upper()]) == [
+        "ab0001cdef",
+        FULL_A,
+    ]
+
+
 async def test_exact_id_match() -> None:
     client = _client(notebooks=[_NB("deadbeef", "Alpha"), _NB("cafef00d", "Beta")])
     assert await resolve_notebook(client, "deadbeef") == "deadbeef"

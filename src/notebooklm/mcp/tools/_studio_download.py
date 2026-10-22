@@ -211,12 +211,12 @@ def _resolve_artifact_id(artifacts: list[Any], artifact_id: str) -> str:
 
     Wraps the transport-neutral :func:`resolve_ref` (full-UUID fast-path, exact
     match, unique prefix; ambiguous / no-match prefixes raise ``ValidationError`` /
-    ``AmbiguousIdError``). The fast-path returns a canonical UUID **verbatim**
+    ``AmbiguousIdError``). The fast-path returns a full UUID (lowercased)
     without scanning ``artifacts``, so we match it case-insensitively against the
     pre-fetched list and return the list's own id. This:
 
-    * fixes uppercase full UUIDs — ``select_artifact`` compares ids
-      case-sensitively, so returning the token's casing would spuriously miss; and
+    * returns the list's id exactly — ``select_artifact`` compares ids
+      case-sensitively; and
     * makes a not-found full UUID raise the SAME hard error as a not-found /
       ambiguous prefix (→ ``ToolError`` on stdio, 400 on the remote route) instead
       of falling through to the download core's soft ``ERROR`` outcome — matching
@@ -228,9 +228,9 @@ def _resolve_artifact_id(artifacts: list[Any], artifact_id: str) -> str:
         id_of=lambda a: a["id"],
         title_of=lambda a: a.get("title"),
     ).id
-    # The full-UUID fast-path returns the caller's casing verbatim; for a prefix
-    # match ``resolved`` is already the list's canonical id. A single
-    # case-insensitive scan normalizes both and confirms membership.
+    # The full-UUID fast-path skips the list; for a prefix match ``resolved`` is
+    # already the list's canonical id. A single case-insensitive scan confirms
+    # membership and returns the list's own id for both.
     resolved_lower = resolved.lower()
     for artifact in artifacts:
         if str(artifact["id"]).lower() == resolved_lower:

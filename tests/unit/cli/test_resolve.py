@@ -144,14 +144,18 @@ class TestResolveNotebookId:
 
     @pytest.mark.asyncio
     async def test_uuid_shaped_id_mixed_case_returns_without_listing(self, mock_client):
-        """Mixed-case 36-char UUID-shaped IDs also fast-path."""
+        """Mixed-case 36-char UUID-shaped IDs also fast-path, lowercased.
+
+        The backend matches ids case-sensitively, so an uppercase id would read
+        as not found (and a delete by it would silently do nothing).
+        """
         uuid_id = "ABC12345-6789-4ABC-Def0-1234567890aB"
         assert len(uuid_id) == 36
         mock_client.notebooks.list = AsyncMock()
 
         result = await resolve_notebook_id(mock_client, uuid_id)
 
-        assert result == uuid_id
+        assert result == uuid_id.lower()
         mock_client.notebooks.list.assert_not_called()
 
     @pytest.mark.asyncio
@@ -649,6 +653,17 @@ class TestResolveSourceIds:
         )
 
         assert result == [uuid_a, uuid_b]
+        mock_client_with_sources.sources.list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_uppercase_full_ids_are_lowercased(self, mock_client_with_sources):
+        """The backend matches ids case-sensitively and its ids are lowercase."""
+        mock_client_with_sources.sources.list = AsyncMock()
+
+        uuid_a = "abc12345-6789-4abc-def0-1234567890ab"
+        result = await resolve_source_ids(mock_client_with_sources, "nb_123", (uuid_a.upper(),))
+
+        assert result == [uuid_a]
         mock_client_with_sources.sources.list.assert_not_called()
 
     @pytest.mark.asyncio

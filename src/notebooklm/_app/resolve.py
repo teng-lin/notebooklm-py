@@ -29,6 +29,11 @@ from ..exceptions import ValidationError
 # 25-char prefix) must go through local list-and-match so it is expanded to the
 # full id before any backend call. Mirrors ``cli.resolve.FULL_ID_PATTERN`` so
 # the two resolvers agree on which inputs skip listing.
+#
+# The pattern accepts either case, but the backend looks ids up CASE-SENSITIVELY
+# and its ids are always lowercase: an uppercase UUID reads as not found, and a
+# delete by one silently does nothing. Every fast-path therefore lowercases the
+# id it passes through.
 FULL_ID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
@@ -110,9 +115,10 @@ def resolve_ref(
     rules, in order:
 
     1. Empty / whitespace ``token`` -> :class:`ValidationError`.
-    2. Canonical 36-char 8-4-4-4-12 UUID -> returned verbatim without scanning
-       ``items`` (the full-id fast-path). The caller is responsible for any
-       authoritative-membership check it needs; this core trusts a full id.
+    2. Canonical 36-char 8-4-4-4-12 UUID -> returned lowercased without scanning
+       ``items`` (the full-id fast-path; see :data:`FULL_ID_PATTERN`). The caller
+       is responsible for any authoritative-membership check it needs; this core
+       trusts a full id.
     3. Case-insensitive exact match against an item id -> that item (exact wins
        over prefix so a short-but-complete id is not reported ambiguous when it
        is also a prefix of another item).
@@ -139,9 +145,10 @@ def resolve_ref(
     token = validate_id(token)
 
     # Rule 2 — concrete UUID passes through without scanning ``items`` so direct
-    # get/delete by id does not force a list call first.
+    # get/delete by id does not force a list call first. Lowercased: the backend
+    # matches ids case-sensitively (see FULL_ID_PATTERN).
     if _is_full_id_candidate(token):
-        return Resolution(id=token, matched_title=None)
+        return Resolution(id=token.lower(), matched_title=None)
 
     token_lower = token.lower()
     matches: list[Any] = []

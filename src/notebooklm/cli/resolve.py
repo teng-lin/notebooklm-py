@@ -221,8 +221,9 @@ def resolve_partial_id_in_items(
     Matching rules (in order):
 
     1. Empty/whitespace partial id -> ``error_factory("...cannot be empty")``.
-    2. Canonical 36-char 8-4-4-4-12 hex+dash UUID -> returned verbatim (no
-       listing required); see :data:`FULL_ID_PATTERN`.
+    2. Canonical 36-char 8-4-4-4-12 hex+dash UUID -> returned lowercased (no
+       listing required; the backend matches ids case-sensitively and they are
+       always lowercase); see :data:`FULL_ID_PATTERN`.
     3. Case-insensitive exact match against any item id -> returned (wins over
        prefix ambiguity so a short-but-complete id isn't reported as
        ambiguous when it's also a prefix of another item).
@@ -259,7 +260,7 @@ def resolve_partial_id_in_items(
         stdout_console: Console for human-mode diagnostics.
         stderr_output_console: Console for JSON-mode diagnostics.
         allow_full_id_passthrough: When true (default), a canonical
-            8-4-4-4-12 UUID is returned verbatim without scanning
+            8-4-4-4-12 UUID is returned lowercased without scanning
             ``items``. Callers that have already fetched the
             authoritative item list (e.g. download helpers) pass
             ``False`` so a full-shape ID that isn't in the list raises
@@ -290,7 +291,7 @@ def resolve_partial_id_in_items(
     # isn't in the list falls through to the membership check below and
     # surfaces the canonical "not found" error rather than a silent 404.
     if allow_full_id_passthrough and _is_full_id_candidate(partial_id):
-        return partial_id
+        return partial_id.lower()
 
     partial_id_lower = partial_id.lower()
 
@@ -378,7 +379,7 @@ async def _resolve_partial_id(
     # don't pay for a backend listing they don't need.
     partial_id = validate_id(partial_id, entity_name)
     if _is_full_id_candidate(partial_id):
-        return partial_id
+        return partial_id.lower()
 
     items = await list_fn()
     return resolve_partial_id_in_items(
@@ -530,7 +531,7 @@ async def resolve_source_ids(
     if not require_existing and all(
         _is_full_id_candidate(source_id) for source_id in validated_source_ids
     ):
-        return list(validated_source_ids)
+        return [source_id.lower() for source_id in validated_source_ids]
 
     sources = await client.sources.list(notebook_id)
 

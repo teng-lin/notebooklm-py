@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An uppercase full UUID now reaches the right notebook, source, note or
+  artifact.** The CLI and MCP resolvers passed a full UUID through in the case
+  it was typed, but Google matches ids case-sensitively and its ids are always
+  lowercase. Reads by an uppercase id failed with a misleading `NOT_FOUND`, and
+  `notebook_delete` by one reported `deleted` while the notebook stayed. The
+  resolvers now lowercase a full UUID before any backend call. The REST server,
+  which takes ids as given in the path, is unchanged.
+
 - **Windows CLI uploads on the selector loop no longer lose data (#2485).** On
   Python 3.12–3.14, asyncio's selector loop drops a chunk of the request body
   when a Windows socket send would block, so multi-megabyte uploads failed

@@ -38,8 +38,8 @@ def title_for_id(items: Sequence[Any], target_id: str) -> str | None:
     """Return the title of the item whose id equals ``target_id``, else ``None``.
 
     Ids compare exactly; a full UUID ref also matches case-insensitively. The
-    resolver passes a full UUID through verbatim in any case, while lists return
-    canonical lowercase ids.
+    resolvers already lowercase a full UUID, and lists return lowercase ids, so
+    the fallback only covers a full UUID that reaches here some other way.
 
     Best-effort: a miss (the resource vanished between resolution and this lookup)
     yields ``None`` rather than raising, so the delete preview still renders.

@@ -75,6 +75,13 @@ def test_resolve_ref_full_id_fast_path_skips_items() -> None:
     assert result == Resolution(id=FULL_ID, matched_title=None)
 
 
+def test_resolve_ref_uppercase_full_id_is_lowercased() -> None:
+    # The backend matches ids case-sensitively and its ids are always lowercase.
+    result = resolve_ref(FULL_ID.upper(), [], id_of=_id_of)
+
+    assert result == Resolution(id=FULL_ID, matched_title=None)
+
+
 def test_resolve_ref_full_id_returned_verbatim_even_with_items() -> None:
     items = [Item(id="other")]
     result = resolve_ref(FULL_ID, items, id_of=_id_of, title_of=_title_of)

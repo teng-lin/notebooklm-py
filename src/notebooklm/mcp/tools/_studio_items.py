@@ -286,7 +286,7 @@ def _match_studio_ref(
         except ValidationError:
             resolution = None
         if resolution is not None:
-            # ``resolve_ref``'s full-UUID fast-path returns the token verbatim
+            # ``resolve_ref``'s full-UUID fast-path returns the token (lowercased)
             # without a membership check; confirm membership case-insensitively
             # (also normalizes a prefix match to the list's canonical id).
             rid = resolution.id.casefold()

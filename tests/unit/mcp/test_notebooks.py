@@ -327,6 +327,21 @@ async def test_notebook_delete_with_confirm_deletes(mcp_call, mock_client) -> No
     mock_client.notebooks.delete.assert_awaited_once_with(NB_ID)
 
 
+async def test_notebook_delete_uppercase_full_uuid_deletes_the_lowercase_id(
+    mcp_call, mock_client
+) -> None:
+    """The backend matches ids case-sensitively: an uppercase id is a silent no-op.
+
+    A live ``notebook_delete`` by an uppercase UUID reported ``deleted`` while the
+    notebook stayed, so the resolver must send the lowercase id.
+    """
+    hex_id = "b6ca69e0-75eb-4108-b727-769e48d26c4a"
+    mock_client.notebooks.delete = AsyncMock(return_value=None)
+    result = await mcp_call("notebook_delete", {"notebook": hex_id.upper(), "confirm": True})
+    assert result.structured_content == {"status": "deleted", "notebook_id": hex_id}
+    mock_client.notebooks.delete.assert_awaited_once_with(hex_id)
+
+
 async def test_notebook_delete_confirm_preview_then_delete(mcp_call, mock_client) -> None:
     """Two-step flow: preview first, then the confirmed delete runs."""
     mock_client.notebooks.list = AsyncMock(return_value=[FakeNotebook(id=NB2_ID, title="Target")])
