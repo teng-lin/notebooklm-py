@@ -52,7 +52,9 @@ _METHOD_KINDS = {
     LIST_CHAT_SESSIONS: frozenset({"reply", "abort", "wait_reply", "wait_abort"}),
     GENERATE_STREAMED: frozenset({"stream"}),
 }
-_CLEANUP_TIMEOUT = 1.0
+# Native gRPC shutdown needs scheduler headroom on loaded Windows runners.
+# Keep teardown bounded without treating a one-second delay as a cleanup failure.
+_CLEANUP_TIMEOUT = 10.0
 
 
 @dataclass(frozen=True)
