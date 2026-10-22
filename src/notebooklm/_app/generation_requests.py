@@ -368,6 +368,14 @@ class AudioGenerationRequest(_SourcedGenerationRequest):
     instructions: OptionalText = UNSET
     audio_format: AudioFormat = AudioFormat.DEEP_DIVE
     audio_length: AudioLength = AudioLength.DEFAULT
+    later: bool = False
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not isinstance(self.later, bool):
+            raise ValidationError("later must be a bool")
+        if self.later and self.wait:
+            raise ValidationError("--later cannot be combined with --wait")
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -126,4 +126,9 @@ def encode_creation(request: n.NormalizedArtifactCreationRequest) -> tuple[list[
     descriptor: list[Any] = [None, None, kind, sources]
     descriptor.extend([None] * (slot - len(descriptor)))
     descriptor.append(config)
-    return [_artifact_client_options(), request.notebook_id, descriptor], label
+    params: list[Any] = [_artifact_client_options(), request.notebook_id, descriptor]
+    if isinstance(request, n.NormalizedAudio) and request.later:
+        # CreateArtifactRequest #7 wraps the deferred-generation bool at #1.
+        # See docs/android/deferred-audio-generation-evidence.md.
+        params.extend([None, None, None, [True]])
+    return params, label

@@ -331,6 +331,11 @@ class Artifact:
         return self.status == ArtifactStatus.PENDING
 
     @property
+    def is_scheduled(self) -> bool:
+        """Check if generation is deferred until a server-selected time."""
+        return self.status == ArtifactStatus.SCHEDULED
+
+    @property
     def is_failed(self) -> bool:
         """Check if artifact generation failed (status=FAILED)."""
         return self.status == ArtifactStatus.FAILED
@@ -341,7 +346,7 @@ class Artifact:
 
         Returns:
             "pending", "in_progress", "completed", "failed", "suggested",
-            "pending_review", or "unknown". See :class:`ArtifactStatus` for the
+            "pending_review", "scheduled", or "unknown". See :class:`ArtifactStatus` for the
             code-to-string table.
         """
         return artifact_status_to_str(self.status)
@@ -521,6 +526,7 @@ class GenerationState(str, Enum):
     # greppable against the recovered enum dump. Semantics unconfirmed; see
     # :class:`~notebooklm.rpc.types.ArtifactStatus`.
     PENDING_REVIEW = "pending_review"
+    SCHEDULED = "scheduled"
     # Legacy client-synthesized outcome; retained for compatibility, no longer emitted.
     REMOVED = "removed"
 
@@ -532,7 +538,7 @@ class GenerationState(str, Enum):
         REST poll route consults it via :attr:`GenerationStatus.is_terminal`,
         and callers can use it instead of enumerating members themselves.
         Anything *not* terminal means "keep waiting": that is why the rare
-        states added in #2127 (``SUGGESTED``, ``PENDING_REVIEW``) and the
+        states ``SUGGESTED``, ``PENDING_REVIEW``, ``SCHEDULED`` and the
         long-standing ``UNKNOWN`` all answer ``False`` — none of them says
         generation finished, so treating them as terminal would abandon a task
         that is still running.
@@ -659,6 +665,11 @@ class GenerationStatus:
         return self.status == "in_progress"
 
     @property
+    def is_scheduled(self) -> bool:
+        """Check if generation is deferred until a server-selected time."""
+        return self.status == "scheduled"
+
+    @property
     def is_not_found(self) -> bool:
         """Check if the artifact was not found in the poll response.
 
@@ -688,7 +699,7 @@ class GenerationStatus:
         The one predicate to branch on for "should I keep polling?". Everything
         else means keep waiting, including ``not_found`` (a transport-level
         absence, not an outcome) and the rare ``suggested`` / ``pending_review``
-        states added in #2127.
+        states, as well as deferred ``scheduled`` artifacts.
 
         Delegates to :attr:`GenerationState.is_terminal`, so a state added to
         that enum later is non-terminal here too — the safe default. Like its

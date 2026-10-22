@@ -534,3 +534,19 @@ def test_media_readiness_holds_back_only_url_bearing_artifact_kinds(
     )
 
     assert _is_media_ready(artifact, artifact_type) is expected
+
+
+@pytest.mark.asyncio
+async def test_waiter_continues_through_scheduled_to_completed() -> None:
+    """A deferred artifact must not prematurely finish or get treated as absent."""
+    service, _supervisor, clock = _make_service()
+    states = [GenerationState.SCHEDULED, GenerationState.IN_PROGRESS, GenerationState.COMPLETED]
+    poll = AsyncMock(side_effect=[GenerationStatus("task1", state) for state in states])
+    observed: list[GenerationStatus] = []
+    result = await service.wait_for_completion(
+        "nb1", "task1", poll_status=poll, on_status_change=observed.append
+    )
+    assert result.is_complete
+    assert [status.status for status in observed] == states
+    assert poll.await_count == 3
+    assert len(clock.sleeps) == 2

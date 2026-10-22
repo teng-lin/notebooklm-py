@@ -174,7 +174,7 @@ class ArtifactsAPI(ABC):
         """
         return (
             ArtifactCreationCapability(
-                "audio", ("language", "instructions", "audio_format", "audio_length")
+                "audio", ("language", "instructions", "audio_format", "audio_length", "later")
             ),
             ArtifactCreationCapability(
                 "video", ("language", "instructions", "video_format", "video_style", "style_prompt")
@@ -375,8 +375,18 @@ class ArtifactsAPI(ABC):
         instructions: str | None = None,
         audio_format: AudioFormat | None = None,
         audio_length: AudioLength | None = None,
+        *,
+        later: bool = False,
     ) -> GenerationStatus:
-        """Generate an Audio Overview (podcast)."""
+        """Generate an Audio Overview (podcast).
+
+        Set ``later=True`` to queue generation for later, as in the web app's
+        Generate later action. The server chooses the execution time, usually
+        a few hours later; account quota and feature availability still apply.
+        The returned status is ``scheduled`` while the artifact is queued.
+        """
+        if not isinstance(later, bool):
+            raise ValidationError("later must be a bool")
         async with self._operation_scope("artifacts.generate_audio"):
             language = self._resolve_language(language)
             source_ids = await self._resolve_source_ids(notebook_id, source_ids)
@@ -388,6 +398,7 @@ class ArtifactsAPI(ABC):
                     instructions,
                     audio_format,
                     audio_length,
+                    later,
                 )
             )
 

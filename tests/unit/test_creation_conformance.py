@@ -423,3 +423,41 @@ async def test_interactive_domain_normalization_and_language_encoding(
         params = terminal.rpc_call.call_args.args[1]
         assert "fr" not in repr(params)
         assert params[2][9][1] == ([4, None, instructions] if instructions.strip() else [4])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later", [False, True])
+async def test_audio_deferred_generation_wire(backend, creation_api, later):
+    """Both backends preserve the field-7 scheduling message and ordinary defaults."""
+    api, observed, terminal, _ = creation_api
+    await api.generate_audio("nb", source_ids=["source"], later=later)
+    assert observed[0].later is later
+    if backend == "web":
+        params = terminal.rpc_call.await_args.args[1]
+        assert len(params) == (7 if later else 3)
+        if later:
+            assert params[3:] == [None, None, None, [True]]
+    else:
+        from notebooklm._android.proto.notebooklm.internal.android.wire.v1 import artifacts_pb2
+
+        projection = artifacts_pb2.WireCreateArtifactDeferredProjection.FromString(
+            terminal.calls[0][1].SerializeToString()
+        )
+        assert projection.HasField("deferred_generation") is later
+        assert projection.deferred_generation.enabled is later
+        # This independently observed suffix is shared with Web field 7.
+        if later:
+            assert b"\x3a\x02\x08\x01" in terminal.calls[0][1].SerializeToString()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later", [1, "true", None])
+async def test_audio_later_requires_bool_before_source_lookup(creation_api, later):
+    api, observed, _, notebooks = creation_api
+    with pytest.raises(ValidationError, match="later must be a bool"):
+        await api.generate_audio("nb", later=later)
+    assert observed == []
+    if hasattr(notebooks, "calls") and isinstance(notebooks.calls, list):
+        assert notebooks.calls == []
+    else:
+        notebooks.get_source_ids.assert_not_awaited()

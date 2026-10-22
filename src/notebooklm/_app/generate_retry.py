@@ -46,7 +46,7 @@ calculate_backoff_delay = artifact_retry.calculate_backoff_delay
 class GenerationOutcome:
     """Semantic result of generation orchestration, independent of rendering."""
 
-    status: Literal["failed", "rate_limited", "completed", "pending"]
+    status: Literal["failed", "rate_limited", "completed", "pending", "scheduled"]
     kind: GenerationKind
     task_id: str | None = None
     url: str | None = None
@@ -151,7 +151,9 @@ def generation_outcome_from_status(status: Any, kind: GenerationKind) -> Generat
         )
 
     return GenerationOutcome(
-        status="pending",
+        status="scheduled"
+        if isinstance(status, GenerationStatus) and status.is_scheduled
+        else "pending",
         kind=kind,
         task_id=_extract_task_id(status),
         raw_status=status,

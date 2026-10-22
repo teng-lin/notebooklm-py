@@ -48,6 +48,7 @@ from .._confirm import (
 from .._context import get_client
 from .._errors import mcp_errors
 from .._resolve import resolve_notebook
+from ._preview import notebook_title_or_none
 
 # The enum→label projection (``_label`` / ``_status_payload``) + its label maps
 # now live in the shared, transport-neutral ``_app.views`` so the REST adapter
@@ -115,8 +116,11 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
-            if public is True and not confirm:
+            # Only an unconfirmed public widening can end in a preview; every other
+            # call writes, so it resolves strictly (no accent-insensitive match).
+            gated = public is True and not confirm
+            nb_id = await resolve_notebook(client, notebook, strict=not gated)
+            if gated:
                 # Gate only a genuine widening (restricted → anyone-with-link). Read
                 # current state to skip a spurious confirm on an already-public
                 # notebook. Benign TOCTOU: if the notebook flips to restricted between
@@ -127,6 +131,7 @@ def register(mcp: Any) -> None:
                     preview: dict[str, Any] = {
                         "action": "share_set_access",
                         "notebook_id": nb_id,
+                        "title": await notebook_title_or_none(client, nb_id),
                         "change": "restricted -> anyone_with_link",
                     }
                     if view_level is not None:
@@ -134,6 +139,15 @@ def register(mcp: Any) -> None:
                         # preview describes every side effect it would apply.
                         preview["view_level"] = view_level
                     return needs_confirmation(preview)
+                # Already public: no preview, so this call writes after all. Hold the
+                # ref to the strict match every write needs, and to the notebook whose
+                # status was just read: a rename or new notebook between the two list
+                # reads could make the strict lookup land on a different one.
+                if await resolve_notebook(client, notebook, strict=True) != nb_id:
+                    raise ValidationError(
+                        f"'{notebook}' resolved to a different notebook on the strict "
+                        "re-check, so nothing was changed. Retry with the notebook id."
+                    )
             # Apply the (possibly restricting) view_level BEFORE toggling public, so a
             # failure on the public step can never leave the notebook public with a
             # wider view level than intended (fail-closed). set_view_level's return is
@@ -199,12 +213,13 @@ def register(mcp: Any) -> None:
             elif email is not None and not email.strip():
                 raise ValidationError("'email' must be non-empty")
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=confirm)
             if not confirm:
                 return needs_confirmation(
                     {
                         "action": "share_set_user",
                         "notebook_id": nb_id,
+                        "title": await notebook_title_or_none(client, nb_id),
                         **(
                             {"grants": [grant.model_dump() for grant in grants]}
                             if grants is not None
@@ -248,10 +263,16 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=confirm)
             if not confirm:
+                title = await notebook_title_or_none(client, nb_id)
                 return needs_confirmation(
-                    {"action": "remove_share_user", "notebook_id": nb_id, "email": email}
+                    {
+                        "action": "remove_share_user",
+                        "notebook_id": nb_id,
+                        "title": title,
+                        "email": email,
+                    }
                 )
             await client.sharing.remove_user(nb_id, email)
             return with_confirmation_deprecation(

@@ -142,7 +142,7 @@ async def test_mcp_share_remove_user_over_vcr() -> None:
     End-to-end: tool -> ``client.sharing.remove_user`` -> the mutating revoke RPC
     (``QDyure``) THEN a ``get_status`` re-read (``JFMDGd``). Pins the flat
     ``{"status": "removed", "notebook_id", "email"}`` wire shape. ``confirm=True``
-    is required — the default confirm-gated preview does not touch the wire.
+    is required — the default confirm-gated preview sends no mutation.
     """
     async with build_mcp_client() as mcp_client:
         result = await mcp_client.call_tool(

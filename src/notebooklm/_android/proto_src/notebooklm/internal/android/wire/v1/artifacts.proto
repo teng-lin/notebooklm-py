@@ -21,6 +21,17 @@ message WireArtifactTableProjection {
   WireTableArtifact table = 19; // APK Artifact tag is addUnused; wire live-validated, 2026-08-29
 }
 
+// Web CreateArtifactRequest #7 -> nested bool #1. The remote message name is
+// unknown; keep the projection repository-local rather than guessing its FQN.
+// Evidence: docs/android/deferred-audio-generation-evidence.md.
+message WireDeferredGenerationOptions {
+  bool enabled = 1;
+}
+
+message WireCreateArtifactDeferredProjection {
+  WireDeferredGenerationOptions deferred_generation = 7;
+}
+
 message WireAudioOverviewGenerationOptionsProjection {
   int32 format = 7; // web registry plus live Android echoes for codes 2, 3, and 4, 2026-08-29
 }

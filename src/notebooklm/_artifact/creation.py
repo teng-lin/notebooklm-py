@@ -37,6 +37,7 @@ class AudioCreationRequest(_CreationRequest):
     instructions: str | None
     audio_format: AudioFormat | None
     audio_length: AudioLength | None
+    later: bool = False
 
 
 @dataclass(frozen=True)

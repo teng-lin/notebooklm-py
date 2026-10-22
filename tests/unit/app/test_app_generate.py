@@ -170,3 +170,25 @@ async def test_mind_map_variants_dispatch_to_their_typed_owner(
     else:
         client.artifacts.generate_mind_map.assert_awaited_once()
         client.mind_maps.generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_audio_later_returns_scheduled_without_waiting() -> None:
+    client = _client()
+    client.artifacts.generate_audio.return_value = GenerationStatus("scheduled-audio", "scheduled")
+    result = await execute_generation(
+        AudioGenerationRequest(notebook_id="nb", later=True),
+        client,
+        notebook_resolver=_notebook,
+        source_resolver=_sources,
+    )
+    assert client.artifacts.generate_audio.await_args.kwargs["later"] is True
+    assert result.generation.status == "scheduled"
+    client.artifacts.wait_for_completion.assert_not_called()
+
+
+def test_audio_later_and_wait_are_incompatible() -> None:
+    from notebooklm.exceptions import ValidationError
+
+    with pytest.raises(ValidationError, match="--later cannot be combined with --wait"):
+        AudioGenerationRequest(notebook_id="nb", later=True, wait=True)

@@ -124,6 +124,8 @@ def _build_call_kwargs(request: GenerationRequest, *, sources: list[str] | None)
         _set_optional(base, "instructions", request.instructions)
         base["audio_format"] = request.audio_format
         base["audio_length"] = request.audio_length
+        if request.later:
+            base["later"] = True
     elif isinstance(request, VideoGenerationRequest):
         _set_optional(base, "language", request.language)
         _set_optional(base, "instructions", request.instructions)

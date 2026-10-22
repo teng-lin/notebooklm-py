@@ -264,8 +264,32 @@ These conventions hold across every tool:
 - **Name *or* ID.** Every `notebook`/`source`/`note`/`artifact` argument accepts a human title **or**
   an ID. Both resolve by prefix: an exact title wins, otherwise a **unique title prefix** matches
   (so `"Scientific"` finds `"Scientific PDF Parsing — …"`), and likewise a full ID or a unique ID
-  prefix. Use the matching `*_list` tool to discover them. An ambiguous name or prefix returns a
-  `VALIDATION` error listing the candidates so you can retry with an exact title or ID. When a name
+  prefix. Use the matching `*_list` tool to discover them. Titles match in tiers: first
+  case-insensitively with accents significant (Unicode canonical caseless matching, so composed and
+  decomposed spellings agree and `"STRASSE"` finds `"Straße"`); only if that finds nothing, the same
+  exact-then-prefix pass runs again ignoring accents, so `"istanbul"` finds `"İstanbul"` and
+  `"cafe"` finds `"Café"`. An earlier tier always wins: with both `"Resume"` and `"Résumé"` present,
+  each spelling resolves to itself. No tier matches `"IĞDIR"` with `"ığdır"`: dotless `ı` stays a
+  distinct letter, since Turkish `I` → `ı` casing needs a Turkish-specific comparison. Ignoring
+  accents also drops vowel and tone marks in scripts such as Thai, Devanagari, Arabic and Hebrew;
+  that tier runs only when tier 1 finds nothing, and several hits are reported as ambiguous. It
+  also applies Unicode compatibility folding, so `"Report 2"` finds `"Report ²"`, `"ABC"` finds
+  `"ＡＢＣ"` and `"iv"` finds `"Ⅳ"`; and since Japanese voicing marks
+  are combining marks, `"ハン"` finds `"パン"` and `"カ"` is a prefix of `"ガイド"`. An ambiguous
+  name or prefix, in any tier, returns a
+  `VALIDATION` error listing the candidates so you can retry with an exact title or ID. Tools that
+  change data use tier 1 only: a rename, `note_save`, a source add, `studio_generate`,
+  `studio_retry`, `research_start` / `research_import` / `research_cancel`, `chat_configure`,
+  `chat_cancel`, an ungated `share_set_access`, and any delete or sharing call with
+  `confirm=True` accept an exact title, a unique title prefix or an ID, and refuse a ref that only
+  the accent-insensitive tier would match with a `VALIDATION` error naming the candidates.
+  Confirmation previews (`confirm=False`), read-only tools, and `chat_ask` / `chat_start` (they
+  add a conversation turn but change no notebook content) keep every tier, and a preview returns
+  the canonical id to confirm with. `studio_rename` and a confirmed
+  single-item `studio_delete` are stricter still: they accept only an exact tier-1 title (or an
+  id), also refuse a title prefix, and refuse a title or prefix ref when the Studio listing is
+  incomplete. So `source_rename(source="Rep")` renames the one source whose title starts with
+  `"Rep"`, while `studio_rename(item="Rep")` refuses and lists the candidates. When a name
   lookup *fails* but is close to a real title — a punctuation-only slip such as a hyphen typed for an
   em-dash (`—`) or a normal space for a non-breaking one — the error's `Did you mean: …` hint names
   up to three near-miss candidates, each with its **title and id** inline, so you can retry with the
@@ -284,7 +308,7 @@ These conventions hold across every tool:
 - **Destructive tools need confirmation.** `notebook_delete`, `source_delete`,
   `studio_delete`, and `share_remove_user` take `confirm` (default `false`). Called without it, they return a `needs_confirmation` preview
   containing canonical parent/target IDs for notebook, source, and Studio deletes, or the canonical
-  notebook ID plus email for `share_remove_user`; they delete **nothing**. Re-submit those exact
+  notebook ID, its title and the email for `share_remove_user`; they delete **nothing**. Re-submit those exact
   identifiers and operands with `confirm=true`. Confirmed names remain compatible in v0.9 but warn and
   return a `deprecation` note; v1 rejects them. A confirmed subset is allowed.
 - **Sharing-widening tools need confirmation too.** `share_set_user` (every grant/regrade) and
@@ -297,7 +321,7 @@ These conventions hold across every tool:
   gate is on the widening direction only.
 
   Preparation and execution are separate tool invocations. Resource-delete previews return
-  canonical parent/target IDs; sharing previews return the canonical notebook ID together with
+  canonical parent/target IDs; sharing previews return the canonical notebook ID and its title together with
   email/permission or public/view-level operands. Neither sends a mutation. The caller may pause for
   human review without holding a request context or client lease; a later `confirm=true` call
   reacquires the shared client and executes with those previewed identifiers and operands. See the

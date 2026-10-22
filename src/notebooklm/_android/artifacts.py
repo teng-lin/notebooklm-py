@@ -408,6 +408,12 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
                     ),
                 ),
             )
+            if creation.later:
+                request.MergeFromString(
+                    _WIRE_PROTO.WireCreateArtifactDeferredProjection(
+                        deferred_generation=_WIRE_PROTO.WireDeferredGenerationOptions(enabled=True)
+                    ).SerializeToString()
+                )
             expected_type = ArtifactTypeCode.AUDIO.value
             expected_variant = None
             family_label = "audio"

@@ -270,6 +270,7 @@ _ARTIFACT_STATUS_TABLE = [
     (4, "FAILED", "failed"),
     (5, "SUGGESTED", "suggested"),
     (6, "PENDING_REVIEW", "pending_review"),
+    (7, "SCHEDULED", "scheduled"),
 ]
 
 
@@ -304,7 +305,7 @@ class TestArtifactStatusToStr:
 
     def test_unrecognized_status_codes_degrade_to_unknown(self):
         """Codes outside the backend enum still fail closed rather than raise."""
-        assert artifact_status_to_str(7) == "unknown"
+        assert artifact_status_to_str(8) == "unknown"
         assert artifact_status_to_str(99) == "unknown"
         assert artifact_status_to_str(-1) == "unknown"
 

@@ -107,6 +107,7 @@ consolidated document rather than encoded in filenames.
 | [`resource-lifecycle-and-public-qualification.md`](resource-lifecycle-and-public-qualification.md) | notebook copy/metadata, notes/maps, labels, collections, and public-selection boundaries |
 | [`public-api-audit.md`](public-api-audit.md) | 2026-08-29 rejection-audit snapshot; its three compatibility seams were later closed |
 | [`web-compat-seam-closure.md`](web-compat-seam-closure.md) | current zero-Web-operation-collaborator boundary and the evidence that closed the final seams |
+| [`deferred-audio-generation-evidence.md`](deferred-audio-generation-evidence.md) | deferred Audio Overview creation field, lifecycle state, and Web/Android live qualification (#2505) |
 | [`file-transfer-evidence.md`](file-transfer-evidence.md) | Scotty upload and artifact-download protocol with interception details |
 | [`deep-research-evidence.md`](deep-research-evidence.md) | Deep Research wire contract, lifecycle, reproducer, and interception |
 | [`copy-append-suggestion-evidence.md`](copy-append-suggestion-evidence.md) | live Android gRPC evidence for the #2283 family: `AddSourcesAsync`, `AppendSource`, `CopySourcesAsync`, `CopyArtifactsAsync`, `NextStepSuggestions`, `GetArtifactCustomizationChoices` |

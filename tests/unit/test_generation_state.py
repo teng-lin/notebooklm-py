@@ -224,6 +224,7 @@ def test_status_from_code_pins_every_backend_artifact_status_code():
         4: GenerationState.FAILED,
         5: GenerationState.SUGGESTED,
         6: GenerationState.PENDING_REVIEW,
+        7: GenerationState.SCHEDULED,
     }
 
 
@@ -248,6 +249,7 @@ def test_is_terminal_partitions_the_enum_exactly():
         GenerationState.UNKNOWN,
         GenerationState.SUGGESTED,
         GenerationState.PENDING_REVIEW,
+        GenerationState.SCHEDULED,
     }
 
 
@@ -318,15 +320,14 @@ def test_generation_outcome_terminality_agrees_with_the_enum():
         outcome = generation_outcome_from_status(
             GenerationStatus(task_id="t", status=state), "audio"
         )
-        assert (outcome.status != "pending") == state.is_terminal, state
+        assert (outcome.status not in {"pending", "scheduled"}) == state.is_terminal, state
 
 
 def test_rare_backend_states_are_distinguishable_from_unknown():
     """SUGGESTED / PENDING_REVIEW must not collapse into ``UNKNOWN`` (#2127)."""
     for code in (ArtifactStatus.SUGGESTED, ArtifactStatus.PENDING_REVIEW):
         assert _status_from_code(code) is not GenerationState.UNKNOWN
-    # ...while a code the backend enum does not define still fails closed.
-    assert _status_from_code(7) is GenerationState.UNKNOWN
+    assert _status_from_code(ArtifactStatus.SCHEDULED) is GenerationState.SCHEDULED
 
 
 def test_status_from_code_none_defaults_to_pending():
@@ -450,6 +451,7 @@ async def test_poll_status_decoded_failed_artifact_has_no_fabricated_error():
         (ArtifactStatus.PROCESSING, GenerationState.IN_PROGRESS),
         (ArtifactStatus.SUGGESTED, GenerationState.SUGGESTED),
         (ArtifactStatus.PENDING_REVIEW, GenerationState.PENDING_REVIEW),
+        (ArtifactStatus.SCHEDULED, GenerationState.SCHEDULED),
     ],
 )
 async def test_poll_status_non_terminal_codes_keep_the_loop_waiting(
@@ -530,3 +532,12 @@ def test_parse_generation_result_none_code_is_pending():
         [["artifact_x", "Title", 7, None, None]], method_id="R7cb6c"
     )
     assert result.status is GenerationState.PENDING
+
+
+def test_scheduled_artifact_and_generation_are_distinct_from_pending():
+    artifact = Artifact(id="later", title="Audio", _artifact_type=1, status=7)
+    status = GenerationStatus(task_id="later", status=_status_from_code(artifact.status))
+    assert artifact.status_str == "scheduled"
+    assert artifact.is_scheduled and not artifact.is_pending and not artifact.is_processing
+    assert status.is_scheduled and not status.is_pending and not status.is_in_progress
+    assert not status.is_terminal

@@ -1358,6 +1358,7 @@ notebooklm generate audio [description] [OPTIONS]
 - `-n, --notebook ID` - Notebook ID (uses current if not set)
 - `--format [deep-dive|brief|critique|debate]` - Podcast format (default: deep-dive)
 - `--length [short|default|long]` - Duration (default: default)
+- `--later` - Queue audio for later on Web or Android; the server chooses the time (usually a few hours). Returns `scheduled` and cannot be combined with `--wait`.
 - `--language LANG` - Output language (precedence: `--language` > `NOTEBOOKLM_HL` env > config > `'en'`)
 - `-s, --source ID` - Limit to specific source IDs (repeatable, uses all if not specified)
 - `--wait / --no-wait` - Wait for completion (default: `--no-wait`)
@@ -1384,6 +1385,10 @@ notebooklm generate audio -s src_abc -s src_def
 # JSON output for scripting/automation
 notebooklm generate audio --json
 # Output: {"task_id": "abc123...", "status": "pending"}
+
+# Queue audio for later without waiting
+notebooklm generate audio --later --json
+# {"task_id": "...", "status": "scheduled"}
 
 # Read long instructions from a file
 notebooklm generate audio --prompt-file instructions.txt --format debate

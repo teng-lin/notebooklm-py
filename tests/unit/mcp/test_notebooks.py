@@ -303,6 +303,23 @@ async def test_notebook_delete_without_confirm_previews(mcp_call, mock_client) -
     mock_client.notebooks.delete.assert_not_called()
 
 
+async def test_notebook_delete_preview_shows_the_resolved_title(mcp_call, mock_client) -> None:
+    """A name resolved by the tiered matcher previews the REAL title (issue #2476)."""
+    mock_client.notebooks.list = AsyncMock(
+        return_value=[
+            FakeNotebook(id=NB_ID, title="İstanbul notları"),
+            FakeNotebook(id=NB2_ID, title="Other"),
+        ]
+    )
+    mock_client.notebooks.delete = AsyncMock(return_value=None)
+    result = await mcp_call("notebook_delete", {"notebook": "istanbul"})
+    assert result.structured_content == {
+        "status": "needs_confirmation",
+        "preview": {"action": "delete_notebook", "notebook_id": NB_ID, "title": "İstanbul notları"},
+    }
+    mock_client.notebooks.delete.assert_not_called()
+
+
 async def test_notebook_delete_with_confirm_deletes(mcp_call, mock_client) -> None:
     mock_client.notebooks.delete = AsyncMock(return_value=None)
     result = await mcp_call("notebook_delete", {"notebook": NB_ID, "confirm": True})

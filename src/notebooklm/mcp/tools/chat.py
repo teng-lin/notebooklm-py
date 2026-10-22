@@ -503,7 +503,7 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             registry = get_chat_tasks(ctx)
             entry = registry.status(task_id) if task_id is not None else None
             if task_id is not None and entry is None:
@@ -600,7 +600,7 @@ def register(mcp: Any) -> None:
             # is enforced transport-neutrally in ``execute_configure`` so the CLI and
             # this tool share one rule.
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             result = await core.execute_configure(
                 client,
                 nb_id,

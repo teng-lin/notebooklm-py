@@ -6,7 +6,7 @@
     "_DOCUMENTED_PUBLIC_IMPORTS": 106
   },
   "tests/_guardrails/_wire_contract.py": {
-    "ENUM_BINDINGS": 156,
+    "ENUM_BINDINGS": 158,
     "ENUM_GAPS": 34,
     "MAPPINGS": 811,
     "PINNED": 174,
@@ -128,7 +128,7 @@
     "_EXEMPLARS": 22
   },
   "tests/_guardrails/test_studio_enum_manifest.py": {
-    "_RPC_ENUM_SNAPSHOT": 290
+    "_RPC_ENUM_SNAPSHOT": 292
   },
   "tests/_guardrails/test_unconfirmed_contract.py": {
     "UNCONFIRMED_METHOD_MANIFEST": 63

@@ -397,8 +397,8 @@ def register(mcp: Any) -> None:
         """Rename a source. Accepts a notebook/source name or ID."""
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
-            src_id = await resolve_source(client, nb_id, source)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
+            src_id = await resolve_source(client, nb_id, source, strict=True)
             result = await mut_core.execute_source_rename(
                 client,
                 mut_core.SourceRenamePlan(notebook_id=nb_id, source_id=src_id, new_title=new_title),
@@ -462,8 +462,8 @@ def register(mcp: Any) -> None:
             # callers don't have to learn the bulk aggregate — only
             # ``sources=`` and the no-arg branch use the new shape.
             if source is not None and coerced is None:
-                nb_id = await resolve_notebook(client, notebook)
-                src_id = await resolve_source(client, nb_id, source)
+                nb_id = await resolve_notebook(client, notebook, strict=confirm)
+                src_id = await resolve_source(client, nb_id, source, strict=confirm)
                 if not confirm:
                     title = title_for_id(await client.sources.list(nb_id), src_id)
                     return needs_confirmation(
@@ -480,7 +480,7 @@ def register(mcp: Any) -> None:
                     confirmed_name_deprecation(notebook, source),
                 )
 
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=confirm)
             snapshot = await client.sources.list(nb_id)
 
             if coerced is None:
@@ -733,7 +733,7 @@ def register(mcp: Any) -> None:
                         "Split into multiple source_add calls."
                     )
                 client = await get_client(ctx)
-                nb_id = await resolve_notebook(client, notebook)
+                nb_id = await resolve_notebook(client, notebook, strict=True)
                 return await _add_url_batch(client, nb_id, urls, allow_internal=allow_internal)
 
             # Single-add mode. The mode checks above guarantee source_type is set; a
@@ -813,7 +813,7 @@ def register(mcp: Any) -> None:
                 content = _select_content(source_type, url=url, text=text, path=path)
 
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
 
             # In-channel bytes file-add (any transport): decode + spool + add, then
             # optionally wait. Takes precedence over the signed-URL broker below.

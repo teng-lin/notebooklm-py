@@ -2241,3 +2241,47 @@ class TestArtifactGenerationExitCodes:
         assert data["error"] is True
         assert data["code"] == "GENERATION_FAILED"
         assert "Transcription error" in data["message"]
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_generate_audio_later_reports_scheduled(runner, monkeypatch, json_output):
+    from notebooklm.types import GenerationStatus
+
+    client = create_mock_client()
+    client.artifacts.generate_audio = AsyncMock(
+        return_value=GenerationStatus(task_id="deferred-audio", status="scheduled")
+    )
+    args = ["generate", "audio", "-n", "nb_123", "--later"]
+    if json_output:
+        args.append("--json")
+    monkeypatch.setattr(
+        helpers_module,
+        "get_auth_tokens",
+        lambda _ctx: auth_module.AuthTokens(cookies={}, csrf_token="csrf", session_id="session"),
+    )
+    result = runner.invoke(cli, args, obj=inject_client(client))
+    assert result.exit_code == 0, result.output
+    assert client.artifacts.generate_audio.await_args.kwargs["later"] is True
+    client.artifacts.wait_for_completion.assert_not_called()
+    if json_output:
+        assert json.loads(result.output) == {"task_id": "deferred-audio", "status": "scheduled"}
+    else:
+        assert "Scheduled:" in result.output
+        assert "Started:" not in result.output
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_generate_audio_later_rejects_wait_before_generation(runner, monkeypatch, json_output):
+    client = create_mock_client()
+    args = ["generate", "audio", "-n", "nb_123", "--later", "--wait"]
+    if json_output:
+        args.append("--json")
+    monkeypatch.setattr(
+        helpers_module,
+        "get_auth_tokens",
+        lambda _ctx: auth_module.AuthTokens(cookies={}, csrf_token="csrf", session_id="session"),
+    )
+    result = runner.invoke(cli, args, obj=inject_client(client))
+    assert result.exit_code != 0
+    assert "--later cannot be combined with --wait" in result.output
+    client.artifacts.generate_audio.assert_not_called()

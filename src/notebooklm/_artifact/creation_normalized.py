@@ -24,6 +24,7 @@ class NormalizedAudio(_NormalizedCreation):
     instructions: str | None
     format_code: int
     length_code: int
+    later: bool = False
 
 
 @dataclass(frozen=True)

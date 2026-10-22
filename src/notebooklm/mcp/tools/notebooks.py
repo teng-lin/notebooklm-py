@@ -146,7 +146,7 @@ def register(mcp: Any) -> None:
         """Rename a notebook. Accepts a notebook name or ID."""
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             result = await core.execute_notebook_rename(
                 client, nb_id, new_title, resolve_notebook_id=passthrough_notebook_id
             )
@@ -162,7 +162,7 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=confirm)
             if not confirm:
                 title = title_for_id(await client.notebooks.list(), nb_id)
                 return needs_confirmation(

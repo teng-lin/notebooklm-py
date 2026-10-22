@@ -143,6 +143,7 @@ class ArtifactStatus(int, Enum):
     * 4 — ``ARTIFACT_STATUS_FAILED`` -> :attr:`FAILED` -> ``"failed"``
     * 5 — ``ARTIFACT_STATUS_SUGGESTED`` -> :attr:`SUGGESTED` -> ``"suggested"``
     * 6 — ``ARTIFACT_PENDING_REVIEW`` -> :attr:`PENDING_REVIEW` -> ``"pending_review"``
+    * 7 — ``ARTIFACT_STATUS_SCHEDULED`` -> :attr:`SCHEDULED` -> ``"scheduled"``
 
     Member *names* describe the lifecycle phase, not the backend spelling, so
     they are stable across this correction: ``PENDING`` has always meant
@@ -169,6 +170,7 @@ class ArtifactStatus(int, Enum):
     # PENDING above; the collision is the backend's own spelling, kept so the
     # member stays greppable against the recovered dump.
     PENDING_REVIEW = 6
+    SCHEDULED = 7  # ARTIFACT_STATUS_SCHEDULED — deferred generation
 
 
 #: Wire spelling of :attr:`ArtifactStatus.SUGGESTED` for the server-side
@@ -189,6 +191,7 @@ _ARTIFACT_STATUS_MAP: dict[int, str] = {
     ArtifactStatus.FAILED: "failed",
     ArtifactStatus.SUGGESTED: "suggested",
     ArtifactStatus.PENDING_REVIEW: "pending_review",
+    ArtifactStatus.SCHEDULED: "scheduled",
 }
 
 
@@ -203,7 +206,7 @@ def artifact_status_to_str(status_code: int) -> str:
 
     Returns:
         String status: "unknown", "pending", "in_progress", "completed",
-        "failed", "suggested", or "pending_review". Returns "unknown" for
+        "failed", "suggested", "pending_review", or "scheduled". Returns "unknown" for
         unrecognized codes (future-proofing), which is also what code ``0``
         (``ARTIFACT_STATUS_UNKNOWN``) maps to.
     """

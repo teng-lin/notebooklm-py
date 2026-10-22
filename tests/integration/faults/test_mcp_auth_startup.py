@@ -19,30 +19,13 @@ from mcp.client.streamable_http import streamable_http_client
 from tests._fault_server.common import ScenarioResult
 from tests._fault_server.http import HttpFaultServer, Reply, Route, Stall
 from tests._fault_server.mcp_startup_cleanup import settle_calls_and_upstream, settle_http_worker
+from tests._fault_server.mcp_startup_report import observe_report
 from tests._fault_server.mcp_stdio_session import stdio_session
 from tests._fault_server.web import NEW_CSRF, NEW_SESSION, homepage_response, list_response
 
 pytestmark = pytest.mark.allow_no_vcr
 _READ = Route.rpc("wXbhsf")
 _ROTATE = Route("POST", "accounts.google.com", "/RotateCookies")
-
-
-async def _observe(path: Path, predicate, *, timeout: float = 10):
-    async def poll():
-        while True:
-            try:
-                contents = path.read_text(encoding="utf-8")
-            except (FileNotFoundError, PermissionError):
-                # The worker publishes via atomic replacement. Windows can deny
-                # a racing open briefly; retry within the observation deadline.
-                pass
-            else:
-                value = json.loads(contents)
-                if predicate(value):
-                    return value
-            await asyncio.sleep(0.025)
-
-    return await asyncio.wait_for(poll(), timeout)
 
 
 @asynccontextmanager
@@ -246,11 +229,11 @@ async def _exercise_stored_auth(
                 request_id = session._dispatcher._next_id + 1
                 first_call = asyncio.create_task(session.call_tool("notebook_list", {}))
                 calls.append(first_call)
-                await _observe(report, lambda state: state["waiters"] >= 1)
+                await observe_report(report, lambda state: state["waiters"] >= 1)
                 if fault == "cancel-waiter":
                     survivor = asyncio.create_task(session.call_tool("notebook_list", {}))
                     calls.append(survivor)
-                    await _observe(report, lambda state: state["waiters"] >= 2)
+                    await observe_report(report, lambda state: state["waiters"] >= 2)
                     # Native task cancellation does not send MCP cancellation.
                     await session.send_notification(
                         types.CancelledNotification(
@@ -262,7 +245,7 @@ async def _exercise_stored_auth(
                     first_call.cancel()
                     with pytest.raises(asyncio.CancelledError):
                         await first_call
-                    cancelled = await _observe(
+                    cancelled = await observe_report(
                         report, lambda state: state["cancelled_waiters"] >= 1
                     )
                     assert cancelled["cancelled_waiters"] == 1
@@ -279,7 +262,7 @@ async def _exercise_stored_auth(
                 assert not response.isError
                 assert response.structuredContent["notebooks"][0]["id"] == "nb-recovered"
                 result.require("healthy_tool_recovery", True)
-        state = await _observe(report, lambda state: state.get("settled"))
+        state = await observe_report(report, lambda state: state.get("settled"))
         assert state["http_closed"] and state["client_closed"]
         assert state["library_clients_created"] == int(fault != "shutdown")
         assert not state["report_errors"]

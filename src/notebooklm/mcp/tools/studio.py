@@ -369,14 +369,16 @@ def register(mcp: Any) -> None:
             )
 
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             # Resolve each source ref the same way every other source-accepting tool
             # does (full-UUID fast-path, 12-char prefix, exact title) instead of
             # forwarding raw — so an agent that passed a prefix/title (the style that
             # works elsewhere) or an empty string gets it validated/resolved, not
             # forwarded to the backend. Omitted/empty stays None (= all sources, #1652).
             resolved_source_ids = (
-                await resolve_sources(client, nb_id, source_ids) if source_ids else None
+                await resolve_sources(client, nb_id, source_ids, strict=True)
+                if source_ids
+                else None
             )
             request = replace(
                 request,
@@ -661,9 +663,9 @@ def register(mcp: Any) -> None:
         with mcp_errors():
             item = item.strip()
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             try:
-                resolved = await resolve_studio_item(client, nb_id, item)
+                resolved = await resolve_studio_item(client, nb_id, item, mutating=True)
             except NotFoundError:
                 # Mirror studio_delete: an absent FULL UUID routes down the artifact
                 # rename path, whose core probes mind_maps.list — preserving
@@ -717,8 +719,8 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
-            art_id = await resolve_artifact(client, nb_id, artifact)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
+            art_id = await resolve_artifact(client, nb_id, artifact, strict=True)
             try:
                 result = await artifact_core.retry_artifact(client, nb_id, art_id)
             except (AuthError, RateLimitError, ServerError, NetworkError, DecodingError):
@@ -813,7 +815,7 @@ def register(mcp: Any) -> None:
         with mcp_errors():
             refs = validate_delete_refs(item, items, confirm=confirm)
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=confirm)
             if refs is not None:
                 payload = await delete_studio_items(client, nb_id, refs, confirm=confirm)
                 return with_confirmation_deprecation(
@@ -824,7 +826,9 @@ def register(mcp: Any) -> None:
                 raise ValidationError("Provide 'item' or 'items'")
             item = item.strip()
             try:
-                resolved = await resolve_studio_item(client, nb_id, item)
+                # A confirmed call deletes with no preview, so it resolves strictly;
+                # the preview resolves loosely and returns the canonical item id.
+                resolved = await resolve_studio_item(client, nb_id, item, mutating=confirm)
             except NotFoundError:
                 # Idempotent-on-missing carve-out: an absent FULL UUID is safe to
                 # send down the artifact delete path (a present note would have been

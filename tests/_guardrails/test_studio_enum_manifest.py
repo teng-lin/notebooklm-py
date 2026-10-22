@@ -54,6 +54,7 @@ _RPC_ENUM_SNAPSHOT: dict[str, dict[str, int]] = {
         "FAILED": 4,
         "SUGGESTED": 5,
         "PENDING_REVIEW": 6,
+        "SCHEDULED": 7,
     },
     # google.rpc.Code, as embedded at index 5 of a wrb.fr entry. Not our
     # numbering to choose — these are the canonical gRPC statuses, so a diff

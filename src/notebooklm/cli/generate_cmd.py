@@ -303,7 +303,7 @@ def _output_generation_outcome(
                 {"task_id": outcome.task_id, "status": "completed", "url": outcome.url}
             )
         else:
-            json_output_response({"task_id": outcome.task_id, "status": "pending"})
+            json_output_response({"task_id": outcome.task_id, "status": outcome.status})
         return
 
     if outcome.status == "completed":
@@ -311,6 +311,9 @@ def _output_generation_outcome(
             console.print(f"[green]{display_name.title()} ready:[/green] {outcome.url}")
         else:
             console.print(f"[green]{display_name.title()} ready[/green]")
+    elif outcome.status == "scheduled":
+        console.print(f"[yellow]Scheduled:[/yellow] {outcome.task_id}")
+        console.print("Generation will run later at a time chosen by the server.")
     else:
         console.print(f"[yellow]Started:[/yellow] {outcome.task_id or outcome.raw_status}")
 
@@ -449,6 +452,7 @@ def generate():
 
 
 @generate.command("audio")
+@click.option("--later", is_flag=True, help="Queue generation for later (usually a few hours).")
 @click.argument("description", default="", required=False)
 @prompt_file_option
 @notebook_option
@@ -480,6 +484,7 @@ def generate_audio(
     notebook_id,
     audio_format,
     audio_length,
+    later,
     language,
     source_ids,
     wait,
@@ -508,6 +513,7 @@ def generate_audio(
         instructions=description or None,
         audio_format=_AUDIO_FORMAT_MAP[audio_format],
         audio_length=_AUDIO_LENGTH_MAP[audio_length],
+        later=later,
         wait=wait,
         timeout=timeout,
         interval=interval,

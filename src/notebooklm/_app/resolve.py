@@ -179,6 +179,78 @@ def resolve_ref(
 
 
 # ---------------------------------------------------------------------------
+# Tiered title matching (issue #2476)
+# ---------------------------------------------------------------------------
+
+
+def caseless_key(text: str) -> str:
+    """Tier-1 key: Unicode canonical caseless form (NFD, casefold, NFC).
+
+    Composed and decomposed spellings compare equal (``"café"`` vs ``"cafe"`` +
+    U+0301), and so do case variants, including ``ß``/``SS`` and final sigma.
+    Accents stay significant, and so does Turkish ``İ``: its folded form keeps
+    the combining dot, so ``"İstanbul"`` and ``"istanbul"`` differ here.
+    """
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFD", text).casefold())
+
+
+def accentless_key(text: str) -> str:
+    """Tier-2 key: accent-insensitive form (NFKD, casefold, drop ``Mn`` marks, NFC).
+
+    A stdlib stand-in for ICU primary strength: every nonspacing mark is dropped,
+    so ``"İstanbul"`` meets ``"istanbul"`` and ``"café"`` meets ``"cafe"``. Base
+    letters are kept, so dotless ``ı`` (U+0131) never equals ``i``.
+    """
+    decomposed = unicodedata.normalize("NFKD", text).casefold()
+    stripped = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return unicodedata.normalize("NFC", stripped)
+
+
+def match_title(
+    token: str,
+    items: Iterable[Any],
+    *,
+    title_of: Callable[[Any], str | None],
+    accent_insensitive: bool = True,
+) -> tuple[list[Any], str | None]:
+    """Return the items whose title matches ``token``, and how they matched.
+
+    Tries, in order: tier-1 exact, tier-1 prefix, tier-2 exact, tier-2 prefix
+    (see :func:`caseless_key` and :func:`accentless_key`), and stops at the first
+    step that matches anything. So a tier-1 hit always beats an accent-insensitive
+    one, and tier 2 only rescues a query that would otherwise miss. The second
+    value is ``"title"`` (exact) or ``"prefix"``, or ``None`` with ``[]`` on a miss.
+    Callers decide what a single match or several matches mean (several must be
+    reported as ambiguous, never resolved silently). An item without a title keys
+    to ``""``. A token whose key is empty never prefix-matches, and a non-empty
+    token that folds to ``""`` (only combining marks) skips that tier.
+
+    ``accent_insensitive=False`` runs tier 1 only, for callers that change data
+    and must not act on an accent-insensitive guess.
+
+    The tier-1 prefix step compares NFC strings, so a combining mark with no
+    precomposed form stays a separate character: ``"i"`` prefix-matches
+    ``"İstanbul"``, because ``İ`` folds to ``i`` + U+0307, while ``"istanbul"``
+    does not.
+    """
+    titled = [(title_of(item) or "", item) for item in items]
+    keys = (caseless_key, accentless_key) if accent_insensitive else (caseless_key,)
+    for key in keys:
+        token_key = key(token)
+        if token and not token_key:
+            continue
+        keyed = [(key(title), item) for title, item in titled]
+        exact = [item for title_key, item in keyed if title_key == token_key]
+        if exact:
+            return exact, "title"
+        if token_key:
+            prefix = [item for title_key, item in keyed if title_key.startswith(token_key)]
+            if prefix:
+                return prefix, "prefix"
+    return [], None
+
+
+# ---------------------------------------------------------------------------
 # Near-miss suggestions for a failed *name* lookup (issue #1787)
 # ---------------------------------------------------------------------------
 
@@ -198,16 +270,16 @@ _MAX_NEAR_MISS_CANDIDATES = 3
 
 
 def _normalize_for_match(text: str) -> str:
-    """Fold a title/token for punctuation- and case-insensitive comparison.
+    """Fold a title/token for punctuation-, case- and accent-insensitive comparison.
 
-    NFKC folds compatibility forms (e.g. a non-breaking space to a plain space),
-    every dash variant collapses to a plain hyphen, runs of whitespace collapse
-    to a single space, and the result is casefolded. This is what lets a hyphen
-    typed for an em-dash — or a normal space typed for a non-breaking one — still
-    match the real title.
+    Builds on the tier-2 :func:`accentless_key` (whose NFKD step folds
+    compatibility forms, e.g. a non-breaking space to a plain space), then every
+    dash variant collapses to a plain hyphen and runs of whitespace collapse to a
+    single space. This is what lets a hyphen typed for an em-dash — or a normal
+    space typed for a non-breaking one — still match the real title.
     """
-    folded = unicodedata.normalize("NFKC", text).translate(_DASH_TRANSLATION)
-    return " ".join(folded.split()).casefold()
+    folded = accentless_key(text).translate(_DASH_TRANSLATION)
+    return " ".join(folded.split())
 
 
 def near_miss_candidates(

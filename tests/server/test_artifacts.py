@@ -142,6 +142,7 @@ def test_poll_transitions_to_completed(authed_client: TestClient, fake_client: F
         GenerationState.UNKNOWN,
         GenerationState.SUGGESTED,
         GenerationState.PENDING_REVIEW,
+        GenerationState.SCHEDULED,
     ],
     ids=lambda s: s.value,
 )

@@ -118,6 +118,7 @@ def normalize_creation(
             _text(request.instructions, "instructions", policy),
             _code(request.audio_format, AudioFormat.DEEP_DIVE, "audio_format", strict=strict),
             _code(request.audio_length, AudioLength.DEFAULT, "audio_length", strict=strict),
+            request.later,
         )
     if isinstance(request, raw.VideoCreationRequest):
         prompt = (

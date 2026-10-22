@@ -69,7 +69,7 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             result = await execute_source_add_play_book(
                 client,
                 SourceAddPlayBookPlan(

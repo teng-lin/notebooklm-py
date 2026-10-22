@@ -40,6 +40,7 @@ enum ArtifactStatus {
   ARTIFACT_STATUS_FAILED = 4;
   ARTIFACT_STATUS_SUGGESTED = 5;
   ARTIFACT_PENDING_REVIEW = 6;
+  ARTIFACT_STATUS_SCHEDULED = 7; // evidence: docs/android/enums.txt
 }
 
 enum AppType {

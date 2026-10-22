@@ -1814,6 +1814,12 @@ status = await client.artifacts.generate_audio(
     language="en",
 )
 
+# Queue an Audio Overview for later (Web and Android)
+status = await client.artifacts.generate_audio(notebook_id, later=True)
+assert status.is_scheduled  # status.status == "scheduled"; not terminal
+# The server chooses when generation runs, usually a few hours later.
+# Account quota and feature availability still apply.
+
 # Video
 status = await client.artifacts.generate_video(
     notebook_id,
@@ -1871,6 +1877,11 @@ status = await with_rate_limit_retry(
 ```
 
 **Waiting for Completion:**
+
+Scheduled artifacts remain nonterminal. `wait_for_completion()` also waits
+while an artifact is `scheduled`, so its ordinary timeout may expire before
+the server starts a job queued with `later=True`. Prefer checking
+`poll_status()` later, or choose a timeout that covers the deferred delay.
 
 ```python
 from notebooklm import ArtifactTimeoutError
@@ -2942,6 +2953,10 @@ class Artifact:
         """Actively generating (status code 2)."""
 
     @property
+    def is_scheduled(self) -> bool:
+        """Deferred generation queued for a server-selected time (status code 7)."""
+
+    @property
     def is_failed(self) -> bool:
         """Generation failed (status code 4)."""
 
@@ -2992,6 +3007,7 @@ backend label verbatim while `report_format` maps labels the client recognizes.
 | 4 | `FAILED` | `"failed"` | Generation failed |
 | 5 | `SUGGESTED` | `"suggested"` | A suggestion row, not a real artifact; filtered out of listings server-side |
 | 6 | `PENDING_REVIEW` | `"pending_review"` | Backend state whose semantics are unconfirmed; modeled so it stays distinguishable from `"unknown"` |
+| 7 | `SCHEDULED` | `"scheduled"` | Deferred generation queued for a server-selected time |
 
 **Corrected in [#2127](https://github.com/teng-lin/notebooklm-py/issues/2127):**
 codes 1 and 2 were transposed relative to the backend — the library read 1 as
@@ -3039,7 +3055,7 @@ Returned by `poll_status`, `wait_for_completion`, and most artifact generation m
 @dataclass
 class GenerationStatus:
     task_id: str  # Same value as Artifact.id once complete
-    status: GenerationState  # str-Enum; see the member table below for all nine values
+    status: GenerationState  # str-Enum; see the member table below for all ten values
     url: str | None = None  # Populated for media artifacts when status == "completed"
     error: str | None = None
     error_code: str | None = None  # e.g. "USER_DISPLAYABLE_ERROR" for rate limits
@@ -3060,6 +3076,10 @@ class GenerationStatus:
     @property
     def is_pending(self) -> bool:
         """Check if generation is pending."""
+
+    @property
+    def is_scheduled(self) -> bool:
+        """Check if generation is queued for later."""
 
     @property
     def is_not_found(self) -> bool:
@@ -3100,6 +3120,7 @@ working unchanged. **Prefer the `.is_*` predicates** (`status.is_complete`,
 | `UNKNOWN` | `"unknown"` | status code 0, plus any code outside the backend enum (future-proofing) |
 | `SUGGESTED` | `"suggested"` | status code 5 — a suggestion row; listings filter these out server-side |
 | `PENDING_REVIEW` | `"pending_review"` | status code 6 — backend state with unconfirmed semantics ([#2127](https://github.com/teng-lin/notebooklm-py/issues/2127)) |
+| `SCHEDULED` | `"scheduled"` | status code 7 — audio created with `later=True`; nonterminal |
 | `REMOVED` | `"removed"` | Legacy compatibility value; no longer emitted by polling |
 
 `GenerationState.is_terminal` is the single authority for "generation ended":

@@ -1756,6 +1756,7 @@ ENUM_BINDINGS: dict[str, tuple[str, dict[int, str]]] = {
             4: "ARTIFACT_STATUS_FAILED",
             5: "ARTIFACT_STATUS_SUGGESTED",
             6: "ARTIFACT_PENDING_REVIEW",
+            7: "ARTIFACT_STATUS_SCHEDULED",
         },
     ),
     # rpc/types.py::QuizQuantity. Shared by quiz AND flashcards; the two backend

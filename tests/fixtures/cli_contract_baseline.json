@@ -4454,6 +4454,24 @@
       "class": "Command",
       "params": [
         {
+          "default": false,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Queue generation for later (usually a few hours).",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "later",
+          "opts": [
+            "--later"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
           "kind": "argument",
           "name": "description",
           "nargs": 1,

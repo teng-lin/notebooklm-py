@@ -134,6 +134,46 @@ async def test_title_match_casefold_non_ascii() -> None:
     assert await resolve_notebook(client, "STRASSE") == "deadbeef"
 
 
+# --------------------------------------------------------------------------- #
+# tiered title matching (issue #2476): canonical caseless, then accent-insensitive
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("token", ["istanbul notları", "ISTANBUL", "istanbul"])
+async def test_dotted_capital_i_title_resolves(token: str) -> None:
+    client = _client(notebooks=[_NB("deadbeef", "İstanbul notları"), _NB("cafef00d", "Other")])
+    assert await resolve_notebook(client, token) == "deadbeef"
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"), [("resume", "deadbeef"), ("Résumé", "cafef00d"), ("RÉSUMÉ", "cafef00d")]
+)
+async def test_tier1_exact_title_beats_an_accent_insensitive_match(
+    token: str, expected: str
+) -> None:
+    client = _client(notebooks=[_NB("deadbeef", "Resume"), _NB("cafef00d", "Résumé")])
+    assert await resolve_notebook(client, token) == expected
+
+
+async def test_two_accent_insensitive_matches_raise_rather_than_pick() -> None:
+    client = _client(notebooks=[_NB("deadbeef", "Resume"), _NB("cafef00d", "Résumé")])
+    with pytest.raises(AmbiguousIdError) as caught:
+        await resolve_notebook(client, "Resumé")
+    assert set(caught.value.candidate_ids) == {"deadbeef", "cafef00d"}
+
+
+async def test_accent_insensitive_tier_folds_turkish_cedilla() -> None:
+    """Tier 2 drops marks, so ``şık`` reaches a ``sık`` title (accepted trade-off)."""
+    client = _client(notebooks=[_NB("deadbeef", "sık"), _NB("cafef00d", "Other")])
+    assert await resolve_notebook(client, "şık") == "deadbeef"
+
+
+async def test_dotless_i_never_matches_i() -> None:
+    client = _client(notebooks=[_NB("deadbeef", "ılık"), _NB("cafef00d", "IĞDIR")])
+    with pytest.raises(NotebookNotFoundError):
+        await resolve_notebook(client, "ilik")
+    with pytest.raises(NotebookNotFoundError):
+        await resolve_notebook(client, "ığdır")
+
+
 async def test_ambiguous_prefix_raises_with_candidates() -> None:
     client = _client(notebooks=[_NB("deadbeef01", "A"), _NB("deadbeef02", "B")])
     with pytest.raises(AmbiguousIdError) as caught:
@@ -727,3 +767,15 @@ def test_partition_source_refs_canonicalizes_ids_and_deduplicates_misses() -> No
     )
     assert resolved == [FULL_A]
     assert [item["source_id"] for item in missing] == [FULL_B.upper(), "Missing"]
+
+
+async def test_dotted_capital_i_title_resolves_for_every_resolver_family() -> None:
+    """Sources, notes, and artifacts share ``_resolve_by_title`` with notebooks."""
+    client = _client(
+        sources=[_Src("ab0001cdef", "İstanbul notları")],
+        artifacts=[_Art("ab0002cdef", "İstanbul notları")],
+        notes=[_Note("ab0003cdef", "İstanbul notları")],
+    )
+    assert await resolve_source(client, "nb-1", "istanbul notları") == "ab0001cdef"
+    assert await resolve_artifact(client, "nb-1", "istanbul notları") == "ab0002cdef"
+    assert await resolve_note(client, "nb-1", "istanbul notları") == "ab0003cdef"

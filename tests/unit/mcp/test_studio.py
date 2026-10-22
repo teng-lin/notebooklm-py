@@ -2192,6 +2192,30 @@ async def test_studio_delete_confirm_false_preview_shape(mcp_call, mock_client) 
     mock_client.notes.delete.assert_not_called()
 
 
+async def test_studio_delete_preview_shows_the_resolved_title(mcp_call, mock_client) -> None:
+    """A tiered-matcher hit previews the REAL item and title (issue #2476)."""
+    art = _completed_artifact(_ART_FULL, "İstanbul notları")
+    mock_client.notes.list = AsyncMock(return_value=[])
+    mock_client.artifacts.list = AsyncMock(return_value=[art])
+    mock_client.artifacts.delete = AsyncMock()
+    result = await mcp_call("studio_delete", {"notebook": NB_ID, "item": "istanbul"})
+    assert result.structured_content == {
+        "status": "needs_confirmation",
+        "preview": {
+            "action": "delete_studio_item",
+            "notebook_id": NB_ID,
+            "item_id": _ART_FULL,
+            "type": "audio",
+            "title": "İstanbul notları",
+        },
+    }
+    batch = await mcp_call("studio_delete", {"notebook": NB_ID, "items": ["istanbul"]})
+    assert batch.structured_content["preview"]["items"] == [
+        {"item_id": _ART_FULL, "type": "audio", "title": "İstanbul notları"}
+    ]
+    mock_client.artifacts.delete.assert_not_called()
+
+
 async def test_studio_delete_preview_canonical_target_survives_title_replacement(
     mcp_call, mock_client
 ) -> None:

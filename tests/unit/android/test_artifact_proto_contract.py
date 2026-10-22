@@ -220,6 +220,7 @@ def test_reachable_artifact_enum_names_and_numbers_are_exhaustive() -> None:
         "ARTIFACT_STATUS_FAILED": 4,
         "ARTIFACT_STATUS_SUGGESTED": 5,
         "ARTIFACT_PENDING_REVIEW": 6,
+        "ARTIFACT_STATUS_SCHEDULED": 7,
     }
     assert _enum_values(artifacts_pb2.AppType) == {
         "APP_TYPE_UNSPECIFIED": 0,

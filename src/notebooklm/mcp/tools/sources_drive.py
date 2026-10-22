@@ -56,7 +56,7 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             result = await mut_core.execute_source_add_drive_file(
                 client,
                 mut_core.SourceAddDriveFilePlan(

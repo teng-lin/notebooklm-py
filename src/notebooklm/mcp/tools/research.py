@@ -130,7 +130,7 @@ def register(mcp: Any) -> None:
             if source == "drive" and mode == "deep":
                 raise ValidationError("mode 'deep' is web-only; use source 'web' for deep research")
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             result = await client.research.start(nb_id, query, source, mode)
             # ``poll_task_id`` is the one id status/import/cancel drive off, chosen
             # by mode (NOT ``report_id or task_id`` — that would wrongly pick a
@@ -358,7 +358,7 @@ def register(mcp: Any) -> None:
                 raise ValidationError("poll_task_id is required to cancel a research run")
             poll_task_id = poll_task_id.strip()
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             # Preflight (``poll_task_id`` as the discriminator → typed NOT_FOUND
             # sentinel, never raises). Only an already-TERMINAL run
             # (``completed`` / ``failed``) is left alone — those states are stable,
@@ -443,7 +443,7 @@ def register(mcp: Any) -> None:
                 raise ValidationError("max_sources must be >= 1 (omit it to import all)")
             poll_task_id = poll_task_id.strip()
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook)
+            nb_id = await resolve_notebook(client, notebook, strict=True)
             # Poll → optional cited/max filter → verified import share one
             # ``client.operation`` so a configured aggregate deadline cannot
             # restart between the read and the mutation. REST import drives the

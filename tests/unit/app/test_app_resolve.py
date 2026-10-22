@@ -9,6 +9,9 @@ import pytest
 from notebooklm._app.resolve import (
     AmbiguousIdError,
     Resolution,
+    accentless_key,
+    caseless_key,
+    match_title,
     near_miss_candidates,
     resolve_ref,
     validate_id,
@@ -232,3 +235,84 @@ def test_near_miss_fuzzy_surfaces_all_items_sharing_a_normalized_title() -> None
         "Report Q3", list(reversed(items)), id_of=_id_of, title_of=_title_of
     )
     assert {c["id"] for c in reversed_got} == {"em", "hy"}
+
+
+# --- title keys and the tiered title matcher (issue #2476) ------------------
+
+#: Turkish capital dotted I typed decomposed: ``I`` + U+0307 COMBINING DOT ABOVE.
+DOTTED_I_DECOMPOSED = "I\u0307"
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "caseless_equal", "accentless_equal"),
+    [
+        pytest.param("İstanbul", "istanbul", False, True, id="dotted-I-vs-i"),
+        pytest.param("İstanbul", f"{DOTTED_I_DECOMPOSED}stanbul", True, True, id="dotted-I-nfd"),
+        pytest.param("café", "cafe\u0301", True, True, id="composed-vs-decomposed"),
+        pytest.param("Straße", "STRASSE", True, True, id="sharp-s"),
+        pytest.param("ΟΔΟΣ", "οδος", True, True, id="final-sigma"),
+        pytest.param("ılık", "ilik", False, False, id="dotless-i-is-not-i"),
+        pytest.param("café", "cafe", False, True, id="accent"),
+        pytest.param("şık", "sık", False, True, id="s-cedilla"),
+        pytest.param("çam", "cam", False, True, id="c-cedilla"),
+        pytest.param("IĞDIR", "ığdır", False, False, id="ascii-I-is-not-dotless-i"),
+    ],
+)
+def test_title_keys(left: str, right: str, caseless_equal: bool, accentless_equal: bool) -> None:
+    assert (caseless_key(left) == caseless_key(right)) is caseless_equal
+    assert (accentless_key(left) == accentless_key(right)) is accentless_equal
+
+
+def _titled(*titles: str | None) -> list[Item]:
+    return [Item(id=f"id-{index}", title=title) for index, title in enumerate(titles)]
+
+
+def test_match_title_tier1_exact_beats_tier2() -> None:
+    items = _titled("Resume", "Résumé")
+    assert match_title("resume", items, title_of=_title_of) == ([items[0]], "title")
+    assert match_title("RÉSUMÉ", items, title_of=_title_of) == ([items[1]], "title")
+
+
+def test_match_title_tier2_rescues_a_tier1_miss() -> None:
+    items = _titled("İstanbul notları", "Other")
+    assert match_title("istanbul notları", items, title_of=_title_of) == ([items[0]], "title")
+    assert match_title("istanbul", items, title_of=_title_of) == ([items[0]], "prefix")
+
+
+def test_match_title_returns_every_tier2_match_for_the_caller_to_reject() -> None:
+    items = _titled("Resume", "Résumé")
+    assert match_title("Resumé", items, title_of=_title_of) == (items, "title")
+
+
+def test_match_title_tier1_ambiguity_does_not_fall_through_to_tier2() -> None:
+    items = _titled("Report A", "Report B", "Réport")
+    assert match_title("report", items, title_of=_title_of) == (items[:2], "prefix")
+
+
+def test_match_title_tier1_prefix_runs_before_tier2_exact() -> None:
+    """The order is tier-1 exact, tier-1 prefix, tier-2 exact, tier-2 prefix."""
+    items = _titled("Café", "Cafeteria")
+    assert match_title("cafe", items, title_of=_title_of) == ([items[1]], "prefix")
+
+
+def test_match_title_empty_key_never_prefix_matches() -> None:
+    """A token that folds to ``""`` (only combining marks) must not match every title."""
+    items = _titled("Weekly Report", None)
+    assert match_title("\u0301", items, title_of=_title_of) == ([], None)
+    # An empty token still equals an untitled item; callers reject it upstream.
+    assert match_title("", items, title_of=_title_of) == ([items[1]], "title")
+
+
+def test_match_title_miss() -> None:
+    assert match_title("absent", _titled("Notes"), title_of=_title_of) == ([], None)
+
+
+def test_near_miss_dotted_i_prefix_matches_and_keeps_original_title() -> None:
+    items = [Item(id="istanbul-id", title="İstanbul notları ve gezi planı")]
+    got = near_miss_candidates("istanbul", items, id_of=_id_of, title_of=_title_of)
+    assert got == [{"id": "istanbul-id", "title": "İstanbul notları ve gezi planı"}]
+
+
+def test_near_miss_keeps_dotless_i_distinct() -> None:
+    items = [Item(id="dotless-id", title="ılık çay ve kahvaltı tarifleri")]
+    assert near_miss_candidates("ilik", items, id_of=_id_of, title_of=_title_of) == []
