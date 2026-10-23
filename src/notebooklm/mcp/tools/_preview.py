@@ -2,11 +2,11 @@
 
 The single-type delete tools (``notebook_delete`` / ``source_delete``) and the
 confirm-gated sharing tools build a ``needs_confirmation`` preview that includes
-the resolved resource's title. Each fetches its own domain list (notebooks /
-sources), but the id-to-title match over that list is identical, so it lives
-here. (Cross-type ``studio_delete`` gets its preview title straight off the
-merged-list resolution instead.) The sharing previews read the notebook title
-best-effort through :func:`notebook_title_or_none`.
+the resolved resource's title. A name ref reuses the list its resolution read; a
+full-UUID ref (resolved without a list) reads the list here. Either way the
+id-to-title match is identical, so it lives here, and the read is best-effort
+through :func:`preview_title`. (Cross-type ``studio_delete`` gets its preview
+title straight off the merged-list resolution instead.)
 
 This module imports NO ``click`` / ``rich`` / ``cli``.
 """
@@ -14,14 +14,14 @@ This module imports NO ``click`` / ``rich`` / ``cli``.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 if TYPE_CHECKING:
     from ...client import NotebookLMClient
 
-__all__ = ["notebook_title_or_none", "title_for_id"]
+__all__ = ["notebook_title_or_none", "preview_title", "title_for_id"]
 
 logger = logging.getLogger(__name__)
 
@@ -58,16 +58,29 @@ def title_for_id(items: Sequence[Any], target_id: str) -> str | None:
     return None if match is None else match.title
 
 
-async def notebook_title_or_none(client: NotebookLMClient, notebook_id: str) -> str | None:
-    """Return the notebook's title for a sharing preview, or ``None`` if unreadable.
+async def preview_title(
+    items: Sequence[Any] | None,
+    fetch: Callable[[], Awaitable[Sequence[Any]]],
+    target_id: str,
+) -> str | None:
+    """Return ``target_id``'s title for a confirmation preview, or ``None`` if unreadable.
 
-    The sharing previews add the title only so a name match is visible before
-    anything is shared or removed. A failed ``notebooks.list`` read must not turn
-    a working preview into an error, so any ``Exception`` yields ``None`` (logged
-    at debug level). Cancellation is a ``BaseException`` and still propagates.
+    ``items`` is the list the resolution already read; ``None`` (a full-UUID ref
+    lists nothing) calls ``fetch`` instead. A preview adds the title only so a
+    name match is visible before anything changes. A failed list read must not
+    turn a working preview into an error, so any ``Exception`` yields ``None``
+    (logged at debug level). Cancellation is a ``BaseException`` and still
+    propagates.
     """
     try:
-        return title_for_id(await client.notebooks.list(), notebook_id)
+        return title_for_id(await fetch() if items is None else items, target_id)
     except Exception:
-        logger.debug("Notebook title lookup for a sharing preview failed", exc_info=True)
+        logger.debug("Title lookup for a confirmation preview failed", exc_info=True)
         return None
+
+
+async def notebook_title_or_none(
+    client: NotebookLMClient, notebook_id: str, *, items: Sequence[Any] | None = None
+) -> str | None:
+    """:func:`preview_title` over the notebook list."""
+    return await preview_title(items, client.notebooks.list, notebook_id)

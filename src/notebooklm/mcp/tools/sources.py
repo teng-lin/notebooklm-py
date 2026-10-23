@@ -69,6 +69,7 @@ from .._resolve import (
     reject_non_canonical_id,
     resolve_notebook,
     resolve_source,
+    resolve_source_listed,
     resolve_sources,
 )
 from ._content_sanity import _annotate_thin_warnings
@@ -80,7 +81,7 @@ from ._fileupload import (
     _spool_stdio_upload,
 )
 from ._passthrough import passthrough_child_id
-from ._preview import title_for_id
+from ._preview import preview_title, title_for_id
 from ._waitagg import _aggregate_wait_outcomes, _wait_all_sources
 
 if TYPE_CHECKING:
@@ -463,9 +464,9 @@ def register(mcp: Any) -> None:
             # ``sources=`` and the no-arg branch use the new shape.
             if source is not None and coerced is None:
                 nb_id = await resolve_notebook(client, notebook, strict=confirm)
-                src_id = await resolve_source(client, nb_id, source, strict=confirm)
+                src_id, listed = await resolve_source_listed(client, nb_id, source, strict=confirm)
                 if not confirm:
-                    title = title_for_id(await client.sources.list(nb_id), src_id)
+                    title = await preview_title(listed, lambda: client.sources.list(nb_id), src_id)
                     return needs_confirmation(
                         {
                             "action": "delete_source",

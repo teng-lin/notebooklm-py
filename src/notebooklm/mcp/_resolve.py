@@ -85,7 +85,9 @@ __all__ = [
     "resolve_artifact",
     "resolve_note",
     "resolve_notebook",
+    "resolve_notebook_listed",
     "resolve_source",
+    "resolve_source_listed",
     "resolve_sources",
 ]
 
@@ -332,15 +334,25 @@ async def resolve_notebook(client: NotebookLMClient, ref: str, *, strict: bool =
         NotebookNotFoundError: No notebook matches ``ref``.
         AmbiguousIdError: ``ref`` matches more than one notebook by prefix or title.
     """
+    return (await resolve_notebook_listed(client, ref, strict=strict))[0]
+
+
+async def resolve_notebook_listed(
+    client: NotebookLMClient, ref: str, *, strict: bool = False
+) -> tuple[str, Sequence[Any] | None]:
+    """:func:`resolve_notebook`, plus the notebook list it read (``None`` if it read none).
+
+    A preview reuses the list for the title instead of listing a second time.
+    """
     ref = validate_id(ref, "notebook")
     reject_non_canonical_id(ref, "notebook")
     # Full UUID fast-path — never list.
     if FULL_ID_PATTERN.fullmatch(ref):
-        return ref.lower()
+        return ref.lower(), None
     items = await client.notebooks.list()
     if _HEX_ISH.match(ref):
-        return _resolve_hex(ref, items, not_found=NotebookNotFoundError, strict=strict)
-    return _resolve_by_title(ref, items, not_found=NotebookNotFoundError, strict=strict)
+        return _resolve_hex(ref, items, not_found=NotebookNotFoundError, strict=strict), items
+    return _resolve_by_title(ref, items, not_found=NotebookNotFoundError, strict=strict), items
 
 
 async def resolve_source(
@@ -366,15 +378,22 @@ async def resolve_source(
         SourceNotFoundError: No source in the notebook matches ``ref``.
         AmbiguousIdError: ``ref`` matches more than one source by prefix or title.
     """
+    return (await resolve_source_listed(client, notebook_id, ref, strict=strict))[0]
+
+
+async def resolve_source_listed(
+    client: NotebookLMClient, notebook_id: str, ref: str, *, strict: bool = False
+) -> tuple[str, Sequence[Any] | None]:
+    """:func:`resolve_source`, plus the source list it read (``None`` if it read none)."""
     ref = validate_id(ref, "source")
     reject_non_canonical_id(ref, "source")
     # Full UUID fast-path — never list.
     if FULL_ID_PATTERN.fullmatch(ref):
-        return ref.lower()
+        return ref.lower(), None
     items = await client.sources.list(notebook_id)
     if _HEX_ISH.match(ref):
-        return _resolve_hex(ref, items, not_found=SourceNotFoundError, strict=strict)
-    return _resolve_by_title(ref, items, not_found=SourceNotFoundError, strict=strict)
+        return _resolve_hex(ref, items, not_found=SourceNotFoundError, strict=strict), items
+    return _resolve_by_title(ref, items, not_found=SourceNotFoundError, strict=strict), items
 
 
 async def resolve_sources(

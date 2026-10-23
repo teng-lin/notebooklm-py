@@ -468,9 +468,9 @@ async def test_sharing_preview_canonical_parent_survives_name_replacement(
         {"notebook": NB_ID, "email": "a@b.com", "confirm": True},
     )
     mock_client.sharing.remove_user.assert_awaited_once_with(NB_ID, "a@b.com")
-    # Two lists, both in the preview (resolve the name, then read its title); the
+    # One list, in the preview: resolving the name also yields its title. The
     # confirmed call by canonical id lists nothing.
-    assert mock_client.notebooks.list.await_count == 2
+    assert mock_client.notebooks.list.await_count == 1
 
 
 @pytest.mark.parametrize(

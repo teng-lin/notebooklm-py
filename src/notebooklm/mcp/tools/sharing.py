@@ -47,7 +47,7 @@ from .._confirm import (
 )
 from .._context import get_client
 from .._errors import mcp_errors
-from .._resolve import resolve_notebook
+from .._resolve import resolve_notebook, resolve_notebook_listed
 from ._preview import notebook_title_or_none
 
 # The enum→label projection (``_label`` / ``_status_payload``) + its label maps
@@ -119,7 +119,7 @@ def register(mcp: Any) -> None:
             # Only an unconfirmed public widening can end in a preview; every other
             # call writes, so it resolves strictly (no accent-insensitive match).
             gated = public is True and not confirm
-            nb_id = await resolve_notebook(client, notebook, strict=not gated)
+            nb_id, listed = await resolve_notebook_listed(client, notebook, strict=not gated)
             if gated:
                 # Gate only a genuine widening (restricted → anyone-with-link). Read
                 # current state to skip a spurious confirm on an already-public
@@ -131,7 +131,7 @@ def register(mcp: Any) -> None:
                     preview: dict[str, Any] = {
                         "action": "share_set_access",
                         "notebook_id": nb_id,
-                        "title": await notebook_title_or_none(client, nb_id),
+                        "title": await notebook_title_or_none(client, nb_id, items=listed),
                         "change": "restricted -> anyone_with_link",
                     }
                     if view_level is not None:
@@ -213,13 +213,13 @@ def register(mcp: Any) -> None:
             elif email is not None and not email.strip():
                 raise ValidationError("'email' must be non-empty")
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook, strict=confirm)
+            nb_id, listed = await resolve_notebook_listed(client, notebook, strict=confirm)
             if not confirm:
                 return needs_confirmation(
                     {
                         "action": "share_set_user",
                         "notebook_id": nb_id,
-                        "title": await notebook_title_or_none(client, nb_id),
+                        "title": await notebook_title_or_none(client, nb_id, items=listed),
                         **(
                             {"grants": [grant.model_dump() for grant in grants]}
                             if grants is not None
@@ -263,9 +263,9 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook, strict=confirm)
+            nb_id, listed = await resolve_notebook_listed(client, notebook, strict=confirm)
             if not confirm:
-                title = await notebook_title_or_none(client, nb_id)
+                title = await notebook_title_or_none(client, nb_id, items=listed)
                 return needs_confirmation(
                     {
                         "action": "remove_share_user",

@@ -34,9 +34,9 @@ from .._confirm import (
 from .._context import get_client
 from .._errors import mcp_errors
 from .._paginate import DEFAULT_LIMIT, paginate
-from .._resolve import resolve_notebook
+from .._resolve import resolve_notebook, resolve_notebook_listed
 from ._passthrough import passthrough_notebook_id
-from ._preview import title_for_id
+from ._preview import notebook_title_or_none
 
 
 def register(mcp: Any) -> None:
@@ -162,9 +162,9 @@ def register(mcp: Any) -> None:
         """
         with mcp_errors():
             client = await get_client(ctx)
-            nb_id = await resolve_notebook(client, notebook, strict=confirm)
+            nb_id, listed = await resolve_notebook_listed(client, notebook, strict=confirm)
             if not confirm:
-                title = title_for_id(await client.notebooks.list(), nb_id)
+                title = await notebook_title_or_none(client, nb_id, items=listed)
                 return needs_confirmation(
                     {"action": "delete_notebook", "notebook_id": nb_id, "title": title}
                 )

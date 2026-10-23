@@ -911,7 +911,7 @@ async def test_source_delete_preview_canonical_id_survives_title_replacement(
     )
     assert "deprecation" not in confirmed.structured_content
     mock_client.sources.delete.assert_awaited_once_with(NB_ID, SRC_ID)
-    assert mock_client.sources.list.await_count == 2
+    assert mock_client.sources.list.await_count == 1
 
 
 async def test_source_delete_confirmed_legacy_name_warns_after_success(

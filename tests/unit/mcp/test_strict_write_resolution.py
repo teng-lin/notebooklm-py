@@ -11,6 +11,7 @@ title prefix, and that previews and reads keep every tier.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -28,7 +29,10 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     ValidationError,
 )
 from notebooklm.mcp._resolve import _resolve_by_title  # noqa: E402 - after importorskip guard
-from notebooklm.mcp.tools._preview import title_for_id  # noqa: E402 - after importorskip guard
+from notebooklm.mcp.tools._preview import (  # noqa: E402 - after importorskip guard
+    notebook_title_or_none,
+    title_for_id,
+)
 from notebooklm.mcp.tools._studio_items import (  # noqa: E402 - after importorskip guard
     _match_studio_ref,
 )
@@ -318,6 +322,46 @@ async def test_sharing_preview_survives_a_failed_title_read(
     assert result.structured_content["preview"]["notebook_id"] == NB_ID
     assert result.structured_content["preview"]["title"] is None
     getattr(mock_client.sharing, mutation).assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tool", "args", "domain"),
+    [
+        ("notebook_delete", {"notebook": NB_ID}, "notebooks"),
+        ("source_delete", {"notebook": NB_ID, "source": SRC_ID}, "sources"),
+    ],
+)
+async def test_delete_preview_survives_a_failed_title_read(
+    mcp_call, mock_client, tool: str, args: dict[str, Any], domain: str
+) -> None:
+    """The delete previews read the title best-effort, like the sharing previews."""
+    getattr(mock_client, domain).list = AsyncMock(side_effect=RPCError("list failed"))
+    getattr(mock_client, domain).delete = AsyncMock()
+    result = await mcp_call(tool, args)
+    assert result.structured_content["status"] == "needs_confirmation"
+    assert result.structured_content["preview"]["title"] is None
+    getattr(mock_client, domain).delete.assert_not_called()
+
+
+@pytest.mark.parametrize(("tool", "args", "mutation"), SHARING_PREVIEWS)
+async def test_sharing_preview_by_name_lists_once(
+    mcp_call, mock_client, tool: str, args: dict[str, Any], mutation: str
+) -> None:
+    """The title comes from the list that resolved the name, not a second read."""
+    mock_client.notebooks.list = AsyncMock(return_value=[Titled(NB_ID, "Team Notes")])
+    mock_client.sharing.get_status = AsyncMock(return_value=SimpleNamespace(is_public=False))
+    setattr(mock_client.sharing, mutation, AsyncMock())
+    result = await mcp_call(tool, {"notebook": "Team Notes", **args})
+    assert result.structured_content["preview"]["title"] == "Team Notes"
+    assert mock_client.notebooks.list.await_count == 1
+    getattr(mock_client.sharing, mutation).assert_not_called()
+
+
+async def test_preview_title_read_propagates_cancellation(mock_client) -> None:
+    """Only an ``Exception`` becomes ``title: None``; cancellation still propagates."""
+    mock_client.notebooks.list = AsyncMock(side_effect=asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await notebook_title_or_none(mock_client, NB_ID)
 
 
 @pytest.mark.parametrize(("tool", "args", "mutation"), SHARING_PREVIEWS)

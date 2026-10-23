@@ -361,7 +361,7 @@ async def test_notebook_delete_confirm_preview_then_delete(mcp_call, mock_client
     confirmed = await mcp_call("notebook_delete", {"notebook": NB2_ID, "confirm": True})
     assert confirmed.structured_content == {"status": "deleted", "notebook_id": NB2_ID}
     mock_client.notebooks.delete.assert_awaited_once_with(NB2_ID)
-    assert mock_client.notebooks.list.await_count == 2
+    assert mock_client.notebooks.list.await_count == 1
 
 
 async def test_notebook_delete_confirmed_legacy_name_warns_after_success(
