@@ -95,7 +95,7 @@ dev = [
     # libprotoc 35.1; the generated code accepts the 7.36.2 runtime. 1.84.0 is
     # the first grpcio release with CPython 3.15 wheels.
     "grpcio==1.84.0",
-    "grpcio-tools==1.84.0",
+    "grpcio-tools==1.84.1",
     "protobuf==7.36.2",
     "gpsoauth>=1.1.0",
 ]
