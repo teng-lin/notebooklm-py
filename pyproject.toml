@@ -58,7 +58,7 @@ impersonate = ["curl_cffi>=0.15.0,<1"]
 headless = ["gpsoauth>=1.1.0"]
 # Android bearer-gRPC runtime. The protobuf runtime is pinned to the patched
 # 6.x release compatible with the checked-in Android generated stubs.
-android = ["grpcio==1.84.0", "protobuf==7.36.2", "gpsoauth>=1.1.0"]
+android = ["grpcio==1.84.1", "protobuf==7.36.2", "gpsoauth>=1.1.0"]
 # >=3.0: the remote-transport bearer auth (FastMCP(auth=...) + TokenVerifier)
 # landed in fastmcp 3.0; 2.x lacks it and would ImportError in mcp/_auth.py.
 # Pinned ==4.1.0: fastmcp 3.x pulls beartype 0.22.x, which imports
@@ -94,7 +94,7 @@ dev = [
     # Deterministic Android protobuf toolchain: grpcio-tools 1.84.0 embeds
     # libprotoc 35.1; the generated code accepts the 7.36.2 runtime. 1.84.0 is
     # the first grpcio release with CPython 3.15 wheels.
-    "grpcio==1.84.0",
+    "grpcio==1.84.1",
     "grpcio-tools==1.84.0",
     "protobuf==7.36.2",
     "gpsoauth>=1.1.0",
