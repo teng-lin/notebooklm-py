@@ -76,7 +76,15 @@ def encode_creation(request: n.NormalizedArtifactCreationRequest) -> tuple[list[
                 None,
                 None,
                 None,
-                [request.quantity_code, request.difficulty_code],
+                [
+                    request.quantity_code,
+                    request.difficulty_code,
+                    *(
+                        [None, list(request.avoid_question_type_codes)]
+                        if request.avoid_question_type_codes
+                        else []
+                    ),
+                ],
             ],
         ]
     elif isinstance(request, n.NormalizedFlashcards):

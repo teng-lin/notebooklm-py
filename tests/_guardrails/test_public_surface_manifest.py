@@ -120,6 +120,7 @@ _RPC_LEGACY_REEXPORTS = [
     "VideoStyle",
     "QuizQuantity",
     "QuizDifficulty",
+    "QuizQuestionType",
     "InfographicOrientation",
     "InfographicDetail",
     "InfographicStyle",
@@ -186,7 +187,7 @@ def test_rpc_legacy_reexports_stay_importable_but_unblessed() -> None:
     """
     import notebooklm.rpc as public_rpc
 
-    assert len(_RPC_LEGACY_REEXPORTS) == 47
+    assert len(_RPC_LEGACY_REEXPORTS) == 48
     assert len(_RPC_LEGACY_REEXPORTS) == len(set(_RPC_LEGACY_REEXPORTS)), (
         "_RPC_LEGACY_REEXPORTS must not contain duplicate names (a dup could mask a drop)"
     )
@@ -256,6 +257,7 @@ _REEXPORTED_RPC_ENUMS = [
     "InfographicStyle",
     "MagicArtifactType",
     "QuizDifficulty",
+    "QuizQuestionType",
     "QuizQuantity",
     "ReportFormat",
     "ShareAccess",
@@ -322,6 +324,7 @@ _TOP_LEVEL_TYPE_EXPORTS = [
     "NextStepSuggestion",
     "PremiumFeatureInfo",
     "QuizDifficulty",
+    "QuizQuestionType",
     "QuizQuantity",
     "ReportFormat",
     "ReportSuggestion",
@@ -515,8 +518,8 @@ def test_neutral_domain_enum_manifest_is_complete() -> None:
         and value.__module__ == canonical_enums.__name__
         and issubclass(value, enum.Enum)
     }
-    assert len(_NEUTRAL_DOMAIN_ENUMS) == 26
-    assert len(set(_NEUTRAL_DOMAIN_ENUMS)) == 26
+    assert len(_NEUTRAL_DOMAIN_ENUMS) == 27
+    assert len(set(_NEUTRAL_DOMAIN_ENUMS)) == 27
     assert set(_NEUTRAL_DOMAIN_ENUMS) == defined
 
 

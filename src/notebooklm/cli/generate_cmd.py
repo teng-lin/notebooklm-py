@@ -47,6 +47,7 @@ from ..types import (
     MindMapResult,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
@@ -137,6 +138,29 @@ _QUIZ_DIFFICULTY_MAP = {
     "medium": QuizDifficulty.MEDIUM,
     "hard": QuizDifficulty.HARD,
 }
+_QUIZ_QUESTION_TYPE_MAP = {
+    "multiple-choice": QuizQuestionType.MULTIPLE_CHOICE,
+    "multiple-select": QuizQuestionType.MULTIPLE_SELECT,
+    "fill-in-the-blank": QuizQuestionType.FILL_IN_THE_BLANK,
+    "short-answer": QuizQuestionType.SHORT_ANSWER,
+}
+
+
+def _parse_question_types(
+    ctx: click.Context, param: click.Parameter, value: str | None
+) -> tuple[QuizQuestionType, ...] | None:
+    """Parse ``--question-types a,b`` into enum members (``None`` when omitted)."""
+    if value is None:
+        return None
+    names = [part.strip().lower() for part in value.split(",") if part.strip()]
+    unknown = [name for name in names if name not in _QUIZ_QUESTION_TYPE_MAP]
+    if unknown or not names:
+        raise click.BadParameter(  # cli-input-validation: --question-types value check
+            f"expected a comma-separated list of: {', '.join(_QUIZ_QUESTION_TYPE_MAP)}"
+        )
+    return tuple(dict.fromkeys(_QUIZ_QUESTION_TYPE_MAP[name] for name in names))
+
+
 _INFOGRAPHIC_ORIENTATION_MAP = {
     "landscape": InfographicOrientation.LANDSCAPE,
     "portrait": InfographicOrientation.PORTRAIT,
@@ -842,6 +866,16 @@ def generate_revise_slide(
     default="medium",
     help="Question difficulty (default: medium)",
 )
+@click.option(
+    "--question-types",
+    default=None,
+    callback=_parse_question_types,
+    help=(
+        "Comma-separated question types to use: "
+        "multiple-choice, multiple-select, fill-in-the-blank, short-answer "
+        "(default: all)"
+    ),
+)
 @click.option("--language", default=None, help="Output language code (default: not sent)")
 @multi_source_option
 @wait_option
@@ -856,6 +890,7 @@ def generate_quiz(
     notebook_id,
     quantity,
     difficulty,
+    question_types,
     language,
     source_ids,
     later,
@@ -875,6 +910,7 @@ def generate_quiz(
     Example:
       notebooklm generate quiz "focus on vocabulary terms"
       notebooklm generate quiz "test key concepts" --difficulty hard --quantity more
+      notebooklm generate quiz --question-types multiple-choice,short-answer
     """
     description = resolve_prompt(description, prompt_file, "description")
     request = QuizGenerationRequest(
@@ -884,6 +920,7 @@ def generate_quiz(
         instructions=description or None,
         quantity=_QUIZ_QUANTITY_MAP[quantity],
         difficulty=_QUIZ_DIFFICULTY_MAP[difficulty],
+        question_types=question_types,
         later=later,
         wait=wait,
         timeout=timeout,

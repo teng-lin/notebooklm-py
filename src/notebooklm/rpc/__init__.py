@@ -26,6 +26,7 @@ from .types import (  # noqa: F401
     InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     RPCMethod,
     SlideDeckFormat,

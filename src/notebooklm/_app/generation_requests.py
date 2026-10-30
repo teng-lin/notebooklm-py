@@ -20,6 +20,7 @@ from ..types import (
     MindMapKind,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
@@ -495,6 +496,7 @@ class QuizGenerationRequest(_DeferredGenerationRequest):
     instructions: OptionalText = UNSET
     quantity: QuizQuantity = QuizQuantity.STANDARD
     difficulty: QuizDifficulty = QuizDifficulty.MEDIUM
+    question_types: tuple[QuizQuestionType, ...] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -150,7 +150,7 @@ ReconciliationCandidate, ReconciliationReport, LookupSuggestion
 # Enums
 AudioFormat, AudioLength
 VideoFormat, VideoStyle
-QuizQuantity, QuizDifficulty
+QuizQuantity, QuizDifficulty, QuizQuestionType
 InfographicOrientation, InfographicDetail, InfographicStyle
 SlideDeckFormat, SlideDeckLength
 ReportFormat

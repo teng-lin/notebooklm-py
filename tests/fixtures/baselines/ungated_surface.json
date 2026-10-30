@@ -152,6 +152,7 @@
     "VideoStyle",
     "QuizQuantity",
     "QuizDifficulty",
+    "QuizQuestionType",
     "InfographicOrientation",
     "InfographicDetail",
     "InfographicStyle",

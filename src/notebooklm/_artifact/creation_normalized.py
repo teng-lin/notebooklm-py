@@ -59,6 +59,7 @@ class NormalizedQuiz(_NormalizedCreation):
     difficulty_code: int
     later: bool = False
     language: str | None = None
+    avoid_question_type_codes: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -47,6 +47,7 @@ from ._types.enums import (
     InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
@@ -193,7 +194,15 @@ class ArtifactsAPI(ABC):
                 ("report_format", "language", "custom_prompt", "extra_instructions", "later"),
             ),
             ArtifactCreationCapability(
-                "quiz", ("language", "instructions", "quantity", "difficulty", "later")
+                "quiz",
+                (
+                    "language",
+                    "instructions",
+                    "quantity",
+                    "difficulty",
+                    "question_types",
+                    "later",
+                ),
             ),
             ArtifactCreationCapability(
                 "flashcards", ("language", "instructions", "quantity", "difficulty", "later")
@@ -546,10 +555,13 @@ class ArtifactsAPI(ABC):
         *,
         later: bool = False,
         language: str | None = None,
+        question_types: builtins.list[QuizQuestionType] | None = None,
     ) -> GenerationStatus:
         """Generate a quiz.
 
         ``language`` is an output-language code (e.g. ``"vi"``); ``None`` omits it.
+        ``question_types`` limits the question types used (``None`` keeps the server
+        default of all types); it must be non-empty when given.
 
         Set ``later=True`` to queue generation; the returned status is ``scheduled``.
         The server chooses when to run it; account quota and availability still apply.
@@ -567,6 +579,7 @@ class ArtifactsAPI(ABC):
                     difficulty,
                     later=later,
                     language=language,
+                    question_types=None if question_types is None else tuple(question_types),
                 )
             )
 

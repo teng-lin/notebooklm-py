@@ -90,6 +90,7 @@ from notebooklm.rpc.types import (
     InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     RPCMethod,
     SlideDeckFormat,
@@ -2105,4 +2106,48 @@ def test_quiz_family_rejects_invalid_language(builder, bad) -> None:
             quantity=None,
             difficulty=None,
             language=bad,
+        )
+
+
+@pytest.mark.parametrize(
+    ("selected", "avoided"),
+    [
+        ((QuizQuestionType.SHORT_ANSWER,), [1, 2, 3]),
+        ((QuizQuestionType.MULTIPLE_CHOICE, QuizQuestionType.SHORT_ANSWER), [1, 3]),
+        ((QuizQuestionType.FILL_IN_THE_BLANK,), [2, 3, 4]),
+    ],
+)
+def test_quiz_question_types_encode_the_avoid_list(selected, avoided) -> None:
+    """The wire carries the *avoided* types at options index 3 (live-verified)."""
+    params = build_quiz_artifact_params(
+        "nb_payload",
+        ["src_alpha"],
+        instructions=None,
+        quantity=None,
+        difficulty=None,
+        question_types=selected,
+    )
+    assert params[2][9][1][7] == [2, 2, None, avoided]
+
+
+def test_quiz_question_types_all_or_none_send_no_avoid_list() -> None:
+    kwargs = {"instructions": None, "quantity": None, "difficulty": None}
+    every = build_quiz_artifact_params(
+        "nb_payload", ["src_alpha"], question_types=tuple(QuizQuestionType), **kwargs
+    )
+    default = build_quiz_artifact_params("nb_payload", ["src_alpha"], **kwargs)
+    assert every == default
+    assert default[2][9][1][7] == [2, 2]
+
+
+@pytest.mark.parametrize("bad", [(), "multiple_choice", (99,)])
+def test_quiz_question_types_rejects_invalid(bad) -> None:
+    with pytest.raises(ValidationError):
+        build_quiz_artifact_params(
+            "nb_payload",
+            ["src_alpha"],
+            instructions=None,
+            quantity=None,
+            difficulty=None,
+            question_types=bad,
         )

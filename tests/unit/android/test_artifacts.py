@@ -63,6 +63,7 @@ from notebooklm._types.enums import (
     InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
@@ -81,6 +82,7 @@ from notebooklm.exceptions import (
     RateLimitError,
     RPCError,
     ServerError,
+    UnsupportedOperationError,
     ValidationError,
 )
 from notebooklm.types import (
@@ -1002,6 +1004,19 @@ async def test_generate_quiz_family_sends_language_code_only_when_given(method, 
     without_language = session.calls[1][1].artifact.app.generation_options
     assert with_language.language_code == "vi"
     assert without_language.language_code == ""
+
+
+@pytest.mark.asyncio
+async def test_generate_quiz_question_types_is_unsupported_on_android() -> None:
+    """The Android server ignores the avoid-list, so the option fails loud (live-verified)."""
+    session, _, _, _, api = _graph()
+
+    with pytest.raises(UnsupportedOperationError, match="question_types"):
+        await api.generate_quiz(
+            "notebook-1", source_ids=["source-1"], question_types=[QuizQuestionType.SHORT_ANSWER]
+        )
+
+    assert session.calls == []
 
 
 @pytest.mark.asyncio

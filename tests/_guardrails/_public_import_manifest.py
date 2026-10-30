@@ -42,6 +42,7 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "PremiumFeatureInfo",
         "QuizDifficulty",
         "QuizQuantity",
+        "QuizQuestionType",
         "ReportFormat",
         "RPCError",
         "SharePermission",

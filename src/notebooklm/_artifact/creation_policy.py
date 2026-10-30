@@ -21,6 +21,7 @@ from .._types.enums import (
     InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
@@ -71,6 +72,27 @@ def _optional_language(value: str | None) -> str | None:
     if value is not None and (not isinstance(value, str) or not value.strip()):
         raise ValidationError("language must be a non-empty string or None")
     return value
+
+
+def _avoided_question_types(
+    selected: tuple[QuizQuestionType, ...] | None, *, flashcards: bool
+) -> tuple[int, ...]:
+    """Convert the selected question types into the wire's avoid-list.
+
+    The wire carries the types to *avoid*, so the selection is inverted. ``None``
+    (or every type) sends nothing, which keeps the server default.
+    """
+    if selected is None:
+        return ()
+    if flashcards:
+        raise ValidationError("question_types is only supported for quizzes")
+    if isinstance(selected, (str, bytes)) or not selected:
+        raise ValidationError("question_types must be a non-empty sequence of QuizQuestionType")
+    try:
+        chosen = {QuizQuestionType(t) for t in selected}
+    except ValueError as exc:
+        raise ValidationError("question_types must contain only QuizQuestionType values") from exc
+    return tuple(sorted(int(t) for t in set(QuizQuestionType) - chosen))
 
 
 def _text(value: str | None, parameter: str, policy: CreationPolicy) -> str | None:
@@ -186,7 +208,7 @@ def normalize_creation(
             if isinstance(request, raw.FlashcardsCreationRequest)
             else normalized.NormalizedQuiz
         )
-        return cls(
+        common = (
             nb,
             sources,
             _text(request.instructions, "instructions", policy),
@@ -195,6 +217,12 @@ def normalize_creation(
             request.later,
             _optional_language(request.language),
         )
+        avoided = _avoided_question_types(
+            request.question_types, flashcards=cls is normalized.NormalizedFlashcards
+        )
+        if cls is normalized.NormalizedFlashcards:
+            return cls(*common)
+        return normalized.NormalizedQuiz(*common, avoided)
     if isinstance(request, raw.InfographicCreationRequest):
         return normalized.NormalizedInfographic(
             nb,

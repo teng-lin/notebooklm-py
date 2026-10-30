@@ -5948,6 +5948,24 @@
           "default": null,
           "envvar": null,
           "has_custom_shell_complete": false,
+          "help": "Comma-separated question types to use: multiple-choice, multiple-select, fill-in-the-blank, short-answer (default: all)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "question_types",
+          "opts": [
+            "--question-types"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
           "help": "Output language code (default: not sent)",
           "is_flag": false,
           "kind": "option",

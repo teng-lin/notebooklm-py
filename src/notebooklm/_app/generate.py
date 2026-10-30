@@ -143,6 +143,8 @@ def _build_call_kwargs(request: GenerationRequest, *, sources: list[str] | None)
         _set_optional(base, "instructions", request.instructions)
         base["quantity"] = request.quantity
         base["difficulty"] = request.difficulty
+        if isinstance(request, QuizGenerationRequest) and request.question_types is not None:
+            base["question_types"] = list(request.question_types)
     elif isinstance(request, InfographicGenerationRequest):
         _set_optional(base, "language", request.language)
         _set_optional(base, "instructions", request.instructions)

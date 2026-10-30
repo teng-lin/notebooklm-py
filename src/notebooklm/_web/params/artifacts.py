@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from ..._artifact import creation as raw
@@ -16,6 +17,7 @@ from ..._types.enums import (
     InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
@@ -142,6 +144,7 @@ def build_quiz_artifact_params(
     quantity: QuizQuantity | None,
     difficulty: QuizDifficulty | None,
     language: str | None = None,
+    question_types: Sequence[QuizQuestionType] | None = None,
 ) -> list[Any]:
     """Compatibility builder using the shared domain normalization boundary."""
     return _encode_public_creation(
@@ -152,6 +155,7 @@ def build_quiz_artifact_params(
             quantity,
             difficulty,
             language=language,
+            question_types=None if question_types is None else tuple(question_types),
         )
     )
 

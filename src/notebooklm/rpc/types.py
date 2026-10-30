@@ -33,6 +33,7 @@ from .._types.enums import (  # noqa: F401 - compatibility re-exports
     MagicArtifactType,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     ShareAccess,
     SharePermission,

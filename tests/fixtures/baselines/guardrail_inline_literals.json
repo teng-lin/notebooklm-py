@@ -3,7 +3,7 @@
     "PRIVATE_SYMBOL_ALLOWANCES": 53
   },
   "tests/_guardrails/_public_import_manifest.py": {
-    "_DOCUMENTED_PUBLIC_IMPORTS": 106
+    "_DOCUMENTED_PUBLIC_IMPORTS": 107
   },
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 158,
@@ -119,16 +119,16 @@
   },
   "tests/_guardrails/test_public_surface_manifest.py": {
     "_AUTH_FIRST_PARTY_COMPATIBILITY_NAMES": 32,
-    "_REEXPORTED_RPC_ENUMS": 24,
-    "_RPC_LEGACY_REEXPORTS": 47,
+    "_REEXPORTED_RPC_ENUMS": 25,
+    "_RPC_LEGACY_REEXPORTS": 48,
     "_TOP_LEVEL_EXCEPTION_EXPORTS": 55,
-    "_TOP_LEVEL_TYPE_EXPORTS": 66
+    "_TOP_LEVEL_TYPE_EXPORTS": 67
   },
   "tests/_guardrails/test_server_classify_consistency.py": {
     "_EXEMPLARS": 22
   },
   "tests/_guardrails/test_studio_enum_manifest.py": {
-    "_RPC_ENUM_SNAPSHOT": 292
+    "_RPC_ENUM_SNAPSHOT": 301
   },
   "tests/_guardrails/test_unconfirmed_contract.py": {
     "UNCONFIRMED_METHOD_MANIFEST": 63

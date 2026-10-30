@@ -413,7 +413,7 @@ embedded in the request, event, or outcome types.
 | `cinematic-video [description]` | Instructions | Alias for `video --format cinematic` | `generate cinematic-video "Documentary about quantum physics"` |
 | `slide-deck [description]` | Instructions | `--format [detailed\|presenter]`, `--length [default\|short]` | `generate slide-deck` |
 | `revise-slide <description>` | Revision instructions | `-a/--artifact <id>` (required), `--slide N` (required) | `generate revise-slide "Move title up" --artifact <id> --slide 0` |
-| `quiz [description]` | Instructions | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]`, `--language CODE` | `generate quiz --difficulty hard --language vi` |
+| `quiz [description]` | Instructions | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]`, `--language CODE`, `--question-types TYPES` | `generate quiz --difficulty hard --question-types multiple-choice,short-answer` |
 | `flashcards [description]` | Instructions | `--difficulty [easy\|medium\|hard]`, `--quantity [fewer\|standard\|more]`, `--language CODE` | `generate flashcards` |
 | `infographic [description]` | Instructions | `--orientation [landscape\|portrait\|square]`, `--detail [concise\|standard\|detailed]`, `--style [auto\|sketch-note\|professional\|bento-grid\|editorial\|instructional\|bricks\|clay\|anime\|kawaii\|scientific]` | `generate infographic` |
 | `data-table <description>` | Instructions | (uniform options only) | `generate data-table "compare concepts"` |

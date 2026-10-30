@@ -277,6 +277,15 @@ class QuizDifficulty(int, Enum):
     HARD = 3
 
 
+class QuizQuestionType(int, Enum):
+    """Quiz question types the generator may use (Web/Android enum values)."""
+
+    FILL_IN_THE_BLANK = 1
+    MULTIPLE_CHOICE = 2
+    MULTIPLE_SELECT = 3
+    SHORT_ANSWER = 4
+
+
 class InfographicOrientation(int, Enum):
     """Infographic orientation options."""
 

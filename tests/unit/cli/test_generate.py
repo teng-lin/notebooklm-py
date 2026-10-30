@@ -15,7 +15,7 @@ from notebooklm._app.generate_retry import (
 from notebooklm.cli import helpers as helpers_module
 from notebooklm.cli.polling_ui import status_with_elapsed
 from notebooklm.notebooklm_cli import cli
-from notebooklm.rpc.types import ReportFormat
+from notebooklm.rpc.types import QuizQuestionType, ReportFormat
 
 from .conftest import create_mock_client, inject_client, mind_map_result
 
@@ -1138,11 +1138,38 @@ class TestGenerateLanguageValidation:
             default = runner.invoke(
                 cli, ["generate", command, "-n", "nb_123"], obj=inject_client(mock_client)
             )
+            if command == "quiz":
+                typed = runner.invoke(
+                    cli,
+                    [
+                        "generate",
+                        "quiz",
+                        "-n",
+                        "nb_123",
+                        "--question-types",
+                        "multiple-choice, short-answer,multiple-choice",
+                    ],
+                    obj=inject_client(mock_client),
+                )
+                bad = runner.invoke(
+                    cli,
+                    ["generate", "quiz", "-n", "nb_123", "--question-types", "essay"],
+                    obj=inject_client(mock_client),
+                )
         assert result.exit_code == 0, result.output
         assert default.exit_code == 0, default.output
         assert generate.call_args_list[0].kwargs["language"] == "ja"
         if command != "audio":
             assert "language" not in generate.call_args_list[1].kwargs
+        if command == "quiz":
+            assert "question_types" not in generate.call_args_list[1].kwargs
+            assert typed.exit_code == 0, typed.output
+            assert generate.call_args_list[2].kwargs["question_types"] == [
+                QuizQuestionType.MULTIPLE_CHOICE,
+                QuizQuestionType.SHORT_ANSWER,
+            ]
+            assert bad.exit_code != 0
+            assert "multiple-choice" in bad.output
 
 
 # =============================================================================

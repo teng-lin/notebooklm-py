@@ -17,6 +17,7 @@ from .._types.enums import (
     InfographicStyle,
     QuizDifficulty,
     QuizQuantity,
+    QuizQuestionType,
     ReportFormat,
     SlideDeckFormat,
     SlideDeckLength,
@@ -72,6 +73,7 @@ class QuizCreationRequest(_CreationRequest):
     difficulty: QuizDifficulty | None
     later: bool = False
     language: str | None = None
+    question_types: tuple[QuizQuestionType, ...] | None = None
 
 
 @dataclass(frozen=True)

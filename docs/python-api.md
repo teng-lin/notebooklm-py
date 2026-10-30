@@ -1849,9 +1849,14 @@ status = await client.artifacts.generate_quiz(
     quantity=QuizQuantity.MORE,  # FEWER, STANDARD, MORE
     difficulty=QuizDifficulty.MEDIUM,  # EASY, MEDIUM, HARD
     language="vi",  # optional output language; None (default) omits it
+    question_types=[QuizQuestionType.MULTIPLE_CHOICE, QuizQuestionType.SHORT_ANSWER],
+    # MULTIPLE_CHOICE, MULTIPLE_SELECT, FILL_IN_THE_BLANK, SHORT_ANSWER; None = all
 )
 ```
 
+`question_types` must be a non-empty list when given; the Web backend sends the
+complement as the request's "avoid" list. The Android backend does not honor it, so
+`generate_quiz(question_types=...)` raises `UnsupportedOperationError` there.
 `generate_flashcards` accepts the same optional `language`. An empty or non-string
 value raises `ValidationError`.
 
