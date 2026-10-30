@@ -11904,11 +11904,11 @@
   ],
   "subsystems": {
     "android": {
-      "lines": 16745,
+      "lines": 16751,
       "modules": 56
     },
     "app": {
-      "lines": 14573,
+      "lines": 14577,
       "modules": 47
     },
     "auth": {
@@ -11916,7 +11916,7 @@
       "modules": 33
     },
     "cli": {
-      "lines": 23164,
+      "lines": 23180,
       "modules": 76
     },
     "mcp": {
@@ -11924,7 +11924,7 @@
       "modules": 42
     },
     "root": {
-      "lines": 28498,
+      "lines": 28531,
       "modules": 94
     },
     "rpc": {
@@ -11944,12 +11944,12 @@
       "modules": 18
     },
     "web": {
-      "lines": 33832,
+      "lines": 33857,
       "modules": 97
     }
   },
   "summary": {
-    "authored_lines": 156244,
+    "authored_lines": 156328,
     "authored_modules": 498,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1311,

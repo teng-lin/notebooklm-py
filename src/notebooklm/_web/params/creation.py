@@ -21,7 +21,7 @@ def _image_option(request: n.NormalizedQuiz | n.NormalizedFlashcards) -> list[An
 
 def _quiz_options(request: n.NormalizedQuiz) -> list[Any]:
     """Positional ``QuizGenerationOptions``: quantity, difficulty, -, avoid-types, image option."""
-    head = [request.quantity_code, request.difficulty_code]
+    head: list[Any] = [request.quantity_code, request.difficulty_code]
     avoid = list(request.avoid_question_type_codes) or None
     image = _image_option(request)
     if image is not None:
@@ -33,7 +33,7 @@ def _quiz_options(request: n.NormalizedQuiz) -> list[Any]:
 
 def _flashcards_options(request: n.NormalizedFlashcards) -> list[Any]:
     """Positional ``FlashcardsGenerationOptions``: quantity, difficulty, image option."""
-    head = [request.quantity_code, request.difficulty_code]
+    head: list[Any] = [request.quantity_code, request.difficulty_code]
     image = _image_option(request)
     return head if image is None else [*head, image]
 

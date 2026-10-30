@@ -5304,6 +5304,26 @@
           }
         },
         {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Include images from the sources, or generate text only (default: server default, images)",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_images",
+          "opts": [
+            "--images"
+          ],
+          "required": false,
+          "secondary_opts": [
+            "--text-only"
+          ],
+          "type": {
+            "name": "boolean"
+          }
+        },
+        {
           "default": "Sentinel.UNSET",
           "envvar": null,
           "has_custom_shell_complete": true,
@@ -5978,6 +5998,26 @@
           "secondary_opts": [],
           "type": {
             "name": "text"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Include images from the sources, or generate text only (default: server default, images)",
+          "is_flag": true,
+          "kind": "option",
+          "multiple": false,
+          "name": "include_images",
+          "opts": [
+            "--images"
+          ],
+          "required": false,
+          "secondary_opts": [
+            "--text-only"
+          ],
+          "type": {
+            "name": "boolean"
           }
         },
         {
