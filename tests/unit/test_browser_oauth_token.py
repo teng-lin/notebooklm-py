@@ -16,14 +16,14 @@ from notebooklm.auth import MasterTokenError
 
 
 def _assert_owned_frame_scrubbed(error: BaseException, frame_name: str, names: set[str]) -> None:
-    owned_frames = []
+    owned_frames = {}
     current = error.__traceback__
     while current is not None:
         if current.tb_frame.f_code.co_name == frame_name:
-            owned_frames.append(current.tb_frame.f_locals)
+            owned_frames[id(current.tb_frame)] = current.tb_frame.f_locals
         current = current.tb_next
     assert len(owned_frames) == 1
-    assert not names & set(owned_frames[0])
+    assert not names & set(next(iter(owned_frames.values())))
 
 
 def test_capture_missing_browser_extra_preserves_explicit_cause_and_scrubs(monkeypatch):
@@ -317,15 +317,94 @@ def test_capture_unreadable_url_preserves_cookie_outcome(
     browser.close.assert_called_once_with()
 
 
-def test_capture_cleanup_failure_preserves_parent_precedence(monkeypatch):
-    """A page cleanup failure retains its existing exception and cleanup precedence."""
-    cleanup_failure = RuntimeError("page close")
+@pytest.mark.parametrize("failing_resource", ["page", "context", "browser"])
+@pytest.mark.parametrize("outcome", ["capture", "timeout", "poll-error"])
+@pytest.mark.parametrize("connection", ["launched", "cdp-existing", "cdp-new"])
+def test_capture_already_closed_cleanup_preserves_outcome(
+    monkeypatch, caplog, failing_resource, outcome, connection
+):
+    """Closed targets preserve capture outcomes and external browser ownership."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    caplog.set_level(logging.DEBUG, logger=capture_service.__name__)
+    page, context, browser = Mock(), Mock(), Mock()
+    resources = {"page": page, "context": context, "browser": browser}
+    secret = "CLEANUP-SECRET-2522"
+    resources[failing_resource].close.side_effect = PlaywrightError(
+        f"Target page, context or browser has been closed: {secret}"
+    )
+    context.new_page.return_value = page
+    context.cookies.return_value = [{"name": "oauth_token", "value": "CAPTURED"}]
+    poll_error = RuntimeError("cookie read failed")
+    if outcome == "poll-error":
+        context.cookies.side_effect = poll_error
+    browser.new_context.return_value = context
+    browser.contexts = [context] if connection == "cdp-existing" else []
+    chromium = SimpleNamespace(
+        launch=Mock(return_value=browser), connect_over_cdp=Mock(return_value=browser)
+    )
+
+    @contextmanager
+    def playwright_context():
+        yield SimpleNamespace(chromium=chromium)
+
+    monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)
+    kwargs = {
+        "cdp_url": "http://localhost:9222" if connection != "launched" else None,
+        "timeout_s": 0 if outcome == "timeout" else 1,
+    }
+    if outcome == "capture":
+        assert capture_service.capture_oauth_token(**kwargs) == "CAPTURED"
+    elif outcome == "timeout":
+        with pytest.raises(MasterTokenError, match="Did not observe an oauth_token cookie"):
+            capture_service.capture_oauth_token(**kwargs)
+    else:
+        with pytest.raises(RuntimeError) as raised:
+            capture_service.capture_oauth_token(**kwargs)
+        assert raised.value is poll_error
+        _assert_owned_frame_scrubbed(
+            raised.value, "capture_oauth_token", {"resource", "cleanup_error", "token"}
+        )
+
+    page.close.assert_called_once_with()
+    if connection == "cdp-existing":
+        context.close.assert_not_called()
+    else:
+        context.close.assert_called_once_with()
+    if connection == "launched":
+        browser.close.assert_called_once_with()
+    else:
+        browser.close.assert_not_called()
+    assert secret not in caplog.text
+    resource_name = {"page": "login page", "context": "browser context", "browser": "browser"}[
+        failing_resource
+    ]
+    if resources[failing_resource].close.called:
+        assert f"OAuth capture: {resource_name} already closed" in caplog.text
+        assert f"OAuth capture: {resource_name} closed" not in caplog.text
+
+
+@pytest.mark.parametrize("error_kind", ["runtime", "playwright", "unrelated-target-message"])
+def test_capture_cleanup_failure_preserves_first_error_and_finishes_cleanup(
+    monkeypatch, caplog, error_kind
+):
+    """Unexpected cleanup errors propagate after all owned resources are attempted."""
+    from playwright.sync_api import Error as PlaywrightError
+
+    caplog.set_level(logging.DEBUG, logger=capture_service.__name__)
+    message = "CLEANUP-ERROR-SECRET"
+    if error_kind == "unrelated-target-message":
+        message += " Target page, context or browser has been closed"
+    error_type = PlaywrightError if error_kind == "playwright" else RuntimeError
+    cleanup_failure = error_type(message)
     page = Mock()
     page.close.side_effect = cleanup_failure
     context = Mock()
+    context.close.side_effect = RuntimeError("context close")
     context.new_page.return_value = page
     context.cookies.return_value = [{"name": "oauth_token", "value": "CAPTURED"}]
     browser_obj = Mock()
+    browser_obj.close.side_effect = RuntimeError("browser close")
     browser_obj.new_context.return_value = context
     chromium = SimpleNamespace(launch=Mock(return_value=browser_obj))
 
@@ -335,12 +414,18 @@ def test_capture_cleanup_failure_preserves_parent_precedence(monkeypatch):
 
     monkeypatch.setattr(capture_service, "sync_playwright_context", playwright_context)
 
-    with pytest.raises(RuntimeError) as raised:
+    with pytest.raises(error_type) as raised:
         capture_service.capture_oauth_token(timeout_s=1)
 
     assert raised.value is cleanup_failure
-    context.close.assert_not_called()
-    browser_obj.close.assert_not_called()
+    assert "CLEANUP-ERROR-SECRET" not in caplog.text
+    assert "OAuth capture: login page close failed" in caplog.text
+    assert "OAuth capture: login page closed" not in caplog.text
+    _assert_owned_frame_scrubbed(
+        raised.value, "capture_oauth_token", {"resource", "cleanup_error", "token"}
+    )
+    context.close.assert_called_once_with()
+    browser_obj.close.assert_called_once_with()
 
 
 @pytest.mark.parametrize("poll_duration", [0.0, 2.0], ids=["empty-polls", "slow-poll"])

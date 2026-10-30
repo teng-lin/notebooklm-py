@@ -21,7 +21,11 @@ from .._auth.master_token_types import MasterTokenError
 # ``browser_launch_errors`` leaf and is re-exported through ``browser_capture``
 # for private import continuity. CLI callers reach this module only through the
 # public auth capability facade.
-from .browser_capture import classify_launch_failure, sync_playwright_context
+from .browser_capture import (
+    TARGET_CLOSED_ERROR,
+    classify_launch_failure,
+    sync_playwright_context,
+)
 
 _EMBEDDED_SETUP_URL = "https://accounts.google.com/EmbeddedSetup"
 logger = logging.getLogger(__name__)
@@ -63,9 +67,13 @@ def capture_oauth_token(
     owns_context = False
     poll_count = 0
     completion_seen = False
+    cleanup_error: Exception | None = None
+    resource = None
+    resource_name = ""
+    owned = False
     try:
         try:
-            import playwright.sync_api  # noqa: F401, PLC0415
+            from playwright.sync_api import Error as PlaywrightError  # noqa: PLC0415
         except ImportError as exc:  # pragma: no cover - import guard
             raise MasterTokenError(
                 "Browser-assisted oauth_token capture needs the [browser] extra "
@@ -162,19 +170,31 @@ def capture_oauth_token(
                 if not token:
                     logger.debug("OAuth capture: timeout expired without oauth_token cookie")
             finally:
-                if page is not None:
-                    logger.debug("OAuth capture: closing login page")
-                    page.close()
-                    logger.debug("OAuth capture: login page closed")
-                if owns_context and context is not None:
-                    logger.debug("OAuth capture: closing browser context")
-                    context.close()
-                    logger.debug("OAuth capture: browser context closed")
-                if owns_browser and browser_obj is not None:
-                    logger.debug("OAuth capture: closing browser")
-                    browser_obj.close()
-                    logger.debug("OAuth capture: browser closed")
+                # EmbeddedSetup can close Chrome after capture. Already-closed
+                # targets are harmless, but unexpected cleanup errors still fail
+                # capture after every owned resource has had a close attempt.
+                for resource_name, resource, owned in (
+                    ("login page", page, True),
+                    ("browser context", context, owns_context),
+                    ("browser", browser_obj, owns_browser),
+                ):
+                    if not owned or resource is None:
+                        continue
+                    logger.debug("OAuth capture: closing %s", resource_name)
+                    try:
+                        resource.close()
+                    except Exception as exc:
+                        if isinstance(exc, PlaywrightError) and TARGET_CLOSED_ERROR in str(exc):
+                            logger.debug("OAuth capture: %s already closed", resource_name)
+                        else:
+                            logger.debug("OAuth capture: %s close failed", resource_name)
+                            if cleanup_error is None:
+                                cleanup_error = exc
+                    else:
+                        logger.debug("OAuth capture: %s closed", resource_name)
                 logger.debug("OAuth capture: stopping Playwright")
+                if cleanup_error is not None:
+                    raise cleanup_error
 
         logger.debug("OAuth capture: Playwright stopped")
         if not token:
@@ -203,6 +223,10 @@ def capture_oauth_token(
         del owns_context
         del poll_count
         del completion_seen
+        del cleanup_error
+        del resource
+        del resource_name
+        del owned
         del browser
         del cdp_url
         del timeout_s
