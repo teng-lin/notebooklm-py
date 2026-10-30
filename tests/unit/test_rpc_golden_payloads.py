@@ -2092,3 +2092,17 @@ class TestNoteShapeConfusionHasTeeth:
         swapped = NoteRow(["ID", swapped_inner])
         assert swapped.content == "REAL_TITLE"
         assert swapped.title == "REAL_CONTENT"
+
+
+@pytest.mark.parametrize("bad", ["", "  ", 5])
+@pytest.mark.parametrize("builder", [build_quiz_artifact_params, build_flashcards_artifact_params])
+def test_quiz_family_rejects_invalid_language(builder, bad) -> None:
+    with pytest.raises(ValidationError):
+        builder(
+            "nb_payload",
+            ["src_alpha"],
+            instructions=None,
+            quantity=None,
+            difficulty=None,
+            language=bad,
+        )

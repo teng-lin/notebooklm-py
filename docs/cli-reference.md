@@ -397,7 +397,7 @@ All generate commands (except the synchronous `mind-map`) accept the same unifor
 Language-aware generate commands (`audio`, `video`, `cinematic-video`, `report`, `infographic`, `slide-deck`, `data-table`, `mind-map`) also support:
 - `--language LANG` to override output language (precedence: `--language` > `NOTEBOOKLM_HL` env > config > `'en'`)
 
-`quiz`, `flashcards`, and `revise-slide` do not accept `--language`.
+`quiz` and `flashcards` also accept `--language LANG`, but unlike the commands above they send no language unless the flag is given (`NOTEBOOKLM_HL` and config are not applied). `revise-slide` does not accept `--language`.
 
 All generation commands construct exact frozen request variants governed by the same neutral
 domain validation used by MCP and REST. The CLI maps its Click-owned inputs directly into most

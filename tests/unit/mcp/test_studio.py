@@ -847,6 +847,25 @@ async def test_artifact_generate_valid_language_passes(mcp_call, mock_client) ->
     mock_client.artifacts.generate_audio.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    ("artifact_type", "method"),
+    [("quiz", "generate_quiz"), ("flashcards", "generate_flashcards")],
+)
+async def test_artifact_generate_quiz_family_language(
+    mcp_call, mock_client, artifact_type, method
+) -> None:
+    """quiz/flashcards omit language unless given; an explicit code is forwarded."""
+    generate = AsyncMock(return_value=FakeStatus(task_id=TASK_ID))
+    setattr(mock_client.artifacts, method, generate)
+    await mcp_call("studio_generate", {"notebook": NB_ID, "artifact_type": artifact_type})
+    await mcp_call(
+        "studio_generate",
+        {"notebook": NB_ID, "artifact_type": artifact_type, "language": "vi"},
+    )
+    assert "language" not in generate.await_args_list[0].kwargs
+    assert generate.await_args_list[1].kwargs["language"] == "vi"
+
+
 # ---------------------------------------------------------------------------
 # studio_generate — per-kind options (#1654)
 # ---------------------------------------------------------------------------
