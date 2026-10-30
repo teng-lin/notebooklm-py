@@ -28,6 +28,7 @@ from ._artifact.creation import (
 from ._artifact.creation_normalized import NormalizedArtifactCreationRequest
 from ._artifact.creation_policy import (
     WEB_CREATION_POLICY,
+    coerce_question_types,
     normalize_creation,
     normalize_video_prompt,
 )
@@ -579,7 +580,7 @@ class ArtifactsAPI(ABC):
                     difficulty,
                     later=later,
                     language=language,
-                    question_types=None if question_types is None else tuple(question_types),
+                    question_types=coerce_question_types(question_types),
                 )
             )
 

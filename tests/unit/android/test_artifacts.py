@@ -1006,6 +1006,14 @@ async def test_generate_quiz_family_sends_language_code_only_when_given(method, 
     assert without_language.language_code == ""
 
 
+def test_android_capabilities_do_not_advertise_quiz_question_types() -> None:
+    _, _, _, _, api = _graph()
+    quiz = next(c for c in api.creation_capabilities if c.family == "quiz")
+    assert "question_types" not in quiz.supported_options
+    assert any("question_types" in text for text in quiz.limitations)
+    assert "language" in quiz.supported_options
+
+
 @pytest.mark.asyncio
 async def test_generate_quiz_question_types_is_unsupported_on_android() -> None:
     """The Android server ignores the avoid-list, so the option fails loud (live-verified)."""

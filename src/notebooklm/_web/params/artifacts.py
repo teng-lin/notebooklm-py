@@ -8,7 +8,11 @@ from typing import Any
 from ..._artifact import creation as raw
 from ..._artifact.creation_policy import DEFAULT_QUIZ_DIFFICULTY as DEFAULT_QUIZ_DIFFICULTY
 from ..._artifact.creation_policy import DEFAULT_QUIZ_QUANTITY as DEFAULT_QUIZ_QUANTITY
-from ..._artifact.creation_policy import WEB_BUILDER_POLICY, normalize_creation
+from ..._artifact.creation_policy import (
+    WEB_BUILDER_POLICY,
+    coerce_question_types,
+    normalize_creation,
+)
 from ..._types.enums import (
     AudioFormat,
     AudioLength,
@@ -155,7 +159,7 @@ def build_quiz_artifact_params(
             quantity,
             difficulty,
             language=language,
-            question_types=None if question_types is None else tuple(question_types),
+            question_types=coerce_question_types(question_types),
         )
     )
 

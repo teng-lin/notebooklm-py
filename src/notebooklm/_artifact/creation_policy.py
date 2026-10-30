@@ -7,6 +7,7 @@ accepted sets here; capability metadata is not permission to tighten them.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Final, cast
@@ -74,6 +75,15 @@ def _optional_language(value: str | None) -> str | None:
     return value
 
 
+def coerce_question_types(value: object) -> tuple[QuizQuestionType, ...] | None:
+    """Turn a caller's ``question_types`` into a tuple, or raise ``ValidationError``."""
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ValidationError("question_types must be a non-empty sequence of QuizQuestionType")
+    return tuple(value)
+
+
 def _avoided_question_types(
     selected: tuple[QuizQuestionType, ...] | None, *, flashcards: bool
 ) -> tuple[int, ...]:
@@ -88,10 +98,11 @@ def _avoided_question_types(
         raise ValidationError("question_types is only supported for quizzes")
     if isinstance(selected, (str, bytes)) or not selected:
         raise ValidationError("question_types must be a non-empty sequence of QuizQuestionType")
-    try:
-        chosen = {QuizQuestionType(t) for t in selected}
-    except ValueError as exc:
-        raise ValidationError("question_types must contain only QuizQuestionType values") from exc
+    if not all(isinstance(t, QuizQuestionType) for t in selected):
+        # An int/bool or another option family's enum (e.g. QuizDifficulty.MEDIUM == 2)
+        # would otherwise silently select a different question type.
+        raise ValidationError("question_types must contain only QuizQuestionType values")
+    chosen = set(selected)
     return tuple(sorted(int(t) for t in set(QuizQuestionType) - chosen))
 
 

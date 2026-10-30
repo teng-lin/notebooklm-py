@@ -2140,7 +2140,9 @@ def test_quiz_question_types_all_or_none_send_no_avoid_list() -> None:
     assert default[2][9][1][7] == [2, 2]
 
 
-@pytest.mark.parametrize("bad", [(), "multiple_choice", (99,)])
+@pytest.mark.parametrize(
+    "bad", [(), "multiple_choice", (99,), (True,), (QuizDifficulty.MEDIUM,), 2]
+)
 def test_quiz_question_types_rejects_invalid(bad) -> None:
     with pytest.raises(ValidationError):
         build_quiz_artifact_params(

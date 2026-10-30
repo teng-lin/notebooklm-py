@@ -381,7 +381,17 @@ class AndroidArtifactsAPI(AndroidArtifactTransferMixin, AndroidArtifactReadMixin
 
     @property
     def creation_capabilities(self) -> tuple[ArtifactCreationCapability, ...]:
-        return super().creation_capabilities + (
+        base = tuple(
+            ArtifactCreationCapability(
+                cap.family,
+                tuple(o for o in cap.supported_options if o != "question_types"),
+                (*cap.limitations, "question_types: the Android server ignores it; raises"),
+            )
+            if cap.family == "quiz"
+            else cap
+            for cap in super().creation_capabilities
+        )
+        return base + (
             ArtifactCreationCapability("interactive_mind_map", ("language", "instructions")),
         )
 
