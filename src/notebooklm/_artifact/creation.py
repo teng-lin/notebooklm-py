@@ -74,6 +74,7 @@ class QuizCreationRequest(_CreationRequest):
     later: bool = False
     language: str | None = None
     question_types: tuple[QuizQuestionType, ...] | None = None
+    include_images: bool | None = None
 
 
 @dataclass(frozen=True)

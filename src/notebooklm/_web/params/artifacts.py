@@ -148,6 +148,7 @@ def build_quiz_artifact_params(
     quantity: QuizQuantity | None,
     difficulty: QuizDifficulty | None,
     language: str | None = None,
+    include_images: bool | None = None,
     question_types: Sequence[QuizQuestionType] | None = None,
 ) -> list[Any]:
     """Compatibility builder using the shared domain normalization boundary."""
@@ -159,6 +160,7 @@ def build_quiz_artifact_params(
             quantity,
             difficulty,
             language=language,
+            include_images=include_images,
             question_types=coerce_question_types(question_types),
         )
     )
@@ -172,6 +174,7 @@ def build_flashcards_artifact_params(
     quantity: QuizQuantity | None,
     difficulty: QuizDifficulty | None,
     language: str | None = None,
+    include_images: bool | None = None,
 ) -> list[Any]:
     """Compatibility builder using the shared domain normalization boundary."""
     return _encode_public_creation(
@@ -182,6 +185,7 @@ def build_flashcards_artifact_params(
             quantity,
             difficulty,
             language=language,
+            include_images=include_images,
         )
     )
 

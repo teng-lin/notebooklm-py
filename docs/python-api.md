@@ -1851,6 +1851,7 @@ status = await client.artifacts.generate_quiz(
     language="vi",  # optional output language; None (default) omits it
     question_types=[QuizQuestionType.MULTIPLE_CHOICE, QuizQuestionType.SHORT_ANSWER],
     # MULTIPLE_CHOICE, MULTIPLE_SELECT, FILL_IN_THE_BLANK, SHORT_ANSWER; None = all
+    include_images=False,  # text only; None (default) keeps the server default (images)
 )
 ```
 
@@ -1858,7 +1859,8 @@ status = await client.artifacts.generate_quiz(
 complement as the request's "avoid" list. The Android backend does not honor it, so
 `generate_quiz(question_types=...)` raises `UnsupportedOperationError` there (unless the
 selection includes every type, which is the default and sends nothing).
-`generate_flashcards` accepts the same optional `language`. An empty or non-string
+`generate_flashcards` accepts the same optional `language` and `include_images`.
+`include_images` must be a `bool` or `None`. An empty or non-string
 value raises `ValidationError`.
 
 `later=True` is a keyword-only option on `generate_audio`, `generate_video`,

@@ -202,11 +202,20 @@ class ArtifactsAPI(ABC):
                     "quantity",
                     "difficulty",
                     "question_types",
+                    "include_images",
                     "later",
                 ),
             ),
             ArtifactCreationCapability(
-                "flashcards", ("language", "instructions", "quantity", "difficulty", "later")
+                "flashcards",
+                (
+                    "language",
+                    "instructions",
+                    "quantity",
+                    "difficulty",
+                    "include_images",
+                    "later",
+                ),
             ),
             ArtifactCreationCapability(
                 "infographic",
@@ -557,10 +566,13 @@ class ArtifactsAPI(ABC):
         later: bool = False,
         language: str | None = None,
         question_types: builtins.list[QuizQuestionType] | None = None,
+        include_images: bool | None = None,
     ) -> GenerationStatus:
         """Generate a quiz.
 
         ``language`` is an output-language code (e.g. ``"vi"``); ``None`` omits it.
+        ``include_images=False`` generates text only (no images from the sources);
+        ``None`` keeps the server default (images included).
         ``question_types`` limits the question types used (``None`` keeps the server
         default of all types); it must be non-empty when given.
 
@@ -580,6 +592,7 @@ class ArtifactsAPI(ABC):
                     difficulty,
                     later=later,
                     language=language,
+                    include_images=include_images,
                     question_types=coerce_question_types(question_types),
                 )
             )
@@ -594,10 +607,13 @@ class ArtifactsAPI(ABC):
         *,
         later: bool = False,
         language: str | None = None,
+        include_images: bool | None = None,
     ) -> GenerationStatus:
         """Generate flashcards.
 
         ``language`` is an output-language code (e.g. ``"vi"``); ``None`` omits it.
+        ``include_images=False`` generates text only (no images from the sources);
+        ``None`` keeps the server default (images included).
 
         Set ``later=True`` to queue generation; the returned status is ``scheduled``.
         The server chooses when to run it; account quota and availability still apply.
@@ -615,6 +631,7 @@ class ArtifactsAPI(ABC):
                     difficulty,
                     later=later,
                     language=language,
+                    include_images=include_images,
                 )
             )
 

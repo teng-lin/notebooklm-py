@@ -353,6 +353,10 @@ def test_artifact_projection_fields_are_exhaustive() -> None:
                 enum,
                 f"{package}.QuizGenerationOptions.QuizDifficulty",
             ),
+            ("image_option", 5, singular, message, f"{package}.ImageOption"),
+        ),
+        artifacts_pb2.ImageOption: _expected(
+            ("disabled_source_images", 1, singular, boolean, None),
         ),
         artifacts_pb2.FlashcardsGenerationOptions: _expected(
             (
@@ -369,6 +373,7 @@ def test_artifact_projection_fields_are_exhaustive() -> None:
                 enum,
                 f"{package}.FlashcardsGenerationOptions.FlashcardsDifficulty",
             ),
+            ("image_option", 3, singular, message, f"{package}.ImageOption"),
         ),
         artifacts_pb2.AppArtifactGenerationOptions: _expected(
             ("app_type", 1, singular, enum, f"{package}.AppType"),

@@ -1138,6 +1138,12 @@ class TestGenerateLanguageValidation:
             default = runner.invoke(
                 cli, ["generate", command, "-n", "nb_123"], obj=inject_client(mock_client)
             )
+            if command != "audio":
+                text_only = runner.invoke(
+                    cli,
+                    ["generate", command, "-n", "nb_123", "--text-only"],
+                    obj=inject_client(mock_client),
+                )
             if command == "quiz":
                 typed = runner.invoke(
                     cli,
@@ -1161,10 +1167,14 @@ class TestGenerateLanguageValidation:
         assert generate.call_args_list[0].kwargs["language"] == "ja"
         if command != "audio":
             assert "language" not in generate.call_args_list[1].kwargs
+        if command != "audio":
+            assert text_only.exit_code == 0, text_only.output
+            assert generate.call_args_list[2].kwargs["include_images"] is False
+            assert "include_images" not in generate.call_args_list[1].kwargs
         if command == "quiz":
             assert "question_types" not in generate.call_args_list[1].kwargs
             assert typed.exit_code == 0, typed.output
-            assert generate.call_args_list[2].kwargs["question_types"] == [
+            assert generate.call_args_list[3].kwargs["question_types"] == [
                 QuizQuestionType.MULTIPLE_CHOICE,
                 QuizQuestionType.SHORT_ANSWER,
             ]

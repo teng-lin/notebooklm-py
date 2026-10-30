@@ -108,6 +108,10 @@ message MediaStreamingUrl {
   MediaStreamingType type = 2; // evidence: docs/android/proto-evidence-ledger.md#artifact-exact-field-ledger
 }
 
+message ImageOption {
+  bool disabled_source_images = 1; // evidence: Web app bundle serializer f2a (quiz image_option / flashcards image_option)
+}
+
 message QuizGenerationOptions {
   enum QuestionQuantity {
     QUESTION_QUANTITY_UNSPECIFIED = 0;
@@ -125,6 +129,7 @@ message QuizGenerationOptions {
 
   QuestionQuantity question_quantity = 1; // evidence: docs/android/schema.proto QuizGenerationOptions
   QuizDifficulty quiz_difficulty = 2; // evidence: docs/android/schema.proto QuizGenerationOptions
+  ImageOption image_option = 5; // evidence: Web app bundle serializer f2a (quiz_generation_options.image_option)
 }
 
 message FlashcardsGenerationOptions {
@@ -144,6 +149,7 @@ message FlashcardsGenerationOptions {
 
   CardQuantity card_quantity = 1;
   FlashcardsDifficulty flashcards_difficulty = 2;
+  ImageOption image_option = 3; // evidence: Web app bundle serializer f2a (flashcards_generation_options.image_option)
 }
 
 message AppArtifactGenerationOptions {

@@ -2153,3 +2153,52 @@ def test_quiz_question_types_rejects_invalid(bad) -> None:
             difficulty=None,
             question_types=bad,
         )
+
+
+@pytest.mark.parametrize(
+    ("include_images", "image_option"), [(False, [True]), (True, [False]), (None, None)]
+)
+def test_quiz_and_flashcards_encode_the_image_option(include_images, image_option) -> None:
+    """``include_images`` is sent inverted as ``image_option { disabled_source_images }``.
+
+    Quiz: options index 4 (field 5); flashcards: options index 2 (field 3). Derived
+    from the Web app's own request serializer.
+    """
+    kwargs = {
+        "instructions": None,
+        "quantity": None,
+        "difficulty": None,
+        "include_images": include_images,
+    }
+    quiz = build_quiz_artifact_params("nb_payload", ["src_alpha"], **kwargs)
+    cards = build_flashcards_artifact_params("nb_payload", ["src_alpha"], **kwargs)
+    assert quiz[2][9][1][7] == (
+        [2, 2] if image_option is None else [2, 2, None, None, image_option]
+    )
+    assert cards[2][9][1][6] == ([2, 2] if image_option is None else [2, 2, image_option])
+
+
+def test_quiz_image_option_composes_with_question_types() -> None:
+    params = build_quiz_artifact_params(
+        "nb_payload",
+        ["src_alpha"],
+        instructions=None,
+        quantity=None,
+        difficulty=None,
+        question_types=(QuizQuestionType.SHORT_ANSWER,),
+        include_images=False,
+    )
+    assert params[2][9][1][7] == [2, 2, None, [1, 2, 3], [True]]
+
+
+@pytest.mark.parametrize("bad", [0, 1, "no"])
+def test_include_images_must_be_a_bool(bad) -> None:
+    with pytest.raises(ValidationError):
+        build_quiz_artifact_params(
+            "nb_payload",
+            ["src_alpha"],
+            instructions=None,
+            quantity=None,
+            difficulty=None,
+            include_images=bad,
+        )

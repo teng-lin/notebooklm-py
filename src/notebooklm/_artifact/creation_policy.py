@@ -84,6 +84,18 @@ def coerce_question_types(value: object) -> tuple[QuizQuestionType, ...] | None:
     return tuple(value)
 
 
+def _disabled_source_images(include_images: bool | None) -> bool | None:
+    """Map ``include_images`` onto the wire's ``disabled_source_images`` flag.
+
+    ``None`` omits the option (server default: images included).
+    """
+    if include_images is None:
+        return None
+    if not isinstance(include_images, bool):
+        raise ValidationError("include_images must be a bool or None")
+    return not include_images
+
+
 def _avoided_question_types(
     selected: tuple[QuizQuestionType, ...] | None, *, flashcards: bool
 ) -> tuple[int, ...]:
@@ -231,9 +243,10 @@ def normalize_creation(
         avoided = _avoided_question_types(
             request.question_types, flashcards=cls is normalized.NormalizedFlashcards
         )
+        disabled_images = _disabled_source_images(request.include_images)
         if cls is normalized.NormalizedFlashcards:
-            return cls(*common)
-        return normalized.NormalizedQuiz(*common, avoided)
+            return normalized.NormalizedFlashcards(*common, disabled_images)
+        return normalized.NormalizedQuiz(*common, avoided, disabled_images)
     if isinstance(request, raw.InfographicCreationRequest):
         return normalized.NormalizedInfographic(
             nb,

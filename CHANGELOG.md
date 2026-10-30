@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Quiz question types (#2528).** `generate_quiz(question_types=[QuizQuestionType...])`
   and `generate quiz --question-types multiple-choice,short-answer` limit the question
   types on the Web backend. Android raises `UnsupportedOperationError` for a restricting
-  selection because its server ignores the option. Include Images is not supported yet (wire unknown).
+  selection because its server ignores the option.
+- **Quiz and flashcards image option (#2528).** `include_images=False` (CLI
+  `--text-only`) generates text only; `None` keeps the server default (images
+  included). Sent as `image_option.disabled_source_images` on Web and Android.
 
 - **Quiz and flashcards output language (#2528).** `generate_quiz` and
   `generate_flashcards` take an optional `language` code, and the CLI gains

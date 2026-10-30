@@ -179,6 +179,8 @@ def build_normalized_create_artifact_plan(
                     flashcards_difficulty=normalized.difficulty_code,
                 )
             )
+            if normalized.disabled_source_images is not None:
+                generation_options.flashcards_generation_options.image_option.disabled_source_images = normalized.disabled_source_images
         else:
             generation_options.quiz_generation_options.CopyFrom(
                 _PROTO.QuizGenerationOptions(
@@ -186,6 +188,10 @@ def build_normalized_create_artifact_plan(
                     quiz_difficulty=normalized.difficulty_code,
                 )
             )
+            if normalized.disabled_source_images is not None:
+                generation_options.quiz_generation_options.image_option.disabled_source_images = (
+                    normalized.disabled_source_images
+                )
         artifact = _PROTO.Artifact(
             type=_PROTO.ARTIFACT_TYPE_APP,
             sources=artifact_sources,

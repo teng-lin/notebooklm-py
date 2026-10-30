@@ -60,6 +60,7 @@ class NormalizedQuiz(_NormalizedCreation):
     later: bool = False
     language: str | None = None
     avoid_question_type_codes: tuple[int, ...] = ()
+    disabled_source_images: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ class NormalizedFlashcards(_NormalizedCreation):
     difficulty_code: int
     later: bool = False
     language: str | None = None
+    disabled_source_images: bool | None = None
 
 
 @dataclass(frozen=True)

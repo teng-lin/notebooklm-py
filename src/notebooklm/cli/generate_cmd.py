@@ -877,6 +877,12 @@ def generate_revise_slide(
     ),
 )
 @click.option("--language", default=None, help="Output language code (default: not sent)")
+@click.option(
+    "--images/--text-only",
+    "include_images",
+    default=None,
+    help="Include images from the sources, or generate text only (default: server default, images)",
+)
 @multi_source_option
 @wait_option
 @wait_polling_options(default_timeout=300, default_interval=2)
@@ -892,6 +898,7 @@ def generate_quiz(
     difficulty,
     question_types,
     language,
+    include_images,
     source_ids,
     later,
     wait,
@@ -917,6 +924,7 @@ def generate_quiz(
         notebook_id=require_notebook(notebook_id),
         source_ids=_source_selection(ctx, source_ids),
         language=UNSET if language is None else resolve_language(language),
+        include_images=include_images,
         instructions=description or None,
         quantity=_QUIZ_QUANTITY_MAP[quantity],
         difficulty=_QUIZ_DIFFICULTY_MAP[difficulty],
@@ -948,6 +956,12 @@ def generate_quiz(
     help="Flashcard difficulty (default: medium)",
 )
 @click.option("--language", default=None, help="Output language code (default: not sent)")
+@click.option(
+    "--images/--text-only",
+    "include_images",
+    default=None,
+    help="Include images from the sources, or generate text only (default: server default, images)",
+)
 @multi_source_option
 @wait_option
 @wait_polling_options(default_timeout=300, default_interval=2)
@@ -962,6 +976,7 @@ def generate_flashcards(
     quantity,
     difficulty,
     language,
+    include_images,
     source_ids,
     later,
     wait,
@@ -986,6 +1001,7 @@ def generate_flashcards(
         notebook_id=require_notebook(notebook_id),
         source_ids=_source_selection(ctx, source_ids),
         language=UNSET if language is None else resolve_language(language),
+        include_images=include_images,
         instructions=description or None,
         quantity=_QUIZ_QUANTITY_MAP[quantity],
         difficulty=_QUIZ_DIFFICULTY_MAP[difficulty],

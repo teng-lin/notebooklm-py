@@ -1015,6 +1015,36 @@ def test_android_capabilities_do_not_advertise_quiz_question_types() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "variant", "options_name"),
+    [
+        ("generate_quiz", "APP_TYPE_QUIZ", "quiz_generation_options"),
+        ("generate_flashcards", "APP_TYPE_FLASHCARDS", "flashcards_generation_options"),
+    ],
+)
+async def test_generate_quiz_family_sends_image_option_only_when_given(
+    method, variant, options_name
+) -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "app-1", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=getattr(_PROTO, variant)
+        )
+    )
+
+    await getattr(api, method)("notebook-1", source_ids=["source-1"], include_images=False)
+    await getattr(api, method)("notebook-1", source_ids=["source-1"], include_images=True)
+    await getattr(api, method)("notebook-1", source_ids=["source-1"])
+
+    def opts(i):
+        return getattr(session.calls[i][1].artifact.app.generation_options, options_name)
+
+    assert opts(0).HasField("image_option") and opts(0).image_option.disabled_source_images
+    assert opts(1).HasField("image_option") and not opts(1).image_option.disabled_source_images
+    assert not opts(2).HasField("image_option")
+
+
+@pytest.mark.asyncio
 async def test_generate_quiz_question_types_is_unsupported_on_android() -> None:
     """The Android server ignores the avoid-list, so the option fails loud (live-verified)."""
     session, _, _, _, api = _graph()

@@ -497,6 +497,7 @@ class QuizGenerationRequest(_DeferredGenerationRequest):
     quantity: QuizQuantity = QuizQuantity.STANDARD
     difficulty: QuizDifficulty = QuizDifficulty.MEDIUM
     question_types: tuple[QuizQuestionType, ...] | None = None
+    include_images: bool | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -506,6 +507,7 @@ class FlashcardsGenerationRequest(_DeferredGenerationRequest):
     instructions: OptionalText = UNSET
     quantity: QuizQuantity = QuizQuantity.STANDARD
     difficulty: QuizDifficulty = QuizDifficulty.MEDIUM
+    include_images: bool | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

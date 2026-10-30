@@ -145,6 +145,8 @@ def _build_call_kwargs(request: GenerationRequest, *, sources: list[str] | None)
         base["difficulty"] = request.difficulty
         if isinstance(request, QuizGenerationRequest) and request.question_types is not None:
             base["question_types"] = list(request.question_types)
+        if request.include_images is not None:
+            base["include_images"] = request.include_images
     elif isinstance(request, InfographicGenerationRequest):
         _set_optional(base, "language", request.language)
         _set_optional(base, "instructions", request.instructions)
