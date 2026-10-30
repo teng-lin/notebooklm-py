@@ -6786,6 +6786,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
+      "owner_qualname": "test_capture_already_closed_cleanup_preserves_outcome",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
       "owner_qualname": "test_capture_cdp_preserves_external_ownership_and_closes_created_resources",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
@@ -6796,7 +6806,7 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
-      "owner_qualname": "test_capture_cleanup_failure_preserves_parent_precedence",
+      "owner_qualname": "test_capture_cleanup_failure_preserves_first_error_and_finishes_cleanup",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
     },
@@ -6923,17 +6933,17 @@
   ],
   "packages": {
     "notebooklm._auth": 85,
-    "notebooklm._browser": 82,
+    "notebooklm._browser": 83,
     "notebooklm.auth": 526
   },
   "summary": {
     "assignments": 0,
     "distinct_targets": 64,
     "files": 85,
-    "lexical_owners": 638,
+    "lexical_owners": 639,
     "private": 50,
-    "public": 643,
-    "total": 693
+    "public": 644,
+    "total": 694
   },
   "version": 1
 }

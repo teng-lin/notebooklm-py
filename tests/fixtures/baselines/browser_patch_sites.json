@@ -25,7 +25,7 @@
       "path": "tests/unit/test_browser_capture_session_candidate.py"
     },
     {
-      "count": 13,
+      "count": 14,
       "path": "tests/unit/test_browser_oauth_token.py"
     }
   ],
@@ -726,6 +726,16 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
+      "owner_qualname": "test_capture_already_closed_cleanup_preserves_outcome",
+      "package": "notebooklm._browser",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "attribute": "sync_playwright_context",
+      "count": 1,
+      "idiom": "monkeypatch.setattr",
+      "module": "oauth_token",
+      "owner_kind": "test",
       "owner_qualname": "test_capture_cdp_preserves_external_ownership_and_closes_created_resources",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
@@ -736,7 +746,7 @@
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token",
       "owner_kind": "test",
-      "owner_qualname": "test_capture_cleanup_failure_preserves_parent_precedence",
+      "owner_qualname": "test_capture_cleanup_failure_preserves_first_error_and_finishes_cleanup",
       "package": "notebooklm._browser",
       "path": "tests/unit/test_browser_oauth_token.py"
     },
@@ -1173,13 +1183,19 @@
     {
       "count": 1,
       "owner_kind": "test",
+      "owner_qualname": "test_capture_already_closed_cleanup_preserves_outcome",
+      "path": "tests/unit/test_browser_oauth_token.py"
+    },
+    {
+      "count": 1,
+      "owner_kind": "test",
       "owner_qualname": "test_capture_cdp_preserves_external_ownership_and_closes_created_resources",
       "path": "tests/unit/test_browser_oauth_token.py"
     },
     {
       "count": 1,
       "owner_kind": "test",
-      "owner_qualname": "test_capture_cleanup_failure_preserves_parent_precedence",
+      "owner_qualname": "test_capture_cleanup_failure_preserves_first_error_and_finishes_cleanup",
       "path": "tests/unit/test_browser_oauth_token.py"
     },
     {
@@ -1283,7 +1299,7 @@
     },
     {
       "attribute": "sync_playwright_context",
-      "count": 11,
+      "count": 12,
       "idiom": "monkeypatch.setattr",
       "module": "oauth_token"
     },
@@ -1297,8 +1313,8 @@
   "summary": {
     "TOTAL": {
       "private": 0,
-      "public": 82,
-      "total": 82
+      "public": 83,
+      "total": 83
     },
     "browser_capture": {
       "private": 0,
@@ -1312,8 +1328,8 @@
     },
     "oauth_token": {
       "private": 0,
-      "public": 14,
-      "total": 14
+      "public": 15,
+      "total": 15
     }
   },
   "version": 2
