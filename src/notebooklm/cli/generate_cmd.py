@@ -842,6 +842,7 @@ def generate_revise_slide(
     default="medium",
     help="Question difficulty (default: medium)",
 )
+@click.option("--language", default=None, help="Output language code (default: not sent)")
 @multi_source_option
 @wait_option
 @wait_polling_options(default_timeout=300, default_interval=2)
@@ -855,6 +856,7 @@ def generate_quiz(
     notebook_id,
     quantity,
     difficulty,
+    language,
     source_ids,
     later,
     wait,
@@ -878,6 +880,7 @@ def generate_quiz(
     request = QuizGenerationRequest(
         notebook_id=require_notebook(notebook_id),
         source_ids=_source_selection(ctx, source_ids),
+        language=UNSET if language is None else resolve_language(language),
         instructions=description or None,
         quantity=_QUIZ_QUANTITY_MAP[quantity],
         difficulty=_QUIZ_DIFFICULTY_MAP[difficulty],
@@ -907,6 +910,7 @@ def generate_quiz(
     default="medium",
     help="Flashcard difficulty (default: medium)",
 )
+@click.option("--language", default=None, help="Output language code (default: not sent)")
 @multi_source_option
 @wait_option
 @wait_polling_options(default_timeout=300, default_interval=2)
@@ -920,6 +924,7 @@ def generate_flashcards(
     notebook_id,
     quantity,
     difficulty,
+    language,
     source_ids,
     later,
     wait,
@@ -943,6 +948,7 @@ def generate_flashcards(
     request = FlashcardsGenerationRequest(
         notebook_id=require_notebook(notebook_id),
         source_ids=_source_selection(ctx, source_ids),
+        language=UNSET if language is None else resolve_language(language),
         instructions=description or None,
         quantity=_QUIZ_QUANTITY_MAP[quantity],
         difficulty=_QUIZ_DIFFICULTY_MAP[difficulty],

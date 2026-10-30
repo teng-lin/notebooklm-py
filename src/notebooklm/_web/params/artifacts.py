@@ -141,10 +141,18 @@ def build_quiz_artifact_params(
     instructions: str | None,
     quantity: QuizQuantity | None,
     difficulty: QuizDifficulty | None,
+    language: str | None = None,
 ) -> list[Any]:
     """Compatibility builder using the shared domain normalization boundary."""
     return _encode_public_creation(
-        raw.QuizCreationRequest(notebook_id, tuple(source_ids), instructions, quantity, difficulty)
+        raw.QuizCreationRequest(
+            notebook_id,
+            tuple(source_ids),
+            instructions,
+            quantity,
+            difficulty,
+            language=language,
+        )
     )
 
 
@@ -155,11 +163,17 @@ def build_flashcards_artifact_params(
     instructions: str | None,
     quantity: QuizQuantity | None,
     difficulty: QuizDifficulty | None,
+    language: str | None = None,
 ) -> list[Any]:
     """Compatibility builder using the shared domain normalization boundary."""
     return _encode_public_creation(
         raw.FlashcardsCreationRequest(
-            notebook_id, tuple(source_ids), instructions, quantity, difficulty
+            notebook_id,
+            tuple(source_ids),
+            instructions,
+            quantity,
+            difficulty,
+            language=language,
         )
     )
 

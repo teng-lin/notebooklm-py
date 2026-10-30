@@ -5286,6 +5286,24 @@
           }
         },
         {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output language code (default: not sent)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "language",
+          "opts": [
+            "--language"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
+          }
+        },
+        {
           "default": "Sentinel.UNSET",
           "envvar": null,
           "has_custom_shell_complete": true,
@@ -5924,6 +5942,24 @@
               "hard"
             ],
             "name": "choice"
+          }
+        },
+        {
+          "default": null,
+          "envvar": null,
+          "has_custom_shell_complete": false,
+          "help": "Output language code (default: not sent)",
+          "is_flag": false,
+          "kind": "option",
+          "multiple": false,
+          "name": "language",
+          "opts": [
+            "--language"
+          ],
+          "required": false,
+          "secondary_opts": [],
+          "type": {
+            "name": "text"
           }
         },
         {

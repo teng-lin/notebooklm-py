@@ -157,6 +157,7 @@ def build_normalized_create_artifact_plan(
         generation_options = _PROTO.AppArtifactGenerationOptions(
             app_type=app_type,
             free_text_steering_prompt=normalized.instructions or "",
+            language_code=normalized.language or "",
         )
         if isinstance(normalized, n.NormalizedFlashcards):
             generation_options.flashcards_generation_options.CopyFrom(

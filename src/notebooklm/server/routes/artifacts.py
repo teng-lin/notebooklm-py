@@ -202,7 +202,8 @@ async def generate(
         # English. Keep those adapter semantics while the typed request itself can
         # still represent omission separately for direct callers.
         source_ids=UNSET if not body.source_ids else tuple(body.source_ids),
-        language=body.language or "en",
+        # quiz/flashcards omit the language slot unless one is given.
+        language=body.language or (UNSET if body.type in ("quiz", "flashcards") else "en"),
         instructions=instructions,
         option_values={
             "report_format": body.report_format,

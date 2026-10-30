@@ -604,6 +604,66 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
             ],
         ),
         (
+            "quiz_language",
+            build_quiz_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                instructions=None,
+                quantity=None,
+                difficulty=None,
+                language="vi",
+            ),
+            [
+                _ARTIFACT_CLIENT_OPTIONS,
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    4,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [2, None, None, "vi", None, None, None, [2, 2]],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "flashcards_language",
+            build_flashcards_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                instructions=None,
+                quantity=None,
+                difficulty=None,
+                language="vi",
+            ),
+            [
+                _ARTIFACT_CLIENT_OPTIONS,
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    4,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [1, None, None, "vi", None, None, [2, 2]],
+                    ],
+                ],
+            ],
+        ),
+        (
             "flashcards_options",
             build_flashcards_artifact_params(
                 "nb_payload",

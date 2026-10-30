@@ -139,6 +139,7 @@ def _build_call_kwargs(request: GenerationRequest, *, sources: list[str] | None)
         base["slide_format"] = request.slide_format
         base["slide_length"] = request.slide_length
     elif isinstance(request, (QuizGenerationRequest, FlashcardsGenerationRequest)):
+        _set_optional(base, "language", request.language)
         _set_optional(base, "instructions", request.instructions)
         base["quantity"] = request.quantity
         base["difficulty"] = request.difficulty

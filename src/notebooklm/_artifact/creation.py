@@ -71,6 +71,7 @@ class QuizCreationRequest(_CreationRequest):
     quantity: QuizQuantity | None
     difficulty: QuizDifficulty | None
     later: bool = False
+    language: str | None = None
 
 
 @dataclass(frozen=True)

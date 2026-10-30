@@ -186,6 +186,7 @@ def normalize_creation(
             _code(request.quantity, DEFAULT_QUIZ_QUANTITY, "quantity", strict=True),
             _code(request.difficulty, DEFAULT_QUIZ_DIFFICULTY, "difficulty", strict=True),
             request.later,
+            None if request.language is None else _language(request.language, policy),
         )
     if isinstance(request, raw.InfographicCreationRequest):
         return normalized.NormalizedInfographic(

@@ -58,6 +58,7 @@ class NormalizedQuiz(_NormalizedCreation):
     quantity_code: int
     difficulty_code: int
     later: bool = False
+    language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class NormalizedFlashcards(_NormalizedCreation):
     quantity_code: int
     difficulty_code: int
     later: bool = False
+    language: str | None = None
 
 
 @dataclass(frozen=True)
