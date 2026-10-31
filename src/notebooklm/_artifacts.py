@@ -192,9 +192,11 @@ class ArtifactsAPI(ABC):
                 "report",
                 ("report_format", "language", "custom_prompt", "extra_instructions", "later"),
             ),
-            ArtifactCreationCapability("quiz", ("instructions", "quantity", "difficulty", "later")),
             ArtifactCreationCapability(
-                "flashcards", ("instructions", "quantity", "difficulty", "later")
+                "quiz", ("language", "instructions", "quantity", "difficulty", "later")
+            ),
+            ArtifactCreationCapability(
+                "flashcards", ("language", "instructions", "quantity", "difficulty", "later")
             ),
             ArtifactCreationCapability(
                 "infographic",
@@ -543,8 +545,11 @@ class ArtifactsAPI(ABC):
         difficulty: QuizDifficulty | None = None,
         *,
         later: bool = False,
+        language: str | None = None,
     ) -> GenerationStatus:
         """Generate a quiz.
+
+        ``language`` is an output-language code (e.g. ``"vi"``); ``None`` omits it.
 
         Set ``later=True`` to queue generation; the returned status is ``scheduled``.
         The server chooses when to run it; account quota and availability still apply.
@@ -561,6 +566,7 @@ class ArtifactsAPI(ABC):
                     quantity,
                     difficulty,
                     later=later,
+                    language=language,
                 )
             )
 
@@ -573,8 +579,11 @@ class ArtifactsAPI(ABC):
         difficulty: QuizDifficulty | None = None,
         *,
         later: bool = False,
+        language: str | None = None,
     ) -> GenerationStatus:
         """Generate flashcards.
+
+        ``language`` is an output-language code (e.g. ``"vi"``); ``None`` omits it.
 
         Set ``later=True`` to queue generation; the returned status is ``scheduled``.
         The server chooses when to run it; account quota and availability still apply.
@@ -591,6 +600,7 @@ class ArtifactsAPI(ABC):
                     quantity,
                     difficulty,
                     later=later,
+                    language=language,
                 )
             )
 

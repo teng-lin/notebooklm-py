@@ -604,6 +604,66 @@ def _expected_rpc_envelope(method: RPCMethod, params: list[Any]) -> list[Any]:
             ],
         ),
         (
+            "quiz_language",
+            build_quiz_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                instructions=None,
+                quantity=None,
+                difficulty=None,
+                language="vi",
+            ),
+            [
+                _ARTIFACT_CLIENT_OPTIONS,
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    4,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [2, None, None, "vi", None, None, None, [2, 2]],
+                    ],
+                ],
+            ],
+        ),
+        (
+            "flashcards_language",
+            build_flashcards_artifact_params(
+                "nb_payload",
+                ["src_alpha"],
+                instructions=None,
+                quantity=None,
+                difficulty=None,
+                language="vi",
+            ),
+            [
+                _ARTIFACT_CLIENT_OPTIONS,
+                "nb_payload",
+                [
+                    None,
+                    None,
+                    4,
+                    [[["src_alpha"]]],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    [
+                        None,
+                        [1, None, None, "vi", None, None, [2, 2]],
+                    ],
+                ],
+            ],
+        ),
+        (
             "flashcards_options",
             build_flashcards_artifact_params(
                 "nb_payload",
@@ -2032,3 +2092,17 @@ class TestNoteShapeConfusionHasTeeth:
         swapped = NoteRow(["ID", swapped_inner])
         assert swapped.content == "REAL_TITLE"
         assert swapped.title == "REAL_CONTENT"
+
+
+@pytest.mark.parametrize("bad", ["", "  ", 5])
+@pytest.mark.parametrize("builder", [build_quiz_artifact_params, build_flashcards_artifact_params])
+def test_quiz_family_rejects_invalid_language(builder, bad) -> None:
+    with pytest.raises(ValidationError):
+        builder(
+            "nb_payload",
+            ["src_alpha"],
+            instructions=None,
+            quantity=None,
+            difficulty=None,
+            language=bad,
+        )

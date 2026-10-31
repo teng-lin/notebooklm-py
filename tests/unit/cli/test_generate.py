@@ -1113,22 +1113,36 @@ class TestGenerateLanguageValidation:
         assert "Unknown language code: invalid_code" in result.output
         assert "notebooklm language list" in result.output
 
-    def test_valid_language_code_accepted(self, runner, mock_auth):
-        """Test that valid language codes are accepted."""
+    @pytest.mark.parametrize(
+        ("command", "method"),
+        [
+            ("audio", "generate_audio"),
+            ("quiz", "generate_quiz"),
+            ("flashcards", "generate_flashcards"),
+        ],
+    )
+    def test_valid_language_code_accepted(self, runner, mock_auth, command, method):
+        """Valid language codes are accepted and forwarded; quiz/flashcards omit it by default."""
         mock_client = create_mock_client()
-        mock_client.artifacts.generate_audio = AsyncMock(
-            return_value={"artifact_id": "audio_123", "status": "processing"}
-        )
+        generate = AsyncMock(return_value={"task_id": "t1", "status": "processing"})
+        setattr(mock_client.artifacts, method, generate)
         with patch.object(
             auth_module, "fetch_tokens_with_domains", new_callable=AsyncMock
         ) as mock_fetch:
             mock_fetch.return_value = ("csrf", "session")
             result = runner.invoke(
                 cli,
-                ["generate", "audio", "-n", "nb_123", "--language", "ja"],
+                ["generate", command, "-n", "nb_123", "--language", "ja"],
                 obj=inject_client(mock_client),
             )
-        assert result.exit_code == 0
+            default = runner.invoke(
+                cli, ["generate", command, "-n", "nb_123"], obj=inject_client(mock_client)
+            )
+        assert result.exit_code == 0, result.output
+        assert default.exit_code == 0, default.output
+        assert generate.call_args_list[0].kwargs["language"] == "ja"
+        if command != "audio":
+            assert "language" not in generate.call_args_list[1].kwargs
 
 
 # =============================================================================

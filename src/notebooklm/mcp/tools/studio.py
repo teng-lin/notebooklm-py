@@ -348,7 +348,8 @@ def register(mcp: Any) -> None:
                 artifact_type,
                 notebook_id=notebook,
                 source_ids=UNSET,
-                language=language or "en",
+                # quiz/flashcards omit the language slot unless one is given.
+                language=language or (UNSET if artifact_type in ("quiz", "flashcards") else "en"),
                 instructions=normalized_instructions,
                 option_values={
                     "report_format": report_format,

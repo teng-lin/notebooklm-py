@@ -66,6 +66,13 @@ def _language(value: str, policy: CreationPolicy) -> str:
     return value
 
 
+def _optional_language(value: str | None) -> str | None:
+    """Strictly validate an optional language on every backend (``None`` omits it)."""
+    if value is not None and (not isinstance(value, str) or not value.strip()):
+        raise ValidationError("language must be a non-empty string or None")
+    return value
+
+
 def _text(value: str | None, parameter: str, policy: CreationPolicy) -> str | None:
     if policy.strict_inputs and value is not None and not isinstance(value, str):
         raise ValidationError(f"{parameter} must be a string or None")
@@ -186,6 +193,7 @@ def normalize_creation(
             _code(request.quantity, DEFAULT_QUIZ_QUANTITY, "quantity", strict=True),
             _code(request.difficulty, DEFAULT_QUIZ_DIFFICULTY, "difficulty", strict=True),
             request.later,
+            _optional_language(request.language),
         )
     if isinstance(request, raw.InfographicCreationRequest):
         return normalized.NormalizedInfographic(

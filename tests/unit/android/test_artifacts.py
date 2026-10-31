@@ -983,6 +983,28 @@ async def test_generate_flashcards_uses_exact_nested_variant_options() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "variant"),
+    [("generate_quiz", "APP_TYPE_QUIZ"), ("generate_flashcards", "APP_TYPE_FLASHCARDS")],
+)
+async def test_generate_quiz_family_sends_language_code_only_when_given(method, variant) -> None:
+    session, _, _, _, api = _graph()
+    session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(
+        artifact=_artifact(
+            "app-1", type_code=_PROTO.ARTIFACT_TYPE_APP, variant=getattr(_PROTO, variant)
+        )
+    )
+
+    await getattr(api, method)("notebook-1", source_ids=["source-1"], language="vi")
+    await getattr(api, method)("notebook-1", source_ids=["source-1"])
+
+    with_language = session.calls[0][1].artifact.app.generation_options
+    without_language = session.calls[1][1].artifact.app.generation_options
+    assert with_language.language_code == "vi"
+    assert without_language.language_code == ""
+
+
+@pytest.mark.asyncio
 async def test_generate_flashcards_rejects_a_quiz_variant_response() -> None:
     session, _, _, _, api = _graph()
     session.responses[CREATE_ARTIFACT_METHOD] = _PROTO.CreateArtifactResponse(

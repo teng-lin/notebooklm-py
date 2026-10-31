@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Quiz and flashcards output language (#2528).** `generate_quiz` and
+  `generate_flashcards` take an optional `language` code, and the CLI gains
+  `--language` on both. Omitting it leaves behavior unchanged; MCP and REST
+  forward `language` for these types only when supplied.
+
 ## [0.8.6] - 2026-10-28
 
 ### Added

@@ -1848,8 +1848,12 @@ status = await client.artifacts.generate_quiz(
     instructions="...",
     quantity=QuizQuantity.MORE,  # FEWER, STANDARD, MORE
     difficulty=QuizDifficulty.MEDIUM,  # EASY, MEDIUM, HARD
+    language="vi",  # optional output language; None (default) omits it
 )
 ```
+
+`generate_flashcards` accepts the same optional `language`. An empty or non-string
+value raises `ValidationError`.
 
 `later=True` is a keyword-only option on `generate_audio`, `generate_video`,
 `generate_report`, `generate_study_guide`, `generate_quiz`, `generate_flashcards`,

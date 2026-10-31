@@ -491,6 +491,7 @@ class ReviseSlideGenerationRequest(_GenerationRequestBase):
 @dataclass(frozen=True, kw_only=True)
 class QuizGenerationRequest(_DeferredGenerationRequest):
     kind: Literal["quiz"] = "quiz"
+    language: OptionalText = UNSET
     instructions: OptionalText = UNSET
     quantity: QuizQuantity = QuizQuantity.STANDARD
     difficulty: QuizDifficulty = QuizDifficulty.MEDIUM
@@ -499,6 +500,7 @@ class QuizGenerationRequest(_DeferredGenerationRequest):
 @dataclass(frozen=True, kw_only=True)
 class FlashcardsGenerationRequest(_DeferredGenerationRequest):
     kind: Literal["flashcards"] = "flashcards"
+    language: OptionalText = UNSET
     instructions: OptionalText = UNSET
     quantity: QuizQuantity = QuizQuantity.STANDARD
     difficulty: QuizDifficulty = QuizDifficulty.MEDIUM
@@ -805,6 +807,7 @@ def build_generation_request(
         return QuizGenerationRequest(
             notebook_id=notebook_id,
             source_ids=source_ids,
+            language=language,
             instructions=instructions,
             quantity=normalized["quantity"],  # type: ignore[arg-type]
             difficulty=normalized["difficulty"],  # type: ignore[arg-type]
@@ -818,6 +821,7 @@ def build_generation_request(
         return FlashcardsGenerationRequest(
             notebook_id=notebook_id,
             source_ids=source_ids,
+            language=language,
             instructions=instructions,
             quantity=normalized["quantity"],  # type: ignore[arg-type]
             difficulty=normalized["difficulty"],  # type: ignore[arg-type]
