@@ -11916,7 +11916,7 @@
       "modules": 33
     },
     "cli": {
-      "lines": 23122,
+      "lines": 23127,
       "modules": 76
     },
     "mcp": {
@@ -11949,7 +11949,7 @@
     }
   },
   "summary": {
-    "authored_lines": 156085,
+    "authored_lines": 156090,
     "authored_modules": 498,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1311,

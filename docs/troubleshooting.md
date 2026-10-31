@@ -203,7 +203,7 @@ If there is one, fix it in this order:
    pipx runpip notebooklm-py install --force-reinstall --no-deps rookie-cookies   # pipx
    pip install --force-reinstall --no-deps rookie-cookies                    # pip / activated venv
    ```
-   For `uv tool` and `pipx`, the exclusion path is inside the tool's own environment (find it with `uv tool dir` or `pipx environment --value PIPX_LOCAL_VENVS`, then `<env>\Lib\site-packagesookie_cookies`), not your project venv.
+   For `uv tool` and `pipx`, the exclusion path is inside the tool's own environment (find it with `uv tool dir` or `pipx environment --value PIPX_LOCAL_VENVS`, then `<env>\Lib\site-packages\rookie_cookies`), not your project venv.
 4. **Confirm it loads** with that same environment's interpreter, then retry the login:
    ```powershell
    & "<env>\Scripts\python.exe" -c "import rookie_cookies; print('OK:', rookie_cookies.__file__)"
