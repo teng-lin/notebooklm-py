@@ -39,8 +39,9 @@ def _handle_rookie_cookies_error(e: Exception, browser_name: str) -> str:
             f"[red]Could not decrypt {browser_name} cookies.[/red]\n"
             "On macOS, allow Keychain access when prompted. On Windows, Chrome 127+ and "
             "current Edge protect the cookie database with App-Bound Encryption (ABE). "
-            "Recent rookie-cookies releases can recover ABE (v20) cookies; if this still "
-            "fails, upgrade rookie-cookies and check whether antivirus quarantined its "
+            "rookie-cookies <0.6 can only recover ABE (v20) cookies from an elevated "
+            "(Administrator) terminal; 0.6+ can do it unelevated. Rerun elevated or upgrade "
+            "rookie-cookies, and if it still fails check whether antivirus quarantined its "
             "native module (see docs/troubleshooting.md). Or use Firefox as the cookie "
             "source instead (plain SQLite, no ABE): notebooklm login --browser-cookies firefox"
         )

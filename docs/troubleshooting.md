@@ -144,7 +144,7 @@ Prints `OK` without prompting → keychain is unlocked and your user has access;
 On Windows, both credential paths can leave you without `__Secure-1PSIDTS` (the rotating freshness partner of `__Secure-1PSID` that every real RPC needs — see [Automatic Token Refresh](#automatic-token-refresh) above), so `notebooklm login` reports success but `notebooklm list` then fails with `Missing required cookies: __Secure-1PSIDTS` (issue [#1753](https://github.com/teng-lin/notebooklm-py/issues/1753)). Two distinct causes are in play:
 
 - **`notebooklm login --browser chrome` (Playwright flow).** The interactive browser completes Google sign-in, but Google may serve an automation-detected session *without* the token-binding cookie (and sometimes without the secondary-binding cookies `OSID` / `APISID` + `SAPISID` the automatic `RotateCookies` recovery needs to re-mint it). When that happens the saved `storage_state.json` is genuinely incomplete and re-running the same flow reproduces it.
-- **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so most cookie-extraction libraries (`browser-cookie3`, `pycookiecheat`) cannot read it. Recent `rookie-cookies` releases can recover ABE (`v20`) cookies, so first upgrade (`pip install -U rookie-cookies`) and see [Windows: App-Bound `v20` recovery fails](#windows-app-bound-v20-recovery-fails-or-the-module-goes-missing) below. If it still fails, use one of the workarounds that follow.
+- **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so most cookie-extraction libraries (`browser-cookie3`, `pycookiecheat`) cannot read it. `rookie-cookies` 0.6+ can recover ABE (`v20`) cookies from a normal terminal; older releases (for example 0.5.8) only do so from an elevated (Run as Administrator) terminal. So first upgrade `rookie-cookies` (or rerun elevated) and see [Windows: App-Bound `v20` recovery fails](#windows-app-bound-v20-recovery-fails-or-the-module-goes-missing) below. If it still fails, use one of the workarounds that follow.
 
 `notebooklm doctor` checks local auth material, not whether Google accepts the session.
 It reports a **warn** row when `__Secure-1PSIDTS` is missing, expired, empty, or
@@ -197,13 +197,16 @@ If there is one, fix it in this order:
    Add-MpPreference -ExclusionPath "<path to your venv>\Lib\site-packages\rookie_cookies"
    Get-MpPreference | Select-Object -ExpandProperty ExclusionPath   # verify
    ```
-3. **Reinstall** so the file is rewritten after the exclusion exists (the quarantined copy is not restored by the exclusion alone):
+3. **Reinstall in the environment that runs `notebooklm`**, so the file is rewritten after the exclusion exists (the quarantined copy is not restored by the exclusion alone). Use the command that matches how you installed the CLI:
    ```powershell
-   uv pip install --force-reinstall --no-deps rookie-cookies   # or: pip install --force-reinstall --no-deps rookie-cookies
+   uv tool upgrade notebooklm-py --reinstall-package rookie-cookies          # uv tool install
+   pipx runpip notebooklm-py install --force-reinstall --no-deps rookie-cookies   # pipx
+   pip install --force-reinstall --no-deps rookie-cookies                    # pip / activated venv
    ```
-4. **Confirm it loads**, then retry the login:
+   For `uv tool` and `pipx`, the exclusion path is inside the tool's own environment (find it with `uv tool dir` or `pipx environment --value PIPX_LOCAL_VENVS`, then `<env>\Lib\site-packagesookie_cookies`), not your project venv.
+4. **Confirm it loads** with that same environment's interpreter, then retry the login:
    ```powershell
-   python -c "import rookie_cookies; print('OK:', rookie_cookies.__file__)"
+   & "<env>\Scripts\python.exe" -c "import rookie_cookies; print('OK:', rookie_cookies.__file__)"
    notebooklm login --browser-cookies chrome
    ```
 
