@@ -15,12 +15,20 @@ from notebooklm.cli.services.login.rookie_cookies_errors import _handle_rookie_c
 
 @pytest.mark.parametrize(
     "error_text",
-    ["database is locked", "could not acquire LOCK on profile"],
+    [
+        "database is locked",
+        "could not acquire LOCK on profile",
+        # Real Windows rookie-cookies text when Chrome is running and the
+        # shadow-copy/shutdown recovery path was not available.
+        "Windows browser database is share-locked at <path> (OS error 32); "
+        "process shutdown is disabled",
+    ],
 )
 def test_locked_database_branch(error_text):
     msg = _handle_rookie_cookies_error(RuntimeError(error_text), "chrome")
     assert "browser database is locked" in msg
     assert "Close your browser" in msg
+    assert "elevated" in msg
     assert "chrome" in msg
 
 

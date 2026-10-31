@@ -24,7 +24,10 @@ def _handle_rookie_cookies_error(e: Exception, browser_name: str) -> str:
     if "lock" in msg or "database" in msg:
         return (
             f"[red]Could not read {browser_name} cookies: browser database is locked.[/red]\n"
-            "Close your browser and try again."
+            "Close your browser completely (including background processes) and try again. "
+            "On Windows you can instead rerun from an elevated (Administrator) terminal "
+            "so rookie-cookies can read a shadow copy while the browser stays open. "
+            "See docs/troubleshooting.md#windows-chrome-cookie-database-is-locked-while-chrome-is-running"
         )
     if "permission" in msg or "access" in msg:
         return (
@@ -35,9 +38,10 @@ def _handle_rookie_cookies_error(e: Exception, browser_name: str) -> str:
         return (
             f"[red]Could not decrypt {browser_name} cookies.[/red]\n"
             "On macOS, allow Keychain access when prompted. On Windows, Chrome 127+ and "
-            "current Edge protect the cookie database with App-Bound Encryption (ABE): the "
-            "key is bound to the browser process via a Windows service, so no external "
-            "process can read it and no flag bypasses it. Use Firefox as the cookie source "
-            "instead (plain SQLite, no ABE): notebooklm login --browser-cookies firefox"
+            "current Edge protect the cookie database with App-Bound Encryption (ABE). "
+            "Recent rookie-cookies releases can recover ABE (v20) cookies; if this still "
+            "fails, upgrade rookie-cookies and check whether antivirus quarantined its "
+            "native module (see docs/troubleshooting.md). Or use Firefox as the cookie "
+            "source instead (plain SQLite, no ABE): notebooklm login --browser-cookies firefox"
         )
     return f"[red]Failed to read cookies from {browser_name}:[/red] {e}"

@@ -144,7 +144,7 @@ Prints `OK` without prompting → keychain is unlocked and your user has access;
 On Windows, both credential paths can leave you without `__Secure-1PSIDTS` (the rotating freshness partner of `__Secure-1PSID` that every real RPC needs — see [Automatic Token Refresh](#automatic-token-refresh) above), so `notebooklm login` reports success but `notebooklm list` then fails with `Missing required cookies: __Secure-1PSIDTS` (issue [#1753](https://github.com/teng-lin/notebooklm-py/issues/1753)). Two distinct causes are in play:
 
 - **`notebooklm login --browser chrome` (Playwright flow).** The interactive browser completes Google sign-in, but Google may serve an automation-detected session *without* the token-binding cookie (and sometimes without the secondary-binding cookies `OSID` / `APISID` + `SAPISID` the automatic `RotateCookies` recovery needs to re-mint it). When that happens the saved `storage_state.json` is genuinely incomplete and re-running the same flow reproduces it.
-- **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so no external process can read it. This blocks every cookie-extraction library (`rookie-cookies`, `browser-cookie3`, `pycookiecheat`), not just `notebooklm-py`. There is no flag that bypasses ABE.
+- **`notebooklm login --browser-cookies chrome` (or `edge`) → `Could not decrypt chrome cookies`.** Chrome 127+ (and current Edge) protect the cookie database with **App-Bound Encryption (ABE)**: the decryption key is bound to the browser process via a Windows service, so most cookie-extraction libraries (`browser-cookie3`, `pycookiecheat`) cannot read it. Recent `rookie-cookies` releases can recover ABE (`v20`) cookies, so first upgrade (`pip install -U rookie-cookies`) and see [Windows: App-Bound `v20` recovery fails](#windows-app-bound-v20-recovery-fails-or-the-module-goes-missing) below. If it still fails, use one of the workarounds that follow.
 
 `notebooklm doctor` checks local auth material, not whether Google accepts the session.
 It reports a **warn** row when `__Secure-1PSIDTS` is missing, expired, empty, or
@@ -179,6 +179,57 @@ Workarounds, most reliable first:
    ```
    If three attempts (normal, `--fresh` + password, `--fresh` + passkey) all reproduce the missing cookie, treat it as the automation-detection case and switch to Firefox or a master token above.
 
+#### Windows: App-Bound `v20` recovery fails, or the module goes missing
+
+`rookie-cookies` recovers Chrome/Edge App-Bound (`v20`) cookies by spawning a browser process and reflectively injecting into it to call `IElevator.DecryptData`. That is the same shape infostealer malware uses, so some antivirus engines quarantine the native module on heuristics alone. Windows Defender has been seen flagging `rookie_cookies.pyd` as `Trojan:Win64/InfoStealer!AMTB`, which silently removes the module and makes `v20` extraction look broken rather than blocked. Symptoms: `Could not decrypt chrome cookies`, `ModuleNotFoundError`/`ImportError` for `rookie_cookies`, or `--browser-cookies` reporting that rookie-cookies is not installed even though you installed it.
+
+Check for a detection (PowerShell):
+
+```powershell
+Get-MpThreatDetection | Where-Object { $_.Resources -match "rookie" }
+```
+
+If there is one, fix it in this order:
+
+1. **Report the false positive** to Microsoft's [file submission portal](https://www.microsoft.com/en-us/wdsi/filesubmission) so the signature is corrected for everyone.
+2. **Add a narrow exclusion** from an elevated (Run as Administrator) PowerShell. Scope it to the package directory only, never the whole venv or a drive:
+   ```powershell
+   Add-MpPreference -ExclusionPath "<path to your venv>\Lib\site-packages\rookie_cookies"
+   Get-MpPreference | Select-Object -ExpandProperty ExclusionPath   # verify
+   ```
+3. **Reinstall** so the file is rewritten after the exclusion exists (the quarantined copy is not restored by the exclusion alone):
+   ```powershell
+   uv pip install --force-reinstall --no-deps rookie-cookies   # or: pip install --force-reinstall --no-deps rookie-cookies
+   ```
+4. **Confirm it loads**, then retry the login:
+   ```powershell
+   python -c "import rookie_cookies; print('OK:', rookie_cookies.__file__)"
+   notebooklm login --browser-cookies chrome
+   ```
+
+If the import succeeds and `v20` still fails, re-run `Get-MpThreatDetection` for a *new* detection; a reinstall changes the file hash and a Defender update can re-flag it. Corporate-managed Defender policies may block exclusions. In that case use Firefox (above) or a master token. Details: the [rookie-cookies troubleshooting guide](https://github.com/teng-lin/rookie-cookies/blob/main/docs/troubleshooting.md) ([PR #82](https://github.com/teng-lin/rookie-cookies/pull/82)).
+
+#### Windows: Chrome cookie database is locked while Chrome is running
+
+```text
+Could not read chrome cookies: browser database is locked.
+```
+
+The underlying `rookie-cookies` error reads roughly `Windows browser database is share-locked at <path> (OS error 32); process shutdown is disabled`. Chrome holds an exclusive lock on its `Cookies` database (and its write-ahead log) while it runs. `rookie-cookies` first tries to read it normally; if Windows refuses, it can fall back to a **non-disruptive shadow copy**, but only when the shell is **elevated** and the database has a pending write-ahead log. Its last-resort recovery, terminating the browser, is opt-in and is **not exposed** through the Python API or CLI that `notebooklm-py` uses, so it never closes Chrome for you.
+
+Fixes, simplest first:
+
+1. **Quit Chrome completely, then retry.** Closing the window is not enough because Chrome keeps background processes alive. Exit from the tray icon, or from PowerShell (this closes every Chrome window, so save your work first):
+   ```powershell
+   Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process
+   notebooklm login --browser-cookies chrome
+   ```
+   To stop this recurring, turn off *Settings → System → Continue running background apps when Google Chrome is closed*.
+2. **Keep Chrome open and run from an elevated terminal.** Open PowerShell with *Run as Administrator* and rerun the same `notebooklm login --browser-cookies chrome` command. This lets `rookie-cookies` read a shadow copy. It is not guaranteed: if it still reports the database as locked, fall back to option 1.
+3. **Use a different source.** Firefox is not locked this way (`notebooklm login --browser-cookies firefox`), or sign in with the Playwright flow (`notebooklm login`).
+
+The same fixes apply to Edge and Brave (replace the process name, for example `msedge`).
+
 #### Windows: browser fails to start with `spawn UNKNOWN`
 
 ```text
@@ -205,7 +256,7 @@ Workarounds, most reliable first:
 2. **Sign in elsewhere and ship the credentials in.** This is the right answer for a non-interactive or locked-down Windows host, and needs no browser on that host at all: run `notebooklm login` on a machine with a display, then copy `storage_state.json` over (or set `NOTEBOOKLM_AUTH_JSON`) — see [installation.md#d-headless-server-or-ci](installation.md#d-headless-server-or-ci).
 3. **Have IT allow-list the directory.** Permit execution from `%LOCALAPPDATA%\ms-playwright` (or wherever `PLAYWRIGHT_BROWSERS_PATH` points), and exclude it from real-time antivirus scanning.
 
-Note that `--browser-cookies chrome` is *not* a workaround on Windows: it runs into App-Bound Encryption instead (see [the section above](#windows-missing-required-cookies-__secure-1psidts-after-login-and---browser-cookies-could-not-decrypt)). Use `--browser-cookies firefox` if you want the cookie-extraction route.
+Note that `--browser-cookies chrome` is *not* a workaround on Windows: it can run into App-Bound Encryption, a locked cookie database, or an antivirus-quarantined module instead (see [the section above](#windows-missing-required-cookies-__secure-1psidts-after-login-and---browser-cookies-could-not-decrypt)). Use `--browser-cookies firefox` if you want the cookie-extraction route.
 
 #### "Unauthorized" or redirect to login page
 
