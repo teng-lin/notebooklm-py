@@ -24,7 +24,7 @@ from notebooklm.exceptions import (
     ValidationError,
 )
 from notebooklm.rpc import RPCMethod
-from notebooklm.types import VideoFormat, VideoStyle
+from notebooklm.types import QuizQuestionType, VideoFormat, VideoStyle
 
 pytestmark = pytest.mark.asyncio
 
@@ -294,6 +294,25 @@ async def test_null_result_names_the_requested_artifact_type() -> None:
 
     with pytest.raises(ArtifactFeatureUnavailableError, match="Quiz generation is unavailable"):
         await service.generate_quiz("nb1", source_ids=["s1"])
+
+
+async def test_quiz_family_options_reach_the_wire_through_the_service() -> None:
+    """Direct service callers get language / question_types / include_images on the wire."""
+    rpc = _FakeRpc()
+    service, _, _, _ = _service(rpc=rpc)
+
+    await service.generate_quiz(
+        "nb1",
+        source_ids=["s1"],
+        language="vi",
+        question_types=[QuizQuestionType.SHORT_ANSWER],
+        include_images=False,
+    )
+    await service.generate_flashcards("nb1", source_ids=["s1"], language="vi", include_images=False)
+
+    quiz, cards = (call.params[2][9][1] for call in rpc.calls)
+    assert quiz[3] == "vi" and quiz[7] == [2, 2, None, [1, 2, 3], [True]]
+    assert cards[3] == "vi" and cards[6] == [2, 2, [True]]
 
 
 async def test_null_artifact_id_raises_feature_unavailable() -> None:

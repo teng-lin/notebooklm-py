@@ -148,8 +148,8 @@ def build_quiz_artifact_params(
     quantity: QuizQuantity | None,
     difficulty: QuizDifficulty | None,
     language: str | None = None,
-    include_images: bool | None = None,
     question_types: Sequence[QuizQuestionType] | None = None,
+    include_images: bool | None = None,
 ) -> list[Any]:
     """Compatibility builder using the shared domain normalization boundary."""
     return _encode_public_creation(

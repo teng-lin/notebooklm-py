@@ -1860,8 +1860,8 @@ complement as the request's "avoid" list. The Android backend does not honor it,
 `generate_quiz(question_types=...)` raises `UnsupportedOperationError` there (unless the
 selection includes every type, which is the default and sends nothing).
 `generate_flashcards` accepts the same optional `language` and `include_images`.
-`include_images` must be a `bool` or `None`. An empty or non-string
-value raises `ValidationError`.
+`include_images` must be a `bool` or `None`, and `language` must be a non-empty string
+or `None`; anything else raises `ValidationError`.
 
 `later=True` is a keyword-only option on `generate_audio`, `generate_video`,
 `generate_report`, `generate_study_guide`, `generate_quiz`, `generate_flashcards`,
