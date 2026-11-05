@@ -142,6 +142,18 @@ def test_empty_answer_reason_survives_textless_stream(code):
     assert result.turn_key.turn_id == "turn"
 
 
+@pytest.mark.parametrize("batched", [False, True], ids=["separate-lines", "same-line"])
+def test_empty_answer_reason_survives_following_items_without_a_reason(batched):
+    frames = [
+        ["wrb.fr", "method", json.dumps([["", None, None, 2]])],
+        ["wrb.fr", "method", json.dumps([["", None, None, None], None, None, None, True])],
+    ]
+    stream = json.dumps(frames) if batched else "\n".join(json.dumps([frame]) for frame in frames)
+    parsed = parse_streaming_chat_response(stream)
+    assert parsed.answer == ""
+    assert parsed.empty_answer_reason == EmptyAnswerReason.FILTERED
+
+
 @pytest.mark.parametrize("field", [12, 13])
 @pytest.mark.parametrize("namespace", ["labs.tailwind", "cloud.notebooklm"])
 def test_quota_presence_raises_rate_limit_with_rejected_commit_state(field, namespace):

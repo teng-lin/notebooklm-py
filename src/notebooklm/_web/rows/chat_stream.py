@@ -547,7 +547,8 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
                 # the turn a caller is most likely to want to give feedback on.
                 if answer.turn_key is not None:
                     turn_key = answer.turn_key
-                empty_answer_reason = answer.empty_answer_reason
+                if answer.empty_answer_reason is not None:
+                    empty_answer_reason = answer.empty_answer_reason
                 text = answer.text
                 if text is None:
                     continue
