@@ -708,6 +708,7 @@ async def test_history_uses_response_document_when_legacy_answer_text_is_empty()
 
 @pytest.mark.asyncio
 async def test_history_turns_exposes_native_status_timestamp_and_empty_reason() -> None:
+    """Retain native status, precise timestamps, and diagnostic absence through the public API."""
     from datetime import datetime, timezone
 
     from google.protobuf.timestamp_pb2 import Timestamp
@@ -746,6 +747,7 @@ async def test_history_turns_exposes_native_status_timestamp_and_empty_reason() 
 
 def test_history_status_is_decoded_from_original_unknown_wire_field() -> None:
     # Field 3 = role 2; field 6 = in-progress 1, as captured in #2541.
+    """Decode the captured field-six varint through the generated descriptor."""
     from notebooklm._android.codecs.chat import decode_history_turns
 
     row = chat_pb2.ChatHistoryMessage.FromString(bytes.fromhex("18023001"))
@@ -770,6 +772,7 @@ def test_history_status_is_decoded_from_original_unknown_wire_field() -> None:
     ],
 )
 def test_native_history_document_visibility_matches_web_ui(variant, content, visible):
+    """Classify visible and decorative protobuf document variants consistently."""
     from notebooklm._android.codecs.chat import decode_history_turns
 
     element = chat_pb2.StructuralElement(start_index=0, end_index=1)
@@ -953,6 +956,7 @@ async def test_stream_next_step_suggestions_are_nonempty_last_wins_across_frames
 
 @pytest.mark.asyncio
 async def test_stream_preserves_exact_empty_answer_reason_in_raw_response() -> None:
+    """Project a textless final reason while retaining its original diagnostic JSON."""
     fake = FakeSession()
     fake.stream_responses = [
         [

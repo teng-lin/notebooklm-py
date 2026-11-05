@@ -293,6 +293,7 @@ class AndroidChatAPI(ChatAPI):
         )
 
     def _decode_history_turns(self, response: Any) -> list[ChatHistoryTurn]:
+        """Project native history into oldest-first typed messages."""
         return decode_history_turns(response)
 
     async def get_history(
@@ -366,6 +367,7 @@ class AndroidChatAPI(ChatAPI):
         cached_turns: list[ConversationTurn],
         conversation_id: str | None,
     ) -> _PostedAsk:
+        """Decode one completed backend stream before shared conversation bookkeeping."""
         turn_id = self._turn_id_factory()
         if not isinstance(turn_id, str) or not turn_id:
             raise ValueError("turn_id_factory must return a non-empty string")

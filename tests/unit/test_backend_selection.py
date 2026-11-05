@@ -219,6 +219,7 @@ def test_android_assembly_wires_no_web_file_upload_collaborator() -> None:
 
 
 def test_android_selected_public_callable_inventory_is_exact() -> None:
+    """Require explicit inventory review for additions to the Android public API."""
     client = NotebookLMClient(_auth(), backend="android")
     expected_names = {
         "notebooks": {

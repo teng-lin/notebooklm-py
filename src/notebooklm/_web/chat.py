@@ -231,6 +231,7 @@ class WebChatAPI(RequestPolicyOwner, ChatAPI):
         cached_turns: list[ConversationTurn],
         conversation_id: str | None,
     ) -> _PostedAsk:
+        """Decode one completed backend stream before shared conversation bookkeeping."""
         conversation_history = self._build_history_from_turns(cached_turns)
         reqid = await self._reqid.next_reqid()
 
@@ -429,11 +430,25 @@ class WebChatAPI(RequestPolicyOwner, ChatAPI):
         return None
 
     def _decode_history_turns(self, response: Any) -> list[ChatHistoryTurn]:
+        """Project a native Web history snapshot into oldest-first typed messages."""
         turns = unwrap_conversation_turns(response, source="chat.get_history_turns")
         decoded: list[ChatHistoryTurn] = []
-        for raw in reversed(turns):
+        for index, raw in enumerate(reversed(turns)):
             row = ConversationTurnRow(raw)
-            if not row.is_well_formed or row.has_unrecognized_role:
+            if not row.is_well_formed:
+                logger.debug(
+                    "get_history_turns: skipping malformed turn at index %d (type=%s)",
+                    index,
+                    type(raw).__name__,
+                )
+                continue
+            if row.has_unrecognized_role:
+                logger.debug(
+                    "get_history_turns: unrecognized role code %s at index %d; "
+                    "possible role-slot drift",
+                    reprlib.repr(row.role),
+                    index,
+                )
                 continue
             answer = row.answer
             decoded.append(

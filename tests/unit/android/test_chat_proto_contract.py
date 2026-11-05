@@ -79,6 +79,7 @@ def test_chat_packages_imports_and_service_free_overlay_are_exact() -> None:
 
 
 def test_chat_request_response_fields_are_exhaustive() -> None:
+    """Pin every admitted chat field against the generated protobuf descriptor."""
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING

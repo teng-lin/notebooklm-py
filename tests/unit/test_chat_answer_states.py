@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -38,11 +39,13 @@ NOW = datetime(2026, 11, 4, tzinfo=timezone.utc)
     ],
 )
 def test_answer_display_state_matches_ui_boundary(status, age, text, state):
+    """Distinguish stale, failed, completed, and unknown answer states."""
     turn = ChatHistoryTurn("id", 2, text, status, NOW - timedelta(seconds=age))
     assert turn.display_state(now=NOW) == state
 
 
 def test_stale_document_answer_is_successful_and_missing_time_stays_streaming():
+    """Recognize visible document content without inventing a missing timestamp."""
     document = StructuredDocument(blocks=(DocumentBlock(0, 1, kind=BlockKind.IMAGE),))
     turn = ChatHistoryTurn(
         "id", 2, "", 1, NOW - timedelta(days=7), answer_document=document, has_document_content=True
@@ -53,6 +56,7 @@ def test_stale_document_answer_is_successful_and_missing_time_stays_streaming():
 
 
 def test_successful_empty_answer_is_distinct_from_failure_and_question():
+    """Only a successful contentless answer represents the empty-answer outcome."""
     assert ChatHistoryTurn("id", 2, "", ChatTurnStatus.COMPLETED).is_empty
     assert not ChatHistoryTurn("id", 2, "", ChatTurnStatus.FAILED).is_empty
     assert ChatHistoryTurn("id", 1, "question", ChatTurnStatus.FAILED).state == "success"
@@ -76,6 +80,7 @@ def test_successful_empty_answer_is_distinct_from_failure_and_question():
     ],
 )
 def test_web_visible_document_content_matches_ui(element, visible):
+    """Mirror the web UI content predicate across supported JSON document variants."""
     row = AnswerRow(["", None, None, None, [[[element]], None, None, None, 1]])
     assert row.has_document_content is visible
     thought = AnswerRow(["", None, None, None, [[[element]], None, None, None, 2]])
@@ -83,6 +88,7 @@ def test_web_visible_document_content_matches_ui(element, visible):
 
 
 def _web_api():
+    """Build an isolated Web adapter with a recording RPC seam."""
     rpc = MagicMock(rpc_call=AsyncMock())
     api = WebChatAPI(
         rpc=rpc,
@@ -97,6 +103,7 @@ def _web_api():
 
 @pytest.mark.asyncio
 async def test_public_web_history_turns_decodes_failed_and_empty_answers():
+    """Expose independent failure and empty-answer metadata without changing row order."""
     api, rpc = _web_api()
     seconds = int(NOW.timestamp())
     rpc.rpc_call.return_value = [
@@ -123,6 +130,7 @@ async def test_public_web_history_turns_decodes_failed_and_empty_answers():
 
 @pytest.mark.asyncio
 async def test_history_turns_resolves_session_and_skips_io_for_nonpositive_limit():
+    """Avoid history requests when no messages or conversation can be selected."""
     api, rpc = _web_api()
     api.get_conversation_id = AsyncMock(return_value=None)
     assert await api.get_history_turns("notebook", limit=0) == []
@@ -134,6 +142,7 @@ async def test_history_turns_resolves_session_and_skips_io_for_nonpositive_limit
 
 @pytest.mark.parametrize("code", [None, 0, 1, 2, 99])
 def test_empty_answer_reason_survives_textless_stream(code):
+    """Retain known and future reason codes even when the stream has no answer text."""
     inner = [["", None, ["conversation", "turn", 7], code], None, None, None, True]
     frame = json.dumps([["wrb.fr", "method", json.dumps(inner)]])
     result = parse_streaming_chat_response(frame)
@@ -144,6 +153,7 @@ def test_empty_answer_reason_survives_textless_stream(code):
 
 @pytest.mark.parametrize("batched", [False, True], ids=["separate-lines", "same-line"])
 def test_empty_answer_reason_survives_following_items_without_a_reason(batched):
+    """Batching must not erase diagnostics that survive separate stream lines."""
     frames = [
         ["wrb.fr", "method", json.dumps([["", None, None, 2]])],
         ["wrb.fr", "method", json.dumps([["", None, None, None], None, None, None, True])],
@@ -157,6 +167,7 @@ def test_empty_answer_reason_survives_following_items_without_a_reason(batched):
 @pytest.mark.parametrize("field", [12, 13])
 @pytest.mark.parametrize("namespace", ["labs.tailwind", "cloud.notebooklm"])
 def test_quota_presence_raises_rate_limit_with_rejected_commit_state(field, namespace):
+    """Recognize both quota markers and namespaces while retaining rejection metadata."""
     detail = [None] * field
     detail[field - 1] = []  # An empty message is still present, as in the web UI.
     payload = [
@@ -177,6 +188,7 @@ def test_quota_presence_raises_rate_limit_with_rejected_commit_state(field, name
 
 
 def test_nonquota_user_displayable_error_remains_chat_error():
+    """Do not reinterpret every displayable rejection as account quota exhaustion."""
     payload = [8, None, [["type.googleapis.com/x.UserDisplayableError", [None] * 13]]]
     frame = json.dumps([["wrb.fr", "method", None, None, None, payload]])
     with pytest.raises(ChatError) as caught:
@@ -185,6 +197,7 @@ def test_nonquota_user_displayable_error_remains_chat_error():
 
 
 def test_optional_history_metadata_is_not_fabricated_and_drift_raises():
+    """Keep omitted metadata absent and reject malformed values explicitly."""
     row = ConversationTurnRow(["id", None, 2, None, None])
     assert row.status is None
     assert row.timestamp is None
@@ -195,3 +208,15 @@ def test_optional_history_metadata_is_not_fabricated_and_drift_raises():
         _ = ConversationTurnRow(["id", [0, -1], 2]).timestamp
     with pytest.raises(UnknownRPCMethodError):
         _ = AnswerRow(["", None, None, "filtered"]).empty_answer_reason
+
+
+def test_skipped_history_rows_emit_bounded_drift_diagnostics(caplog):
+    """A malformed snapshot must be distinguishable from an empty conversation."""
+    api, _ = _web_api()
+    with caplog.at_level(logging.DEBUG, logger="notebooklm._chat.api"):
+        turns = api._decode_history_turns([[None, ["id", None, "unexpected" * 1000]]])
+    assert turns == []
+    messages = [record.message for record in caplog.records]
+    assert any("malformed turn" in message for message in messages)
+    assert any("role-slot drift" in message for message in messages)
+    assert all(len(message) < 300 for message in messages)
