@@ -12,6 +12,7 @@ import logging
 import math
 import re
 import reprlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from typing import Any, NoReturn
 
@@ -195,14 +196,13 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
     parseable_chunk_count = 0
     terminal_sequence: int | None = None
 
-    def process_chunk(json_str: str) -> None:
-        """Process a JSON chunk, updating best answer candidates and their refs."""
+    def process_extraction(chunk: _ChunkExtraction) -> None:
+        """Update answer candidates and metadata from one decoded envelope."""
         nonlocal final_marked_answer, final_marked_refs, final_marked_document
         nonlocal best_marked_answer, best_marked_refs, best_marked_document
         nonlocal best_unmarked_answer, best_unmarked_refs, best_unmarked_document
         nonlocal saw_drift_signal, server_conv_id, turn_key, next_steps, parseable_chunk_count
         nonlocal saw_final_chunk, terminal_sequence, empty_answer_reason
-        chunk = _extract_chunk_with_parseable(json_str)
         if chunk.parseable:
             parseable_chunk_count += 1
         # Recorded whether or not the chunk bore text: it is what separates
@@ -238,6 +238,11 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             next_steps = chunk.next_steps
         if chunk.terminal_sequence is not None:
             terminal_sequence = chunk.terminal_sequence
+
+    def process_chunk(json_str: str) -> None:
+        """Process every envelope in a line before applying final-answer selection."""
+        for chunk in _extract_chunks_with_parseable(json_str):
+            process_extraction(chunk)
 
     i = 0
     while i < len(lines):
@@ -375,16 +380,33 @@ def extract_answer_and_refs_from_chunk(
 ) -> tuple[str | None, bool, list[ChatReference], str | None]:
     """Extract answer text, references, and conversation ID from one response chunk.
 
-    Public 4-tuple wrapper around :func:`_extract_chunk_with_parseable`.
+    Public 4-tuple wrapper around :func:`_extract_chunks_with_parseable`.
     The remaining :class:`_ChunkExtraction` fields are internal-only — they exist
     for the streaming parser's "zero parseable chunks" detection and answer
     selection, and are not part of this module's outward-facing contract.
     """
-    chunk = _extract_chunk_with_parseable(json_str)
+    # Preserve this legacy helper's first-text 4-tuple contract. The main
+    # streaming parser consumes all envelopes through the iterator instead.
+    chunk = next(
+        (chunk for chunk in _extract_chunks_with_parseable(json_str) if chunk.text),
+        _ChunkExtraction(),
+    )
     return chunk.text, chunk.is_answer, chunk.references, chunk.conversation_id
 
 
-def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
+def _extract_chunks_with_parseable(json_str: str) -> Iterator[_ChunkExtraction]:
+    """Decode a JSON line once and visit every frame, independent of batching."""
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(data, list):
+        return
+    for item in data:
+        yield _extract_chunk_from_items([item])
+
+
+def _extract_chunk_from_items(data: list[Any]) -> _ChunkExtraction:
     """Extract answer/refs/conv-id from one chunk and report wire-format parseability.
 
     :attr:`~_ChunkExtraction.parseable` is True iff at least one ``wrb.fr``
@@ -405,14 +427,6 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
     comments for the exact per-item vs across-frame semantics.
     """
     refs: list[ChatReference] = []
-
-    try:
-        data = json.loads(json_str)
-    except json.JSONDecodeError:
-        return _ChunkExtraction(references=refs)
-
-    if not isinstance(data, list):
-        return _ChunkExtraction(references=refs)
 
     parseable = False
     saw_final_envelope = False

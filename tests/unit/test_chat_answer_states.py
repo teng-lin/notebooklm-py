@@ -164,6 +164,54 @@ def test_empty_answer_reason_survives_following_items_without_a_reason(batched):
     assert parsed.empty_answer_reason == EmptyAnswerReason.FILTERED
 
 
+@pytest.mark.parametrize("batched", [False, True], ids=["separate-lines", "same-line"])
+def test_text_before_empty_answer_metadata_does_not_stop_envelope_processing(batched):
+    """Earlier text must not hide a later textless envelope's reason code."""
+    frames = [
+        ["wrb.fr", "method", json.dumps([["partial answer", None, None, None]])],
+        ["wrb.fr", "method", json.dumps([["", None, None, 2], None, None, None, True])],
+    ]
+    stream = json.dumps(frames) if batched else "\n".join(json.dumps([frame]) for frame in frames)
+    parsed = parse_streaming_chat_response(stream)
+    assert parsed.answer == "partial answer"
+    assert parsed.empty_answer_reason == EmptyAnswerReason.FILTERED
+
+
+@pytest.mark.parametrize("batched", [False, True], ids=["separate-lines", "same-line"])
+def test_batched_final_answer_selection_matches_separate_lines(batched):
+    """A shorter final answer must win over an earlier long partial in either carrier."""
+    frames = [
+        [
+            "wrb.fr",
+            "method",
+            json.dumps([["long partial answer", None, None, None, [None, None, None, None, 1]]]),
+        ],
+        [
+            "wrb.fr",
+            "method",
+            json.dumps(
+                [["final", None, None, None, [None, None, None, None, 1]], None, None, None, True]
+            ),
+        ],
+    ]
+    stream = json.dumps(frames) if batched else "\n".join(json.dumps([frame]) for frame in frames)
+    assert parse_streaming_chat_response(stream).answer == "final"
+
+
+@pytest.mark.parametrize("batched", [False, True], ids=["separate-lines", "same-line"])
+def test_later_quota_rejection_is_not_hidden_by_earlier_text(batched):
+    """Partial text is not a successful answer when a later envelope rejects the ask."""
+    details = [None] * 11 + [[]]
+    payload = [8, None, [["type.googleapis.com/x.UserDisplayableError", details]]]
+    frames = [
+        ["wrb.fr", "method", json.dumps([["partial answer"]])],
+        ["wrb.fr", "method", None, None, None, payload],
+    ]
+    stream = json.dumps(frames) if batched else "\n".join(json.dumps([frame]) for frame in frames)
+    with pytest.raises(RateLimitError):
+        parse_streaming_chat_response(stream)
+
+
 @pytest.mark.parametrize("field", [12, 13])
 @pytest.mark.parametrize("namespace", ["labs.tailwind", "cloud.notebooklm"])
 def test_quota_presence_raises_rate_limit_with_rejected_commit_state(field, namespace):
