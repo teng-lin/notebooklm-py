@@ -46,12 +46,15 @@ from ._types.artifacts import (
 )
 from ._types.chat import (
     AskResult,
+    ChatHistoryTurn,
     ChatMode,
     ChatReference,
     ChatSessionStatus,
     ChatSettings,
+    ChatTurnStatus,
     ConversationTurn,
     ConversationTurnKey,
+    EmptyAnswerReason,
     NextStepSuggestion,
 )
 from ._types.collections import Collection
@@ -285,6 +288,9 @@ __all__ = [
     "Note",
     "Label",
     "Collection",
+    "ChatHistoryTurn",
+    "ChatTurnStatus",
+    "EmptyAnswerReason",
     "ConversationTurn",
     "ConversationTurnKey",
     "NextStepSuggestion",
@@ -424,6 +430,9 @@ for _public_moved_type in (
     ChatSettings,
     ChatSession,
     Collection,
+    ChatHistoryTurn,
+    ChatTurnStatus,
+    EmptyAnswerReason,
     ConversationTurn,
     ConversationTurnKey,
     CopiedArtifact,

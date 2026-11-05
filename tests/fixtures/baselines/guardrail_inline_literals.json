@@ -8,8 +8,8 @@
   "tests/_guardrails/_wire_contract.py": {
     "ENUM_BINDINGS": 158,
     "ENUM_GAPS": 34,
-    "MAPPINGS": 811,
-    "PINNED": 174,
+    "MAPPINGS": 821,
+    "PINNED": 192,
     "UNMAPPED": 359
   },
   "tests/_guardrails/test_android_retry_manifest.py": {

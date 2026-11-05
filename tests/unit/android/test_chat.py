@@ -707,6 +707,87 @@ async def test_history_uses_response_document_when_legacy_answer_text_is_empty()
 
 
 @pytest.mark.asyncio
+async def test_history_turns_exposes_native_status_timestamp_and_empty_reason() -> None:
+    from datetime import datetime, timezone
+
+    from google.protobuf.timestamp_pb2 import Timestamp
+
+    failed = chat_pb2.ChatHistoryMessage(
+        message_id="failed",
+        observed_event_type=2,
+        status=1,
+        timestamp=Timestamp(seconds=1_700_000_000, nanos=123456789),
+    )
+    empty = chat_pb2.ChatHistoryMessage(
+        message_id="empty",
+        observed_event_type=2,
+        status=2,
+        act_on_sources_response=chat_pb2.ActOnSourcesResponse(
+            response=chat_pb2.AnswerResponse(empty_answer_reason=chat_pb2.UNANSWERABLE)
+        ),
+    )
+    future = chat_pb2.ChatHistoryMessage(message_id="future", observed_event_type=2, status=99)
+    missing = chat_pb2.ChatHistoryMessage(message_id="missing", observed_event_type=2)
+    fake = FakeSession()
+    fake.unary_responses[LIST_CHAT_TURNS_METHOD] = [
+        chat_pb2.ListChatTurnsResponse(chat_turns=[missing, future, empty, failed])
+    ]
+    api, _, _ = _api(fake)
+    turns = await api.get_history_turns("notebook-1", conversation_id="conversation-1", limit=4)
+    assert [turn.message_id for turn in turns] == ["failed", "empty", "future", "missing"]
+    assert turns[0].status == 1
+    assert turns[0].timestamp == datetime.fromtimestamp(1_700_000_000.123456, tz=timezone.utc)
+    assert turns[0].state == "error"
+    assert turns[1].status == 2 and turns[1].is_empty
+    assert turns[1].empty_answer_reason == chat_pb2.UNANSWERABLE
+    assert turns[2].status == 99 and turns[2].state == "unknown"
+    assert turns[3].status is None and turns[3].timestamp is None
+
+
+def test_history_status_is_decoded_from_original_unknown_wire_field() -> None:
+    # Field 3 = role 2; field 6 = in-progress 1, as captured in #2541.
+    from notebooklm._android.codecs.chat import decode_history_turns
+
+    row = chat_pb2.ChatHistoryMessage.FromString(bytes.fromhex("18023001"))
+    turn = decode_history_turns(chat_pb2.ListChatTurnsResponse(chat_turns=[row]))[0]
+    assert turn.role == 2
+    assert turn.status == 1
+
+
+@pytest.mark.parametrize(
+    ("variant", "content", "visible"),
+    [
+        ("paragraph", " \n", False),
+        ("paragraph", "answer", True),
+        ("code_block", " \n", False),
+        ("code_block", "print(1)", True),
+        ("image", "", True),
+        ("horizontal_rule", "", False),
+        ("thought", "", False),
+        ("function_call", "", False),
+        ("function_response", "", False),
+        ("table", "", True),
+    ],
+)
+def test_native_history_document_visibility_matches_web_ui(variant, content, visible):
+    from notebooklm._android.codecs.chat import decode_history_turns
+
+    element = chat_pb2.StructuralElement(start_index=0, end_index=1)
+    getattr(element, variant).SetInParent()
+    if variant == "paragraph":
+        element.paragraph.elements.add().text_run.content = content
+    elif variant == "code_block":
+        element.code_block.content = content
+    document = chat_pb2.TailwindDoc(body=chat_pb2.Body(content=[element]))
+    row = chat_pb2.ChatHistoryMessage(observed_event_type=2, status=1)
+    row.act_on_sources_response.response.response_doc.CopyFrom(document)
+    response = chat_pb2.ListChatTurnsResponse(chat_turns=[row])
+    assert decode_history_turns(response)[0].has_document_content is visible
+    row.act_on_sources_response.response.response_doc.type = chat_pb2.TYPE_THOUGHT
+    assert not decode_history_turns(chat_pb2.ListChatTurnsResponse(chat_turns=[row]))[0].has_content
+
+
+@pytest.mark.asyncio
 async def test_get_history_returns_empty_when_no_conversation() -> None:
     """No chat session is a real empty history, not a swallowed fetch failure (#2384)."""
     fake = FakeSession()
@@ -894,6 +975,7 @@ async def test_stream_preserves_exact_empty_answer_reason_in_raw_response() -> N
     )
 
     assert posted.answer == ""
+    assert posted.empty_answer_reason == chat_pb2.FILTERED
     assert '"empty_answer_reason": "FILTERED"' in posted.raw_response
 
 

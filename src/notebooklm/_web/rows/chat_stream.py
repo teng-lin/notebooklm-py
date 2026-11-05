@@ -95,6 +95,7 @@ class StreamingChatParseResult:
     #: Suggested follow-up questions/actions, collected last-wins across chunks
     #: that carried a populated ``NextStepSuggestions`` block.
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    empty_answer_reason: int | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,7 @@ class _ChunkExtraction:
     #: Read before the answer-text gate, so a text-less chunk still reports it.
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    empty_answer_reason: int | None = None
     #: Sequence metadata from a terminal ``["e", n, ...]`` bookkeeping
     #: frame. It is deliberately not called a status: successful streams also
     #: carry this frame and ``n`` is not an RPC/gRPC error code.
@@ -188,6 +190,7 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
     server_conv_id: str | None = None
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = []
+    empty_answer_reason: int | None = None
     saw_final_chunk = False
     parseable_chunk_count = 0
     terminal_sequence: int | None = None
@@ -198,7 +201,7 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
         nonlocal best_marked_answer, best_marked_refs, best_marked_document
         nonlocal best_unmarked_answer, best_unmarked_refs, best_unmarked_document
         nonlocal saw_drift_signal, server_conv_id, turn_key, next_steps, parseable_chunk_count
-        nonlocal saw_final_chunk, terminal_sequence
+        nonlocal saw_final_chunk, terminal_sequence, empty_answer_reason
         chunk = _extract_chunk_with_parseable(json_str)
         if chunk.parseable:
             parseable_chunk_count += 1
@@ -229,6 +232,8 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             server_conv_id = chunk.conversation_id
         if chunk.turn_key is not None:
             turn_key = chunk.turn_key
+        if chunk.empty_answer_reason is not None:
+            empty_answer_reason = chunk.empty_answer_reason
         if chunk.next_steps:
             next_steps = chunk.next_steps
         if chunk.terminal_sequence is not None:
@@ -361,6 +366,7 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
         answer_document=final_document,
         turn_key=turn_key,
         next_steps=next_steps,
+        empty_answer_reason=empty_answer_reason,
     )
 
 
@@ -412,6 +418,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
     saw_final_envelope = False
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = []
+    empty_answer_reason: int | None = None
     terminal_sequence: int | None = None
     for item in data:
         if not isinstance(item, list) or len(item) < 2:
@@ -540,6 +547,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
                 # the turn a caller is most likely to want to give feedback on.
                 if answer.turn_key is not None:
                     turn_key = answer.turn_key
+                empty_answer_reason = answer.empty_answer_reason
                 text = answer.text
                 if text is None:
                     continue
@@ -557,6 +565,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
                     is_final_response=envelope_is_final,
                     turn_key=turn_key,
                     next_steps=next_steps,
+                    empty_answer_reason=empty_answer_reason,
                 )
         # inner_json decoded but the record didn't yield usable answer data
         # — either the outer ``isinstance(inner_data, list) and len > 0``
@@ -574,6 +583,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
         is_final_response=saw_final_envelope,
         turn_key=turn_key,
         next_steps=next_steps,
+        empty_answer_reason=empty_answer_reason,
         terminal_sequence=terminal_sequence,
     )
 
@@ -645,7 +655,7 @@ def _raise_chat_error_frame(item: list) -> NoReturn:
 
 
 def raise_if_rate_limited(error_payload: list) -> None:
-    """Raise ``ChatError`` if the payload contains a UserDisplayableError."""
+    """Raise RateLimitError for quota markers, ChatError for other rejections."""
     try:
         # Structure: [8, None, [["type.googleapis.com/.../UserDisplayableError", ...]]]
         # ``ErrorPayloadRow`` centralises the ``error_payload[2]`` entries read
@@ -654,6 +664,16 @@ def raise_if_rate_limited(error_payload: list) -> None:
         for entry in row.entries:
             entry_type = ErrorPayloadRow.entry_type(entry)
             if entry_type is not None and "UserDisplayableError" in entry_type:
+                if ErrorPayloadRow.entry_is_quota_exhausted(entry):
+                    raise mark_commit_state(
+                        RateLimitError(
+                            "Chat quota exhausted. All features will be available again "
+                            "when the account quota resets.",
+                            rpc_code=row.status_code,
+                        ),
+                        CommitState.REJECTED,
+                        operation="chat",
+                    )
                 # Append the server's ``google.rpc.Status.message`` when it
                 # sent one, keeping the client-authored remedy (#2188). No
                 # recorded sample carries one, so the sentence below is what
@@ -668,7 +688,7 @@ def raise_if_rate_limited(error_payload: list) -> None:
                     CommitState.REJECTED,
                     operation="chat",
                 )
-    except ChatError:
+    except (ChatError, RateLimitError):
         raise
     except Exception:
         logger.debug(

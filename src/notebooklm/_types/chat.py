@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from enum import Enum, IntEnum
+from typing import Any, Literal
 
 from .documents import StructuredDocument
 from .enums import ChatGoal, ChatResponseLength, MagicArtifactType
@@ -26,6 +27,86 @@ class ConversationTurn:
     query: str
     answer: str
     turn_number: int
+
+
+class ChatTurnStatus(IntEnum):
+    """Observed history status codes; names are client interpretations (#2541)."""
+
+    IN_PROGRESS = 1
+    COMPLETED = 2
+    FAILED = 3
+    CANCELLED = 4
+
+
+class EmptyAnswerReason(IntEnum):
+    """AnswerResponse's diagnostic reason for returning no answer."""
+
+    UNKNOWN = 0
+    UNANSWERABLE = 1
+    FILTERED = 2
+
+
+@dataclass(frozen=True)
+class ChatHistoryTurn:
+    """One server history message, rather than a paired question and answer.
+
+    ``role`` is 1 for a question and 2 for an answer. ``status`` preserves the
+    raw code (see :class:`ChatTurnStatus`), including future values; ``None``
+    means the backend omitted it. ``timestamp`` is the message's UTC time.
+    ``empty_answer_reason`` preserves the diagnostic code (see
+    :class:`EmptyAnswerReason`); absent/default zero is represented by ``None``.
+    Quota failures cannot be reconstructed from history's generic failed code.
+    """
+
+    message_id: str
+    role: int
+    text: str
+    status: int | None = None
+    timestamp: datetime | None = None
+    empty_answer_reason: int | None = None
+    answer_document: StructuredDocument = field(default_factory=StructuredDocument, repr=False)
+    has_document_content: bool = False
+
+    def display_state(
+        self, *, now: datetime | None = None
+    ) -> Literal["streaming", "error", "success", "unknown"]:
+        """Apply the web UI's stale-answer rule using an aware reference time.
+
+        An in-progress answer older than 30 minutes succeeds if it has text
+        or document content, otherwise it fails. At exactly 30 minutes it is
+        still streaming. Without a timestamp it stays streaming. Missing or
+        future status codes remain unknown rather than implying success.
+        """
+        if self.role == 1:
+            return "success"
+        if self.status in (ChatTurnStatus.FAILED, ChatTurnStatus.CANCELLED):
+            return "error"
+        if self.status == ChatTurnStatus.IN_PROGRESS:
+            if self.timestamp is not None:
+                reference = now if now is not None else datetime.now(timezone.utc)
+                if reference - self.timestamp > timedelta(minutes=30):
+                    return "success" if self.has_content else "error"
+            return "streaming"
+        return "success" if self.status == ChatTurnStatus.COMPLETED else "unknown"
+
+    @property
+    def state(self) -> Literal["streaming", "error", "success", "unknown"]:
+        """Current display state; recomputed so cached turns can become stale."""
+        return self.display_state()
+
+    @property
+    def has_content(self) -> bool:
+        """Whether text or the backend document contains visible answer content.
+
+        ``has_document_content`` is decoded separately from the block tree:
+        thought/function blocks, horizontal rules and whitespace do not count.
+        """
+        return bool(self.text.strip() or self.has_document_content)
+
+    @property
+    def is_empty(self) -> bool:
+        """A successful answer with no content, distinct from a failed answer."""
+        return self.role == 2 and self.state == "success" and not self.has_content
 
 
 @dataclass(frozen=True)
@@ -476,6 +557,8 @@ class AskResult:
         next_steps: Suggested follow-up questions/actions volunteered with the
             winning answer row. Empty when the stream omitted the optional
             ``NextStepSuggestions`` block.
+        empty_answer_reason: Diagnostic EmptyAnswerReason code, or ``None``
+            when absent/default zero. Unknown future codes are preserved.
     """
 
     answer: str
@@ -487,3 +570,4 @@ class AskResult:
     answer_document: StructuredDocument = field(default_factory=StructuredDocument, repr=False)
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    empty_answer_reason: int | None = None

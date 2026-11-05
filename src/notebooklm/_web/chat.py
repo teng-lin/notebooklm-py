@@ -31,11 +31,12 @@ from .._runtime.config import (
     assert_resolved_read_timeout,
 )
 from .._runtime.contracts import LoopGuard
+from .._types.documents import StructuredDocument
 from .._types.enums import ChatGoal, ChatResponseLength
 from ..exceptions import ChatError, NotebookLMError, UnknownRPCMethodError
 from ..outcomes import CommitState
 from ..rpc import RPCMethod, safe_index
-from ..types import ChatReference, ChatSessionStatus, ConversationTurn, Note
+from ..types import ChatHistoryTurn, ChatReference, ChatSessionStatus, ConversationTurn, Note
 from .contracts import RpcCaller
 from .params.chat_note import build_save_chat_as_note_params
 from .params.chat_session import (
@@ -283,6 +284,7 @@ class WebChatAPI(RequestPolicyOwner, ChatAPI):
             answer_document=parsed.answer_document,
             turn_key=parsed.turn_key,
             next_steps=parsed.next_steps,
+            empty_answer_reason=parsed.empty_answer_reason,
         )
 
     async def _list_turn_roles(
@@ -425,6 +427,32 @@ class WebChatAPI(RequestPolicyOwner, ChatAPI):
                 repr(raw)[:500],
             )
         return None
+
+    def _decode_history_turns(self, response: Any) -> list[ChatHistoryTurn]:
+        turns = unwrap_conversation_turns(response, source="chat.get_history_turns")
+        decoded: list[ChatHistoryTurn] = []
+        for raw in reversed(turns):
+            row = ConversationTurnRow(raw)
+            if not row.is_well_formed or row.has_unrecognized_role:
+                continue
+            answer = row.answer
+            decoded.append(
+                ChatHistoryTurn(
+                    message_id=row.message_id,
+                    role=row.role,
+                    text=row.question_text
+                    if row.is_question
+                    else (answer.text or "")
+                    if answer
+                    else "",
+                    status=row.status,
+                    timestamp=row.timestamp,
+                    empty_answer_reason=answer.empty_answer_reason if answer else None,
+                    answer_document=answer.document if answer else StructuredDocument(),
+                    has_document_content=answer.has_document_content if answer else False,
+                )
+            )
+        return decoded
 
     async def get_history(
         self,

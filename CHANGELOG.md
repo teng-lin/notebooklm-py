@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Chat answer states (#2541).** `chat.get_history_turns()` exposes message
+  status, UTC timestamp, empty-answer reason, and the web UI's stale-answer
+  classification on Web and Android. `AskResult.empty_answer_reason` distinguishes
+  diagnostic empty responses, and Web quota markers now raise `RateLimitError`.
+
 - **Quiz question types (#2528).** `generate_quiz(question_types=[QuizQuestionType...])`
   and `generate quiz --question-types multiple-choice,short-answer` limit the question
   types on the Web backend. Android raises `UnsupportedOperationError` for a restricting

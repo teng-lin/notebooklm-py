@@ -331,6 +331,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
             "get_conversation_id",
             "get_conversation_turns",
             "get_history",
+            "get_history_turns",
             "get_settings",
             "save_answer_as_note",
             "session_status",
@@ -422,7 +423,7 @@ def test_android_selected_public_callable_inventory_is_exact() -> None:
     }
 
     assert observed_names == expected_names
-    assert sum(map(len, observed_names.values())) == 165
+    assert sum(map(len, observed_names.values())) == 166
 
 
 @pytest.mark.parametrize("backend", [None, "web"])

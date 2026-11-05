@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import timezone
 from typing import Any
 
 from ..._types.documents import DocumentAnnotation, StructuredDocument, utf16_len
-from ...types import ChatReference, ConversationTurnKey
+from ...types import ChatHistoryTurn, ChatReference, ConversationTurnKey
 from .documents import (
     decode_blocks,
     decode_document,
@@ -113,6 +114,55 @@ def decode_turn_key(answer: Any) -> ConversationTurnKey | None:
     )
 
 
+def _has_document_content(document: Any) -> bool:
+    """Mirror the web UI's content test without depending on decoded offsets."""
+    if document.type == 2:
+        return False
+    for element in document.body.content:
+        if any(
+            element.HasField(name)
+            for name in ("thought", "function_call", "function_response", "horizontal_rule")
+        ):
+            continue
+        if element.HasField("paragraph"):
+            if any(
+                part.HasField("image") or part.HasField("resource") or part.text_run.content.strip()
+                for part in element.paragraph.elements
+            ):
+                return True
+        elif element.HasField("code_block"):
+            if element.code_block.content.strip():
+                return True
+        elif any(element.HasField(name) for name in ("table", "image", "a2ui_block")):
+            return True
+    return False
+
+
+def decode_history_turns(response: Any) -> list[ChatHistoryTurn]:
+    """Project individual Android history rows, oldest first, with answer metadata."""
+    turns: list[ChatHistoryTurn] = []
+    for row in reversed(response.chat_turns):
+        if row.observed_event_type not in (1, 2):
+            continue
+        answer = row.act_on_sources_response.response
+        document = decode_document(answer.response_doc)
+        turns.append(
+            ChatHistoryTurn(
+                message_id=row.message_id,
+                role=row.observed_event_type,
+                text=row.user_query_text if row.observed_event_type == 1 else answer.response,
+                status=row.status if row.HasField("status") else None,
+                timestamp=row.timestamp.ToDatetime(tzinfo=timezone.utc)
+                if row.HasField("timestamp")
+                else None,
+                empty_answer_reason=int(answer.empty_answer_reason) or None,
+                answer_document=document,
+                has_document_content=_has_document_content(answer.response_doc),
+            )
+        )
+    return turns
+
+
 def decode_history(response: Any, *, limit: int) -> list[tuple[str, str]]:
     """Pair newest-first Android question/answer event rows, oldest first."""
 
@@ -161,6 +211,7 @@ def decode_history(response: Any, *, limit: int) -> list[tuple[str, str]]:
 __all__ = [
     "decode_document",
     "decode_history",
+    "decode_history_turns",
     "decode_references",
     "decode_turn_key",
 ]
