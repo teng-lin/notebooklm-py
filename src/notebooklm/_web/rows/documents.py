@@ -177,6 +177,18 @@ class ParagraphElementRow:
     _START_POS: ClassVar[int] = 0
     _END_POS: ClassVar[int] = 1
     _TEXT_RUN_POS: ClassVar[int] = 2
+    _IMAGE_POS: ClassVar[int] = 3
+    _RESOURCE_POS: ClassVar[int] = 4
+
+    @property
+    def has_display_content(self) -> bool:
+        """Text, image or resource presence, independent of document offsets."""
+        text = TextRunRow(_at(self._raw, self._TEXT_RUN_POS)).content
+        return bool(
+            (text and text.strip())
+            or _at(self._raw, self._IMAGE_POS) is not None
+            or _at(self._raw, self._RESOURCE_POS) is not None
+        )
 
     @property
     def span(self) -> TextSpan | None:
@@ -438,6 +450,27 @@ class StructuralElementRow:
             if _at(self._raw, pos) is not None:
                 return kind
         return BlockKind.UNKNOWN
+
+    @property
+    def has_display_content(self) -> bool:
+        """The web chat UI's visible-content predicate (build cited in #2541)."""
+        kind = self.kind
+        if kind in (
+            BlockKind.UNKNOWN,
+            BlockKind.THOUGHT,
+            BlockKind.FUNCTION_CALL,
+            BlockKind.FUNCTION_RESPONSE,
+            BlockKind.HORIZONTAL_RULE,
+        ):
+            return False
+        if kind == BlockKind.PARAGRAPH:
+            paragraph = _at(self._raw, self._PARAGRAPH_POS)
+            elements = _as_list(_at(paragraph, ParagraphRow._ELEMENTS_POS)) or []
+            return any(ParagraphElementRow(element).has_display_content for element in elements)
+        if kind == BlockKind.CODE_BLOCK:
+            text = _at(_at(self._raw, self._CODE_BLOCK_POS), 0)
+            return isinstance(text, str) and bool(text.strip())
+        return True
 
     def block(
         self, depth: int = 0, *, bounds: tuple[int, int] | None = None

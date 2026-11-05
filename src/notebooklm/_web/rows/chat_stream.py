@@ -12,6 +12,7 @@ import logging
 import math
 import re
 import reprlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from typing import Any, NoReturn
 
@@ -95,6 +96,7 @@ class StreamingChatParseResult:
     #: Suggested follow-up questions/actions, collected last-wins across chunks
     #: that carried a populated ``NextStepSuggestions`` block.
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    empty_answer_reason: int | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +128,7 @@ class _ChunkExtraction:
     #: Read before the answer-text gate, so a text-less chunk still reports it.
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
+    empty_answer_reason: int | None = None
     #: Sequence metadata from a terminal ``["e", n, ...]`` bookkeeping
     #: frame. It is deliberately not called a status: successful streams also
     #: carry this frame and ``n`` is not an RPC/gRPC error code.
@@ -188,18 +191,18 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
     server_conv_id: str | None = None
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = []
+    empty_answer_reason: int | None = None
     saw_final_chunk = False
     parseable_chunk_count = 0
     terminal_sequence: int | None = None
 
-    def process_chunk(json_str: str) -> None:
-        """Process a JSON chunk, updating best answer candidates and their refs."""
+    def process_extraction(chunk: _ChunkExtraction) -> None:
+        """Update answer candidates and metadata from one decoded envelope."""
         nonlocal final_marked_answer, final_marked_refs, final_marked_document
         nonlocal best_marked_answer, best_marked_refs, best_marked_document
         nonlocal best_unmarked_answer, best_unmarked_refs, best_unmarked_document
         nonlocal saw_drift_signal, server_conv_id, turn_key, next_steps, parseable_chunk_count
-        nonlocal saw_final_chunk, terminal_sequence
-        chunk = _extract_chunk_with_parseable(json_str)
+        nonlocal saw_final_chunk, terminal_sequence, empty_answer_reason
         if chunk.parseable:
             parseable_chunk_count += 1
         # Recorded whether or not the chunk bore text: it is what separates
@@ -229,10 +232,17 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
             server_conv_id = chunk.conversation_id
         if chunk.turn_key is not None:
             turn_key = chunk.turn_key
+        if chunk.empty_answer_reason is not None:
+            empty_answer_reason = chunk.empty_answer_reason
         if chunk.next_steps:
             next_steps = chunk.next_steps
         if chunk.terminal_sequence is not None:
             terminal_sequence = chunk.terminal_sequence
+
+    def process_chunk(json_str: str) -> None:
+        """Process every envelope in a line before applying final-answer selection."""
+        for chunk in _extract_chunks_with_parseable(json_str):
+            process_extraction(chunk)
 
     i = 0
     while i < len(lines):
@@ -361,6 +371,7 @@ def parse_streaming_chat_response(response_text: str) -> StreamingChatParseResul
         answer_document=final_document,
         turn_key=turn_key,
         next_steps=next_steps,
+        empty_answer_reason=empty_answer_reason,
     )
 
 
@@ -369,16 +380,33 @@ def extract_answer_and_refs_from_chunk(
 ) -> tuple[str | None, bool, list[ChatReference], str | None]:
     """Extract answer text, references, and conversation ID from one response chunk.
 
-    Public 4-tuple wrapper around :func:`_extract_chunk_with_parseable`.
+    Public 4-tuple wrapper around :func:`_extract_chunks_with_parseable`.
     The remaining :class:`_ChunkExtraction` fields are internal-only — they exist
     for the streaming parser's "zero parseable chunks" detection and answer
     selection, and are not part of this module's outward-facing contract.
     """
-    chunk = _extract_chunk_with_parseable(json_str)
+    # Preserve this legacy helper's first-text 4-tuple contract. The main
+    # streaming parser consumes all envelopes through the iterator instead.
+    chunk = next(
+        (chunk for chunk in _extract_chunks_with_parseable(json_str) if chunk.text),
+        _ChunkExtraction(),
+    )
     return chunk.text, chunk.is_answer, chunk.references, chunk.conversation_id
 
 
-def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
+def _extract_chunks_with_parseable(json_str: str) -> Iterator[_ChunkExtraction]:
+    """Decode a JSON line once and visit every frame, independent of batching."""
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(data, list):
+        return
+    for item in data:
+        yield _extract_chunk_from_items([item])
+
+
+def _extract_chunk_from_items(data: list[Any]) -> _ChunkExtraction:
     """Extract answer/refs/conv-id from one chunk and report wire-format parseability.
 
     :attr:`~_ChunkExtraction.parseable` is True iff at least one ``wrb.fr``
@@ -400,18 +428,11 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
     """
     refs: list[ChatReference] = []
 
-    try:
-        data = json.loads(json_str)
-    except json.JSONDecodeError:
-        return _ChunkExtraction(references=refs)
-
-    if not isinstance(data, list):
-        return _ChunkExtraction(references=refs)
-
     parseable = False
     saw_final_envelope = False
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = []
+    empty_answer_reason: int | None = None
     terminal_sequence: int | None = None
     for item in data:
         if not isinstance(item, list) or len(item) < 2:
@@ -540,6 +561,8 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
                 # the turn a caller is most likely to want to give feedback on.
                 if answer.turn_key is not None:
                     turn_key = answer.turn_key
+                if answer.empty_answer_reason is not None:
+                    empty_answer_reason = answer.empty_answer_reason
                 text = answer.text
                 if text is None:
                     continue
@@ -557,6 +580,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
                     is_final_response=envelope_is_final,
                     turn_key=turn_key,
                     next_steps=next_steps,
+                    empty_answer_reason=empty_answer_reason,
                 )
         # inner_json decoded but the record didn't yield usable answer data
         # — either the outer ``isinstance(inner_data, list) and len > 0``
@@ -574,6 +598,7 @@ def _extract_chunk_with_parseable(json_str: str) -> _ChunkExtraction:
         is_final_response=saw_final_envelope,
         turn_key=turn_key,
         next_steps=next_steps,
+        empty_answer_reason=empty_answer_reason,
         terminal_sequence=terminal_sequence,
     )
 
@@ -645,7 +670,7 @@ def _raise_chat_error_frame(item: list) -> NoReturn:
 
 
 def raise_if_rate_limited(error_payload: list) -> None:
-    """Raise ``ChatError`` if the payload contains a UserDisplayableError."""
+    """Raise RateLimitError for quota markers, ChatError for other rejections."""
     try:
         # Structure: [8, None, [["type.googleapis.com/.../UserDisplayableError", ...]]]
         # ``ErrorPayloadRow`` centralises the ``error_payload[2]`` entries read
@@ -654,6 +679,16 @@ def raise_if_rate_limited(error_payload: list) -> None:
         for entry in row.entries:
             entry_type = ErrorPayloadRow.entry_type(entry)
             if entry_type is not None and "UserDisplayableError" in entry_type:
+                if ErrorPayloadRow.entry_is_quota_exhausted(entry):
+                    raise mark_commit_state(
+                        RateLimitError(
+                            "Chat quota exhausted. All features will be available again "
+                            "when the account quota resets.",
+                            rpc_code=row.status_code,
+                        ),
+                        CommitState.REJECTED,
+                        operation="chat",
+                    )
                 # Append the server's ``google.rpc.Status.message`` when it
                 # sent one, keeping the client-authored remedy (#2188). No
                 # recorded sample carries one, so the sentence below is what
@@ -668,7 +703,7 @@ def raise_if_rate_limited(error_payload: list) -> None:
                     CommitState.REJECTED,
                     operation="chat",
                 )
-    except ChatError:
+    except (ChatError, RateLimitError):
         raise
     except Exception:
         logger.debug(

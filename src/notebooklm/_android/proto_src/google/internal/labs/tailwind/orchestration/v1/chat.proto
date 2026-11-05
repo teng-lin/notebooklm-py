@@ -309,6 +309,7 @@ message ChatHistoryMessage {
   int32 observed_event_type = 3; // exact archive name; raw role value consumed by the base
   string user_query_text = 4; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
   ActOnSourcesResponse act_on_sources_response = 5; // evidence: docs/android/proto-evidence-ledger.md#chat-field-ledger
+  optional int32 status = 6; // observed history status; Web UI mapping documented in #2541
 }
 
 message ListChatSessionsRequest {

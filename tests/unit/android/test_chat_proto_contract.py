@@ -79,6 +79,7 @@ def test_chat_packages_imports_and_service_free_overlay_are_exact() -> None:
 
 
 def test_chat_request_response_fields_are_exhaustive() -> None:
+    """Pin every admitted chat field against the generated protobuf descriptor."""
     singular = False
     repeated = True
     string = FieldDescriptor.TYPE_STRING
@@ -315,6 +316,7 @@ def test_chat_request_response_fields_are_exhaustive() -> None:
             "message_id": (1, singular, string, None),
             "timestamp": (2, singular, message, "google.protobuf.Timestamp"),
             "observed_event_type": (3, singular, int32, None),
+            "status": (6, singular, int32, None),
             "user_query_text": (4, singular, string, None),
             "act_on_sources_response": (
                 5,

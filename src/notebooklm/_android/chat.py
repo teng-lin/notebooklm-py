@@ -38,13 +38,20 @@ from ..exceptions import (
     UnknownRPCMethodError,
 )
 from ..types import (
+    ChatHistoryTurn,
     ChatReference,
     ChatSessionStatus,
     ConversationTurn,
     NextStepSuggestion,
     Note,
 )
-from .codecs.chat import decode_document, decode_history, decode_references, decode_turn_key
+from .codecs.chat import (
+    decode_document,
+    decode_history,
+    decode_history_turns,
+    decode_references,
+    decode_turn_key,
+)
 from .codecs.notebooks import validate_project_identity
 from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .notes import SAVED_RESPONSE_NOTE_TYPE, create_note
@@ -285,6 +292,10 @@ class AndroidChatAPI(ChatAPI):
             next_page_token=next_page_token,
         )
 
+    def _decode_history_turns(self, response: Any) -> list[ChatHistoryTurn]:
+        """Project native history into oldest-first typed messages."""
+        return decode_history_turns(response)
+
     async def get_history(
         self,
         notebook_id: str,
@@ -356,6 +367,7 @@ class AndroidChatAPI(ChatAPI):
         cached_turns: list[ConversationTurn],
         conversation_id: str | None,
     ) -> _PostedAsk:
+        """Decode one completed backend stream before shared conversation bookkeeping."""
         turn_id = self._turn_id_factory()
         if not isinstance(turn_id, str) or not turn_id:
             raise ValueError("turn_id_factory must return a non-empty string")
@@ -460,6 +472,7 @@ class AndroidChatAPI(ChatAPI):
             answer_document=answer_document,
             turn_key=decode_turn_key(answer),
             next_steps=next_steps,
+            empty_answer_reason=int(answer.empty_answer_reason) or None,
         )
 
     async def _send_delete_conversation(

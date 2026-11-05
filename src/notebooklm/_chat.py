@@ -24,6 +24,7 @@ from .exceptions import ChatError, NotebookLMError, ValidationError
 from .outcomes import CommitState, OperationMetadata, RecoveryAction
 from .types import (
     AskResult,
+    ChatHistoryTurn,
     ChatMode,
     ChatReference,
     ChatSessionStatus,
@@ -83,6 +84,7 @@ class _PostedAsk:
     answer_document: StructuredDocument
     turn_key: ConversationTurnKey | None
     next_steps: list[NextStepSuggestion]
+    empty_answer_reason: int | None = None
 
 
 @dataclass(frozen=True)
@@ -511,6 +513,7 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             answer_document=posted.answer_document,
             turn_key=posted.turn_key,
             next_steps=posted.next_steps,
+            empty_answer_reason=posted.empty_answer_reason,
         )
 
     def get_cached_turns(self, conversation_id: str) -> list[ConversationTurn]:
@@ -554,6 +557,9 @@ class ChatAPI(LoopBoundPrimitive, ABC):
             response lifetime: it can become idle shortly before the HTTP/gRPC
             stream closes. Use it as a polling signal, not as proof that a
             caller already holding the stream has consumed its final frame.
+            It can also remain generating after a dead request. Inspect
+            :meth:`get_history_turns` for per-answer status and the web UI's
+            30-minute stale-answer classification.
         """
         self._loop_guard.assert_bound_loop()
         async with self._operation_scope("chat.session_status"):
@@ -751,6 +757,32 @@ class ChatAPI(LoopBoundPrimitive, ABC):
 
         For positive limits, empty means no conversation or no turns; fetch failures raise.
         """
+
+    async def get_history_turns(
+        self,
+        notebook_id: str,
+        limit: int = 100,
+        conversation_id: str | None = None,
+    ) -> list[ChatHistoryTurn]:
+        """Return individual server messages with status and timestamps, oldest first.
+
+        ``limit`` counts messages, including questions and answers, rather than
+        Q&A pairs. A non-positive limit or absent conversation returns ``[]``;
+        fetch failures raise. ``get_history()`` retains its tuple contract.
+        """
+        self._loop_guard.assert_bound_loop()
+        if limit <= 0:
+            return []
+        async with self._operation_scope("chat.get_history_turns"):
+            resolved_id = conversation_id or await self.get_conversation_id(notebook_id)
+            if not resolved_id:
+                return []
+            response = await self.get_conversation_turns(notebook_id, resolved_id, limit=limit)
+            return self._decode_history_turns(response)
+
+    def _decode_history_turns(self, response: Any) -> list[ChatHistoryTurn]:
+        """Project native history messages; implemented by each backend."""
+        raise NotImplementedError
 
     async def configure(
         self,

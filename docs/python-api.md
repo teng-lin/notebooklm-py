@@ -1942,12 +1942,61 @@ else:
 | `configure(notebook_id, ...)` | `str, ...` | `None` | Set chat persona. **Writes the whole chat-settings block with no merge** — an omitted `goal`/`response_length` resets that field to its default. For a partial, merge-preserving update use the CLI `configure` / MCP `chat_configure` (they read `get_settings` first). |
 | `get_settings(notebook_id)` | `str` | `ChatSettings` | Read the notebook's current chat configuration (`goal`, `response_length`, `custom_prompt`). A never-configured notebook reads back as `DEFAULT`/`DEFAULT`. |
 | `get_history(notebook_id, limit=100, conversation_id=None)` | `str, int, str` | `list[tuple[str, str]]` | Get Q&A pairs from most recent conversation. For a positive `limit`, empty means no conversation or no turns; turn-fetch failures raise. Android also returns `[]` for non-positive limits. |
+| `get_history_turns(notebook_id, limit=100, conversation_id=None)` | `str, int, str` | `list[ChatHistoryTurn]` | Individual messages, oldest first, with status, UTC timestamp, document content and empty-answer reason. `limit` counts messages, including questions; non-positive limits return `[]`. |
 | `get_conversation_turns(notebook_id, conversation_id, limit=2)` | `str, str, int` | `Any` | Raw turn payload. Web: batchexecute rows. Android: protobuf `ListChatTurnsResponse`. Prefer `get_history` for typed Q&A pairs. |
 | `get_conversation_id(notebook_id)` | `str` | `str \| None` | Get most recent conversation ID from server |
 | `session_status(notebook_id, conversation_id=None)` | `str, str \| None` | `ChatSessionStatus` | Read the selected session's live generation state. Omitting `conversation_id` selects the most recent session; a notebook with no session is idle. |
 | `cancel(notebook_id, conversation_id=None)` | `str, str \| None` | `None` | Idempotently stop active generation for the selected session. Omitting `conversation_id` selects the most recent session. The caller holding a Web response stream must also abandon that stream after success. |
 | `delete_conversation(notebook_id, conversation_id)` | `str, str` | `None` | **DESTRUCTIVE.** Permanently delete a server-side conversation (web UI's "Delete history" action). The next `ask()` with no `conversation_id` then starts a brand-new conversation. |
 | `save_answer_as_note(notebook_id, ask_result, *, title=None)` | `str, AskResult, str \| None` | `Note` | Save a chat answer as a citation-rich note ([issue #660](https://github.com/teng-lin/notebooklm-py/issues/660)) — the resulting note's `[N]` markers remain interactive hover-anchored citations in the NotebookLM web UI. Owns the saved-from-chat workflow on `ChatAPI` (the data owner). Raises `ValueError` if `ask_result.references` is empty. When `title is None`, derives `f"Chat: {ask_result.answer[:50].strip().replace(chr(10), ' ')}"`. |
+
+**Failed, stale and empty answers (#2541):**
+
+`get_history()` keeps returning `(question, answer)` pairs. Use
+`get_history_turns()` on either backend to distinguish outcomes:
+
+```python
+from notebooklm import ChatTurnStatus, EmptyAnswerReason
+from notebooklm.exceptions import RateLimitError
+
+turns = await client.chat.get_history_turns(nb_id, conversation_id=conversation_id)
+for turn in turns:
+    if turn.role != 2:  # 1 = question, 2 = answer
+        continue
+    print(turn.message_id, turn.timestamp, turn.status, turn.state)
+    if turn.state == "error":
+        print("The answer failed or its generation became stale")
+    elif turn.is_empty:
+        print("The completed answer has no content", turn.empty_answer_reason)
+```
+
+`ChatTurnStatus` names the observed codes: `IN_PROGRESS=1`, `COMPLETED=2`,
+`FAILED=3`, `CANCELLED=4`. The names are client interpretations, not recovered
+server enum labels. `status` preserves unknown integer codes; an omitted status
+is `None`. For answers, `state` is `streaming`, `error`, `success`, or `unknown`.
+An in-progress answer **over** 30 minutes old is successful if it contains
+non-whitespace text or visible document content; otherwise it is an error,
+matching the web UI. A missing timestamp leaves it streaming. Thought/function
+blocks, horizontal rules, and whitespace-only paragraphs/code do not count as
+visible content. `has_document_content` records this independently of whether
+all document variants render as text. `display_state(now=aware_datetime)` applies
+the same rule with an explicit clock; `state` evaluates it at the current time.
+Unknown status codes remain `unknown` rather than implying completion.
+
+`AskResult.empty_answer_reason` and `ChatHistoryTurn.empty_answer_reason`
+preserve the server's nonzero diagnostic code: `EmptyAnswerReason.UNANSWERABLE=1`
+or `FILTERED=2`. Missing/default zero is `None`; unknown nonzero codes survive.
+These reasons describe an empty answer, not a failed generation. Live Web
+quota errors carrying `UserDisplayableError` field 12 or 13 now raise
+`RateLimitError`; other displayable rejections remain `ChatError`. Android's
+`RESOURCE_EXHAUSTED` mapping already raises `RateLimitError`. History only
+records the generic failed status, so a later history fetch cannot recover
+whether a failure was quota-related.
+
+`session_status()` alone cannot distinguish a live stream from a dead
+in-progress turn: it may continue reporting `generating=True` and a token for
+days. Read the individual turn states as well. This does not automatically
+cancel or retry a generation.
 
 **ask() Parameters:**
 ```python

@@ -92,14 +92,16 @@ from __future__ import annotations
 
 import reprlib
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, ClassVar
 
 from ..._types.chat import ConversationTurnKey
+from ..._types.common import _datetime_from_timestamp
 from ..._types.documents import StructuredDocument
 from ...exceptions import UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 from ..wire.decoder import sanitize_status_message
-from .documents import build_document
+from .documents import DocumentBodyRow, StructuralElementRow, build_document
 
 __all__ = [
     "AnswerRow",
@@ -532,6 +534,9 @@ class ConversationTurnRow:
     # MUST be updated in the same commit — that failure is the wire-shape
     # change signal.
     _ROLE_POS: ClassVar[int] = 2
+    _ID_POS: ClassVar[int] = 0
+    _TIMESTAMP_POS: ClassVar[int] = 1
+    _STATUS_POS: ClassVar[int] = 5
     _QUESTION_TEXT_POS: ClassVar[int] = 3
     _ANSWER_CONTENT_POS: ClassVar[int] = 4
     # A turn must carry at least its role slot to be classifiable — mirrors
@@ -605,6 +610,67 @@ class ConversationTurnRow:
         if not self.is_question:
             return ""
         return str(self._raw[self._QUESTION_TEXT_POS] or "")
+
+    @property
+    def message_id(self) -> str:
+        """Server message id, or an empty string on an unusable row."""
+        value = self._raw[self._ID_POS] if self.is_well_formed else None
+        return value if isinstance(value, str) else ""
+
+    @property
+    def status(self) -> int | None:
+        """Optional raw status at slot 5; unknown integer codes are preserved."""
+        if not self.is_well_formed or len(self._raw) <= self._STATUS_POS:
+            return None
+        value = self._raw[self._STATUS_POS]
+        if value is not None and type(value) is not int:
+            raise UnknownRPCMethodError(
+                "Conversation turn status is not an integer",
+                method_id=_TURNS_METHOD_ID,
+                path=(self._STATUS_POS,),
+                source="ConversationTurnRow.status",
+            )
+        return value
+
+    @property
+    def timestamp(self) -> datetime | None:
+        """UTC message timestamp, including protobuf nanoseconds to microsecond precision."""
+        raw = self._raw[self._TIMESTAMP_POS] if self.is_well_formed else None
+        if raw is None or raw == []:
+            return None
+        if isinstance(raw, list) and raw:
+            seconds = raw[0]
+            nanos = raw[1] if len(raw) > 1 and raw[1] is not None else 0
+            if type(seconds) is int and type(nanos) is int and 0 <= nanos < 1_000_000_000:
+                stamp = _datetime_from_timestamp(seconds)
+                if stamp is not None:
+                    try:
+                        return stamp + timedelta(microseconds=nanos // 1000)
+                    except OverflowError:
+                        pass
+        raise UnknownRPCMethodError(
+            "Conversation turn timestamp is not a valid [seconds, nanos] value",
+            method_id=_TURNS_METHOD_ID,
+            path=(self._TIMESTAMP_POS,),
+            source="ConversationTurnRow.timestamp",
+        )
+
+    @property
+    def answer(self) -> AnswerRow | None:
+        """Optional AnswerResponse inside the history ActOnSourcesResponse."""
+        if not self.is_answer:
+            return None
+        content = self._raw[self._ANSWER_CONTENT_POS]
+        if content is None or content == []:
+            return None
+        if isinstance(content, list) and isinstance(content[0], list):
+            return AnswerRow(content[0])
+        raise UnknownRPCMethodError(
+            "Conversation turn answer is not an AnswerResponse row",
+            method_id=_TURNS_METHOD_ID,
+            path=(self._ANSWER_CONTENT_POS, 0),
+            source="ConversationTurnRow.answer",
+        )
 
 
 def count_question_turn_rows(turns_data: Any, *, source: str) -> tuple[int, int]:
@@ -827,6 +893,14 @@ class ErrorPayloadRow:
         value = entry[0]
         return value if isinstance(value, str) else None
 
+    @staticmethod
+    def entry_is_quota_exhausted(entry: Any) -> bool:
+        """UserDisplayableError fields 12/13 are message-presence quota markers."""
+        if not isinstance(entry, list) or len(entry) < 2 or not isinstance(entry[1], list):
+            return False
+        details = entry[1]
+        return any(len(details) > index and details[index] is not None for index in (11, 12))
+
 
 @dataclass(frozen=True)
 class NextStepSuggestionRow:
@@ -908,6 +982,35 @@ class AnswerRow:
     def raw(self) -> list[Any]:
         """The wrapped raw answer row."""
         return self._raw
+
+    @property
+    def empty_answer_reason(self) -> int | None:
+        """Optional AnswerResponse field 4; preserve future nonzero reason codes."""
+        if len(self._raw) <= self._EMPTY_ANSWER_REASON_POS:
+            return None
+        value = self._raw[self._EMPTY_ANSWER_REASON_POS]
+        if value is not None and type(value) is not int:
+            raise UnknownRPCMethodError(
+                "Chat empty-answer reason is not an integer",
+                method_id=None,
+                path=(self._EMPTY_ANSWER_REASON_POS,),
+                source="AnswerRow.empty_answer_reason",
+            )
+        return value or None
+
+    @property
+    def has_document_content(self) -> bool:
+        """Visible content, excluding thought-only documents and decorative blocks."""
+        block = self._type_block
+        if block is None or (
+            len(block) > self._ANSWER_MARKER_POS and block[self._ANSWER_MARKER_POS] == 2
+        ):
+            return False
+        body = block[self._DOC_BODY_POS] if block else None
+        return any(
+            StructuralElementRow(element).has_display_content
+            for element in DocumentBodyRow(body).elements
+        )
 
     @property
     def text(self) -> str | None:
