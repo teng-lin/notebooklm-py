@@ -1968,7 +1968,15 @@ for turn in turns:
         print("The answer failed or its generation became stale")
     elif turn.is_empty:
         print("The completed answer has no content", turn.empty_answer_reason)
+    elif not turn.answer_present:
+        print("The answer payload was missing, so it could not be read")
 ```
+
+`answer_present` is `False` when an answer row carried no answer payload, which
+is different from a completed answer with empty text; `is_empty` is `False` for
+the former. On Android, an answer row that also carries its question (a combined
+legacy-shaped row) yields that question as a role-1 turn, sharing the row's
+`message_id`, just before the answer turn.
 
 `ChatTurnStatus` names the observed codes: `IN_PROGRESS=1`, `COMPLETED=2`,
 `FAILED=3`, `CANCELLED=4`. The names are client interpretations, not recovered

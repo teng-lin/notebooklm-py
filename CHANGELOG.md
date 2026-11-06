@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   classification on Web and Android. `AskResult.empty_answer_reason` distinguishes
   diagnostic empty responses, and Web quota markers now raise `RateLimitError`.
 
+- **History turn fidelity (#2543).** `get_history_turns()` now yields the question of
+  an Android combined row, and `ChatHistoryTurn.answer_present` tells an absent answer
+  payload apart from an empty answer (`is_empty` is `False` when it is absent).
+
 - **Quiz question types (#2528).** `generate_quiz(question_types=[QuizQuestionType...])`
   and `generate quiz --question-types multiple-choice,short-answer` limit the question
   types on the Web backend. Android raises `UnsupportedOperationError` for a restricting
