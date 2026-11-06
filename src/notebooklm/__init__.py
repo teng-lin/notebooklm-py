@@ -238,6 +238,7 @@ from .types import (
     SuggestedTopic,
     TableCell,
     TextSpan,
+    ToolsetPreference,
     UnknownArtifactUserState,
     # Warnings
     UnknownTypeWarning,
@@ -293,6 +294,7 @@ __all__ = [
     "Notebook",
     "PremiumFeatureInfo",
     "ChatSession",
+    "ToolsetPreference",
     "ChatSessionStatus",
     "NotebookDescription",
     "NotebookMetadata",

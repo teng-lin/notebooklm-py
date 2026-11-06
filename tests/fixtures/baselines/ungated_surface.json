@@ -30,6 +30,7 @@
     "Notebook",
     "PremiumFeatureInfo",
     "ChatSession",
+    "ToolsetPreference",
     "ChatSessionStatus",
     "NotebookDescription",
     "NotebookMetadata",

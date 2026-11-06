@@ -36,18 +36,20 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..._types.common import _datetime_from_timestamp
 from ..._types.enums import ChatGoal, ChatResponseLength, SharePermission
-from ...exceptions import UnknownRPCMethodError
+from ...exceptions import DecodingError, UnknownRPCMethodError
 from ...rpc import RPCMethod, safe_index
 
 if TYPE_CHECKING:
-    from ..._types.notebooks import Notebook
+    from ..._types.notebooks import Notebook, ToolsetPreference
 
 logger = logging.getLogger("notebooklm._types.notebooks")
 
 __all__ = [
     "PromptSuggestionRow",
     "ProjectRow",
+    "ToolsetPreferenceRow",
     "decode_notebook",
+    "decode_toolset_preferences",
     "unwrap_next_step_suggestions",
     "unwrap_prompt_suggestions",
 ]
@@ -411,3 +413,136 @@ class PromptSuggestionRow:
         into ``chat_ask`` without leaking a bullet-dash as the question (#1909).
         """
         return _strip_leading_list_marker(self._str_at(self._PROMPT_POS))
+
+
+_LIST_TOOLSET_PREFERENCES_METHOD_ID = RPCMethod.LIST_TOOLSET_PREFERENCES.value
+_TOOLSET_PREFERENCES_ROWS_POS = 0
+
+
+@dataclass(frozen=True)
+class ToolsetPreferenceRow:
+    """Typed view of one raw ``ListNotebookToolsetPreferences`` (``EEr8Nb``) row.
+
+    Wire layout (live-captured from ``ToolManagementService.ListNotebookToolsetPreferences``):
+
+    =====  ============================================================
+    Index  Meaning
+    =====  ============================================================
+    0      toolset_id (str, e.g. ``"google-drive"``)
+    1      display_name (str | None, e.g. ``"Google Drive"``)
+    2      enabled (bool)
+    3      tools (list of ``[tool_label, ...]`` sub-rows)
+    =====  ============================================================
+    """
+
+    _raw: Any = field(repr=False)
+
+    _ID_POS: ClassVar[int] = 0
+    _DISPLAY_NAME_POS: ClassVar[int] = 1
+    _ENABLED_POS: ClassVar[int] = 2
+    _TOOLS_POS: ClassVar[int] = 3
+    _TOOL_LABEL_POS: ClassVar[int] = 0
+
+    @property
+    def toolset_id(self) -> str | None:
+        """Toolset identifier at slot 0, or ``None`` when absent/malformed."""
+        if not isinstance(self._raw, list) or len(self._raw) <= self._ID_POS:
+            return None
+        value = self._raw[self._ID_POS]
+        return value if isinstance(value, str) and value.strip() else None
+
+    @property
+    def display_name(self) -> str | None:
+        """Human-readable display name at slot 1, or ``None`` when omitted."""
+        if not isinstance(self._raw, list) or len(self._raw) <= self._DISPLAY_NAME_POS:
+            return None
+        value = self._raw[self._DISPLAY_NAME_POS]
+        return value if isinstance(value, str) and value else None
+
+    @property
+    def enabled(self) -> bool:
+        """Boolean enabled flag at slot 2 (``False`` when omitted or non-bool)."""
+        if not isinstance(self._raw, list) or len(self._raw) <= self._ENABLED_POS:
+            return False
+        value = self._raw[self._ENABLED_POS]
+        return value if isinstance(value, bool) else False
+
+    @property
+    def tools(self) -> tuple[str, ...]:
+        """Tuple of tool display labels extracted from nested ``[label]`` entries."""
+        if not isinstance(self._raw, list) or len(self._raw) <= self._TOOLS_POS:
+            return ()
+        raw_tools = self._raw[self._TOOLS_POS]
+        if raw_tools is None:
+            return ()
+        if not isinstance(raw_tools, list):
+            return ()
+        labels: list[str] = []
+        for item in raw_tools:
+            if isinstance(item, list) and len(item) > self._TOOL_LABEL_POS:
+                label = item[self._TOOL_LABEL_POS]
+                if isinstance(label, str) and label:
+                    labels.append(label)
+        return tuple(labels)
+
+
+def decode_toolset_preferences(
+    result: Any,
+    *,
+    source: str = "NotebooksAPI.get_toolset_preferences",
+) -> list[ToolsetPreference]:
+    """Decode a ``ListNotebookToolsetPreferences`` (``EEr8Nb``) response.
+
+    An empty response (``None``, ``[]``, or ``[None]`` / ``[[]]``) yields ``[]``.
+    A non-list outer envelope, non-list inner container, or malformed row missing
+    a non-empty string ``toolset_id`` raises :class:`DecodingError`.
+    """
+    from ..._types.notebooks import ToolsetPreference
+
+    if result is None or result == []:
+        return []
+    if not isinstance(result, list):
+        raise DecodingError(
+            f"{source}: expected outer list envelope, got {type(result).__name__}",
+            method_id=_LIST_TOOLSET_PREFERENCES_METHOD_ID,
+            raw_response=reprlib.repr(result),
+        )
+    inner = safe_index(
+        result,
+        _TOOLSET_PREFERENCES_ROWS_POS,
+        method_id=_LIST_TOOLSET_PREFERENCES_METHOD_ID,
+        source=source,
+    )
+    if inner is None:
+        return []
+    if not isinstance(inner, list):
+        raise DecodingError(
+            f"{source}: expected list of toolset rows at index 0, got {type(inner).__name__}",
+            method_id=_LIST_TOOLSET_PREFERENCES_METHOD_ID,
+            raw_response=reprlib.repr(result),
+        )
+
+    preferences: list[ToolsetPreference] = []
+    for index, raw_row in enumerate(inner):
+        if not isinstance(raw_row, list):
+            raise DecodingError(
+                f"{source}: expected list row at index {index}, got {type(raw_row).__name__}",
+                method_id=_LIST_TOOLSET_PREFERENCES_METHOD_ID,
+                raw_response=reprlib.repr(raw_row),
+            )
+        row = ToolsetPreferenceRow(raw_row)
+        if row.toolset_id is None:
+            raise DecodingError(
+                f"{source}: toolset row at index {index} missing non-empty string toolset_id",
+                method_id=_LIST_TOOLSET_PREFERENCES_METHOD_ID,
+                raw_response=reprlib.repr(raw_row),
+            )
+        preferences.append(
+            ToolsetPreference(
+                toolset_id=row.toolset_id,
+                display_name=row.display_name,
+                enabled=row.enabled,
+                tools=row.tools,
+            )
+        )
+    return preferences

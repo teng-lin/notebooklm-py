@@ -721,6 +721,7 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
         RPCMethod.GET_NOTEBOOK,
         RPCMethod.GET_SOURCE_GUIDE,
         RPCMethod.GET_SHARE_STATUS,
+        RPCMethod.LIST_TOOLSET_PREFERENCES,
         RPCMethod.REMOVE_RECENTLY_VIEWED,
     ):
         return [notebook_id]
