@@ -46,7 +46,7 @@ from notebooklm._types.artifacts import (
 )
 from notebooklm._types.chat import NextStepSuggestion
 from notebooklm._types.labels import Label
-from notebooklm._types.notebooks import Notebook, PromptSuggestion
+from notebooklm._types.notebooks import Notebook, PromptSuggestion, ToolsetPreference
 from notebooklm._types.sharing import ShareStatus
 from notebooklm._types.sources import PlayBook, Source
 from notebooklm._web.rows.artifacts import (
@@ -60,6 +60,7 @@ from notebooklm._web.rows.labels import decode_label
 from notebooklm._web.rows.notebooks import (
     PromptSuggestionRow,
     decode_notebook,
+    decode_toolset_preferences,
     unwrap_next_step_suggestions,
     unwrap_prompt_suggestions,
 )
@@ -251,3 +252,12 @@ def get_customization_choices(decoded: Any) -> ArtifactCustomizationChoices:
             if row.is_well_formed
         ),
     )
+
+
+def list_toolset_preferences(decoded: Any) -> list[ToolsetPreference]:
+    """``LIST_TOOLSET_PREFERENCES`` -> one :class:`ToolsetPreference` per row.
+
+    Mirrors ``WebNotebooksAPI.get_toolset_preferences``: routes ``decoded``
+    through :func:`decode_toolset_preferences`.
+    """
+    return decode_toolset_preferences(decoded, source="golden.list_toolset_preferences")

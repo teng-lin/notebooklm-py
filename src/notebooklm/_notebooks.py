@@ -31,6 +31,7 @@ from .types import (
     NotebookDescription,
     NotebookMetadata,
     PromptSuggestion,
+    ToolsetPreference,
 )
 
 logger = logging.getLogger(__name__)
@@ -256,6 +257,10 @@ class NotebooksAPI(ABC):
     @abstractmethod
     async def remove_from_recent(self, notebook_id: str) -> None:
         """Remove a notebook from the recently viewed list."""
+
+    @abstractmethod
+    async def get_toolset_preferences(self, notebook_id: str) -> builtins.list[ToolsetPreference]:
+        """Return per-notebook Connected Apps / toolset preferences."""
 
     @abstractmethod
     async def get_raw(self, notebook_id: str) -> Any:

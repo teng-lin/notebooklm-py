@@ -176,3 +176,17 @@ def build_next_step_suggestions_params(
     if source_ids:
         params.append(nest_source_ids(list(source_ids), 2))
     return params
+
+
+def build_toolset_preferences_params(notebook_id: str) -> list[Any]:
+    """Build ``LIST_TOOLSET_PREFERENCES`` (``EEr8Nb``) params.
+
+    ``ToolManagementService.ListNotebookToolsetPreferences`` takes a single
+    notebook ID at field 1: ``[notebook_id]``.
+
+    Raises:
+        ValueError: if ``notebook_id`` is not a non-blank string.
+    """
+    if not isinstance(notebook_id, str) or not notebook_id.strip():
+        raise ValueError("notebook_id must be a non-empty string")
+    return [notebook_id]
