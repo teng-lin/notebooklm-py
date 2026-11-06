@@ -52,6 +52,7 @@ def _clear_oauth_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "NOTEBOOKLM_MCP_OAUTH_PASSWORD",
         "NOTEBOOKLM_MCP_OAUTH_BASE_URL",
         "NOTEBOOKLM_MCP_TRUST_PROXY",
+        "NOTEBOOKLM_MCP_READ_ONLY",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -436,4 +437,71 @@ def test_http_non_loopback_partial_oauth_refuses(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(SystemExit):
         entry.main(["--transport", "http", "--host", "0.0.0.0", "--port", "8000"])
+    built.assert_not_called()
+
+
+def test_read_only_cli_flag_threads_to_create_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    fake_server = MagicMock()
+    captured: dict[str, object] = {}
+
+    def fake_create_server(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return fake_server
+
+    monkeypatch.setattr(entry, "create_server", fake_create_server)
+    entry.main(["--read-only"])
+
+    assert captured == {"profile": None, "read_only": True}
+    fake_server.run.assert_called_once_with(transport="stdio", show_banner=False)
+
+
+def test_read_only_env_threads_to_http_and_disables_file_transfer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_MCP_READ_ONLY", "1")
+    monkeypatch.setenv("NOTEBOOKLM_MCP_PUBLIC_URL", "https://files.example.com")
+    monkeypatch.setenv("NOTEBOOKLM_MCP_UPLOAD_WIDGET", "1")
+    monkeypatch.delenv("FASTMCP_STATELESS_HTTP", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND", raising=False)
+    monkeypatch.delenv("NOTEBOOKLM_MCP_TOKEN", raising=False)
+
+    fake_server = MagicMock()
+    captured: dict[str, object] = {}
+
+    def fake_create_server(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return fake_server
+
+    monkeypatch.setattr(entry, "create_server", fake_create_server)
+    entry.main(["--transport", "http", "--host", "127.0.0.1", "--port", "8123"])
+
+    assert captured["read_only"] is True
+    assert captured["file_transfer"] is None
+    assert fake_server.run.call_args.kwargs["stateless_http"] is None
+
+
+def test_read_only_falsey_env_keeps_default_surface(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_MCP_READ_ONLY", "0")
+    monkeypatch.delenv("NOTEBOOKLM_PROFILE", raising=False)
+    fake_server = MagicMock()
+    captured: dict[str, object] = {}
+
+    def fake_create_server(**kwargs: object) -> MagicMock:
+        captured.update(kwargs)
+        return fake_server
+
+    monkeypatch.setattr(entry, "create_server", fake_create_server)
+    entry.main([])
+
+    assert "read_only" not in captured
+
+
+def test_read_only_invalid_env_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NOTEBOOKLM_MCP_READ_ONLY", "ture")
+    built = MagicMock(side_effect=AssertionError("create_server must not be reached"))
+    monkeypatch.setattr(entry, "create_server", built)
+
+    with pytest.raises(SystemExit, match="Invalid NOTEBOOKLM_MCP_READ_ONLY"):
+        entry.main([])
     built.assert_not_called()

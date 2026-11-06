@@ -26,6 +26,7 @@ import logging
 import os
 import secrets
 import sys
+from typing import Any
 
 from .._adapter_support import check_bind_allowed, is_loopback
 from ._auth import MCP_TOKEN_ENV, build_auth, get_configured_token
@@ -51,6 +52,11 @@ ALLOW_EXTERNAL_BIND_ENV = "NOTEBOOKLM_MCP_ALLOW_EXTERNAL_BIND"
 #: file-transfer URLs. Optional — falls back to the OAuth base URL. When neither is
 #: set, remote file transfer is simply unavailable (no startup crash).
 PUBLIC_URL_ENV = "NOTEBOOKLM_MCP_PUBLIC_URL"
+
+#: Opt-in startup filter omitting mutating and destructive tools from MCP registration.
+READ_ONLY_ENV = "NOTEBOOKLM_MCP_READ_ONLY"
+
+_TRUTHY_BOOL_VALUES = frozenset({"1", "true", "t", "yes", "y", "on"})
 
 #: Valid resolved transports. An env-derived default is validated against this
 #: AFTER parsing (argparse ``choices`` validates explicit CLI args, but not the
@@ -137,7 +143,7 @@ def _host_guard_bypass_allowed(
 _FALSEY_STATELESS_VALUES = frozenset({"0", "false", "f", "no", "n", "off"})
 
 
-def _resolve_stateless_http() -> bool | None:
+def _resolve_stateless_http(*, read_only: bool = False) -> bool | None:
     """Resolve the ``stateless_http`` value for the http transport, warning on a footgun.
 
     * Widget on + ``FASTMCP_STATELESS_HTTP`` unset → return ``True`` (auto-enable stateless,
@@ -152,7 +158,7 @@ def _resolve_stateless_http() -> bool | None:
     """
     from ._uploadwidget import _WIDGET_FLAG
 
-    if os.environ.get(_WIDGET_FLAG) != "1":
+    if read_only or os.environ.get(_WIDGET_FLAG) != "1":
         return None  # Widget off → nothing to resolve; FastMCP reads the env itself.
 
     stateless_env = os.environ.get("FASTMCP_STATELESS_HTTP")
@@ -202,6 +208,15 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("web", "android"),
         default=None,
         help="Preferred API backend (default: NOTEBOOKLM_BACKEND, else web).",
+    )
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        default=False,
+        help=(
+            f"Register only read-only tools (default: ${READ_ONLY_ENV}=1). "
+            "Mutating and destructive tools are omitted from the server."
+        ),
     )
     parser.add_argument(
         "--transport",
@@ -257,6 +272,24 @@ def _build_file_transfer() -> FileTransferConfig | None:
     return FileTransferConfig(signer=FileLinkSigner(secrets.token_bytes(32)), base_url=public_url)
 
 
+def _resolve_read_only(cli_flag: bool) -> bool:
+    """Resolve ``--read-only`` / ``NOTEBOOKLM_MCP_READ_ONLY``, failing closed on typos."""
+    if cli_flag:
+        return True
+    raw = os.environ.get(READ_ONLY_ENV)
+    if raw is None or not raw.strip():
+        return False
+    normalized = raw.strip().lower()
+    if normalized in _TRUTHY_BOOL_VALUES:
+        return True
+    if normalized in _FALSEY_STATELESS_VALUES:
+        return False
+    raise SystemExit(
+        f"Invalid {READ_ONLY_ENV}={raw!r}: must be a boolean value "
+        "(1/0, true/false, yes/no, on/off)."
+    )
+
+
 def _resolve_port(raw: str) -> int:
     """Convert the (possibly env-derived) ``--port`` string to an int, or fail clean.
 
@@ -289,7 +322,7 @@ def main(argv: list[str] | None = None) -> None:
     raw_profiles = args.profiles
     if raw_profiles is None and args.profile is None:
         raw_profiles = os.environ.get(PROFILES_ENV) or None
-    profile_kwargs = {}
+    profile_kwargs: dict[str, Any] = {}
     if raw_profiles is not None:
         profile_kwargs["profiles"] = [name.strip() for name in raw_profiles.split(",")]
         args.profile = (
@@ -300,6 +333,9 @@ def main(argv: list[str] | None = None) -> None:
         profile_kwargs["profile"] = args.profile
     if args.backend is not None:
         profile_kwargs["backend"] = args.backend
+    read_only = _resolve_read_only(args.read_only)
+    if read_only:
+        profile_kwargs["read_only"] = True
 
     # argparse ``choices`` validates an explicit --transport, but NOT an
     # env-derived default; validate the resolved value so a bogus
@@ -328,8 +364,9 @@ def main(argv: list[str] | None = None) -> None:
         _check_http_auth_required(host, token, oauth_config)
         oauth = build_oauth_provider(oauth_config) if oauth_config else None
         # Optional remote file transfer: built only here (http path), validated, and
-        # absent (None) when no public URL is set — never a startup crash.
-        file_transfer = _build_file_transfer()
+        # absent (None) when no public URL is set — never a startup crash. Skipped in
+        # read-only mode where upload/download tools and routes are omitted.
+        file_transfer = None if read_only else _build_file_transfer()
         server_kwargs = {
             **profile_kwargs,
             "auth": build_auth(token, oauth),
@@ -362,7 +399,9 @@ def main(argv: list[str] | None = None) -> None:
         # server rejects as "Missing session ID" ("fail to fetch app content"). Enabling the widget
         # implies stateless unless the operator set FASTMCP_STATELESS_HTTP explicitly — and an
         # explicit falsey value is warned about (it silently breaks the widget). See #1915.
-        stateless_http = _resolve_stateless_http()  # None → FastMCP reads FASTMCP_STATELESS_HTTP
+        stateless_http = _resolve_stateless_http(
+            read_only=read_only
+        )  # None → FastMCP reads FASTMCP_STATELESS_HTTP
 
         server.run(
             transport="http",
