@@ -117,18 +117,18 @@ def mock_client() -> MagicMock:
     return client
 
 
-def _server_for(mock_client: MagicMock) -> FastMCP:
+def _server_for(mock_client: MagicMock, **kwargs: Any) -> FastMCP:
     @contextlib.asynccontextmanager
     async def factory() -> AsyncIterator[MagicMock]:
         yield mock_client
 
-    return create_server(client_factory=factory)
+    return create_server(client_factory=factory, **kwargs)
 
 
 @pytest.fixture
-def server_factory(mock_client: MagicMock) -> Callable[[], FastMCP]:
-    """Return a zero-arg builder for a server bound to ``mock_client``."""
-    return lambda: _server_for(mock_client)
+def server_factory(mock_client: MagicMock) -> Callable[..., FastMCP]:
+    """Return a builder for a server bound to ``mock_client``."""
+    return lambda **kwargs: _server_for(mock_client, **kwargs)
 
 
 @pytest.fixture
