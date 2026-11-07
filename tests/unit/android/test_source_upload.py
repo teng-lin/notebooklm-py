@@ -990,6 +990,67 @@ async def test_filename_title_is_not_custom_and_performs_zero_project_reads(tmp_
     assert [call[0] for call in session.calls] == [ADD_TENTATIVE_SOURCES_METHOD]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("filename", "header_name"),
+    [
+        ("Annual Report.pdf", "Annual Report.pdf"),
+        ("Caf\u00e9.pdf", "Cafe.pdf"),
+        ("The Team\u2019s Plan.pdf", "The Teams Plan.pdf"),
+        ("\u4f1a\u8bae\u8bb0\u5f55.pdf", "upload.pdf"),
+        (" Annual Report.pdf", "Annual Report.pdf"),
+    ],
+)
+@pytest.mark.parametrize("curl", [False, True], ids=["httpx", "curl-cffi"])
+async def test_file_name_header_is_header_safe_and_registration_keeps_real_name(
+    tmp_path: Path,
+    filename: str,
+    header_name: str,
+    curl: bool,
+) -> None:
+    harness = HTTPHarness()
+    session, _, _, api = await _graph(harness, curl=curl)
+    _, content = _write_pdf(tmp_path)
+    path = tmp_path / filename
+    path.write_bytes(content)
+
+    result = await api.add_file(NOTEBOOK_ID, path)
+
+    assert result.title == filename
+    assert session.calls[0][1].tentative_sources_metadata[0].name == filename
+    start = next(call for call in harness.calls if call.method == "POST")
+    value = start.headers["X-Goog-Upload-File-Name"]
+    assert value == header_name
+    assert value == value.strip()
+    assert all(0x20 <= ord(character) < 0x7F for character in value)
+    assert httpx.Headers({"X-Goog-Upload-File-Name": value}).raw
+
+
+@pytest.mark.parametrize(
+    ("filename", "header_name"),
+    [
+        ("document.pdf", "document.pdf"),
+        ("Annual * Report.pdf", "Annual * Report.pdf"),
+        ("The Team\u2019s Plan * Draft.pdf", "The Teams Plan * Draft.pdf"),
+        ("a .pdf", "a .pdf"),
+        ("tab\there.pdf", "tab\there.pdf"),
+        (".pdf", ".pdf"),
+        ("notes", "notes"),
+        ("Cafe\u0301.pdf", "Cafe.pdf"),
+        ("Annual Report.pdf ", "Annual Report.pdf"),
+        ("\ttab.pdf", "tab.pdf"),
+        ("bell\x07.pdf", "bell.pdf"),
+        ("line\r\nX-Evil: 1.pdf", "lineX-Evil: 1.pdf"),
+        ("\u4f1a\u8bae", "upload"),
+    ],
+)
+def test_header_safe_filename_keeps_valid_names_and_folds_the_rest(
+    filename: str,
+    header_name: str,
+) -> None:
+    assert upload_module._header_safe_filename(filename) == header_name
+
+
 @pytest.mark.parametrize(
     "url",
     [
