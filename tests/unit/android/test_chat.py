@@ -756,6 +756,38 @@ def test_history_status_is_decoded_from_original_unknown_wire_field() -> None:
     assert turn.status == 1
 
 
+def test_history_turns_keeps_combined_row_question() -> None:
+    """A combined answer row yields its question first, as get_history() does (#2543)."""
+    from notebooklm._android.codecs.chat import decode_history, decode_history_turns
+
+    row = chat_pb2.ChatHistoryMessage(
+        message_id="a1", observed_event_type=2, user_query_text="What is chapter 3 about?", status=2
+    )
+    row.act_on_sources_response.response.response = "Chapter 3 is about X."
+    response = chat_pb2.ListChatTurnsResponse(chat_turns=[row])
+    turns = decode_history_turns(response)
+    assert [(t.role, t.text) for t in turns] == [
+        (1, "What is chapter 3 about?"),
+        (2, "Chapter 3 is about X."),
+    ]
+    assert turns[0].status is None
+    assert decode_history(response, limit=10) == [
+        ("What is chapter 3 about?", "Chapter 3 is about X.")
+    ]
+
+
+def test_history_turns_android_absent_payload_differs_from_empty_answer() -> None:
+    from notebooklm._android.codecs.chat import decode_history_turns
+
+    absent = chat_pb2.ChatHistoryMessage(message_id="a1", observed_event_type=2, status=2)
+    empty = chat_pb2.ChatHistoryMessage(message_id="a1", observed_event_type=2, status=2)
+    empty.act_on_sources_response.response.response = ""
+    [absent_turn] = decode_history_turns(chat_pb2.ListChatTurnsResponse(chat_turns=[absent]))
+    [empty_turn] = decode_history_turns(chat_pb2.ListChatTurnsResponse(chat_turns=[empty]))
+    assert (absent_turn.answer_present, absent_turn.is_empty) == (False, False)
+    assert (empty_turn.answer_present, empty_turn.is_empty) == (True, True)
+
+
 @pytest.mark.parametrize(
     ("variant", "content", "visible"),
     [

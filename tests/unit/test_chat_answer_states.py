@@ -62,6 +62,24 @@ def test_successful_empty_answer_is_distinct_from_failure_and_question():
     assert ChatHistoryTurn("id", 1, "question", ChatTurnStatus.FAILED).state == "success"
 
 
+def test_absent_answer_payload_is_not_an_empty_answer():
+    """An unreadable answer (#2543) must not read as a completed empty one."""
+    absent = ChatHistoryTurn("id", 2, "", ChatTurnStatus.COMPLETED, answer_present=False)
+    assert not absent.is_empty
+    assert absent.state == "success"
+    assert ChatHistoryTurn("id", 1, "question").answer_present
+
+
+@pytest.mark.parametrize(
+    ("answer_slot", "present"),
+    [(None, False), ([[""]], True)],
+)
+def test_web_history_distinguishes_absent_from_empty_answer(answer_slot, present):
+    turn = WebChatAPI._decode_history_turns(None, [[["a1", [], 2, None, answer_slot, 2]]])[0]
+    assert turn.answer_present is present
+    assert turn.is_empty is present
+
+
 @pytest.mark.parametrize(
     ("element", "visible"),
     [

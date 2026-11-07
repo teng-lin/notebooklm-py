@@ -56,6 +56,9 @@ class ChatHistoryTurn:
     ``empty_answer_reason`` preserves the diagnostic code (see
     :class:`EmptyAnswerReason`); absent/default zero is represented by ``None``.
     Quota failures cannot be reconstructed from history's generic failed code.
+    ``answer_present`` is ``False`` for an answer row whose payload was absent
+    (as opposed to present with empty text), so an unreadable answer is not
+    mistaken for an empty one. Question rows always report ``True``.
     """
 
     message_id: str
@@ -66,6 +69,7 @@ class ChatHistoryTurn:
     empty_answer_reason: int | None = None
     answer_document: StructuredDocument = field(default_factory=StructuredDocument, repr=False)
     has_document_content: bool = False
+    answer_present: bool = True
 
     def display_state(
         self, *, now: datetime | None = None
@@ -105,8 +109,17 @@ class ChatHistoryTurn:
 
     @property
     def is_empty(self) -> bool:
-        """A successful answer with no content, distinct from a failed answer."""
-        return self.role == 2 and self.state == "success" and not self.has_content
+        """A successful answer that was read and has no content.
+
+        Distinct from a failed answer and from one whose payload was absent
+        (``answer_present`` is ``False``), which could not be read at all.
+        """
+        return (
+            self.role == 2
+            and self.answer_present
+            and self.state == "success"
+            and not self.has_content
+        )
 
 
 @dataclass(frozen=True)
