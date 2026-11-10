@@ -11931,7 +11931,7 @@
   ],
   "subsystems": {
     "android": {
-      "lines": 16826,
+      "lines": 16846,
       "modules": 56
     },
     "app": {
@@ -11967,16 +11967,16 @@
       "modules": 21
     },
     "types": {
-      "lines": 5843,
+      "lines": 5856,
       "modules": 18
     },
     "web": {
-      "lines": 34258,
+      "lines": 34259,
       "modules": 97
     }
   },
   "summary": {
-    "authored_lines": 156970,
+    "authored_lines": 157004,
     "authored_modules": 498,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1314,

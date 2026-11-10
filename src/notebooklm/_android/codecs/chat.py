@@ -139,25 +139,45 @@ def _has_document_content(document: Any) -> bool:
 
 
 def decode_history_turns(response: Any) -> list[ChatHistoryTurn]:
-    """Project individual Android history rows, oldest first, with answer metadata."""
+    """Project individual Android history rows, oldest first, with answer metadata.
+
+    A combined legacy-shaped row (an answer row that also carries
+    ``user_query_text``) yields its question as a role-1 turn, sharing the
+    row's ``message_id``, immediately before the answer turn.
+    """
     turns: list[ChatHistoryTurn] = []
     for row in reversed(response.chat_turns):
-        if row.observed_event_type not in (1, 2):
+        role = row.observed_event_type
+        if role not in (1, 2):
             continue
+        timestamp = (
+            row.timestamp.ToDatetime(tzinfo=timezone.utc) if row.HasField("timestamp") else None
+        )
+        if role == 2 and row.user_query_text:
+            turns.append(
+                ChatHistoryTurn(
+                    message_id=row.message_id,
+                    role=1,
+                    text=row.user_query_text,
+                    timestamp=timestamp,
+                )
+            )
         answer = row.act_on_sources_response.response
-        document = decode_document(answer.response_doc)
         turns.append(
             ChatHistoryTurn(
                 message_id=row.message_id,
-                role=row.observed_event_type,
-                text=row.user_query_text if row.observed_event_type == 1 else answer.response,
+                role=role,
+                text=row.user_query_text if role == 1 else answer.response,
                 status=row.status if row.HasField("status") else None,
-                timestamp=row.timestamp.ToDatetime(tzinfo=timezone.utc)
-                if row.HasField("timestamp")
-                else None,
+                timestamp=timestamp,
                 empty_answer_reason=int(answer.empty_answer_reason) or None,
-                answer_document=document,
+                answer_document=decode_document(answer.response_doc),
                 has_document_content=_has_document_content(answer.response_doc),
+                answer_present=role == 1
+                or (
+                    row.HasField("act_on_sources_response")
+                    and row.act_on_sources_response.HasField("response")
+                ),
             )
         )
     return turns

@@ -465,6 +465,7 @@ class WebChatAPI(RequestPolicyOwner, ChatAPI):
                     empty_answer_reason=answer.empty_answer_reason if answer else None,
                     answer_document=answer.document if answer else StructuredDocument(),
                     has_document_content=answer.has_document_content if answer else False,
+                    answer_present=row.is_question or answer is not None,
                 )
             )
         return decoded
