@@ -321,3 +321,59 @@ def test_bad_port_env_without_override_errors_cleanly(
     with pytest.raises(SystemExit):
         entry.main(["--transport", "http", "--host", "127.0.0.1"])
     fake_server.run.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# Read-only registration mode
+# --------------------------------------------------------------------------- #
+async def test_read_only_server_rejects_mutating_calls_and_notes_instructions(
+    mock_client: MagicMock,
+) -> None:
+    """In ``read_only=True`` mode, mutating tools are absent and cannot be invoked."""
+    from fastmcp.exceptions import ToolError
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[MagicMock]:
+        yield mock_client
+
+    server = create_server(client_factory=factory, read_only=True)
+    assert server.instructions is not None
+    assert "read-only mode" in server.instructions
+
+    async with Client(server) as client:
+        tools = {tool.name for tool in await client.list_tools()}
+        assert "source_search" in tools
+        assert "notebook_list" in tools
+        assert "notebook_create" not in tools
+        assert "notebook_delete" not in tools
+        assert "chat_ask" not in tools
+        with pytest.raises(ToolError):
+            await client.call_tool("notebook_create", {"title": "Should Fail"})
+
+
+def test_read_only_server_skips_file_routes_and_upload_widget(
+    mock_client: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``read_only=True`` never mounts remote file-transfer routes or the upload widget."""
+    from notebooklm.mcp import _fileroutes, _uploadwidget
+    from notebooklm.mcp._filelink import FileLinkSigner, FileTransferConfig
+
+    @contextlib.asynccontextmanager
+    async def factory() -> AsyncIterator[MagicMock]:
+        yield mock_client
+
+    routes_spy = MagicMock()
+    widget_spy = MagicMock()
+    monkeypatch.setattr(_fileroutes, "register_file_routes", routes_spy)
+    monkeypatch.setattr(_uploadwidget, "register_upload_widget", widget_spy)
+    monkeypatch.setenv("NOTEBOOKLM_MCP_UPLOAD_WIDGET", "1")
+
+    transfer = FileTransferConfig(
+        signer=FileLinkSigner(b"0" * 32),
+        base_url="https://files.example.com",
+    )
+    create_server(client_factory=factory, file_transfer=transfer, read_only=True)
+
+    routes_spy.assert_not_called()
+    widget_spy.assert_not_called()
