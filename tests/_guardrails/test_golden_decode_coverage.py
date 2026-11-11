@@ -90,6 +90,7 @@ _GOLDEN_EXPANSION = "tests/integration/test_golden_decoded_vcr_expansion.py"
 _COMPREHENSIVE = "tests/integration/test_vcr_comprehensive.py"
 _GAP_BACKFILL = "tests/integration/test_rpc_gap_backfill_vcr.py"
 _SUGGEST_PROMPTS_VCR = "tests/integration/test_notebooks_suggest_prompts_vcr.py"
+_TOOLSET_PREFERENCES_VCR = "tests/integration/test_notebooks_toolset_preferences_vcr.py"
 _COPY_NOTEBOOK_VCR = "tests/integration/test_notebook_copy_vcr.py"
 _TRANSFER_VCR = "tests/integration/test_transfer_rpcs_vcr.py"
 _DISCOVER_VCR = "tests/integration/test_research_discover_vcr.py"
@@ -241,6 +242,12 @@ GOLDEN_COVERAGE: dict[RPCMethod, tuple[GoldenPointer, ...]] = {
     ),
     RPCMethod.SUGGEST_PROMPTS: (
         (_SUGGEST_PROMPTS_VCR, "TestSuggestPromptsVCR::test_suggest_prompts_decoded_golden"),
+    ),
+    RPCMethod.LIST_TOOLSET_PREFERENCES: (
+        (
+            _TOOLSET_PREFERENCES_VCR,
+            "TestToolsetPreferencesVCR::test_get_toolset_preferences_decoded_golden",
+        ),
     ),
     # --- #2283 transfer / suggestion family (live-recorded) ---
     RPCMethod.SUGGEST_NEXT_STEPS: (

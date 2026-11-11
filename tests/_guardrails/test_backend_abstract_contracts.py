@@ -93,6 +93,7 @@ BASE_ABSTRACT_CONTRACTS: tuple[_AbstractContract, ...] = (
                 "get_raw",
                 "get_source_ids",
                 "get_summary",
+                "get_toolset_preferences",
                 "list",
                 "remove_from_recent",
                 "suggest_next_steps",

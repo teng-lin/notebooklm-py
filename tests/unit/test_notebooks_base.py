@@ -119,6 +119,9 @@ class _FakeNotebooksAPI(NotebooksAPI):
     async def remove_from_recent(self, notebook_id: str) -> None:
         raise NotImplementedError
 
+    async def get_toolset_preferences(self, notebook_id: str) -> builtins.list[Any]:
+        raise NotImplementedError
+
     async def get_raw(self, notebook_id: str) -> Any:
         raise NotImplementedError
 

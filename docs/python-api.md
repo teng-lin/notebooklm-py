@@ -1291,6 +1291,7 @@ async with NotebookLMClient.from_storage(rate_limit_max_retries=0) as client:
 | `get_summary(notebook_id)` | `notebook_id: str` | `str` | Get raw summary text |
 | `get_share_url(notebook_id, artifact_id=None)` | `notebook_id: str, str \| None` | `str` | Get a share URL |
 | `suggest_next_steps(notebook_id, *, source_ids=None)` | `str, list[str] \| None` | `list[NextStepSuggestion]` | Grounded follow-up **questions** for the notebook (`NextStepSuggestions`) — the block a chat answer carries as `AskResult.next_steps`, without needing a prior conversation. `source_ids=None` lets the server use all sources (no `GET_NOTEBOOK` round-trip). Distinct from `suggest_prompts`, which returns `(title, prompt)` steering pairs. |
+| `get_toolset_preferences(notebook_id)` | `notebook_id: str` | `list[ToolsetPreference]` | Read per-notebook Connected Apps / toolset preferences (`ToolManagementService.ListNotebookToolsetPreferences` / `EEr8Nb`), such as `google-drive` (`("Search Drive", "Read Drive file")`). Web-only; Android raises `UnsupportedOperationError`. |
 | `remove_from_recent(notebook_id)` | `notebook_id: str` | `None` | Remove from recently viewed |
 | `get_raw(notebook_id)` | `notebook_id: str` | `Any` | Get raw API response data. Web: batchexecute list. Android: known-field **dict** (`message_to_known_dict`), not a protobuf message. See [Web vs Android inventory](web-android-public-behavior.md). |
 

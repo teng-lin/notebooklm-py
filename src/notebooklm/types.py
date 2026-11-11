@@ -135,6 +135,7 @@ from ._types.notebooks import (
     PromptSuggestion,
     SourceSummary,
     SuggestedTopic,
+    ToolsetPreference,
 )
 from ._types.notes import Note
 from ._types.research import (
@@ -252,6 +253,7 @@ __all__ = [
     "Notebook",
     "PremiumFeatureInfo",
     "ChatSession",
+    "ToolsetPreference",
     "NotebookDescription",
     "NotebookMetadata",
     "SuggestedTopic",
@@ -470,6 +472,7 @@ for _public_moved_type in (
     SourceSummary,
     SourceType,
     SuggestedTopic,
+    ToolsetPreference,
 ):
     _public_moved_type.__module__ = __name__
 del _public_moved_type
