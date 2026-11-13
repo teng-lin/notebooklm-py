@@ -128,7 +128,7 @@ def _violations(source: str, rel: str) -> list[str]:
 def test_every_lazy_client_call_sits_inside_its_guard() -> None:
     found: list[str] = []
     for path in sorted(MCP_DIR.rglob("*.py")):
-        found += _violations(path.read_text(encoding="utf-8"), str(path.relative_to(MCP_DIR)))
+        found += _violations(path.read_text(encoding="utf-8"), path.relative_to(MCP_DIR).as_posix())
     assert not found, "lazy client open escaping its error boundary (#2330):\n" + "\n".join(found)
 
 
