@@ -214,7 +214,7 @@ jobs:
         include = []
         if selected_lane in {"all", "web"}:
             include.append(
-                {"os": "ubuntu-latest", "backend": "web",
+                {"os": "ubuntu-24.04", "backend": "web",
                  "lane": "nightly-web-ubuntu", "mode": "full",
                  "selection": "not variants", "account_slot": web["account_slot"],
                  "master_token_secret_name": web["master_token_secret_name"]}
