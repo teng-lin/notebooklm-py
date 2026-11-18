@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import time
+import unicodedata
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -358,6 +359,32 @@ def validate_upload_session_url(raw_url: str, project_id: str) -> str:
     if not values["upload_id"] or values["upload_protocol"] != "resumable":
         raise ValidationError("Invalid Android upload session response")
     return raw_url
+
+
+def _header_safe_filename(filename: str) -> str:
+    """Return ``filename`` in a form that can travel in an HTTP header value.
+
+    httpx encodes header values as ASCII, and h11 rejects values with leading
+    or trailing whitespace or control characters, so a name with an accented
+    letter, a CJK character or a leading space never reaches the wire (#2547).
+    The source keeps its real name through the tentative registration; this
+    form is used only for ``X-Goog-Upload-File-Name``.
+    """
+
+    def _fold(value: str) -> str:
+        decomposed = unicodedata.normalize("NFKD", value)
+        ascii_value = decomposed.encode("ascii", "ignore").decode("ascii")
+        return "".join(
+            character
+            for character in ascii_value
+            if character == "\t" or 0x20 <= ord(character) < 0x7F
+        )
+
+    folded = _fold(filename).strip()
+    suffix = _fold(Path(filename).suffix).strip()
+    if folded in {"", suffix}:
+        return f"upload{suffix}"
+    return folded
 
 
 def _upload_failure(filename: str, state: _UploadState, detail: str) -> SourceAddError:
@@ -1217,7 +1244,7 @@ class AndroidUploadPipeline(EpochFenced):
                 "X-Goog-AuthUser": "0",
                 "X-Goog-Upload-Command": "start",
                 "X-Goog-Upload-Content-Length": str(file_size),
-                "X-Goog-Upload-File-Name": filename,
+                "X-Goog-Upload-File-Name": _header_safe_filename(filename),
                 "X-Goog-Upload-Header-Content-Length": str(file_size),
                 "X-Goog-Upload-Header-Content-Type": content_type,
                 "X-Goog-Upload-Protocol": "resumable",

@@ -1958,7 +1958,7 @@
     },
     {
       "kind": "from",
-      "lineno": 24,
+      "lineno": 25,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -1967,7 +1967,7 @@
     },
     {
       "kind": "from",
-      "lineno": 25,
+      "lineno": 26,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -1976,7 +1976,7 @@
     },
     {
       "kind": "from",
-      "lineno": 26,
+      "lineno": 27,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -1985,7 +1985,7 @@
     },
     {
       "kind": "from",
-      "lineno": 27,
+      "lineno": 28,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -1994,7 +1994,7 @@
     },
     {
       "kind": "from",
-      "lineno": 28,
+      "lineno": 29,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -2003,7 +2003,7 @@
     },
     {
       "kind": "from",
-      "lineno": 29,
+      "lineno": 30,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -2012,7 +2012,7 @@
     },
     {
       "kind": "from",
-      "lineno": 30,
+      "lineno": 31,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -2021,7 +2021,7 @@
     },
     {
       "kind": "from",
-      "lineno": 31,
+      "lineno": 32,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -2030,7 +2030,7 @@
     },
     {
       "kind": "from",
-      "lineno": 32,
+      "lineno": 33,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -2039,7 +2039,7 @@
     },
     {
       "kind": "from",
-      "lineno": 38,
+      "lineno": 39,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -2048,7 +2048,7 @@
     },
     {
       "kind": "from",
-      "lineno": 47,
+      "lineno": 48,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._android.upload",
@@ -2057,7 +2057,7 @@
     },
     {
       "kind": "from",
-      "lineno": 541,
+      "lineno": 568,
       "scope": "AndroidUploadPipeline._client_factory",
       "scope_kind": "function",
       "source": "notebooklm._android.upload",
@@ -2066,7 +2066,7 @@
     },
     {
       "kind": "from",
-      "lineno": 1321,
+      "lineno": 1348,
       "scope": "AndroidUploadPipeline._finalize_worker",
       "scope_kind": "function",
       "source": "notebooklm._android.upload",
@@ -11949,7 +11949,7 @@
   ],
   "subsystems": {
     "android": {
-      "lines": 16846,
+      "lines": 16873,
       "modules": 56
     },
     "app": {
@@ -11994,7 +11994,7 @@
     }
   },
   "summary": {
-    "authored_lines": 157157,
+    "authored_lines": 157184,
     "authored_modules": 499,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1316,
