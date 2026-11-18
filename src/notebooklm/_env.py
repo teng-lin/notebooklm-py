@@ -108,19 +108,19 @@ def get_base_host() -> str:
 
 # The frontend build label sent as ``bl`` on the chat streaming endpoint.
 #
-# Re-captured live on 2026-08-04 from the app shell, which served
-# ``…_20260802.02_p0`` from BOTH personal hosts (identical bytes — this is not a
-# host-specific value). The previous pin, ``…_20260301.03_p0``, had gone five
-# months without a re-check (#2073).
+# Re-captured live on 2026-11-18 from the authenticated notebook.google.com
+# app shell, which served ``…_20261116.14_p0``. The previous pin,
+# ``…_20260802.02_p0``, was 106 label-days behind (90-day threshold; #2540).
+# The legacy host redirected to sign-in in this session; no label was observed there.
 #
-# Measured on the same day, the server does NOT validate this value: the live
+# Measured on 2026-08-04, the server did NOT validate this value: the live
 # streaming endpoint returned a complete, cited answer for the pinned label, for
 # the served label, AND for a fabricated ``…_19700101.00_p0``. So a stale pin is
-# not degrading today — the risk is that it is accepted silently right up until
+# not evidence of breakage — the risk is that it is accepted silently right up until
 # it isn't, which is why :data:`BUILD_LABEL_STALE_AFTER_DAYS` exists and the
 # nightly canary's build-label lane (``scripts/check_rpc_health.py``) watches the
 # gap instead of leaving this constant unattended.
-DEFAULT_BL = "boq_labs-tailwind-frontend_20260802.02_p0"
+DEFAULT_BL = "boq_labs-tailwind-frontend_20261116.14_p0"
 
 # How far behind the served label this pin may fall before the canary calls it
 # stale. Wide on purpose: Google ships a new build roughly weekly, so a tighter
