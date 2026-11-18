@@ -23,6 +23,7 @@ from fastmcp import Context
 
 from ..._app import notebooks as core
 from ..._app.serialize import to_jsonable
+from ..._app.views import chat_settings_view
 from ..._app.views import notebook_view as _notebook_view
 from .._confirm import (
     DESTRUCTIVE,
@@ -84,12 +85,11 @@ def register(mcp: Any) -> None:
     async def notebook_describe(
         ctx: Context, notebook: str, include_metadata: bool = False
     ) -> dict[str, Any]:
-        """Fetch a notebook's AI-generated description. Accepts a notebook name or ID.
+        """Fetch a notebook's AI description by name or ID.
 
-        Returns the resolved ``notebook_id`` plus the AI ``description``. Pass
-        ``include_metadata=True`` to additionally fetch the notebook's metadata
-        (details + source list) and surface it under a ``metadata`` key; the
-        default output (``include_metadata`` omitted) is unchanged.
+        Returns ``notebook_id`` and ``description``. ``include_metadata=True`` adds
+        notebook details, sources, and ``chat_settings`` (goal/response_length
+        labels and custom_prompt, or ``null`` when unavailable) under ``metadata``.
         """
         with mcp_errors():
             client = await get_client(ctx)
@@ -134,6 +134,9 @@ def register(mcp: Any) -> None:
                 # dataclass, so ``to_jsonable`` always emits it as a dict here.
                 metadata_block["notebook"] = _notebook_view(meta_result.metadata.notebook)
                 metadata_block["notebook"]["sources_count"] = len(meta_result.metadata.sources)
+                metadata_block["chat_settings"] = chat_settings_view(
+                    meta_result.metadata.notebook.chat_settings
+                )
                 output["metadata"] = metadata_block
                 return output
             result = await core.execute_notebook_describe(

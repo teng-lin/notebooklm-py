@@ -27,6 +27,9 @@ from notebooklm.exceptions import (  # noqa: E402 - after importorskip guard
     RPCError,
 )
 from notebooklm.types import (  # noqa: E402 - after importorskip guard
+    ChatGoal,
+    ChatResponseLength,
+    ChatSettings,
     Notebook,
     NotebookMetadata,
     SharePermission,
@@ -223,9 +226,55 @@ async def test_notebook_describe_include_metadata_adds_block(mcp_call, mock_clie
             "role_label": "editor",
         },
         "sources": [{"kind": "pdf", "title": "Doc", "url": None}],
+        "chat_settings": None,
     }
     mock_client.notebooks.get_description.assert_awaited_once_with(NB_ID)
     mock_client.notebooks.get_metadata.assert_awaited_once_with(NB_ID)
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected"),
+    [
+        (
+            ChatSettings(ChatGoal.CUSTOM, ChatResponseLength.LONGER, "  Keep my persona.  "),
+            {
+                "goal": "custom",
+                "response_length": "longer",
+                "custom_prompt": "  Keep my persona.  ",
+            },
+        ),
+        (
+            ChatSettings(ChatGoal.DEFAULT, ChatResponseLength.DEFAULT),
+            {"goal": "default", "response_length": "default", "custom_prompt": None},
+        ),
+        (
+            ChatSettings(ChatGoal.LEARNING_GUIDE, ChatResponseLength.SHORTER),
+            {"goal": "learning_guide", "response_length": "shorter", "custom_prompt": None},
+        ),
+        (None, None),
+    ],
+)
+async def test_notebook_describe_exposes_decoded_chat_settings_without_extra_reads(
+    mcp_call, mock_client, settings, expected
+) -> None:
+    mock_client.notebooks.get_description = AsyncMock(
+        return_value=FakeDescription(summary="A summary")
+    )
+    mock_client.notebooks.get_metadata = AsyncMock(
+        return_value=NotebookMetadata(
+            notebook=Notebook(id=NB_ID, title="Research", chat_settings=settings), sources=[]
+        )
+    )
+    mock_client.chat.get_settings = AsyncMock()
+
+    result = await mcp_call("notebook_describe", {"notebook": NB_ID, "include_metadata": True})
+
+    metadata = result.structured_content["metadata"]
+    assert metadata["chat_settings"] == expected
+    assert "chat_settings" not in metadata["notebook"]
+    mock_client.notebooks.get_description.assert_awaited_once_with(NB_ID)
+    mock_client.notebooks.get_metadata.assert_awaited_once_with(NB_ID)
+    mock_client.chat.get_settings.assert_not_awaited()
 
 
 async def test_notebook_describe_metadata_source_count_matches_enumeration(

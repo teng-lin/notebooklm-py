@@ -545,31 +545,42 @@ async def test_chat_configure_length_default_only_merges(mcp_call, mock_client) 
     )
 
 
-async def test_chat_configure_empty_goal_only_rejected(mcp_call, mock_client) -> None:
-    """An empty goal is not-supplied, so goal: "" with no length is a bare/empty call."""
+@pytest.mark.parametrize("goal", ["", "   ", "\t\n"])
+async def test_chat_configure_empty_goal_only_rejected(mcp_call, mock_client, goal) -> None:
+    """A blank goal alone must not reset existing settings or resolve the notebook."""
     mock_client.chat.configure = AsyncMock(return_value=None)
+    mock_client.chat.get_settings = AsyncMock()
+    mock_client.notebooks.list = AsyncMock()
     with pytest.raises(ToolError) as excinfo:
-        await mcp_call("chat_configure", {"notebook": NB_ID, "goal": ""})
+        await mcp_call("chat_configure", {"notebook": "My Notebook", "goal": goal})
     assert "at least one setting" in str(excinfo.value)
     mock_client.chat.configure.assert_not_called()
+    mock_client.chat.get_settings.assert_not_awaited()
+    mock_client.notebooks.list.assert_not_awaited()
 
 
-async def test_chat_configure_empty_goal_with_length_merges(mcp_call, mock_client) -> None:
+@pytest.mark.parametrize("goal", ["", "   ", "\t\n"])
+async def test_chat_configure_empty_goal_with_length_merges(mcp_call, mock_client, goal) -> None:
     """goal: "" + a length is a length-ONLY (partial) write, so it merges (#1751).
 
-    Pins ``bool(goal)`` (not ``goal is not None``): an empty goal counts as
+    Pins ``bool(goal and goal.strip())``: a blank goal counts as
     not-supplied, so pairing it with a response_length is a length-only partial
     that preserves the current goal/persona.
     """
     mock_client.chat.configure = AsyncMock(return_value=None)
     mock_client.chat.get_settings = AsyncMock(
         return_value=ChatSettings(
-            goal=ChatGoal.DEFAULT, response_length=ChatResponseLength.DEFAULT, custom_prompt=None
+            goal=ChatGoal.CUSTOM,
+            response_length=ChatResponseLength.DEFAULT,
+            custom_prompt="Keep my persona.",
         )
     )
-    await mcp_call("chat_configure", {"notebook": NB_ID, "goal": "", "response_length": "longer"})
+    await mcp_call("chat_configure", {"notebook": NB_ID, "goal": goal, "response_length": "longer"})
     mock_client.chat.configure.assert_awaited_once_with(
-        NB_ID, goal=ChatGoal.DEFAULT, response_length=ChatResponseLength.LONGER, custom_prompt=None
+        NB_ID,
+        goal=ChatGoal.CUSTOM,
+        response_length=ChatResponseLength.LONGER,
+        custom_prompt="Keep my persona.",
     )
 
 
