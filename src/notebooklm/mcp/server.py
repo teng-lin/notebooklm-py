@@ -25,7 +25,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider
@@ -40,7 +40,13 @@ from ._context import AppState, ProfileRegistry
 from ._filelink import FileTransferConfig
 from ._profiles import PROFILE_STARTUP_TIMEOUT_ENV, ProfileTools, profile_lifespan
 
-__all__ = ["SERVER_INSTRUCTIONS", "SERVER_NAME", "create_server", "register_all"]
+__all__ = [
+    "ReadOnlyTools",
+    "SERVER_INSTRUCTIONS",
+    "SERVER_NAME",
+    "create_server",
+    "register_all",
+]
 
 SERVER_NAME = "notebooklm"
 
@@ -83,6 +89,7 @@ def register_all(mcp: FastMCP) -> None:
         sources,
         sources_drive,
         sources_playbooks,
+        sources_search,
         studio,
     )
 
@@ -91,6 +98,7 @@ def register_all(mcp: FastMCP) -> None:
         sources,
         sources_drive,
         sources_playbooks,
+        sources_search,
         chat,
         notes,
         studio,
@@ -126,6 +134,29 @@ async def _shutdown(
     return await provider.aclose(exc_type, exc, tb)
 
 
+class ReadOnlyTools:
+    """Registration filter admitting only tools annotated ``readOnlyHint=True``.
+
+    Used when ``create_server(..., read_only=True)`` is requested so mutating and
+    destructive tools are omitted from the MCP server registry at startup rather
+    than guarded only by runtime flags. Composes cleanly with :class:`ProfileTools`.
+    """
+
+    def __init__(self, server: Any) -> None:
+        self._server = server
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._server, name)
+
+    def tool(self, *args: Any, **kwargs: Any) -> Any:
+        first = next(iter(args), None)
+        bare_fn = first if callable(first) else None
+        annotations = kwargs.get("annotations")
+        if getattr(annotations, "readOnlyHint", None) is not True:
+            return bare_fn if bare_fn is not None else (lambda fn: fn)
+        return self._server.tool(*args, **kwargs)
+
+
 def create_server(
     *,
     profile: str | None = None,
@@ -136,6 +167,7 @@ def create_server(
     client_factory: ClientFactory | None = None,
     auth: AuthProvider | None = None,
     file_transfer: FileTransferConfig | None = None,
+    read_only: bool = False,
 ) -> FastMCP:
     """Build the FastMCP server.
 
@@ -165,6 +197,8 @@ def create_server(
             or http without a public URL) the tools keep / reject the path-based
             behavior and no routes are mounted (ADR-0024). Built only on the
             network-bound http path in :mod:`.__main__`.
+        read_only: When ``True``, register only tools annotated ``readOnlyHint=True``
+            and skip mounting remote file-transfer routes or the upload widget.
 
     Returns:
         A configured :class:`~fastmcp.FastMCP` server whose lifespan binds one
@@ -256,19 +290,26 @@ def create_server(
             + ", ".join(paths)
             + ". Profiles route accounts; the server credential grants access to all profiles."
         )
+    if read_only:
+        instructions += (
+            " Running in read-only mode: mutating and destructive tools are not registered."
+        )
     mcp = FastMCP(name=SERVER_NAME, instructions=instructions, lifespan=lifespan, auth=auth)
-    registrar = cast(FastMCP, ProfileTools(mcp)) if multi_profile else mcp
-    register_all(registrar)
-    if file_transfer is not None:
+    registrar: Any = ProfileTools(mcp) if multi_profile else mcp
+    if read_only:
+        registrar = ReadOnlyTools(registrar)
+    register_all(cast(FastMCP, registrar))
+    if file_transfer is not None and not read_only:
         # Import lazily so a build without file transfer never imports the route
         # module (and stdio stays untouched).
         from ._fileroutes import register_file_routes
 
         register_file_routes(mcp, file_transfer)
-    # Dev-only in-app upload widget (Phase 3 experiment). No-op unless NOTEBOOKLM_MCP_UPLOAD_WIDGET=1,
-    # so it never enters the prod manifest. Lazy import keeps the fastmcp.apps dependency off the
-    # default path.
-    from ._uploadwidget import register_upload_widget
+    if not read_only:
+        # Dev-only in-app upload widget (Phase 3 experiment). No-op unless NOTEBOOKLM_MCP_UPLOAD_WIDGET=1,
+        # so it never enters the prod manifest. Lazy import keeps the fastmcp.apps dependency off the
+        # default path.
+        from ._uploadwidget import register_upload_widget
 
-    register_upload_widget(registrar, file_transfer)
+        register_upload_widget(registrar, file_transfer)
     return mcp

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ..._app.serialize import source_summary
+from ..._app.serialize import relevant_chunk_summary, source_summary
 from ...types import drive_source_status_to_str, source_status_to_str
 
 if TYPE_CHECKING:
@@ -18,13 +18,7 @@ def source_kind_value(kind: SourceType | None) -> str | None:
 
 def relevant_chunk_payload(chunk: RelevantChunk) -> dict[str, Any]:
     """Return the stable JSON shape for one ranked source-search result."""
-    return {
-        "source_id": chunk.source_id,
-        "text": chunk.text,
-        "rank": chunk.rank,
-        "start": chunk.start,
-        "end": chunk.end,
-    }
+    return relevant_chunk_summary(chunk)
 
 
 def source_summary_payload(src: Source) -> dict[str, Any]:
