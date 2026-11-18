@@ -719,7 +719,7 @@ def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
     assert "--lane nightly-web-ubuntu" in planner_run
     assert "--lane nightly-android-macos" in planner_run
     assert "--lane nightly-readonly-windows" in planner_run
-    assert planner_run.count('"os": "ubuntu-latest"') == 1
+    assert planner_run.count('"os": "ubuntu-24.04"') == 1
     assert planner_run.count('"os": "macos-latest"') == 1
     assert planner_run.count('"os": "windows-latest"') == 1
     assert planner_run.count('"backend": "web"') == 2
