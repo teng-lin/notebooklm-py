@@ -95,7 +95,8 @@ jobs:
   coverage:
     name: Coverage (${{ needs.resolve-target.outputs.branch }}@${{ needs.resolve-target.outputs.short_sha }})
     needs: resolve-target
-    runs-on: ubuntu-latest
+    # Playwright 1.57 does not support Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v7
       with:

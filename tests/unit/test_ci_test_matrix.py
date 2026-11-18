@@ -140,7 +140,7 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
             "selection": "full",
         },
         {
-            "os": "ubuntu-latest",
+            "os": "ubuntu-24.04",
             "python-version": "3.12",
             "canonical": True,
             "windows_playwright": False,
@@ -168,7 +168,7 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
             "selection": "platform",
         },
     ]
-    assert {cell["os"] for cell in matrix["include"]} == set(SUPPORTED_OSES)
+    assert {cell["os"] for cell in matrix["include"]} == set(SUPPORTED_OSES) | {"ubuntu-24.04"}
 
 
 def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> None:
@@ -634,7 +634,7 @@ def test_nightly_coverage_is_sha_pinned_secret_free_and_enforces_floors() -> Non
     job = workflow["jobs"]["coverage"]
     assert job["needs"] == "resolve-target"
     assert "if" not in job
-    assert job["runs-on"] == "ubuntu-latest"
+    assert job["runs-on"] == "ubuntu-24.04"
     assert "environment" not in job
     assert "secrets." not in str(job)
 
@@ -719,7 +719,7 @@ def test_nightly_e2e_maps_backends_and_suites_to_designated_runners() -> None:
     assert "--lane nightly-web-ubuntu" in planner_run
     assert "--lane nightly-android-macos" in planner_run
     assert "--lane nightly-readonly-windows" in planner_run
-    assert planner_run.count('"os": "ubuntu-latest"') == 1
+    assert planner_run.count('"os": "ubuntu-24.04"') == 1
     assert planner_run.count('"os": "macos-latest"') == 1
     assert planner_run.count('"os": "windows-latest"') == 1
     assert planner_run.count('"backend": "web"') == 2
