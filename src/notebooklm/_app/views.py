@@ -33,13 +33,14 @@ from ..types import drive_source_status_to_str, share_permission_to_str, source_
 from .serialize import to_jsonable
 
 if TYPE_CHECKING:
-    from ..types import AskResult, Notebook, ShareStatus, Source
+    from ..types import AskResult, ChatSettings, Notebook, ShareStatus, Source
 
 __all__ = [
     "ACCESS_LABELS",
     "PERMISSION_LABELS",
     "VIEW_LEVEL_LABELS",
     "ask_result_view",
+    "chat_settings_view",
     "label",
     "notebook_view",
     "notebook_viewed_keys",
@@ -164,6 +165,17 @@ def source_view(source: Source) -> dict[str, Any]:
     )
     view["is_drive_degraded"] = source.is_drive_degraded
     return view
+
+
+def chat_settings_view(settings: ChatSettings | None) -> dict[str, Any] | None:
+    """Project decoded chat settings to labels, retaining ``None`` for unknown settings."""
+    if settings is None:
+        return None
+    return {
+        "goal": settings.goal.name.lower(),
+        "response_length": settings.response_length.name.lower(),
+        "custom_prompt": settings.custom_prompt,
+    }
 
 
 def notebook_view(notebook: Notebook) -> dict[str, Any]:

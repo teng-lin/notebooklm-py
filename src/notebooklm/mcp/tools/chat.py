@@ -583,10 +583,10 @@ def register(mcp: Any) -> None:
             # together — the omitted field is preserved. The one call still worth
             # rejecting is a fully bare one (no preset, no goal, no length): that
             # resets every setting to default, which is almost never what an agent
-            # meant. "Supplied" matches the core: an empty goal ("") is a no-op
-            # (core uses `if persona:`), and any explicit response_length —
+            # meant. "Supplied" matches the core: an empty or whitespace-only goal
+            # is a no-op (core checks `persona.strip()`), and any explicit response_length —
             # incl. "default" — is a real setting.
-            if chat_mode is None and not goal and response_length is None:
+            if chat_mode is None and not (goal and goal.strip()) and response_length is None:
                 raise ValidationError(
                     "chat_configure needs at least one setting: a chat_mode preset "
                     "(default / learning-guide / concise / detailed), a custom goal, "
