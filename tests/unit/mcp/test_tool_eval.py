@@ -31,8 +31,12 @@ pytest.importorskip("fastmcp")
 #: to ~36.0k). Move these DOWN as the surface gets leaner; a rise means
 #: description/param bloat that must be justified, not rubber-stamped.
 SCHEMA_CHAR_BUDGET = (
-    44_610  # total serialized inputSchema + description chars (current 44_590; +20 slack)
+    45_380  # total serialized inputSchema + description chars (current 45_362; ~20 slack)
 )
+# Added discrete read-only `source_search` (4 params, +781 chars: 44_581 -> 45_362)
+# over `client.sources.search` (ADR-0025 discrete-verb rationale: ranked passage
+# retrieval across notebook sources is distinct from `source_read`'s single-source
+# fulltext/summary slice); ratcheted to 45_380 with the existing ~20-char slack.
 # P7 adds canonical-ID confirmation instructions to six existing tools and the
 # public four-state source-batch contract to ``source_add``. Tightening the
 # obsolete fatal-category prose pays for that guidance: 44_590 -> 44_219, so

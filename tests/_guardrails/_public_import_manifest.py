@@ -48,6 +48,7 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "SharePermission",
         "ShareViewLevel",
         "SourceType",
+        "ToolsetPreference",
         "VideoFormat",
         "VideoStyle",
     ],
@@ -118,6 +119,7 @@ _DOCUMENTED_PUBLIC_IMPORTS = {
         "ArtifactLookupStatus",
         "ConnectionLimits",
         "SourceDeleteOutcome",
+        "ToolsetPreference",
     ],
     "notebooklm.urls": [
         "is_google_auth_redirect",

@@ -36,6 +36,7 @@ from ..types import (
     NotebookDescription,
     PromptSuggestion,
     SuggestedTopic,
+    ToolsetPreference,
 )
 from .contracts import RpcCaller
 from .params.notebooks import (
@@ -45,12 +46,14 @@ from .params.notebooks import (
     build_get_notebook_params,
     build_next_step_suggestions_params,
     build_prompt_suggestions_params,
+    build_toolset_preferences_params,
     build_update_notebook_params,
 )
 from .rows.chat import NextStepSuggestionRow
 from .rows.notebooks import (
     PromptSuggestionRow,
     decode_notebook,
+    decode_toolset_preferences,
     unwrap_next_step_suggestions,
     unwrap_prompt_suggestions,
 )
@@ -966,6 +969,36 @@ class WebNotebooksAPI(NotebooksAPI):
             params,
             allow_null=True,
         )
+
+    async def get_toolset_preferences(self, notebook_id: str) -> builtins.list[ToolsetPreference]:
+        """Get per-notebook Connected Apps / toolset preferences (``EEr8Nb``).
+
+        Queries ``ToolManagementService.ListNotebookToolsetPreferences`` for the
+        Connected Apps configured on ``notebook_id`` (for example ``google-drive``
+        with its ``Search Drive`` and ``Read Drive file`` tools).
+
+        Args:
+            notebook_id: The notebook ID.
+
+        Returns:
+            List of :class:`ToolsetPreference` entries (empty when no toolsets are
+            returned for the notebook).
+
+        Raises:
+            ValidationError: If ``notebook_id`` is empty or whitespace-only.
+            DecodingError: If a non-empty response deviates from the expected row layout.
+        """
+        try:
+            params = build_toolset_preferences_params(notebook_id)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        result = await self._rpc.rpc_call(
+            RPCMethod.LIST_TOOLSET_PREFERENCES,
+            params,
+            source_path=f"/notebook/{notebook_id}",
+            allow_null=True,
+        )
+        return decode_toolset_preferences(result)
 
     async def get_raw(self, notebook_id: str) -> Any:
         """Get raw notebook data from API.

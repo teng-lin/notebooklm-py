@@ -90,6 +90,7 @@ typed namespaces. For Android gRPC method contracts, start with the
 | `mKDdke` | COPY_ARTIFACTS | Copy Studio artifacts into another notebook (full new rows inline) | `_web/artifacts.py` |
 | `OcvKNc` | SUGGEST_NEXT_STEPS | Grounded follow-up questions (the chat `next_steps` block, standalone) | `_web/notebooks.py` |
 | `sqTeoe` | GET_CUSTOMIZATION_CHOICES | Studio "Customize" option tables (account-level) | `_web/artifacts.py` |
+| `EEr8Nb` | LIST_TOOLSET_PREFERENCES | Read per-notebook Connected Apps / toolset preferences (`ToolManagementService.ListNotebookToolsetPreferences`, Web-only) | `_web/notebooks.py`, `_web/rows/notebooks.py` |
 
 ### Content Type Codes (ArtifactTypeCode)
 

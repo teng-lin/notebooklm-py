@@ -158,6 +158,9 @@ class RPCMethod(str, Enum):
 
     # Additional notebook operations
     REMOVE_RECENTLY_VIEWED = "fejl7e"  # -> RemoveRecentlyViewedProject
+    # -> ToolManagementService.ListNotebookToolsetPreferences. Web-only Connected Apps /
+    # toolset preference read (e.g. Google Drive search & file read tools).
+    LIST_TOOLSET_PREFERENCES = "EEr8Nb"
 
     # User settings
     # -> GetOrCreateAccount (account-level; may create the account on first call)

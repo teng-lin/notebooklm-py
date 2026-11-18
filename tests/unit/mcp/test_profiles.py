@@ -54,6 +54,27 @@ async def test_every_tool_requires_profile_and_preserves_manifest(profiles):
         assert "profile" not in original[tool.name].parameters.get("properties", {})
 
 
+async def test_read_only_multi_profile_keeps_read_only_set_and_requires_profile(profiles):
+    """``--read-only`` composed with multiple profiles keeps the read-only tool set.
+
+    ``_resolve_read_only`` and ``profile_kwargs`` thread both settings into
+    ``create_server``. Every remaining tool must still require ``profile``.
+    """
+    from tests.unit.mcp.test_manifest import READ_ONLY_TOOLS
+
+    _, factory = profiles
+    tools = await create_server(
+        profiles=["work", "personal"],
+        backend="android",
+        profile_client_factory=factory,
+        read_only=True,
+    ).list_tools()
+    assert {tool.name for tool in tools} == set(READ_ONLY_TOOLS)
+    for tool in tools:
+        assert "profile" in tool.parameters["required"]
+        assert tool.parameters["properties"]["profile"] == {"type": "string"}
+
+
 async def test_concurrent_calls_route_without_global_state(profiles):
     clients, factory = profiles
     entered = {name: asyncio.Event() for name in clients}

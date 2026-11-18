@@ -1405,10 +1405,12 @@ describes the exposed surface at this baseline; it is not a commitment to add pa
 | Basic account limits and tier | No dedicated command | `server_info` account details | Info response account details |
 | Play Books | Yes | `source_list_play_books`, `source_add_play_book` | No routes |
 | Chat history | Yes | `chat_ask` with history mode | No route |
-| Source search, clean, refresh, and copy | Yes | No exposed verbs | No exposed routes |
+| Source search | Yes | `source_search` | No exposed route |
+| Source clean, refresh, and copy | Yes | No exposed verbs | No exposed routes |
 
-The MCP manifest has 38 tools at this baseline. Its serialized schema and descriptions total
-44,219 characters against `SCHEMA_CHAR_BUDGET = 44_610`. `tests/unit/mcp/test_manifest.py` pins the
+The MCP manifest has 39 tools at this baseline (`--read-only` / `NOTEBOOKLM_MCP_READ_ONLY=1`
+narrows startup registration to the 14 `readOnlyHint` tools). Its serialized schema and descriptions
+total 45,362 characters against `SCHEMA_CHAR_BUDGET = 45_380`. `tests/unit/mcp/test_manifest.py` pins the
 exact manifest and a ceiling of 40; `tests/unit/mcp/test_tool_eval.py` retains the schema and
 per-tool parameter ceilings; `tests/e2e/test_mcp.py::TestMcpToolMatrix` maps every registered tool
 to owning coverage. A change to the table must follow those live inventories rather than infer
@@ -2577,6 +2579,7 @@ src/notebooklm/
 │       ├── sources.py           # source_list/read/rename/delete/wait/add over _app.source_* (add: url/text/file/youtube via source_add, drive via source_mutations); source_add folds in wait=True (single-mode add + wait composed via _waitagg) and bytes_base64/filename (in-channel small-file byte upload via _fileupload) — #1890
 │       ├── sources_drive.py     # source_add_drive_file tool (#1884): discrete verb over _app.source_mutations.execute_source_add_drive_file — downloads + uploads the upload-only Drive types (kept out of the ceiling'd sources.py; own register())
 │       ├── sources_playbooks.py # source_list_play_books + source_add_play_book tools (#2292/#2302): backend-neutral discrete verbs over _app.source_play_books — Google Play Books (Expert Intelligence) (own register())
+│       ├── sources_search.py    # source_search read-only tool: discrete verb over client.sources.search (ranked passage retrieval across Web + Android; own register())
 │       ├── chat.py              # chat_ask (client.chat.ask + get_history recall + suggest_followups) + chat_configure (_app.chat.execute_configure) + suggest_prompts (client.notebooks.suggest_prompts surface selector)
 │       ├── notes.py             # note_save (create-or-update upsert) over _app.notes; note reading/renaming/deleting fold into the cross-type Studio tools
 │       ├── studio.py            # hosts the Studio tools: studio_list (merges notes+artifacts via _studio_items.studio_items; surfaces each artifact's generation_prompt in the summary listing / the item= single-fetch — folded studio_get_prompt in #1896) / generate / status / download (via _studio_download) / rename / retry / studio_delete — both rename and delete are cross-type via _studio_items.resolve_studio_item (note→_app.notes.execute_note_rename/execute_note_delete, artifact→_app.artifacts kind-aware core); enum dispatch over _app.generate + _app.download; stateless poll via _app.artifacts.poll_artifact
