@@ -220,7 +220,8 @@ jobs:
           canonical: false
           windows_playwright: false
           selection: full
-        - os: ubuntu-latest
+        # Playwright does not yet support the Ubuntu 26.04 latest image.
+        - os: ubuntu-24.04
           python-version: "3.12"
           canonical: true
           windows_playwright: false

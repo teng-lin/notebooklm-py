@@ -140,7 +140,7 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
             "selection": "full",
         },
         {
-            "os": "ubuntu-latest",
+            "os": "ubuntu-24.04",
             "python-version": "3.12",
             "canonical": True,
             "windows_playwright": False,
@@ -168,7 +168,10 @@ def test_test_matrix_is_independent_and_preserves_ci_contract() -> None:
             "selection": "platform",
         },
     ]
-    assert {cell["os"] for cell in matrix["include"]} == set(SUPPORTED_OSES)
+    assert {cell["os"] for cell in matrix["include"]} == {
+        *SUPPORTED_OSES,
+        "ubuntu-24.04",
+    }
 
 
 def test_pr_matrix_runs_once_without_coverage_and_canonical_owns_reality() -> None:
