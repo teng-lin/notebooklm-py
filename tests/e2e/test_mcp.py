@@ -211,6 +211,7 @@ TOOL_COVERAGE: dict[str, str] = {
     ),
     "source_list": "TestMcpSources.test_source_roundtrip",
     "source_read": "TestMcpSources.test_source_roundtrip",
+    "source_search": "tests/unit/mcp/test_sources_search.py (passage search, source scoping, and validation)",
     "source_rename": "TestMcpSources.test_source_roundtrip",
     "source_delete": "TestMcpSources.test_source_roundtrip",
     "source_wait": "TestMcpSources.test_source_roundtrip",

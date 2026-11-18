@@ -43,7 +43,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..types import PlayBook, Source
+    from ..types import PlayBook, RelevantChunk, Source
 
 # JSON-native scalar leaves that pass through untouched. ``bool`` is a subclass
 # of ``int`` so listing ``int`` alone would already catch it, but naming it
@@ -139,6 +139,17 @@ def play_book_summary(book: PlayBook) -> dict[str, Any]:
         "cover_url": book.cover_url,
         "store_url": book.store_url,
         "updated_at": book.updated_at.isoformat() if book.updated_at is not None else None,
+    }
+
+
+def relevant_chunk_summary(chunk: RelevantChunk) -> dict[str, Any]:
+    """Return the transport-neutral JSON shape for one ranked passage-search row."""
+    return {
+        "source_id": chunk.source_id,
+        "text": chunk.text,
+        "rank": chunk.rank,
+        "start": chunk.start,
+        "end": chunk.end,
     }
 
 

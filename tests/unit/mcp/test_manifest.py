@@ -5,7 +5,7 @@ in-memory FastMCP ``Client``, then pins:
 
 * the EXACT set of tool names — so a tool can't be silently added, removed, or
   renamed without updating this gate;
-* a tool-count ceiling (40): the current surface is 38 tools; the next tool
+* a tool-count ceiling (40): the current surface is 39 tools; the next tool
   stays under the ceiling, but an accidental explosion still trips the gate;
 * the ``destructiveHint`` annotation + a ``confirm`` parameter on every
   destructive (delete) tool; and
@@ -27,7 +27,7 @@ from notebooklm._app.download_specs import DOWNLOAD_FORMAT_NAMES, DOWNLOAD_SPECS
 pytest.importorskip("fastmcp")
 
 
-#: The complete, pinned tool surface. 38 tools across 8 domains. Adding or
+#: The complete, pinned tool surface. 39 tools across 8 domains. Adding or
 #: removing a tool MUST update this set (and the ceiling below if it grows).
 EXPECTED_TOOLS: frozenset[str] = frozenset(
     {
@@ -37,9 +37,10 @@ EXPECTED_TOOLS: frozenset[str] = frozenset(
         "notebook_describe",
         "notebook_rename",
         "notebook_delete",
-        # Sources (10)
+        # Sources (11)
         "source_list",
         "source_read",
+        "source_search",
         "source_rename",
         "source_delete",
         "source_wait",
@@ -115,6 +116,8 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "notebook_describe",
         "source_list",
         "source_read",
+        "source_wait",
+        "source_search",
         "source_list_play_books",
         "await_upload",
         "studio_list",
@@ -291,3 +294,15 @@ async def test_studio_download_advertises_artifact_id_and_format_enum(tools_by_n
     # still advertise its full type enum so the by-type path stays schema-guided.
     type_schema = properties["artifact_type"]
     assert _schema_enum_values(type_schema) == set(DOWNLOAD_SPECS_BY_NAME), json.dumps(type_schema)
+
+
+async def test_read_only_server_registers_only_read_only_tools(server_factory) -> None:
+    """``create_server(read_only=True)`` exposes exactly ``READ_ONLY_TOOLS``."""
+    from fastmcp import Client
+
+    async with Client(server_factory(read_only=True)) as client:
+        tools = await client.list_tools()
+    actual = frozenset(tool.name for tool in tools)
+    assert actual == READ_ONLY_TOOLS
+    assert not (actual & DESTRUCTIVE_TOOLS)
+    assert not (actual & CONFIRM_GATED_MUTATING_TOOLS)
