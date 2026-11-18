@@ -21,6 +21,7 @@ from ..exceptions import (
     RateLimitError,
     RPCError,
     ServerError,
+    UnsupportedOperationError,
     ValidationError,
 )
 from ..outcomes import CommitState
@@ -30,6 +31,7 @@ from ..types import (
     NotebookDescription,
     PromptSuggestion,
     SharePermission,
+    ToolsetPreference,
 )
 from .epoch import bind_workflow_epoch, reset_workflow_epoch
 from .session import AndroidSession
@@ -506,6 +508,15 @@ class AndroidNotebooksAPI(NotebooksAPI):
                 exc.rpc_code,
                 notebook_id,
             )
+
+    async def get_toolset_preferences(self, notebook_id: str) -> builtins.list[ToolsetPreference]:
+        """Raise ``UnsupportedOperationError`` on Android (``ToolManagementService`` is Web-only)."""
+        if not isinstance(notebook_id, str) or not notebook_id.strip():
+            raise ValidationError("notebook_id must be a non-empty string")
+        raise UnsupportedOperationError(
+            "get_toolset_preferences is not supported on the Android backend "
+            "(ToolManagementService is Web-only)"
+        )
 
 
 __all__ = [

@@ -51,6 +51,28 @@ class ChatSession:
     id: str
 
 
+@dataclass(frozen=True)
+class ToolsetPreference:
+    """Per-notebook Connected Apps / toolset preference returned by ``EEr8Nb``.
+
+    Returned by :meth:`~notebooklm._notebooks.NotebooksAPI.get_toolset_preferences`
+    (``ToolManagementService.ListNotebookToolsetPreferences`` on the Web backend).
+
+    Attributes:
+        toolset_id: Stable backend toolset identifier (e.g. ``"google-drive"``).
+        display_name: Human-readable toolset label (e.g. ``"Google Drive"``),
+            or ``None`` when omitted.
+        enabled: Whether this toolset is enabled for the notebook.
+        tools: Display labels of tools surfaced under this toolset
+            (e.g. ``("Search Drive", "Read Drive file")``).
+    """
+
+    toolset_id: str
+    display_name: str | None = None
+    enabled: bool = False
+    tools: tuple[str, ...] = ()
+
+
 @dataclass
 class Notebook:
     """Represents a NotebookLM notebook."""

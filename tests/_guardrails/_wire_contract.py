@@ -1697,6 +1697,60 @@ PINNED: tuple[Pinned, ...] = (
         "and its report contains no [cite: N] markers at all, so the mapping "
         "recorded here is the ordinal itself, not a marker resolution table",
     ),
+    Pinned(
+        "notebooks",
+        MODULE_LEVEL,
+        "_TOOLSET_PREFERENCES_ROWS_POS",
+        0,
+        "ListNotebookToolsetPreferencesResponse tag 1 — repeated toolset preference rows",
+        "Web ToolManagementService.ListNotebookToolsetPreferences (EEr8Nb) live capture; "
+        "absent from Android schema.proto",
+    ),
+    Pinned(
+        "notebooks",
+        "ToolsetPreferenceRow",
+        "_ID_POS",
+        0,
+        "NotebookToolsetPreference tag 1 — toolset identifier string",
+        "Web ToolManagementService.ListNotebookToolsetPreferences (EEr8Nb) live capture: "
+        "'google-drive' at row[0]",
+    ),
+    Pinned(
+        "notebooks",
+        "ToolsetPreferenceRow",
+        "_DISPLAY_NAME_POS",
+        1,
+        "NotebookToolsetPreference tag 2 — display name string",
+        "Web ToolManagementService.ListNotebookToolsetPreferences (EEr8Nb) live capture: "
+        "'Google Drive' at row[1]",
+    ),
+    Pinned(
+        "notebooks",
+        "ToolsetPreferenceRow",
+        "_ENABLED_POS",
+        2,
+        "NotebookToolsetPreference tag 3 — enabled boolean",
+        "Web ToolManagementService.ListNotebookToolsetPreferences (EEr8Nb) live capture: "
+        "boolean toggle state at row[2]",
+    ),
+    Pinned(
+        "notebooks",
+        "ToolsetPreferenceRow",
+        "_TOOLS_POS",
+        3,
+        "NotebookToolsetPreference tag 4 — repeated tool descriptors",
+        "Web ToolManagementService.ListNotebookToolsetPreferences (EEr8Nb) live capture: "
+        "nested [['Search Drive'], ['Read Drive file']] at row[3]",
+    ),
+    Pinned(
+        "notebooks",
+        "ToolsetPreferenceRow",
+        "_TOOL_LABEL_POS",
+        0,
+        "ToolsetToolDescriptor tag 1 — tool display label",
+        "Web ToolManagementService.ListNotebookToolsetPreferences (EEr8Nb) live capture: "
+        "label string at row[3][i][0]",
+    ),
 )
 
 

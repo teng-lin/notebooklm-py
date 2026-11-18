@@ -1,0 +1,65 @@
+{
+  "method_name": "LIST_TOOLSET_PREFERENCES",
+  "method_id": "EEr8Nb",
+  "description": "Fetch per-notebook Connected Apps / toolset preferences via ToolManagementService.ListNotebookToolsetPreferences (wrapped [[ [toolset_id, display_name, enabled, [[tool_label], ...]], ... ]] envelope). NOTE: response.allow_null is false here to pin a populated decode; production rpc_call uses allow_null=True to tolerate empty/null payloads.",
+  "request": {
+    "params": [
+      "SCRUBBED_NB_001"
+    ],
+    "expected_f_req": [
+      [
+        [
+          "EEr8Nb",
+          "[\"SCRUBBED_NB_001\"]",
+          null,
+          "generic"
+        ]
+      ]
+    ]
+  },
+  "response": {
+    "chunks": [
+      [
+        [
+          "wrb.fr",
+          "EEr8Nb",
+          "[[[\"google-drive\",\"Google Drive\",true,[[\"Search Drive\"],[\"Read Drive file\"]]]]]",
+          null,
+          null,
+          null,
+          "generic"
+        ]
+      ]
+    ],
+    "allow_null": false,
+    "expected_decoded": [
+      [
+        [
+          "google-drive",
+          "Google Drive",
+          true,
+          [
+            [
+              "Search Drive"
+            ],
+            [
+              "Read Drive file"
+            ]
+          ]
+        ]
+      ]
+    ]
+  },
+  "mapper": "tests.unit._golden_mappers:list_toolset_preferences",
+  "mapper_expected": [
+    {
+      "toolset_id": "google-drive",
+      "display_name": "Google Drive",
+      "enabled": true,
+      "tools": [
+        "Search Drive",
+        "Read Drive file"
+      ]
+    }
+  ]
+}

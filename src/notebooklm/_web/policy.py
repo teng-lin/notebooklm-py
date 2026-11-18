@@ -784,6 +784,10 @@ def register_default_policies(registry: IdempotencyRegistry) -> None:
             "read-only studio customization table; replay does not mutate any state"
         ),
         RPCMethod.GET_SHARE_STATUS: "read-only share status fetch; replay does not mutate ACL state",
+        RPCMethod.LIST_TOOLSET_PREFERENCES: (
+            "read-only per-notebook Connected Apps / toolset preference fetch; "
+            "replay does not mutate notebook state"
+        ),
         RPCMethod.REMOVE_RECENTLY_VIEWED: (
             "remove notebook from recents is idempotent; replay leaves it absent"
         ),
