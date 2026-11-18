@@ -502,7 +502,7 @@ class TestChatBlOverride:
         pass. The literal pin catches that.
 
         Updating it is therefore part of bumping the constant, deliberately.
-        Last re-captured live from the app shell on 2026-08-04 (#2073); the
+        Last re-captured live from the app shell on 2026-11-18 (#2540); the
         nightly canary's build-label lane reports when it falls behind again.
         """
         monkeypatch.delenv("NOTEBOOKLM_BL", raising=False)
@@ -528,7 +528,7 @@ class TestChatBlOverride:
         )
         assert (
             _extract_query_param(str(request.url), "bl")
-            == "boq_labs-tailwind-frontend_20260802.02_p0"
+            == "boq_labs-tailwind-frontend_20261116.14_p0"
         )
 
 
