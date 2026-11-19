@@ -868,10 +868,10 @@ def decode_response(
             opt-in per call site rather than a blanket change because three RPCs
             are RECORDED doing exactly that on flows the client reports as
             successful — see ``_RPCS_OBSERVED_SWALLOWING_A_STATUS`` (#2188).
-        strict_null_status: Require any status attached to a null result to be
-            recognized and OK, including when the result is encoded as JSON text.
-            Implies ``raise_on_null_status``. A status-free null still follows
-            ``allow_null``.
+        strict_null_status: Require every status attached to a null frame for
+            this RPC to be recognized and OK, including JSON-encoded nulls and
+            null frames alongside a populated result. Implies ``raise_on_null_status``.
+            A status-free null still follows ``allow_null`` if there is no result.
 
     Returns:
         Decoded result data
@@ -911,7 +911,7 @@ def decode_response(
             e.raw_response = _truncate_response_preview(response_preview)
         raise
 
-    if result is None:
+    if result is None or strict_null_status:
         # An *absent* RPC ID is categorically different from a *present-but-null*
         # result. The drift detector — the strongest signal that Google changed a
         # method ID or served an anti-bot/redirect wall instead of real RPC data —
@@ -940,10 +940,8 @@ def decode_response(
                 raw_response=response_preview,
             )
 
-        # RPC ID was found but extract_rpc_result returned None.
-        # This means wrb.fr had null result_data without UserDisplayableError.
-        # Enrich the message if the server attached a bare status code at
-        # index 5 (issues #114 / #294 showed GET_NOTEBOOK returning [5]).
+        # Check statuses from matching null frames. In strict mode these can
+        # report a failure even when another frame supplied usable data.
         #
         # The obfuscated ``rpc_id`` (the #1 breakage class per CLAUDE.md — it
         # changes whenever Google re-obfuscates a method) and the raw numeric
@@ -957,16 +955,12 @@ def decode_response(
         )
         status = _find_wrb_status(status_payloads, prefer_rejection=strict_null_status)
 
-        # ``rpc_id`` is present in ``found_ids`` but ``extract_rpc_result``
-        # returned None — the requested frame carried a genuinely null payload.
-        # Honor ``allow_null`` and return None for callers that opt in, EXCEPT
-        # when the caller asked for strictness and the server tagged that null
-        # with a non-OK status. A status-tagged null is the server saying "no",
-        # not an empty-but-fine payload; swallowing it made ``generate_*``
-        # report "<type> generation is unavailable" for a live INVALID_ARGUMENT
-        # rejection (#2188).
+        # Preserve populated results and honor ``allow_null`` for empty results
+        # unless the caller opted in to checking a rejection status (#2188).
         rejected = status is not None and status[0] != GrpcStatusCode.OK
-        if allow_null and not ((raise_on_null_status or strict_null_status) and rejected):
+        if (allow_null or result is not None) and not (
+            (raise_on_null_status or strict_null_status) and rejected
+        ):
             if rejected and status is not None:
                 # Still swallowed, but no longer without trace. DEBUG, not
                 # WARNING: three RPCs are recorded doing this on flows the
@@ -1004,7 +998,7 @@ def decode_response(
                     rpc_id,
                     rpc_id,
                 )
-            return None
+            return result
 
         if status is not None:
             code, label, payload = status
