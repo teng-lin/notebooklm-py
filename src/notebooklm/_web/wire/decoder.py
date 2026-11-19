@@ -15,6 +15,7 @@ from ..._types.enums import GrpcStatusCode
 from ...exceptions import (
     AuthError,
     ClientError,
+    DecodingError,
     NetworkError,
     RateLimitError,
     RPCError,
@@ -548,7 +549,9 @@ def _extract_status_code(error_info: Any) -> tuple[int, str] | None:
     return code, _GRPC_STATUS_MESSAGES[code]
 
 
-def _null_result_payloads(chunks: list[Any], rpc_id: str) -> list[Any]:
+def _null_result_payloads(
+    chunks: list[Any], rpc_id: str, *, include_encoded_null: bool = False
+) -> list[Any]:
     """Every non-null index-5 payload on a null-result frame for ``rpc_id``.
 
     Returns ALL of them rather than the first: in ``rt=c`` streamed mode the
@@ -556,9 +559,6 @@ def _null_result_payloads(chunks: list[Any], rpc_id: str) -> list[Any]:
     handles the same case), so stopping at the first would let a placeholder
     frame's unclassifiable payload hide a real status on a later frame — which
     is what the pre-#2188 loop avoided by continuing until a code parsed.
-
-    Shared walk behind :func:`_find_wrb_status` and
-    :func:`_has_null_result_payload` so the two agree on which frames they mean.
     """
     source = "decoder._null_result_payloads"
     payloads: list[Any] = []
@@ -578,41 +578,35 @@ def _null_result_payloads(chunks: list[Any], rpc_id: str) -> list[Any]:
                 continue
             result_data = safe_index(item, 2, method_id=rpc_id, source=source)
             error_info = safe_index(item, 5, method_id=rpc_id, source=source)
-            if result_data is not None or error_info is None:
+            if error_info is None:
                 continue
-            payloads.append(error_info)
+            if result_data is None or (
+                include_encoded_null
+                and isinstance(result_data, str)
+                and result_data.strip(" \t\n\r") == "null"
+            ):
+                payloads.append(error_info)
     return payloads
 
 
-def _has_null_result_payload(chunks: list[Any], rpc_id: str) -> bool:
-    """Whether the server attached anything at index 5 of a null-result frame.
-
-    Distinguishes "no payload at all" (a genuinely empty result — nothing to
-    report) from "a payload is there". The only caller consults this AFTER
-    :func:`_find_wrb_status` has already returned ``None``, so at that point
-    "a payload is there" means "there, and this decoder could not name it" —
-    which is drift worth logging. Re-checking classifiability here would be
-    dead logic, so it is not re-checked.
-    """
-    return bool(_null_result_payloads(chunks, rpc_id))
-
-
-def _find_wrb_status(chunks: list[Any], rpc_id: str) -> tuple[int, str, Any] | None:
-    """Locate the status code at index 5 of a null-result frame for ``rpc_id``.
-
-    Used by ``decode_response`` to enrich the null-result error message when
-    the server explicitly flagged the RPC with a status code.
+def _find_wrb_status(
+    payloads: list[Any], *, prefer_rejection: bool = False
+) -> tuple[int, str, Any] | None:
+    """Find the first recognized status, optionally preferring a rejection.
 
     Returns ``(code, label, payload)`` where ``payload`` is the raw
     ``google.rpc.Status`` array, so the caller can also read the server's
     ``message`` field without re-walking the chunks.
     """
-    for payload in _null_result_payloads(chunks, rpc_id):
+    success = None
+    for payload in payloads:
         status = _extract_status_code(payload)
         if status is not None:
             code, label = status
-            return code, label, payload
-    return None
+            if not prefer_rejection or code != GrpcStatusCode.OK:
+                return code, label, payload
+            success = code, label, payload
+    return success
 
 
 def _contains_user_displayable_error(obj: Any, max_depth: int = 20) -> bool:
@@ -855,6 +849,7 @@ def decode_response(
     allow_null: bool = False,
     *,
     raise_on_null_status: bool = False,
+    strict_null_status: bool = False,
 ) -> Any:
     """
     Complete decode pipeline: strip prefix -> parse chunks -> extract result.
@@ -873,6 +868,10 @@ def decode_response(
             opt-in per call site rather than a blanket change because three RPCs
             are RECORDED doing exactly that on flows the client reports as
             successful — see ``_RPCS_OBSERVED_SWALLOWING_A_STATUS`` (#2188).
+        strict_null_status: Require every status attached to a null frame for
+            this RPC to be recognized and OK, including JSON-encoded nulls and
+            null frames alongside a populated result. Implies ``raise_on_null_status``.
+            A status-free null still follows ``allow_null`` if there is no result.
 
     Returns:
         Decoded result data
@@ -912,7 +911,7 @@ def decode_response(
             e.raw_response = _truncate_response_preview(response_preview)
         raise
 
-    if result is None:
+    if result is None or strict_null_status:
         # An *absent* RPC ID is categorically different from a *present-but-null*
         # result. The drift detector — the strongest signal that Google changed a
         # method ID or served an anti-bot/redirect wall instead of real RPC data —
@@ -941,10 +940,8 @@ def decode_response(
                 raw_response=response_preview,
             )
 
-        # RPC ID was found but extract_rpc_result returned None.
-        # This means wrb.fr had null result_data without UserDisplayableError.
-        # Enrich the message if the server attached a bare status code at
-        # index 5 (issues #114 / #294 showed GET_NOTEBOOK returning [5]).
+        # Check statuses from matching null frames. In strict mode these can
+        # report a failure even when another frame supplied usable data.
         #
         # The obfuscated ``rpc_id`` (the #1 breakage class per CLAUDE.md — it
         # changes whenever Google re-obfuscates a method) and the raw numeric
@@ -953,18 +950,17 @@ def decode_response(
         # the exception ATTRIBUTES (``method_id`` / ``rpc_code`` / ``found_ids``)
         # for logging and debugging, but keep the human-readable message free of
         # them — only the stable gRPC status label is user-facing.
-        status = _find_wrb_status(chunks, rpc_id)
+        status_payloads = _null_result_payloads(
+            chunks, rpc_id, include_encoded_null=strict_null_status
+        )
+        status = _find_wrb_status(status_payloads, prefer_rejection=strict_null_status)
 
-        # ``rpc_id`` is present in ``found_ids`` but ``extract_rpc_result``
-        # returned None — the requested frame carried a genuinely null payload.
-        # Honor ``allow_null`` and return None for callers that opt in, EXCEPT
-        # when the caller asked for strictness and the server tagged that null
-        # with a non-OK status. A status-tagged null is the server saying "no",
-        # not an empty-but-fine payload; swallowing it made ``generate_*``
-        # report "<type> generation is unavailable" for a live INVALID_ARGUMENT
-        # rejection (#2188).
+        # Preserve populated results and honor ``allow_null`` for empty results
+        # unless the caller opted in to checking a rejection status (#2188).
         rejected = status is not None and status[0] != GrpcStatusCode.OK
-        if allow_null and not (raise_on_null_status and rejected):
+        if (allow_null or result is not None) and not (
+            (raise_on_null_status or strict_null_status) and rejected
+        ):
             if rejected and status is not None:
                 # Still swallowed, but no longer without trace. DEBUG, not
                 # WARNING: three RPCs are recorded doing this on flows the
@@ -980,7 +976,15 @@ def decode_response(
                     rpc_id,
                     status[1],
                 )
-            elif raise_on_null_status and _has_null_result_payload(chunks, rpc_id):
+            elif strict_null_status:
+                if any(_extract_status_code(payload) is None for payload in status_payloads):
+                    raise DecodingError(
+                        "Null RPC result carried an unrecognized status.",
+                        method_id=rpc_id,
+                        found_ids=found_ids,
+                        raw_response=response_preview,
+                    )
+            elif raise_on_null_status and status_payloads:
                 # The caller asked for strictness and the server DID attach
                 # something at index 5, but not a status this decoder can name —
                 # a code outside 0-16, a bool, a string, a nested ``[[3]]``. That
@@ -994,7 +998,7 @@ def decode_response(
                     rpc_id,
                     rpc_id,
                 )
-            return None
+            return result
 
         if status is not None:
             code, label, payload = status

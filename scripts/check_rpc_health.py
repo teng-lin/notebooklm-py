@@ -108,9 +108,13 @@ from notebooklm._web.params.artifacts import (
 )
 from notebooklm._web.params.artifacts import build_retry_artifact_params
 from notebooklm._web.params.chat_stream import build_streaming_chat_request
-from notebooklm._web.params.notebooks import build_create_notebook_params
+from notebooklm._web.params.notebooks import (
+    build_create_notebook_params,
+    build_toolset_preferences_params,
+)
 from notebooklm._web.rows.chat_stream import parse_streaming_chat_response
 from notebooklm._web.rows.customization import unwrap_customization_choices
+from notebooklm._web.rows.notebooks import decode_toolset_preferences
 from notebooklm._web.wire.decoder import (
     collect_rpc_ids,
     decode_response,
@@ -134,7 +138,7 @@ from notebooklm.rpc import (
     get_batchexecute_url,
 )
 from notebooklm.rpc.types import _QUERY_ENDPOINT_PATH
-from notebooklm.types import AudioFormat, SlideDeckFormat, VideoFormat
+from notebooklm.types import AudioFormat, GrpcStatusCode, SlideDeckFormat, VideoFormat
 
 
 class CheckStatus(str, Enum):
@@ -716,12 +720,14 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     if not notebook_id:
         return None
 
+    if method == RPCMethod.LIST_TOOLSET_PREFERENCES:
+        return build_toolset_preferences_params(notebook_id)
+
     # Methods that take [notebook_id] as the only param
     if method in (
         RPCMethod.GET_NOTEBOOK,
         RPCMethod.GET_SOURCE_GUIDE,
         RPCMethod.GET_SHARE_STATUS,
-        RPCMethod.LIST_TOOLSET_PREFERENCES,
         RPCMethod.REMOVE_RECENTLY_VIEWED,
     ):
         return [notebook_id]
@@ -877,6 +883,45 @@ def get_test_params(method: RPCMethod, notebook_id: str | None) -> list[Any] | N
     return None
 
 
+async def _check_toolset_preferences(
+    client: httpx.AsyncClient,
+    auth: AuthTokens,
+    notebook_id: str,
+    params: list[Any],
+) -> CheckResult:
+    """Validate the notebook-scoped read that backs the eager-bundle exception."""
+    method = RPCMethod.LIST_TOOLSET_PREFERENCES
+    rpc_id = method.value
+    result = CheckResult(method, CheckStatus.ERROR, rpc_id, [])
+    response_text, error = await make_rpc_request(
+        client, auth, method, params, source_path=f"/notebook/{notebook_id}"
+    )
+    if error is not None or response_text is None:
+        result.error = error if error is not None else "Empty response from server"
+        return result
+
+    try:
+        data = decode_response(response_text, rpc_id, allow_null=True, strict_null_status=True)
+        decode_toolset_preferences(data)
+    except RPCError as exc:
+        result.found_ids = exc.found_ids or []
+        if (
+            isinstance(exc, UnknownRPCMethodError)
+            and result.found_ids
+            and rpc_id not in result.found_ids
+        ):
+            result.status = CheckStatus.MISMATCH
+            result.error = f"Expected '{rpc_id}' not in response"
+        elif exc.rpc_code == GrpcStatusCode.RESOURCE_EXHAUSTED:
+            result.error = "RPC error: RESOURCE_EXHAUSTED"
+        else:
+            result.error = f"Parse error: {type(exc).__name__}"
+    else:
+        result.status = CheckStatus.OK
+        result.found_ids = [rpc_id]
+    return result
+
+
 @trace_probe()
 async def check_method(
     client: httpx.AsyncClient,
@@ -941,6 +986,9 @@ async def check_method(
             found_ids=[],
             error="No test parameters available",
         )
+
+    if method == RPCMethod.LIST_TOOLSET_PREFERENCES and notebook_id is not None:
+        return await _check_toolset_preferences(client, auth, notebook_id, params)
 
     # Make the call
     found_ids, error = await make_rpc_call(client, auth, method, params)

@@ -1947,3 +1947,53 @@ class TestRaiseOnNullStatus:
         result = decode_response(raw, self.RPC_ID, allow_null=True, raise_on_null_status=True)
 
         assert result == ["art_1"]
+
+    @pytest.mark.parametrize("status", [[3], [42]])
+    def test_encoded_null_keeps_legacy_tolerance(self, status):
+        chunk = json.dumps(["wrb.fr", self.RPC_ID, "null", None, None, status])
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+
+        assert decode_response(raw, self.RPC_ID, allow_null=True, raise_on_null_status=True) is None
+
+    @pytest.mark.parametrize(
+        ("status", "error_type", "expected_code"),
+        [([3], RPCError, 3), ([42], DecodingError, None)],
+    )
+    def test_strict_null_status_checks_frames_after_an_ok_status(
+        self, status, error_type, expected_code
+    ):
+        raw = ")]}'\n\n" + json.dumps(
+            [
+                ["wrb.fr", self.RPC_ID, None, None, None, [0]],
+                ["wrb.fr", self.RPC_ID, "null", None, None, status],
+            ]
+        )
+
+        with pytest.raises(error_type) as exc_info:
+            decode_response(raw, self.RPC_ID, allow_null=True, strict_null_status=True)
+
+        assert exc_info.value.rpc_code == expected_code
+
+    @pytest.mark.parametrize("null_first", [False, True])
+    @pytest.mark.parametrize(
+        ("status", "error_type", "expected_code"),
+        [(None, None, None), ([0], None, None), ([3], RPCError, 3), ([42], DecodingError, None)],
+    )
+    def test_strict_null_status_checks_null_alongside_populated_result(
+        self, null_first, status, error_type, expected_code
+    ):
+        frames = [
+            ["wrb.fr", self.RPC_ID, '["art_1"]'],
+            ["wrb.fr", self.RPC_ID, "null", None, None, status],
+        ]
+        if null_first:
+            frames.reverse()
+        raw = ")]}'\n\n" + json.dumps(frames)
+
+        assert decode_response(raw, self.RPC_ID, raise_on_null_status=True) == ["art_1"]
+        if error_type is None:
+            assert decode_response(raw, self.RPC_ID, strict_null_status=True) == ["art_1"]
+        else:
+            with pytest.raises(error_type) as exc_info:
+                decode_response(raw, self.RPC_ID, allow_null=True, strict_null_status=True)
+            assert exc_info.value.rpc_code == expected_code
