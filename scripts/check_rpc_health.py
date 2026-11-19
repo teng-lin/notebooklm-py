@@ -901,7 +901,7 @@ async def _check_toolset_preferences(
         return result
 
     try:
-        data = decode_response(response_text, rpc_id, allow_null=True, raise_on_null_status=True)
+        data = decode_response(response_text, rpc_id, allow_null=True, strict_null_status=True)
         decode_toolset_preferences(data)
     except RPCError as exc:
         result.found_ids = exc.found_ids or []

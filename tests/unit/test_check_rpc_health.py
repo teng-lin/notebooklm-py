@@ -415,20 +415,26 @@ async def test_check_method_propagates_empty_message_errors(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("returned_id", "payload", "rpc_status", "status", "error"),
+    ("returned_id", "inner", "rpc_status", "status", "error"),
     [
-        ("EEr8Nb", [[["google-drive", "Drive", True, []]]], None, CheckStatus.OK, None),
+        ("EEr8Nb", '[[["google-drive", "Drive", true, []]]]', None, CheckStatus.OK, None),
         ("EEr8Nb", None, None, CheckStatus.OK, None),
-        ("EEr8Nb", [42], None, CheckStatus.ERROR, "Parse error: DecodingError"),
+        ("EEr8Nb", "null", None, CheckStatus.OK, None),
+        ("EEr8Nb", "null", [0], CheckStatus.OK, None),
+        ("EEr8Nb", "[42]", None, CheckStatus.ERROR, "Parse error: DecodingError"),
         ("EEr8Nb", None, [3], CheckStatus.ERROR, "Parse error: RPCError"),
+        ("EEr8Nb", " \tnull\n", [3], CheckStatus.ERROR, "Parse error: RPCError"),
+        ("EEr8Nb", None, [42], CheckStatus.ERROR, "Parse error: DecodingError"),
+        ("EEr8Nb", "null", [42], CheckStatus.ERROR, "Parse error: DecodingError"),
         ("EEr8Nb", None, [8], CheckStatus.ERROR, "RPC error: RESOURCE_EXHAUSTED"),
-        ("zzzzzz", [[]], None, CheckStatus.MISMATCH, "Expected 'EEr8Nb' not in response"),
+        ("EEr8Nb", "null", [8], CheckStatus.ERROR, "RPC error: RESOURCE_EXHAUSTED"),
+        ("zzzzzz", "[[]]", None, CheckStatus.MISMATCH, "Expected 'EEr8Nb' not in response"),
     ],
 )
 async def test_toolset_preferences_probe_validates_the_notebook_scoped_response(
     timing_out_auth: check_rpc_health.AuthTokens,
     returned_id: str,
-    payload: Any,
+    inner: str | None,
     rpc_status: list[int] | None,
     status: CheckStatus,
     error: str | None,
@@ -441,7 +447,6 @@ async def test_toolset_preferences_probe_validates_the_notebook_scoped_response(
         sent = json.loads(parse_qs(request.content.decode())["f.req"][0])[0][0]
         assert sent[0] == method.value
         assert json.loads(sent[1]) == ["nb_test"]
-        inner = None if payload is None else json.dumps(payload)
         body = ")]}'\n\n" + json.dumps([["wrb.fr", returned_id, inner, None, None, rpc_status]])
         return httpx.Response(200, text=body)
 

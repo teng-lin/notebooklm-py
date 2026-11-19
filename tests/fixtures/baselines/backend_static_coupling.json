@@ -8195,7 +8195,7 @@
     },
     {
       "kind": "from",
-      "lineno": 25,
+      "lineno": 26,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.wire.decoder",
@@ -8204,7 +8204,7 @@
     },
     {
       "kind": "from",
-      "lineno": 26,
+      "lineno": 27,
       "scope": null,
       "scope_kind": "module",
       "source": "notebooklm._web.wire.decoder",
@@ -11989,12 +11989,12 @@
       "modules": 18
     },
     "web": {
-      "lines": 34259,
+      "lines": 34269,
       "modules": 97
     }
   },
   "summary": {
-    "authored_lines": 157199,
+    "authored_lines": 157209,
     "authored_modules": 499,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1316,
