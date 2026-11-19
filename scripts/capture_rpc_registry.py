@@ -28,10 +28,9 @@ ids we hardcode, surfacing five classes:
 * ABSENT          — our id no longer appears in the bundle at all (rotation/stale — the alarm)
 * PRESENT-UNPARSED— our id string is in the bundle but its registration form wasn't
                     parsed (not a rotation; a parser gap to widen, not an alert)
-* LAZY-MODULE     — a live-probed id whose registration is loaded only with a
-                    feature module and is therefore intentionally absent from
-                    the authenticated homepage's eager bundle set (not an alert;
-                    the direct RPC health probe remains its rotation canary)
+* LAZY-MODULE     — a live-probed feature id that can be absent from the
+                    authenticated homepage's eager bundle set. The direct RPC
+                    health probe is its rotation canary.
 * UNMAPPED        — a live RPC the bundle declares that we don't expose, grouped by
                     service family: **current** (old `LabsTailwind*` consumer backend
                     — callable on our cohort now, just unexposed), **enterprise** (the
@@ -45,7 +44,7 @@ maps** (``switch(code){case N:return "Label"}`` blocks for VideoFormat /
 AudioFormat / app-variants), the ``Yp`` **quota-code** map (a feature-rollout
 early-warning surface), and proto **required-field assertions** (schema-shape
 drift). ``--check-enums`` extracts and diffs the switch enums against the int
-enums in ``rpc/types.py`` with the same four-class spirit as the id diff, but a
+enums in ``_types/enums.py`` with the same four-class spirit as the id diff, but a
 distinct taxonomy — see :func:`diff_enums` for why ``NEW`` is report-only.
 
 Auth: discovering the bundle URL needs **one authenticated homepage read** (an
@@ -127,13 +126,11 @@ _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ch
 
 _AUTH_FAILURE_EXIT = 2
 
-# The authenticated homepage exposes only the eager JS bundle set. This RPC is
-# registered by the source-search feature's lazy module, so it cannot be proven
-# by the entry-bundle scrape even though both Web batchexecute and Android gRPC
-# accepted it live on 2026-09-01. Keep it in a separate report bucket instead
-# of falsely calling it CONFIRMED or ABSENT. ``check_rpc_health.py`` sends a
-# direct read-only request for the id, so a rotation still has a live canary.
-_LAZY_MODULE_RPC_IDS: frozenset[str] = frozenset({"ASU5Oe"})
+# The authenticated homepage exposes only the eager JS bundle set. Source search
+# (ASU5Oe) loads through a feature module. Connected Apps (EEr8Nb) was missing
+# from the eager bundle on 2026-11-19 while that same CI run got its ID back from
+# batchexecute (#2562). Both have direct read-only probes in check_rpc_health.py.
+_LAZY_MODULE_RPC_IDS: frozenset[str] = frozenset({"ASU5Oe", "EEr8Nb"})
 
 
 class _BundleAuthenticationError(RuntimeError):
@@ -155,7 +152,7 @@ def _write_outcome(path: Path | None, outcome: str) -> None:
 _DEFAULT_TYPES = (
     Path(__file__).resolve().parent.parent / "src" / "notebooklm" / "rpc" / "_identifiers.py"
 )
-_DEFAULT_ENUM_TYPES = _DEFAULT_TYPES.with_name("types.py")
+_DEFAULT_ENUM_TYPES = _DEFAULT_TYPES.parent.parent / "_types" / "enums.py"
 
 # --- Service-family classification: consumer backend vs enterprise (Discovery Engine) ---
 # "Current" (the consumer backend serving our cohort now) is detected *empirically*:
@@ -359,7 +356,7 @@ def diff(ours: dict[str, str], live: dict[str, str], bundle: str) -> dict[str, d
 # minified ``switch`` statements mapping an integer code to a display label,
 # e.g. ``switch(a){case 1:return"Explainer";case 3:return"Cinematic";...}``.
 # These are the human-facing labels for VideoFormat / AudioFormat / the
-# app-variant picker — the same integers we hardcode in ``rpc/types.py`` and
+# app-variant picker — the same integers we hardcode in ``_types/enums.py`` and
 # send on the wire. If Google ever renumbers a *selectable* format (the #1597
 # alarm: the VideoStyle/format code an existing label maps to changes) every
 # generate-* call silently produces the wrong artifact, so we diff them.
@@ -380,7 +377,7 @@ _SWITCH_CASE_RE = re.compile(r'case\s+(\d+)\s*:\s*return\s*"([^"]*)"')
 # anchor set is attributed to that enum (so a block that gained an unreleased
 # label still matches). Anchors are deliberately a handful of stable,
 # distinctive labels — not the full set — so a NEW label never breaks
-# attribution. The keys are our ``rpc/types.py`` enum class names.
+# attribution. The keys are our studio enum class names.
 _ENUM_LABEL_ANCHORS: dict[str, frozenset[str]] = {
     "VideoFormat": frozenset({"Explainer", "Cinematic"}),
     "AudioFormat": frozenset({"Deep Dive", "Critique", "Debate"}),
@@ -421,7 +418,7 @@ def extract_switch_enums(bundle: str) -> dict[str, dict[int, str]]:
 
 
 def parse_enum_members_from_text(types_text: str, enum_name: str) -> dict[str, int]:
-    """Return ``{MEMBER_NAME: int_value}`` for an ``(int, Enum)`` class in types.py.
+    """Return ``{MEMBER_NAME: int_value}`` for an ``(int, Enum)`` class in source text.
 
     Mirrors :func:`parse_ids_from_text` but for the integer studio enums. Scoped
     to the named class body so members of other enums don't bleed in. Aliases
@@ -727,7 +724,7 @@ def _print_report(
             print(f"  {rpc_id:<8} {present[rpc_id]}")
     if lazy_module:
         print(
-            "\nLAZY-MODULE — registration is outside the eager bundle; "
+            "\nLAZY-MODULE — id absent from the eager bundle; "
             "direct health probe owns drift detection:"
         )
         for rpc_id in sorted(lazy_module, key=lambda i: lazy_module[i]):
@@ -869,9 +866,8 @@ def main(argv: list[str] | None = None) -> int:
     types_text = args.types.read_text(encoding="utf-8")
     # ``--types`` historically accepted one synthetic file containing both
     # RPCMethod and studio enums, which the offline tests and external scripts
-    # may still rely on. The repository default now splits those owners: IDs
-    # are dependency-bottom while the compatibility module still re-exports
-    # transport enums. Preserve custom-file behavior and split only our default.
+    # may still rely on. Preserve custom-file behavior and read the studio enum
+    # definitions from their owner when using the repository defaults.
     enum_types_text = (
         _DEFAULT_ENUM_TYPES.read_text(encoding="utf-8")
         if args.types == _DEFAULT_TYPES
@@ -981,7 +977,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"\nFAIL: {len(enum_buckets['changed'])} CHANGED and "
             f"{len(enum_buckets['stale'])} STALE studio enum value(s) — a selectable "
-            "format was renumbered or retired; re-capture rpc/types.py enums.",
+            "format was renumbered or retired; re-capture _types/enums.py values.",
             file=sys.stderr,
         )
         exit_code = 1

@@ -413,6 +413,45 @@ async def test_check_method_propagates_empty_message_errors(
     assert result.error == "ReadTimeout"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("returned_id", "payload", "rpc_status", "status", "error"),
+    [
+        ("EEr8Nb", [[["google-drive", "Drive", True, []]]], None, CheckStatus.OK, None),
+        ("EEr8Nb", None, None, CheckStatus.OK, None),
+        ("EEr8Nb", [42], None, CheckStatus.ERROR, "Parse error: DecodingError"),
+        ("EEr8Nb", None, [3], CheckStatus.ERROR, "Parse error: RPCError"),
+        ("EEr8Nb", None, [8], CheckStatus.ERROR, "RPC error: RESOURCE_EXHAUSTED"),
+        ("zzzzzz", [[]], None, CheckStatus.MISMATCH, "Expected 'EEr8Nb' not in response"),
+    ],
+)
+async def test_toolset_preferences_probe_validates_the_notebook_scoped_response(
+    timing_out_auth: check_rpc_health.AuthTokens,
+    returned_id: str,
+    payload: Any,
+    rpc_status: list[int] | None,
+    status: CheckStatus,
+    error: str | None,
+) -> None:
+    method = check_rpc_health.RPCMethod.LIST_TOOLSET_PREFERENCES
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["source-path"] == "/notebook/nb_test"
+        assert request.url.params["rpcids"] == method.value
+        sent = json.loads(parse_qs(request.content.decode())["f.req"][0])[0][0]
+        assert sent[0] == method.value
+        assert json.loads(sent[1]) == ["nb_test"]
+        inner = None if payload is None else json.dumps(payload)
+        body = ")]}'\n\n" + json.dumps([["wrb.fr", returned_id, inner, None, None, rpc_status]])
+        return httpx.Response(200, text=body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        result = await check_rpc_health.check_method(client, timing_out_auth, method, "nb_test")
+
+    assert result.status is status
+    assert result.error == error
+
+
 def test_is_transient_error_classifies_readtimeout_as_transient() -> None:
     # Pinned policy (see scripts/check_rpc_health.py docstring + the
     # comment on TRANSIENT_ERROR_MARKERS): ``httpx.ReadTimeout`` against

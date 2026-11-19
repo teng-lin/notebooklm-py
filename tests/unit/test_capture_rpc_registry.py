@@ -90,12 +90,15 @@ def test_diff_buckets() -> None:
     assert set(buckets["unmapped"]) == {"NewOne"}
 
 
-def test_live_probed_lazy_module_id_is_not_reported_as_absent() -> None:
-    """ASU5Oe is loaded after entry-bundle startup; its direct probe owns drift."""
-    ours = {"ASU5Oe": "RETRIEVE_RELEVANT_CHUNKS", "ZZxxYY": "GONE"}
+@pytest.mark.parametrize(
+    ("rpc_id", "method"),
+    [("ASU5Oe", "RETRIEVE_RELEVANT_CHUNKS"), ("EEr8Nb", "LIST_TOOLSET_PREFERENCES")],
+)
+def test_live_probed_lazy_module_id_is_not_reported_as_absent(rpc_id: str, method: str) -> None:
+    ours = {rpc_id: method, "ZZxxYY": "GONE"}
     buckets = diff(ours, {}, "")
 
-    assert buckets["lazy_module"] == {"ASU5Oe": "RETRIEVE_RELEVANT_CHUNKS"}
+    assert buckets["lazy_module"] == {rpc_id: method}
     assert buckets["absent"] == {"ZZxxYY": "GONE"}
 
 
@@ -553,6 +556,35 @@ def test_check_enums_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[st
         encoding="utf-8",
     )
     assert main(["--bundle-file", str(bundle), "--types", str(types), "--check-enums"]) == 1
+
+
+def test_check_enums_uses_repository_definitions_by_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bundle = tmp_path / "bundle.js"
+    bundle.write_text(_ENUM_BUNDLE, encoding="utf-8")
+    args = ["--bundle-file", str(bundle), "--check-enums", "--json"]
+
+    assert main(args) == 0
+    enums = json.loads(capsys.readouterr().out)["enums"]
+    assert {(row["enum"], row["code"]) for row in enums["new"]} == {
+        ("AudioFormat", 5),
+        ("VideoFormat", 5),
+    }
+
+    bundle.write_text(
+        _ENUM_BUNDLE.replace('case 1:return"Explainer"', 'case 2:return"Explainer"').replace(
+            'case 2:return"Brief";case 3:return"Cinematic"',
+            'case 1:return"Brief";case 3:return"Cinematic"',
+        ),
+        encoding="utf-8",
+    )
+    assert main(args) == 1
+    changes = json.loads(capsys.readouterr().out)["enums"]["changed"]
+    assert {(row["enum"], row["member"]) for row in changes} == {
+        ("VideoFormat", "EXPLAINER"),
+        ("VideoFormat", "BRIEF"),
+    }
 
 
 def test_check_and_check_enums_combine(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
