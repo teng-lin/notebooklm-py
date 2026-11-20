@@ -699,3 +699,28 @@ def test_execute_clear_cache_reports_zero_when_nothing_cleared() -> None:
 
     assert result.cleared is False
     assert result.count == 0
+
+
+@pytest.mark.asyncio
+async def test_save_answer_with_unresolved_markers_warns_before_plain_save() -> None:
+    """Raw ``[cite: N]`` markers land verbatim in the note, so say so (#2563)."""
+    client = _client()
+    note = Note(id="note_raw1", notebook_id="nb_1", title="Chat: Q?", content="x")
+    client.notes.create = AsyncMock(return_value=note)
+    sink = _RecordingSink()
+
+    outcome = await save_answer_as_note(
+        client,
+        "nb_1",
+        _ask_result(answer="Claim [cite: 1] and [cite: 2, 3].", references=[]),
+        note_title=None,
+        question="Q?",
+        progress=sink,
+    )
+
+    assert outcome.plain_text_fallback is True
+    assert sink.events == [
+        ChatEvent("NOTE_PLAIN_TEXT_FALLBACK"),
+        ChatEvent("NOTE_UNRESOLVED_CITATIONS", count=2),
+        ChatEvent("NOTE_SAVED", note_id="note_raw1", note_title="Chat: Q?"),
+    ]

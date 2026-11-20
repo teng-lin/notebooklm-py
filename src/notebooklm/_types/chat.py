@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum, IntEnum
@@ -527,6 +528,18 @@ class NextStepSuggestion:
             return None
 
 
+#: A raw ``[cite: N]`` / ``[cite: N, M]`` marker. The backend writes these into
+#: the answer text and normally rewrites them to ``[N]`` against a citation
+#: table it streams alongside. When a turn arrives without that table (#2563)
+#: the raw form survives into ``AskResult.answer`` with no ``references``.
+_UNRESOLVED_CITATION_MARKER = re.compile(r"\[cite:\s*\d+(?:\s*,\s*\d+)*\s*\]")
+
+
+def count_unresolved_citation_markers(text: str) -> int:
+    """Count raw ``[cite: N]`` markers the backend never resolved to ``[N]``."""
+    return len(_UNRESOLVED_CITATION_MARKER.findall(text or ""))
+
+
 @dataclass
 class AskResult:
     """Result of asking the notebook a question.
@@ -584,3 +597,15 @@ class AskResult:
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
     empty_answer_reason: int | None = None
+
+    @property
+    def unresolved_citation_count(self) -> int:
+        """Number of raw ``[cite: N]`` markers left unresolved in ``answer``.
+
+        Non-zero means the backend streamed this turn without its citation
+        table (#2563): the claims are cited in the text but cannot be mapped
+        to sources, and ``references`` is usually empty. The answer is not
+        wrong, but it is not verifiable either — callers that need grounding
+        should retry the question in a fresh conversation.
+        """
+        return count_unresolved_citation_markers(self.answer)

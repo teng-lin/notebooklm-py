@@ -60,6 +60,7 @@ ChatEventKind = Literal[
     "HISTORY_UNAVAILABLE",
     "NOTE_NO_ANSWER",
     "NOTE_PLAIN_TEXT_FALLBACK",
+    "NOTE_UNRESOLVED_CITATIONS",
     "NOTE_SAVED",
     "NOTE_SAVE_FAILED",
 ]
@@ -74,6 +75,7 @@ class ChatEvent:
     note_id: str | None = None
     note_title: str | None = None
     detail: str | None = None
+    count: int | None = None
 
 
 @runtime_checkable
@@ -294,6 +296,10 @@ async def save_answer_as_note(
                 # No citations to preserve -- fall back to the plain-text path so the
                 # save still succeeds.
                 _emit(progress, ChatEvent("NOTE_PLAIN_TEXT_FALLBACK"))
+                unresolved = result.unresolved_citation_count
+                if unresolved:
+                    # The note will carry the raw markers verbatim (#2563).
+                    _emit(progress, ChatEvent("NOTE_UNRESOLVED_CITATIONS", count=unresolved))
                 note = await client.notes.create(notebook_id, title, result.answer)
                 plain_text_fallback = True
             _emit(progress, ChatEvent("NOTE_SAVED", note_id=note.id, note_title=note.title))

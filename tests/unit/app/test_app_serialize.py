@@ -392,3 +392,25 @@ def test_ask_result_view_carries_next_step_suggestions() -> None:
     )
 
     assert view["next_steps"] == [{"question": "What next?", "type_code": 9}]
+
+
+def test_ask_result_view_reports_unresolved_citations() -> None:
+    """The JSON envelope flags a turn whose citation table never arrived (#2563)."""
+    from notebooklm._app.views import ask_result_view
+    from notebooklm.types import AskResult
+
+    broken = ask_result_view(
+        AskResult(
+            answer="Claim [cite: 1] and claim [cite: 2, 3].",
+            conversation_id="conv-1",
+            turn_number=3,
+            is_follow_up=True,
+        )
+    )
+    healthy = ask_result_view(
+        AskResult(answer="Claim [1].", conversation_id="conv-1", turn_number=1, is_follow_up=False)
+    )
+
+    assert broken["unresolved_citations"] == 2
+    assert broken["references"] == []
+    assert healthy["unresolved_citations"] == 0

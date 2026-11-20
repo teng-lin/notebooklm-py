@@ -3255,6 +3255,14 @@ class AskResult:
     turn_key: ConversationTurnKey | None  # Backend key for THIS turn (#2122)
     next_steps: list[NextStepSuggestion]  # Backend-suggested follow-ups (#2119)
 
+    @property
+    def unresolved_citation_count(self) -> int: ...
+
+    # Raw [cite: N] markers left in `answer` because the turn arrived without
+    # its citation table (#2563). Non-zero => the answer cannot be mapped to
+    # sources; retry in a fresh conversation if you need grounding. Exposed as
+    # `unresolved_citations` in the MCP / REST / `ask --json` envelopes.
+
 
 @dataclass(frozen=True)
 class NextStepSuggestion:
