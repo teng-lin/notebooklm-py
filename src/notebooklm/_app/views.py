@@ -248,4 +248,8 @@ def ask_result_view(result: AskResult) -> dict[str, Any]:
     payload = to_jsonable(result)
     payload.pop("raw_response", None)
     payload.pop("answer_document", None)
+    # Derived, so ``to_jsonable`` never sees it: surface it explicitly so an
+    # agent can tell a turn whose citation table never arrived (#2563) from a
+    # genuinely uncited answer without regex-scanning the text itself.
+    payload["unresolved_citations"] = getattr(result, "unresolved_citation_count", 0)
     return payload
