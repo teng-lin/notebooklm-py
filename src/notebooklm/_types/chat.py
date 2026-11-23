@@ -528,15 +528,12 @@ class NextStepSuggestion:
             return None
 
 
-#: A raw ``[cite: N]`` / ``[cite: N, M]`` marker. The backend writes these into
-#: the answer text and normally rewrites them to ``[N]`` against a citation
-#: table it streams alongside. When a turn arrives without that table (#2563)
-#: the raw form survives into ``AskResult.answer`` with no ``references``.
+#: Raw ``[cite: N]`` / ``[cite: N, M]`` syntax seen in turns without references (#2563).
 _UNRESOLVED_CITATION_MARKER = re.compile(r"\[cite:\s*\d+(?:\s*,\s*\d+)*\s*\]")
 
 
 def count_unresolved_citation_markers(text: str) -> int:
-    """Count raw ``[cite: N]`` markers the backend never resolved to ``[N]``."""
+    """Count occurrences of raw ``[cite: N]`` syntax in the text."""
     return len(_UNRESOLVED_CITATION_MARKER.findall(text or ""))
 
 
@@ -600,12 +597,11 @@ class AskResult:
 
     @property
     def unresolved_citation_count(self) -> int:
-        """Number of raw ``[cite: N]`` markers left unresolved in ``answer``.
+        """Heuristic count of raw ``[cite: N]`` markers when references are empty.
 
-        Non-zero means the backend streamed this turn without its citation
-        table (#2563): the claims are cited in the text but cannot be mapped
-        to sources, and ``references`` is usually empty. The answer is not
-        wrong, but it is not verifiable either — callers that need grounding
-        should retry the question in a fresh conversation.
+        Turns with source references return zero. In turns without references
+        (#2563), quoted examples can also contribute to the count.
         """
+        if self.references:
+            return 0
         return count_unresolved_citation_markers(self.answer)

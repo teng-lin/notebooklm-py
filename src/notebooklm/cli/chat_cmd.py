@@ -121,7 +121,7 @@ def _render_chat_event(event: ChatEvent) -> str:
     if event.kind == "NOTE_UNRESOLVED_CITATIONS":
         return (
             f"[yellow]Warning: the note keeps {event.count} raw \\[cite: N] marker(s) "
-            "that could not be linked to sources.[/yellow]"
+            "from the answer.[/yellow]"
         )
     if event.kind == "NOTE_SAVED":
         return (
@@ -436,12 +436,11 @@ def register_chat_commands(cli):
                     # The answer is model text, not Rich markup: printing it as
                     # markup silently swallowed ``[cite: N]`` markers (#2563).
                     console.print(result.answer, markup=False)
-                    if result.unresolved_citation_count:
+                    unresolved = result.unresolved_citation_count
+                    if unresolved:
                         console.print(
-                            f"\n[yellow]Warning: {result.unresolved_citation_count} "
-                            "citation marker(s) could not be linked to sources "
-                            "(the server sent no citation table for this turn). "
-                            "Ask again with --new for a cited answer.[/yellow]"
+                            f"\n[yellow]Warning: {unresolved} raw citation marker(s) "
+                            "with no source references.[/yellow]"
                         )
                     if result.is_follow_up and resumed_from_server:
                         console.print(

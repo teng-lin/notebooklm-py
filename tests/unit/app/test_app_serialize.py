@@ -395,7 +395,7 @@ def test_ask_result_view_carries_next_step_suggestions() -> None:
 
 
 def test_ask_result_view_reports_unresolved_citations() -> None:
-    """The JSON envelope flags a turn whose citation table never arrived (#2563)."""
+    """The JSON envelope reports raw markers in an answer with no references."""
     from notebooklm._app.views import ask_result_view
     from notebooklm.types import AskResult
 

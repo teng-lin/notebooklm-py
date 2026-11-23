@@ -9,13 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Unresolved citation signal (#2563).** When a chat turn streams without its
-  citation table, the answer keeps raw `[cite: N]` markers and `references` is
-  empty. `AskResult.unresolved_citation_count` counts those markers, and the
-  MCP / REST / `ask --json` envelopes carry it as `unresolved_citations`. Text
-  `ask` now prints the markers instead of swallowing them as Rich markup and
-  warns that the citations could not be linked; `--save-as-note` warns that
-  the plain-text note keeps the raw markers.
+- **Unresolved citation signal (#2563).** `AskResult.unresolved_citation_count`
+  counts raw `[cite: N]` markers in answers with no source references. The MCP,
+  REST, and `ask --json` envelopes carry this heuristic as `unresolved_citations`.
+  Text `ask` preserves the markers and warns when they appear without source
+  references. `--save-as-note` warns that the plain-text note keeps them.
 
 - **Chat answer states (#2541).** `chat.get_history_turns()` exposes message
   status, UTC timestamp, empty-answer reason, and the web UI's stale-answer
