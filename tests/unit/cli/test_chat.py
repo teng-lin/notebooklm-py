@@ -1664,3 +1664,71 @@ class TestAskJsonTurnKey:
 
         assert result.exit_code == 0, result.stderr or result.output
         assert json.loads(result.stdout)["turn_key"] is None
+
+
+class TestAskUnresolvedCitations:
+    """Follow-up turns can arrive without their citation table (#2563)."""
+
+    RAW = "Claim one [cite: 3] and claim two [cite: 4, 5]."
+
+    def _invoke(self, runner, mock_client, *extra):
+        return runner.invoke(
+            cli,
+            ["ask", "Q?", "-n", "nb_123", *extra],
+            obj=inject_client(mock_client),
+        )
+
+    def _client(self, answer):
+        mock_client = create_mock_client()
+        mock_client.chat.ask = AsyncMock(return_value=make_ask_result(answer))
+        mock_client.chat.get_conversation_id = AsyncMock(return_value=None)
+        mock_client.notes.create = AsyncMock(return_value=make_note())
+        return mock_client
+
+    def test_text_output_keeps_raw_markers_and_warns(self, runner, mock_auth, mock_fetch_tokens):
+        result = self._invoke(runner, self._client(self.RAW))
+
+        assert result.exit_code == 0, result.output
+        # Rich markup used to swallow these markers silently.
+        assert "[cite: 3]" in result.output
+        assert "[cite: 4, 5]" in result.output
+        assert "2 raw citation marker(s) with no source references" in result.output
+        assert "--new" not in result.output
+
+    def test_text_output_without_markers_does_not_warn(self, runner, mock_auth, mock_fetch_tokens):
+        result = self._invoke(runner, self._client("Resolved claim [1]."))
+
+        assert result.exit_code == 0, result.output
+        assert "citation marker(s)" not in result.output
+
+    def test_quoted_marker_in_answer_with_references(self, runner, mock_auth, mock_fetch_tokens):
+        answer = "The source uses the literal syntax `[cite: 3]`. [1]"
+        client = self._client(answer)
+        client.chat.ask.return_value.references = [
+            ChatReference(source_id="src_123", citation_number=1)
+        ]
+
+        text = self._invoke(runner, client)
+        assert text.exit_code == 0, text.output
+        assert answer in text.output
+        assert "citation marker(s)" not in text.output
+
+        json_result = self._invoke(runner, client, "--json")
+        assert json_result.exit_code == 0, json_result.output
+        data = json.loads(json_result.stdout)
+        assert data["unresolved_citations"] == 0
+        assert data["references"][0]["source_id"] == "src_123"
+
+    def test_json_envelope_reports_unresolved_citations(self, runner, mock_auth, mock_fetch_tokens):
+        result = self._invoke(runner, self._client(self.RAW), "--json")
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.stdout)
+        assert data["unresolved_citations"] == 2
+        assert data["references"] == []
+
+    def test_save_as_note_warns_that_markers_are_kept(self, runner, mock_auth, mock_fetch_tokens):
+        result = self._invoke(runner, self._client(self.RAW), "--save-as-note")
+
+        assert result.exit_code == 0, result.output
+        assert "raw [cite: N] marker(s)" in result.output

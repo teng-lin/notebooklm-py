@@ -3255,6 +3255,14 @@ class AskResult:
     turn_key: ConversationTurnKey | None  # Backend key for THIS turn (#2122)
     next_steps: list[NextStepSuggestion]  # Backend-suggested follow-ups (#2119)
 
+    @property
+    def unresolved_citation_count(self) -> int: ...
+
+    # Heuristic count of raw [cite: N] markers in `answer` when `references`
+    # is empty, as seen in #2563. Quoted markers can also contribute. Returns
+    # zero if there are source references. Exposed as `unresolved_citations`
+    # in the MCP / REST / `ask --json` envelopes.
+
 
 @dataclass(frozen=True)
 class NextStepSuggestion:

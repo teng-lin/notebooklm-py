@@ -248,4 +248,6 @@ def ask_result_view(result: AskResult) -> dict[str, Any]:
     payload = to_jsonable(result)
     payload.pop("raw_response", None)
     payload.pop("answer_document", None)
+    # ``to_jsonable`` skips properties. Include the marker heuristic explicitly.
+    payload["unresolved_citations"] = getattr(result, "unresolved_citation_count", 0)
     return payload

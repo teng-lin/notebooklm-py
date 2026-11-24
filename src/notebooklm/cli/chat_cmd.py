@@ -118,6 +118,11 @@ def _render_chat_event(event: ChatEvent) -> str:
         return "[yellow]Warning: No answer to save as note[/yellow]"
     if event.kind == "NOTE_PLAIN_TEXT_FALLBACK":
         return "[dim]No citations in answer; saving as plain-text note.[/dim]"
+    if event.kind == "NOTE_UNRESOLVED_CITATIONS":
+        return (
+            f"[yellow]Warning: the note keeps {event.count} raw \\[cite: N] marker(s) "
+            "from the answer.[/yellow]"
+        )
     if event.kind == "NOTE_SAVED":
         return (
             f"\n[dim]Saved as note: {event.note_title or ''} ({(event.note_id or '')[:8]}...)[/dim]"
@@ -428,7 +433,15 @@ def register_chat_commands(cli):
                 # is emitted LAST as the terminal stdout output.
                 if not json_output:
                     console.print("[bold cyan]Answer:[/bold cyan]")
-                    console.print(result.answer)
+                    # The answer is model text, not Rich markup: printing it as
+                    # markup silently swallowed ``[cite: N]`` markers (#2563).
+                    console.print(result.answer, markup=False)
+                    unresolved = result.unresolved_citation_count
+                    if unresolved:
+                        console.print(
+                            f"\n[yellow]Warning: {unresolved} raw citation marker(s) "
+                            "with no source references.[/yellow]"
+                        )
                     if result.is_follow_up and resumed_from_server:
                         console.print(
                             f"\n[dim]Resumed conversation: {result.conversation_id}[/dim]"

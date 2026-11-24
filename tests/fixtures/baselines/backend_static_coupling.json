@@ -11953,7 +11953,7 @@
       "modules": 56
     },
     "app": {
-      "lines": 14600,
+      "lines": 14608,
       "modules": 47
     },
     "auth": {
@@ -11961,7 +11961,7 @@
       "modules": 33
     },
     "cli": {
-      "lines": 23174,
+      "lines": 23187,
       "modules": 76
     },
     "mcp": {
@@ -11985,7 +11985,7 @@
       "modules": 21
     },
     "types": {
-      "lines": 5856,
+      "lines": 5877,
       "modules": 18
     },
     "web": {
@@ -11994,7 +11994,7 @@
     }
   },
   "summary": {
-    "authored_lines": 157203,
+    "authored_lines": 157245,
     "authored_modules": 499,
     "class_local_edges": 0,
     "cross_subsystem_edges": 1316,

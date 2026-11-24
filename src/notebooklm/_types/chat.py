@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum, IntEnum
@@ -527,6 +528,15 @@ class NextStepSuggestion:
             return None
 
 
+#: Raw ``[cite: N]`` / ``[cite: N, M]`` syntax seen in turns without references (#2563).
+_UNRESOLVED_CITATION_MARKER = re.compile(r"\[cite:\s*\d+(?:\s*,\s*\d+)*\s*\]")
+
+
+def count_unresolved_citation_markers(text: str) -> int:
+    """Count occurrences of raw ``[cite: N]`` syntax in the text."""
+    return len(_UNRESOLVED_CITATION_MARKER.findall(text or ""))
+
+
 @dataclass
 class AskResult:
     """Result of asking the notebook a question.
@@ -584,3 +594,14 @@ class AskResult:
     turn_key: ConversationTurnKey | None = None
     next_steps: list[NextStepSuggestion] = field(default_factory=list)
     empty_answer_reason: int | None = None
+
+    @property
+    def unresolved_citation_count(self) -> int:
+        """Heuristic count of raw ``[cite: N]`` markers when references are empty.
+
+        Turns with source references return zero. In turns without references
+        (#2563), quoted examples can also contribute to the count.
+        """
+        if self.references:
+            return 0
+        return count_unresolved_citation_markers(self.answer)

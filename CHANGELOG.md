@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Unresolved citation signal (#2563).** `AskResult.unresolved_citation_count`
+  counts raw `[cite: N]` markers in answers with no source references. The MCP,
+  REST, and `ask --json` envelopes carry this heuristic as `unresolved_citations`.
+  Text `ask` preserves the markers and warns when they appear without source
+  references. `--save-as-note` warns that the plain-text note keeps them.
+
 - **Chat answer states (#2541).** `chat.get_history_turns()` exposes message
   status, UTC timestamp, empty-answer reason, and the web UI's stale-answer
   classification on Web and Android. `AskResult.empty_answer_reason` distinguishes
