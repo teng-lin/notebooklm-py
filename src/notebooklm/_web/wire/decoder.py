@@ -1023,13 +1023,18 @@ def decode_response(
                     found_ids=found_ids,
                     raw_response=response_preview,
                 )
-            raise RPCError(
+            error = RPCError(
                 message,
                 method_id=rpc_id,
                 rpc_code=code,
                 found_ids=found_ids,
                 raw_response=response_preview,
             )
+            # INVALID_ARGUMENT with no result is an explicit refusal. A populated
+            # frame or a status like INTERNAL can leave the outcome uncertain.
+            if result is None and code == GrpcStatusCode.INVALID_ARGUMENT:
+                mark_commit_state(error, CommitState.REJECTED)
+            raise error
         raise RPCError(
             "The server returned an empty result (possible server error or parameter mismatch).",
             method_id=rpc_id,

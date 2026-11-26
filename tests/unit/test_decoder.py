@@ -1997,3 +1997,4 @@ class TestRaiseOnNullStatus:
             with pytest.raises(error_type) as exc_info:
                 decode_response(raw, self.RPC_ID, allow_null=True, strict_null_status=True)
             assert exc_info.value.rpc_code == expected_code
+            assert exc_info.value.commit_state is None
