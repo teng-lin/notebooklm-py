@@ -541,6 +541,25 @@ This walkthrough takes ~2 minutes. You never copy a cookie, a token, or the raw 
 
 ### Generation Failures
 
+#### Studio Data Table returns `invalid argument`
+
+Gemini Notebook rejected the create request before returning a task ID. We
+reproduced the error with a ready PDF source and found the Data Table tile
+absent from that notebook's web Studio panel. See the report in
+[#2571](https://github.com/teng-lin/notebooklm-py/issues/2571).
+
+Check Studio for the same notebook. When the tile is unavailable, you can ask
+chat to extract the selected source as CSV text.
+
+```bash
+notebooklm ask -n "$NOTEBOOK_ID" -s "$SOURCE_ID" --json \
+  "Return only CSV with columns date, description, and certificate_number."
+```
+
+The `answer` field contains generated text. Remove any code fences or citation
+markers and verify the rows against the source before saving the CSV.
+Only completed Studio artifacts are available via `notebooklm download data-table`.
+
 #### Audio/Video generation is refused immediately
 
 **Cause:** NotebookLM refused the generation kickoff synchronously (often quota,
