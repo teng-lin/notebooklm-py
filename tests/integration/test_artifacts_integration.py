@@ -29,7 +29,7 @@ from notebooklm.exceptions import (
     ValidationError,
 )
 from notebooklm.options import ClientConfig, RetryOptions
-from notebooklm.outcomes import CommitState
+from notebooklm.outcomes import CommitState, RecoveryAction
 from notebooklm.rpc import (
     AudioFormat,
     AudioLength,
@@ -930,14 +930,14 @@ class TestArtifactsAPI:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("rpc_code", "label", "commit_state", "unconfirmed"),
+        ("rpc_code", "label", "commit_state", "recovery_action", "unconfirmed"),
         [
-            (3, "invalid argument", CommitState.REJECTED, False),
-            (13, "internal", CommitState.UNKNOWN, True),
+            (3, "invalid argument", CommitState.REJECTED, RecoveryAction.NONE, False),
+            (13, "internal", CommitState.UNKNOWN, RecoveryAction.INSPECT_AND_RECONCILE, True),
         ],
     )
     async def test_generate_data_table_status_preserves_commit_evidence(
-        self, auth_tokens, httpx_mock, rpc_code, label, commit_state, unconfirmed
+        self, auth_tokens, httpx_mock, rpc_code, label, commit_state, recovery_action, unconfirmed
     ):
         frame = ["wrb.fr", RPCMethod.CREATE_ARTIFACT.value, None, None, None, [rpc_code], "generic"]
         httpx_mock.add_response(content=raw_batchexecute_body([frame]).encode())
@@ -952,6 +952,10 @@ class TestArtifactsAPI:
         assert error.rpc_code == rpc_code
         assert error.commit_state is commit_state
         assert error.unconfirmed is unconfirmed
+        metadata = error.operation_metadata
+        assert metadata is not None
+        assert metadata.recovery_action is recovery_action
+        assert [attempt.commit_state for attempt in metadata.attempts] == [commit_state]
         assert len(httpx_mock.get_requests()) == 1
 
     @pytest.mark.asyncio

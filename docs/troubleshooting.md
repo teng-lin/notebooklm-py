@@ -556,7 +556,8 @@ notebooklm ask -n "$NOTEBOOK_ID" -s "$SOURCE_ID" --json \
   "Return only CSV with columns date, description, and certificate_number."
 ```
 
-The `answer` field contains generated text. Review it before saving it as a CSV.
+The `answer` field contains generated text. Remove any code fences or citation
+markers and verify the rows against the source before saving the CSV.
 Only completed Studio artifacts are available via `notebooklm download data-table`.
 
 #### Audio/Video generation is refused immediately
