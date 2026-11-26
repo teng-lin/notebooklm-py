@@ -25,6 +25,7 @@ from ...exceptions import (
 )
 from ...outcomes import CommitState
 from ...rpc.types import RPCMethod
+from .overrides import resolve_rpc_id
 from .safe_index import safe_index
 
 # Re-export through ``notebooklm.rpc`` for backward compatibility.
@@ -1030,9 +1031,15 @@ def decode_response(
                 found_ids=found_ids,
                 raw_response=response_preview,
             )
-            # INVALID_ARGUMENT with no result is an explicit refusal. A populated
-            # frame or a status like INTERNAL can leave the outcome uncertain.
-            if result is None and code == GrpcStatusCode.INVALID_ARGUMENT:
+            # CreateArtifact has returned an empty INVALID_ARGUMENT for refused
+            # creates. Other methods can have partial effects, such as sharing
+            # requests whose invitation delivery cannot be verified.
+            create_artifact = RPCMethod.CREATE_ARTIFACT
+            if (
+                result is None
+                and code == GrpcStatusCode.INVALID_ARGUMENT
+                and rpc_id == resolve_rpc_id(create_artifact.name, create_artifact.value)
+            ):
                 mark_commit_state(error, CommitState.REJECTED)
             raise error
         raise RPCError(

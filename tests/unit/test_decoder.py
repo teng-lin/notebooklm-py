@@ -1790,6 +1790,16 @@ class TestRaiseOnNullStatus:
         assert exc_info.value.rpc_code == code
         assert exc_info.value.commit_state is commit_state
 
+    def test_create_artifact_rejection_supports_rpc_id_override(self, monkeypatch):
+        overridden_id = "OverrideRpc"
+        monkeypatch.setenv("NOTEBOOKLM_RPC_OVERRIDES", '{"CREATE_ARTIFACT": "OverrideRpc"}')
+        chunk = json.dumps(["wrb.fr", overridden_id, None, None, None, [3], "generic"])
+        raw = f")]}}'\n{len(chunk)}\n{chunk}\n"
+        with pytest.raises(RPCError) as exc_info:
+            decode_response(raw, overridden_id, allow_null=True, raise_on_null_status=True)
+
+        assert exc_info.value.commit_state is CommitState.REJECTED
+
     def test_opt_in_still_returns_none_without_a_status(self):
         """No status means no reason to report — the null stays a null."""
         assert (
